@@ -1,0 +1,10 @@
+{
+  "name": "salon-module",
+  "version": "0.1.0",
+  "description": "Salon appointment scheduling module",
+  "features": [
+    "appointment-scheduling",
+    "calendar-view",
+    "customer-booking"
+  ]
+}

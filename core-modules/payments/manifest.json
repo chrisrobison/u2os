@@ -1,0 +1,5 @@
+{
+  "name": "payments-core",
+  "version": "0.1.0",
+  "description": "Core primitive module scaffold for payments"
+}

@@ -1,0 +1,6 @@
+{
+  "id": "salon-appointments-panel",
+  "title": "Salon Appointments",
+  "description": "Upcoming appointments and quick booking",
+  "script": "/modules/salon-module/ui/panel.js"
+}

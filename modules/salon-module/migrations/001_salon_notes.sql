@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS salon_appointment_notes (
+  id VARCHAR(64) PRIMARY KEY,
+  appointment_id CHAR(36) NOT NULL,
+  note TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
