@@ -1,0 +1,104 @@
+{
+  "version": "1.0",
+  "app": {
+    "id": "default",
+    "name": "Business Workspace",
+    "description": "User-facing workflow shell for business staff"
+  },
+  "navigation": [
+    {
+      "id": "customers",
+      "title": "Customers",
+      "icon": "users",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "customers",
+        "title": "Customer Profiles"
+      },
+      "hooks": {
+        "onLoad": [
+          {
+            "type": "client",
+            "name": "client.notifyLoaded"
+          },
+          {
+            "type": "server",
+            "name": "server.auditView",
+            "options": {
+              "area": "customers"
+            }
+          }
+        ],
+        "afterSave": [
+          {
+            "type": "client",
+            "name": "client.notifySaved"
+          }
+        ]
+      }
+    },
+    {
+      "id": "sales",
+      "title": "Sales",
+      "children": [
+        {
+          "id": "orders",
+          "title": "Orders",
+          "componentTag": "bos-entity-form",
+          "componentProps": {
+            "entity": "orders",
+            "title": "Order Management"
+          },
+          "hooks": {
+            "onLoad": [
+              {
+                "type": "server",
+                "name": "server.auditView",
+                "options": {
+                  "area": "orders"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "invoices",
+          "title": "Invoices",
+          "componentTag": "bos-entity-form",
+          "componentProps": {
+            "entity": "invoices",
+            "title": "Invoice Desk"
+          },
+          "hooks": {
+            "afterSave": [
+              {
+                "type": "server",
+                "name": "server.auditSave",
+                "options": {
+                  "area": "invoices"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "calendar",
+      "title": "Calendar",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "appointments",
+        "title": "Appointments"
+      },
+      "hooks": {
+        "onLoad": [
+          {
+            "type": "client",
+            "name": "client.notifyLoaded"
+          }
+        ]
+      }
+    }
+  ]
+}

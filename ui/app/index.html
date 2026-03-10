@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Business OS App Runtime</title>
+    <link rel="stylesheet" href="/app/styles.css" />
+    <script type="module" src="https://unpkg.com/@larcjs/core-lite@3.0.1/src/components/pan-bus.mjs"></script>
+  </head>
+  <body>
+    <pan-bus id="appBus"></pan-bus>
+
+    <div class="app-layout">
+      <aside class="app-sidebar">
+        <h1 id="appTitle">Loading app...</h1>
+        <p id="appMeta" class="subtle">Loading app definition...</p>
+        <nav id="navTree" class="nav-tree"></nav>
+      </aside>
+
+      <main class="app-main">
+        <header class="main-header">
+          <div id="tabs" class="tabs"></div>
+          <p id="statusLine" class="subtle">Ready.</p>
+        </header>
+
+        <section id="tabPanels" class="tab-panels"></section>
+      </main>
+    </div>
+
+    <script type="module" src="/app/main.js"></script>
+  </body>
+</html>

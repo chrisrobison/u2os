@@ -8,6 +8,8 @@ function toInt(value, fallback) {
 module.exports = {
   port: toInt(process.env.PORT, 3000),
   modulesDir: process.env.MODULES_DIR || 'modules',
+  appsDir: process.env.APPS_DIR || 'config/apps',
+  defaultAppId: process.env.DEFAULT_APP_ID || 'default',
   db: {
     client: (process.env.DB_CLIENT || 'mysql').toLowerCase(),
     host: process.env.DB_HOST || '127.0.0.1',

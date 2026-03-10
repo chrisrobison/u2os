@@ -1,0 +1,305 @@
+:root {
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --line: #d8dde4;
+  --ink: #1a2732;
+  --muted: #5c6b78;
+  --accent: #0f6d5e;
+  --accent-soft: #d7efe9;
+  --danger: #a62f2f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  color: var(--ink);
+  background: radial-gradient(circle at 0% 0%, #f8fbfd, #eef2f6 45%, #e8edf2 100%);
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+}
+
+pan-bus {
+  display: none;
+}
+
+.app-layout {
+  height: 100%;
+  display: grid;
+  grid-template-columns: 280px 1fr;
+}
+
+.app-sidebar {
+  border-right: 1px solid var(--line);
+  padding: 18px 14px;
+  overflow: auto;
+  background: linear-gradient(180deg, #fdfefe, #f2f7f6);
+}
+
+.app-sidebar h1 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.subtle {
+  color: var(--muted);
+  font-size: 0.87rem;
+}
+
+.nav-tree {
+  margin-top: 18px;
+  display: grid;
+  gap: 6px;
+}
+
+.nav-node {
+  margin-left: calc(var(--depth, 0) * 10px);
+}
+
+.nav-group {
+  margin: 8px 0 4px;
+  font-weight: 700;
+  color: #2e4a5f;
+  font-size: 0.82rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.nav-branch {
+  display: grid;
+  gap: 4px;
+}
+
+.nav-item {
+  width: 100%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.nav-item:hover {
+  background: #eaf3f1;
+}
+
+.nav-item.active {
+  background: var(--accent-soft);
+  border-color: #b7ddd4;
+  font-weight: 700;
+}
+
+.app-main {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-width: 0;
+}
+
+.main-header {
+  border-bottom: 1px solid var(--line);
+  padding: 8px 10px;
+  background: #fbfcfd;
+}
+
+.tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tab-btn {
+  border: 1px solid #b8c4d1;
+  background: #edf2f8;
+  border-radius: 8px;
+  padding: 6px 8px;
+  color: #223445;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tab-btn.active {
+  background: #ffffff;
+  border-color: #85aaa3;
+}
+
+.tab-close {
+  border: none;
+  background: transparent;
+  color: #7d8793;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.tab-panels {
+  min-height: 0;
+  overflow: auto;
+  padding: 10px;
+}
+
+.tab-panel {
+  display: none;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
+.panel-fallback {
+  border: 1px dashed #c5ccd4;
+  background: #f7fafb;
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.entity-workspace {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 10px;
+}
+
+.entity-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.entity-header h3 {
+  margin: 0;
+}
+
+.entity-header p {
+  margin: 4px 0 0;
+}
+
+.entity-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.entity-actions input,
+.entity-actions button,
+.entity-form-actions button,
+.entity-field input,
+.entity-field textarea {
+  border: 1px solid #bcc7d3;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font: inherit;
+}
+
+.entity-actions button,
+.entity-form-actions button {
+  cursor: pointer;
+  background: #f4f8fc;
+}
+
+.entity-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 300px) 1fr;
+  gap: 10px;
+}
+
+.entity-pane {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.entity-pane h4 {
+  margin: 0 0 8px;
+}
+
+.entity-record-list {
+  display: grid;
+  gap: 6px;
+  max-height: 65vh;
+  overflow: auto;
+}
+
+.entity-record-item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  text-align: left;
+  background: #fff;
+  cursor: pointer;
+  display: grid;
+}
+
+.entity-record-item strong {
+  font-size: 0.9rem;
+}
+
+.entity-record-item small {
+  color: var(--muted);
+}
+
+.entity-record-item.active {
+  border-color: #7baca3;
+  background: #ecf6f3;
+}
+
+.entity-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.entity-field {
+  display: grid;
+  gap: 4px;
+}
+
+.entity-field.full {
+  grid-column: 1 / -1;
+}
+
+.entity-field label {
+  font-size: 0.84rem;
+  color: #44596d;
+}
+
+.entity-field textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.entity-form-actions {
+  margin-top: 10px;
+}
+
+.entity-form-actions .danger {
+  border-color: #d7aaaa;
+  color: var(--danger);
+}
+
+.entity-pad {
+  padding: 10px;
+}
+
+@media (max-width: 980px) {
+  .app-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .app-sidebar {
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    max-height: 260px;
+  }
+
+  .entity-grid {
+    grid-template-columns: 1fr;
+  }
+}

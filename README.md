@@ -13,6 +13,7 @@ Modular, API-first business operating system with a reusable kernel and dynamica
   - `salon-module` (appointment scheduling + calendar + appointment events)
   - `example-module` (minimal reference plugin)
 - Responsive dashboard (`/ui/dashboard`) with dynamic module panels
+- User app runtime (`/ui/app`) driven by app-definition JSON and component hooks
 
 ## Data Connector Switching
 
@@ -48,6 +49,9 @@ npm run start
 
 - API: `http://localhost:3000/api`
 - Dashboard: `http://localhost:3000/dashboard`
+- User App Runtime: `http://localhost:3000/app`
+
+App runtime configuration is loaded from `config/apps/*.json` (default: `default.json`).
 
 ## Example APIs
 
