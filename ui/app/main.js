@@ -1,4 +1,5 @@
 import './components/bos-entity-form.js';
+import './components/bos-salon-workspace.js';
 
 const state = {
   appId: new URLSearchParams(window.location.search).get('app') || 'default',

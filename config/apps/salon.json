@@ -1,0 +1,70 @@
+{
+  "version": "1.0",
+  "app": {
+    "id": "salon",
+    "name": "Salon Manager",
+    "description": "Business vertical plugin for salon operations"
+  },
+  "navigation": [
+    {
+      "id": "salon-dashboard",
+      "title": "Dashboard",
+      "componentTag": "bos-salon-workspace",
+      "componentProps": {
+        "view": "dashboard"
+      },
+      "hooks": {
+        "onLoad": [
+          {
+            "type": "client",
+            "name": "client.notifyLoaded"
+          }
+        ]
+      }
+    },
+    {
+      "id": "salon-calendar",
+      "title": "Calendar",
+      "componentTag": "bos-salon-workspace",
+      "componentProps": {
+        "view": "calendar"
+      },
+      "hooks": {
+        "onLoad": [
+          {
+            "type": "client",
+            "name": "client.notifyLoaded"
+          }
+        ],
+        "afterSave": [
+          {
+            "type": "client",
+            "name": "client.notifySaved"
+          }
+        ]
+      }
+    },
+    {
+      "id": "salon-clients",
+      "title": "Clients",
+      "componentTag": "bos-salon-workspace",
+      "componentProps": {
+        "view": "clients"
+      },
+      "hooks": {
+        "onLoad": [
+          {
+            "type": "client",
+            "name": "client.notifyLoaded"
+          }
+        ],
+        "afterSave": [
+          {
+            "type": "client",
+            "name": "client.notifySaved"
+          }
+        ]
+      }
+    }
+  ]
+}

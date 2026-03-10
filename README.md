@@ -57,6 +57,7 @@ npm run start
 - API: `http://localhost:3000/api`
 - Dashboard: `http://localhost:3000/dashboard`
 - User App Runtime: `http://localhost:3000/app`
+  - Salon vertical app: `http://localhost:3000/app?app=salon`
 
 App runtime configuration is loaded from `config/apps/*.json` (default: `default.json`).
 
@@ -68,6 +69,9 @@ App runtime configuration is loaded from `config/apps/*.json` (default: `default
 - `GET /api/events`
 - `GET /api/analytics`
 - `POST /api/modules/salon-module/appointments`
+- `GET /api/modules/salon-module/dashboard`
+- `GET /api/modules/salon-module/calendar?month=2026-03&date=2026-03-10`
+- `GET /api/modules/salon-module/clients?q=emma`
 
 ## Identifier Model
 
