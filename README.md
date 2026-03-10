@@ -41,7 +41,14 @@ npm install
 npm run db:init
 ```
 
-4. Start server:
+4. (Upgrade only) If your database already has existing data and you are upgrading to dual IDs,
+run the additive migration/backfill:
+
+```bash
+npm run db:migrate:public-ids
+```
+
+5. Start server:
 
 ```bash
 npm run start
@@ -61,6 +68,14 @@ App runtime configuration is loaded from `config/apps/*.json` (default: `default
 - `GET /api/events`
 - `GET /api/analytics`
 - `POST /api/modules/salon-module/appointments`
+
+## Identifier Model
+
+- Internal identity remains UUID in `id` for all entity relationships.
+- Business entities also get a stable, human-facing `public_id` (for example `ORD-100001`).
+- Entity routes support either UUID or `public_id`:
+  - `GET /api/orders/<uuid>`
+  - `GET /api/orders/ORD-100001`
 
 ## Developer Docs
 

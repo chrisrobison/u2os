@@ -48,11 +48,14 @@ function buildEntitySql(entity) {
       .filter((name) => ['status', 'email', 'phone', 'cell', 'organization_id', 'customer_id'].includes(name));
 
   const create = `CREATE TABLE IF NOT EXISTS ${qid(entity)} (${columns.join(', ')});`;
+  const uniqueIndexes = schema.columns
+    .filter((c) => c.name === 'public_id')
+    .map((c) => `CREATE UNIQUE INDEX IF NOT EXISTS ${qid(`udx_${entity}_${c.name}`)} ON ${qid(entity)}(${qid(c.name)});`);
   const indexes = indexCandidates.map((name) =>
     `CREATE INDEX IF NOT EXISTS ${qid(`idx_${entity}_${name}`)} ON ${qid(entity)}(${qid(name)});`
   );
 
-  return [create, ...indexes].join('\n');
+  return [create, ...uniqueIndexes, ...indexes].join('\n');
 }
 
 async function createPostgresConnector(config) {
@@ -117,7 +120,7 @@ async function createPostgresConnector(config) {
       nullable: row.is_nullable === 'YES',
       defaultValue: row.column_default,
       isPrimary: row.is_primary === true,
-      readOnly: row.is_primary === true || row.column_name === 'created' || row.column_name === 'modified'
+      readOnly: row.is_primary === true || row.column_name === 'public_id' || row.column_name === 'created' || row.column_name === 'modified'
     }));
   }
 
@@ -139,6 +142,14 @@ async function createPostgresConnector(config) {
       );
       CREATE INDEX IF NOT EXISTS ${qid('idx_system_events_name')} ON ${qid('system_events')}(${qid('event_name')});
       CREATE INDEX IF NOT EXISTS ${qid('idx_system_events_created')} ON ${qid('system_events')}(${qid('created_at')});
+    `);
+
+    await query(`
+      CREATE TABLE IF NOT EXISTS ${qid('public_id_counters')} (
+        ${qid('entity')} TEXT PRIMARY KEY,
+        ${qid('last_value')} INT NOT NULL,
+        ${qid('updated_at')} TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+      );
     `);
 
     for (const table of entities) {

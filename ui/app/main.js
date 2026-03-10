@@ -21,8 +21,9 @@ const clientHookRegistry = {
     setStatus(`Loaded ${navItem.title}`);
   },
   'client.notifySaved': async ({ navItem, context }) => {
-    const recordId = context?.id ? ` #${context.id}` : '';
-    setStatus(`Saved in ${navItem.title}${recordId}`);
+    const recordId = context?.publicId || context?.id;
+    const suffix = recordId ? ` #${recordId}` : '';
+    setStatus(`Saved in ${navItem.title}${suffix}`);
   }
 };
 

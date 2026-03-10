@@ -186,9 +186,45 @@ button.danger {
   display: grid;
   grid-template-columns: repeat(2, minmax(220px, 1fr));
   gap: 10px;
-  max-height: calc(100% - 78px);
+  max-height: calc(100% - 140px);
   overflow: auto;
   padding-right: 4px;
+}
+
+.record-summary {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  background: #f9fcff;
+}
+
+.record-id-line {
+  margin: 0;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.record-id-line strong {
+  font-size: 0.95rem;
+}
+
+.record-id-line span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.record-advanced summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 0.85rem;
+}
+
+.record-advanced p {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
 }
 
 .field {

@@ -28,6 +28,7 @@ const tableTitle = document.getElementById('tableTitle');
 const systemMeta = document.getElementById('systemMeta');
 const recordsList = document.getElementById('recordsList');
 const recordForm = document.getElementById('recordForm');
+const recordSummary = document.getElementById('recordSummary');
 const searchInput = document.getElementById('searchInput');
 const searchBtn = document.getElementById('searchBtn');
 const refreshBtn = document.getElementById('refreshBtn');
@@ -39,6 +40,15 @@ function humanize(value) {
   return String(value || '')
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 function inferInputType(columnType = '') {
@@ -99,6 +109,16 @@ function getSelectedRecord() {
   return state.records.find((row) => row.id === state.selectedId) || null;
 }
 
+function getRecordLookupId(record) {
+  if (!record) return state.selectedId;
+  return record.public_id || record.id;
+}
+
+function getRecordDisplayId(record) {
+  if (!record) return null;
+  return record.public_id || record.id;
+}
+
 function buildFormDefinition(record) {
   const fields = [];
 
@@ -136,11 +156,29 @@ function buildFormDefinition(record) {
 
 function renderForm(record = null) {
   const fields = buildFormDefinition(record);
+  renderRecordSummary(record);
   recordForm.innerHTML = '';
   for (const field of fields) {
     recordForm.appendChild(createField(field));
   }
   deleteBtn.disabled = state.createMode || !state.selectedId;
+}
+
+function renderRecordSummary(record) {
+  if (!record) {
+    recordSummary.innerHTML = '<p class="subtle">New record</p>';
+    return;
+  }
+
+  const displayId = getRecordDisplayId(record);
+  const label = record[state.table.slice(0, -1)] || record.name || record.title || '(unnamed)';
+  recordSummary.innerHTML = `
+    <p class="record-id-line"><strong>${escapeHtml(displayId)}</strong> <span>${escapeHtml(label)}</span></p>
+    <details class="record-advanced">
+      <summary>Advanced IDs</summary>
+      <p>UUID: <code>${escapeHtml(record.id)}</code></p>
+    </details>
+  `;
 }
 
 function renderTableNav() {
@@ -179,8 +217,9 @@ function renderRecordList() {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = `record-item${record.id === state.selectedId ? ' active' : ''}`;
+    const heading = getRecordDisplayId(record) || '(missing id)';
     const label = record[labelColumn] || '(unnamed)';
-    btn.innerHTML = `<strong>${label}</strong><small>${record.id || ''}</small>`;
+    btn.innerHTML = `<strong>${escapeHtml(heading)}</strong><small>${escapeHtml(label)} | UUID: ${escapeHtml(record.id || '')}</small>`;
     btn.addEventListener('click', () => {
       state.selectedId = record.id;
       state.createMode = false;
@@ -287,7 +326,9 @@ async function saveRecord() {
       state.selectedId = created.id;
       state.createMode = false;
     } else {
-      await fetchJson(`/api/${state.table}/${state.selectedId}`, {
+      const current = getSelectedRecord();
+      const lookupId = getRecordLookupId(current);
+      await fetchJson(`/api/${state.table}/${encodeURIComponent(lookupId)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -302,10 +343,13 @@ async function saveRecord() {
 
 async function deleteRecord() {
   if (!state.selectedId) return;
-  if (!window.confirm(`Delete ${state.selectedId}?`)) return;
+  const current = getSelectedRecord();
+  const lookupId = getRecordLookupId(current);
+  const displayId = getRecordDisplayId(current) || state.selectedId;
+  if (!window.confirm(`Delete ${displayId}?`)) return;
 
   try {
-    await fetchJson(`/api/${state.table}/${state.selectedId}`, { method: 'DELETE' });
+    await fetchJson(`/api/${state.table}/${encodeURIComponent(lookupId)}`, { method: 'DELETE' });
     state.selectedId = null;
     state.createMode = false;
     await loadRecords();

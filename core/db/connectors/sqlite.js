@@ -46,11 +46,14 @@ function buildEntitySql(entity) {
       .filter((name) => ['status', 'email', 'phone', 'cell', 'organization_id', 'customer_id'].includes(name));
 
   const create = `CREATE TABLE IF NOT EXISTS ${qid(entity)} (${columns.join(', ')});`;
+  const uniqueIndexes = schema.columns
+    .filter((c) => c.name === 'public_id')
+    .map((c) => `CREATE UNIQUE INDEX IF NOT EXISTS ${qid(`udx_${entity}_${c.name}`)} ON ${qid(entity)}(${qid(c.name)});`);
   const indexes = indexCandidates.map((name) =>
     `CREATE INDEX IF NOT EXISTS ${qid(`idx_${entity}_${name}`)} ON ${qid(entity)}(${qid(name)});`
   );
 
-  return [create, ...indexes].join('\n');
+  return [create, ...uniqueIndexes, ...indexes].join('\n');
 }
 
 async function createSqliteConnector(config) {
@@ -95,7 +98,7 @@ async function createSqliteConnector(config) {
       nullable: row.notnull === 0,
       defaultValue: row.dflt_value,
       isPrimary: row.pk === 1,
-      readOnly: row.pk === 1 || row.name === 'created' || row.name === 'modified'
+      readOnly: row.pk === 1 || row.name === 'public_id' || row.name === 'created' || row.name === 'modified'
     }));
   }
 
@@ -112,6 +115,12 @@ async function createSqliteConnector(config) {
         ${qid('event_name')} TEXT NOT NULL,
         ${qid('payload')} TEXT NOT NULL,
         ${qid('created_at')} TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS ${qid('public_id_counters')} (
+        ${qid('entity')} TEXT PRIMARY KEY,
+        ${qid('last_value')} INTEGER NOT NULL,
+        ${qid('updated_at')} TEXT DEFAULT CURRENT_TIMESTAMP
       );
 
       CREATE INDEX IF NOT EXISTS ${qid('idx_system_events_name')} ON ${qid('system_events')}(${qid('event_name')});

@@ -44,11 +44,14 @@ function buildEntitySql(entity) {
       .filter((name) => ['status', 'email', 'phone', 'cell', 'organization_id', 'customer_id'].includes(name));
 
   const create = `CREATE TABLE IF NOT EXISTS ${qid(entity)} (${columns.join(', ')}) ENGINE=InnoDB;`;
+  const uniqueIndexes = schema.columns
+    .filter((c) => c.name === 'public_id')
+    .map((c) => `CREATE UNIQUE INDEX ${qid(`udx_${entity}_${c.name}`)} ON ${qid(entity)}(${qid(c.name)});`);
   const indexes = indexCandidates.map((name) =>
     `CREATE INDEX ${qid(`idx_${entity}_${name}`)} ON ${qid(entity)}(${qid(name)});`
   );
 
-  return [create, ...indexes];
+  return [create, ...uniqueIndexes, ...indexes];
 }
 
 async function createMySqlConnector(config) {
@@ -104,7 +107,7 @@ async function createMySqlConnector(config) {
       nullable: row.IS_NULLABLE === 'YES',
       defaultValue: row.COLUMN_DEFAULT,
       isPrimary: row.COLUMN_KEY === 'PRI',
-      readOnly: row.COLUMN_KEY === 'PRI' || row.COLUMN_NAME === 'created' || row.COLUMN_NAME === 'modified' || (row.EXTRA && row.EXTRA.includes('auto_increment'))
+      readOnly: row.COLUMN_KEY === 'PRI' || row.COLUMN_NAME === 'public_id' || row.COLUMN_NAME === 'created' || row.COLUMN_NAME === 'modified' || (row.EXTRA && row.EXTRA.includes('auto_increment'))
     }));
   }
 
@@ -125,6 +128,14 @@ async function createMySqlConnector(config) {
         ${qid('created_at')} TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         INDEX ${qid('idx_system_events_name')} (${qid('event_name')}),
         INDEX ${qid('idx_system_events_created')} (${qid('created_at')})
+      ) ENGINE=InnoDB;
+    `);
+
+    await query(`
+      CREATE TABLE IF NOT EXISTS ${qid('public_id_counters')} (
+        ${qid('entity')} VARCHAR(64) PRIMARY KEY,
+        ${qid('last_value')} INT NOT NULL,
+        ${qid('updated_at')} TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       ) ENGINE=InnoDB;
     `);
 

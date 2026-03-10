@@ -9,7 +9,12 @@ function createEntityRouter(db, eventBus) {
     router.post(`/${entity}`, async (req, res, next) => {
       try {
         const created = await db.create(entity, req.body || {});
-        await eventBus.publish(`${entity.slice(0, -1)}.created`, { entity, id: created.id, record: created });
+        await eventBus.publish(`${entity.slice(0, -1)}.created`, {
+          entity,
+          id: created.id,
+          public_id: created.public_id || null,
+          record: created
+        });
         res.status(201).json(created);
       } catch (error) {
         next(error);
@@ -30,9 +35,9 @@ function createEntityRouter(db, eventBus) {
       }
     });
 
-    router.get(`/${entity}/:id`, async (req, res, next) => {
+    router.get(`/${entity}/:identifier`, async (req, res, next) => {
       try {
-        const row = await db.getById(entity, req.params.id);
+        const row = await db.getByIdentifier(entity, req.params.identifier);
         if (!row) {
           return res.status(404).json({ error: `${entity} record not found` });
         }
@@ -42,29 +47,55 @@ function createEntityRouter(db, eventBus) {
       }
     });
 
-    router.put(`/${entity}/:id`, async (req, res, next) => {
+    router.put(`/${entity}/:identifier`, async (req, res, next) => {
       try {
-        const updated = await db.update(entity, req.params.id, req.body || {});
+        const updated = await db.update(entity, req.params.identifier, req.body || {});
         if (!updated) {
           return res.status(404).json({ error: `${entity} record not found` });
         }
 
-        await eventBus.publish(`${entity.slice(0, -1)}.updated`, { entity, id: updated.id, record: updated });
+        await eventBus.publish(`${entity.slice(0, -1)}.updated`, {
+          entity,
+          id: updated.id,
+          public_id: updated.public_id || null,
+          record: updated
+        });
         return res.json(updated);
       } catch (error) {
         return next(error);
       }
     });
 
-    router.delete(`/${entity}/:id`, async (req, res, next) => {
+    router.delete(`/${entity}/:identifier`, async (req, res, next) => {
       try {
-        const deleted = await db.remove(entity, req.params.id);
+        const existing = await db.getByIdentifier(entity, req.params.identifier);
+        if (!existing) {
+          return res.status(404).json({ error: `${entity} record not found` });
+        }
+
+        const deleted = await db.remove(entity, existing.id);
         if (!deleted) {
           return res.status(404).json({ error: `${entity} record not found` });
         }
 
-        await eventBus.publish(`${entity.slice(0, -1)}.deleted`, { entity, id: req.params.id });
+        await eventBus.publish(`${entity.slice(0, -1)}.deleted`, {
+          entity,
+          id: existing.id,
+          public_id: existing.public_id || null
+        });
         return res.status(204).send();
+      } catch (error) {
+        return next(error);
+      }
+    });
+
+    router.get(`/${entity}/resolve/:identifier`, async (req, res, next) => {
+      try {
+        const row = await db.getByIdentifier(entity, req.params.identifier);
+        if (!row) {
+          return res.status(404).json({ error: `${entity} record not found` });
+        }
+        return res.json(row);
       } catch (error) {
         return next(error);
       }
@@ -120,12 +151,22 @@ function createEntityRouter(db, eventBus) {
         return res.status(400).json({ error: 'local and remote must be valid table names' });
       }
 
+      const resolvedLocalId = await db.resolveId(local, local_id);
+      if (!resolvedLocalId) {
+        return res.status(400).json({ error: `Local record '${local_id}' not found in ${local}` });
+      }
+
+      const resolvedRemoteId = await db.resolveId(remote, remote_id);
+      if (!resolvedRemoteId) {
+        return res.status(400).json({ error: `Remote record '${remote_id}' not found in ${remote}` });
+      }
+
       const clamp = await db.create('clamps', {
-        clamp: `${local}:${local_id} -> ${remote}:${remote_id}`,
+        clamp: `${local}:${resolvedLocalId} -> ${remote}:${resolvedRemoteId}`,
         local,
-        local_id,
+        local_id: resolvedLocalId,
         remote,
-        remote_id,
+        remote_id: resolvedRemoteId,
         context: context || null
       });
 
@@ -142,6 +183,16 @@ function createEntityRouter(db, eventBus) {
   router.get('/links', async (req, res, next) => {
     try {
       const { local, local_id, remote, remote_id, context, limit } = req.query;
+      let resolvedLocalId = null;
+      let resolvedRemoteId = null;
+
+      if (local && local_id && entitySet.has(local)) {
+        resolvedLocalId = await db.resolveId(local, local_id);
+      }
+      if (remote && remote_id && entitySet.has(remote)) {
+        resolvedRemoteId = await db.resolveId(remote, remote_id);
+      }
+
       const rows = await db.list('clamps', {
         limit: limit ? Number.parseInt(limit, 10) : 500,
         offset: 0
@@ -149,9 +200,9 @@ function createEntityRouter(db, eventBus) {
 
       const filtered = rows.filter((row) => {
         if (local && row.local !== local) return false;
-        if (local_id && row.local_id !== local_id) return false;
+        if (local_id && row.local_id !== (resolvedLocalId || local_id)) return false;
         if (remote && row.remote !== remote) return false;
-        if (remote_id && row.remote_id !== remote_id) return false;
+        if (remote_id && row.remote_id !== (resolvedRemoteId || remote_id)) return false;
         if (context && row.context !== context) return false;
         return true;
       });
@@ -169,10 +220,12 @@ function createEntityRouter(db, eventBus) {
         return res.status(404).json({ error: `Unknown entity '${entity}'` });
       }
 
+      const resolvedId = await db.resolveId(entity, id);
+      const internalId = resolvedId || id;
       const rows = await db.list('clamps', { limit: 1000, offset: 0 });
       const links = rows.filter((row) =>
-        (row.local === entity && row.local_id === id) ||
-        (row.remote === entity && row.remote_id === id)
+        (row.local === entity && row.local_id === internalId) ||
+        (row.remote === entity && row.remote_id === internalId)
       );
 
       return res.json(links);

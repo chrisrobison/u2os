@@ -4,6 +4,15 @@ function humanize(value) {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 function inferInputType(columnType = '') {
   const type = String(columnType).toLowerCase();
   if (type.includes('int') || type.includes('real') || type.includes('double') || type.includes('numeric') || type.includes('decimal')) {
@@ -60,6 +69,7 @@ class BosEntityForm extends HTMLElement {
     this.$title = null;
     this.$save = null;
     this.$delete = null;
+    this.$recordSummary = null;
   }
 
   connectedCallback() {
@@ -115,7 +125,7 @@ class BosEntityForm extends HTMLElement {
             <p class="entity-subtle"></p>
           </div>
           <div class="entity-actions">
-            <input data-role="search" type="search" placeholder="Search" />
+            <input data-role="search" type="search" placeholder="Search public ID, UUID, or text" />
             <button data-action="search" type="button">Search</button>
             <button data-action="refresh" type="button">Refresh</button>
             <button data-action="new" type="button">New</button>
@@ -130,6 +140,7 @@ class BosEntityForm extends HTMLElement {
 
           <section class="entity-pane">
             <h4>Details</h4>
+            <div data-role="record-summary" class="entity-record-summary"></div>
             <form data-role="form" class="entity-form"></form>
             <div class="entity-actions entity-form-actions">
               <button data-action="save" type="button">Save</button>
@@ -146,6 +157,7 @@ class BosEntityForm extends HTMLElement {
     this.$form = this.querySelector('[data-role="form"]');
     this.$save = this.querySelector('[data-action="save"]');
     this.$delete = this.querySelector('[data-action="delete"]');
+    this.$recordSummary = this.querySelector('[data-role="record-summary"]');
 
     this.querySelector('[data-action="search"]').addEventListener('click', () => this.loadRecords().catch((error) => this.showError(error)));
     this.querySelector('[data-action="refresh"]').addEventListener('click', () => this.loadRecords().catch((error) => this.showError(error)));
@@ -200,6 +212,33 @@ class BosEntityForm extends HTMLElement {
     return this.state.records.find((row) => String(row.id) === String(this.state.selectedId)) || null;
   }
 
+  getRecordLookupId(record) {
+    if (!record) return this.state.selectedId;
+    return record.public_id || record.id;
+  }
+
+  getRecordDisplayId(record) {
+    if (!record) return null;
+    return record.public_id || record.id;
+  }
+
+  renderRecordSummary(record) {
+    if (!record) {
+      this.$recordSummary.innerHTML = '<p class=\"entity-subtle\">New record</p>';
+      return;
+    }
+
+    const displayId = this.getRecordDisplayId(record);
+    const label = record[this.state.entity.slice(0, -1)] || record.name || record.title || '(unnamed)';
+    this.$recordSummary.innerHTML = `
+      <p class=\"entity-id-line\"><strong>${escapeHtml(displayId)}</strong> <span>${escapeHtml(label)}</span></p>
+      <details class=\"entity-advanced\">
+        <summary>Advanced IDs</summary>
+        <p>UUID: <code>${escapeHtml(record.id)}</code></p>
+      </details>
+    `;
+  }
+
   renderRecordList() {
     if (this.state.records.length === 0) {
       this.$records.innerHTML = '<div class="entity-subtle entity-pad">No records found.</div>';
@@ -214,7 +253,9 @@ class BosEntityForm extends HTMLElement {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = `entity-record-item${String(record.id) === String(this.state.selectedId) ? ' active' : ''}`;
-      btn.innerHTML = `<strong>${record[labelColumn] || '(unnamed)'}</strong><small>${record.id || ''}</small>`;
+      const heading = this.getRecordDisplayId(record) || '(missing id)';
+      const label = record[labelColumn] || '(unnamed)';
+      btn.innerHTML = `<strong>${escapeHtml(heading)}</strong><small>${escapeHtml(label)} | UUID: ${escapeHtml(record.id || '')}</small>`;
       btn.addEventListener('click', () => {
         this.state.selectedId = record.id;
         this.state.createMode = false;
@@ -222,7 +263,8 @@ class BosEntityForm extends HTMLElement {
         this.renderForm(record);
         this.emitRuntimeEvent('onView', {
           entity: this.state.entity,
-          id: record.id
+          id: record.id,
+          publicId: record.public_id || null
         });
       });
       this.$records.appendChild(btn);
@@ -294,6 +336,7 @@ class BosEntityForm extends HTMLElement {
   renderForm(record = null) {
     const fields = this.buildFormDefinition(record);
     this.$form.innerHTML = '';
+    this.renderRecordSummary(record);
     for (const field of fields) {
       this.$form.appendChild(this.createField(field));
     }
@@ -354,7 +397,9 @@ class BosEntityForm extends HTMLElement {
         this.state.selectedId = created.id;
         this.state.createMode = false;
       } else {
-        await this.fetchJson(`/api/${this.state.entity}/${this.state.selectedId}`, {
+        const current = this.getSelectedRecord();
+        const lookupId = this.getRecordLookupId(current);
+        await this.fetchJson(`/api/${this.state.entity}/${encodeURIComponent(lookupId)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -362,13 +407,16 @@ class BosEntityForm extends HTMLElement {
       }
 
       await this.loadRecords();
+      const selected = this.getSelectedRecord();
       this.emitRuntimeEvent('onSave', {
         entity: this.state.entity,
-        id: this.state.selectedId
+        id: selected?.id || this.state.selectedId,
+        publicId: selected?.public_id || null
       });
       this.emitRuntimeEvent('afterSave', {
         entity: this.state.entity,
-        id: this.state.selectedId
+        id: selected?.id || this.state.selectedId,
+        publicId: selected?.public_id || null
       });
     } catch (error) {
       alert(`Save failed: ${error.message}`);
@@ -377,10 +425,13 @@ class BosEntityForm extends HTMLElement {
 
   async deleteRecord() {
     if (!this.state.selectedId) return;
-    if (!window.confirm(`Delete ${this.state.selectedId}?`)) return;
+    const current = this.getSelectedRecord();
+    const lookupId = this.getRecordLookupId(current);
+    const displayId = this.getRecordDisplayId(current) || this.state.selectedId;
+    if (!window.confirm(`Delete ${displayId}?`)) return;
 
     try {
-      await this.fetchJson(`/api/${this.state.entity}/${this.state.selectedId}`, {
+      await this.fetchJson(`/api/${this.state.entity}/${encodeURIComponent(lookupId)}`, {
         method: 'DELETE'
       });
       this.state.selectedId = null;

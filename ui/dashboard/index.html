@@ -21,7 +21,7 @@
             <p id="systemMeta" class="subtle">Loading system metadata...</p>
           </div>
           <div class="actions">
-            <input id="searchInput" type="search" placeholder="Search current table" />
+            <input id="searchInput" type="search" placeholder="Search public ID, UUID, or text" />
             <button id="searchBtn" type="button">Search</button>
             <button id="refreshBtn" type="button">Refresh</button>
             <button id="newBtn" type="button">New</button>
@@ -36,6 +36,7 @@
 
           <section class="pane pane-bottom">
             <h3>Record Details</h3>
+            <div id="recordSummary" class="record-summary"></div>
             <form id="recordForm" class="record-form"></form>
             <div class="actions form-actions">
               <button id="saveBtn" type="button">Save</button>

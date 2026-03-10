@@ -1,3 +1,5 @@
+const { hasPublicId } = require('./publicIds');
+
 const schemas = {
   users: {
     singular: 'user',
@@ -183,10 +185,16 @@ function buildSchema(entity) {
     return null;
   }
 
+  const hasPublicIdentifier = hasPublicId(entity);
+  const publicIdColumns = hasPublicIdentifier
+    ? [{ name: 'public_id', type: 'string', nullable: true }]
+    : [];
+
   return {
     singular: def.singular,
     columns: [
       { name: 'id', type: 'id', primary: true, nullable: false },
+      ...publicIdColumns,
       { name: def.singular, type: 'string', nullable: true },
       ...def.fields,
       { name: 'created', type: 'datetime', nullable: false, defaultNow: true, readOnly: true },

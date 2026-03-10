@@ -8,7 +8,8 @@
     "start": "node core/server.js",
     "dev": "node --watch core/server.js",
     "db:init": "node scripts/init-db.js",
-    "db:seed": "node scripts/seed-sample-data.js"
+    "db:seed": "node scripts/seed-sample-data.js",
+    "db:migrate:public-ids": "node scripts/migrate-public-ids.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

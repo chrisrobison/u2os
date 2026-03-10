@@ -255,6 +255,38 @@ pan-bus {
   gap: 10px;
 }
 
+.entity-record-summary {
+  border: 1px solid var(--line);
+  background: #f7fbfa;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+}
+
+.entity-id-line {
+  margin: 0;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.entity-id-line span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.entity-advanced summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 0.85rem;
+}
+
+.entity-advanced p {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
 .entity-field {
   display: grid;
   gap: 4px;
