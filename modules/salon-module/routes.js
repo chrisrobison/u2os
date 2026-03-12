@@ -87,6 +87,71 @@ function withinDateRange(isoDate, fromDate, toDate) {
   return true;
 }
 
+function buildVisitStats(appointments) {
+  const statsByCustomer = new Map();
+
+  for (const appointment of appointments) {
+    if (!appointment.customer_id) continue;
+    const current = statsByCustomer.get(appointment.customer_id) || {
+      visits: 0,
+      completedVisits: 0,
+      scheduledVisits: 0,
+      upcomingVisits: 0,
+      lastVisitAt: null
+    };
+
+    current.visits += 1;
+    if (appointment.status === 'completed') current.completedVisits += 1;
+    if (appointment.status === 'scheduled' || appointment.status === 'booked') current.scheduledVisits += 1;
+
+    const startAt = toIso(appointment.start_at);
+    if (startAt && (!current.lastVisitAt || startAt > current.lastVisitAt)) {
+      current.lastVisitAt = startAt;
+    }
+
+    const startsMs = startAt ? new Date(startAt).getTime() : NaN;
+    if (!Number.isNaN(startsMs) && startsMs >= Date.now()) {
+      current.upcomingVisits += 1;
+    }
+
+    statsByCustomer.set(appointment.customer_id, current);
+  }
+
+  return statsByCustomer;
+}
+
+function summarizeClient(customer, stats) {
+  const name = fullName(customer, 'customer') || customer.customer || '(unnamed)';
+  const current = stats || {
+    visits: 0,
+    completedVisits: 0,
+    scheduledVisits: 0,
+    upcomingVisits: 0,
+    lastVisitAt: null
+  };
+
+  return {
+    id: customer.id,
+    public_id: customer.public_id || null,
+    name,
+    first_name: customer.first_name || null,
+    last_name: customer.last_name || null,
+    email: customer.email || null,
+    phone: customer.phone || customer.cell || null,
+    cell: customer.cell || null,
+    sms: customer.sms || false,
+    status: customer.status || null,
+    notes: customer.notes || null,
+    photo_url: customer.photo_url || null,
+    visits: current.visits,
+    completedVisits: current.completedVisits,
+    scheduledVisits: current.scheduledVisits,
+    upcomingVisits: current.upcomingVisits,
+    lastVisitAt: current.lastVisitAt,
+    lastVisitDate: current.lastVisitAt ? current.lastVisitAt.slice(0, 10) : null
+  };
+}
+
 module.exports = async function registerSalonRoutes(router, { db, eventBus }) {
   async function fetchReferenceData() {
     const [customers, staffUsers] = await Promise.all([
@@ -254,36 +319,10 @@ module.exports = async function registerSalonRoutes(router, { db, eventBus }) {
         db.list('appointments', { limit: 1000, offset: 0 })
       ]);
 
-      const visitsByCustomer = new Map();
-      for (const appointment of appointments) {
-        if (!appointment.customer_id) continue;
-        const current = visitsByCustomer.get(appointment.customer_id) || { visits: 0, lastVisitAt: null };
-        current.visits += 1;
-        const startAt = toIso(appointment.start_at);
-        if (startAt && (!current.lastVisitAt || startAt > current.lastVisitAt)) {
-          current.lastVisitAt = startAt;
-        }
-        visitsByCustomer.set(appointment.customer_id, current);
-      }
+      const visitsByCustomer = buildVisitStats(appointments);
 
       const clients = customers
-        .map((customer) => {
-          const stats = visitsByCustomer.get(customer.id) || { visits: 0, lastVisitAt: null };
-          const name = fullName(customer, 'customer') || customer.customer || '(unnamed)';
-          return {
-            id: customer.id,
-            public_id: customer.public_id || null,
-            name,
-            first_name: customer.first_name || null,
-            last_name: customer.last_name || null,
-            email: customer.email || null,
-            phone: customer.phone || customer.cell || null,
-            status: customer.status || null,
-            visits: stats.visits,
-            lastVisitAt: stats.lastVisitAt,
-            lastVisitDate: stats.lastVisitAt ? stats.lastVisitAt.slice(0, 10) : null
-          };
-        })
+        .map((customer) => summarizeClient(customer, visitsByCustomer.get(customer.id)))
         .filter((client) => {
           if (!q) return true;
           const haystack = [
@@ -310,6 +349,37 @@ module.exports = async function registerSalonRoutes(router, { db, eventBus }) {
       res.json({ clients });
     } catch (error) {
       next(error);
+    }
+  });
+
+  router.get('/clients/:identifier', async (req, res, next) => {
+    try {
+      const customer = await db.getByIdentifier('customers', req.params.identifier);
+      if (!customer) {
+        return res.status(404).json({ error: 'Client not found' });
+      }
+
+      const [allAppointments, staffUsers] = await Promise.all([
+        db.list('appointments', { limit: 2000, offset: 0 }),
+        db.list('users', { limit: 500, offset: 0 })
+      ]);
+
+      const clientAppointments = allAppointments.filter((item) => item.customer_id === customer.id);
+      const visitStats = buildVisitStats(clientAppointments).get(customer.id);
+      const staffById = new Map(staffUsers.map((row) => [row.id, row]));
+      const customerById = new Map([[customer.id, customer]]);
+
+      const appointments = clientAppointments
+        .map((item) => hydrateAppointment(item, { customerById, staffById }))
+        .sort((a, b) => String(b.starts_at || '').localeCompare(String(a.starts_at || '')))
+        .slice(0, 100);
+
+      return res.json({
+        client: summarizeClient(customer, visitStats),
+        appointments
+      });
+    } catch (error) {
+      return next(error);
     }
   });
 

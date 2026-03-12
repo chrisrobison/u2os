@@ -48,6 +48,19 @@ function shiftMonth(monthKey, delta) {
   return next.toISOString().slice(0, 7);
 }
 
+function initialsFor(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'CL';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+}
+
+function avatarUrlFor(client) {
+  if (client.photo_url) return client.photo_url;
+  const seed = encodeURIComponent(client.public_id || client.id || client.name || 'client');
+  return `https://api.dicebear.com/9.x/thumbs/svg?seed=${seed}`;
+}
+
 class BosSalonWorkspace extends HTMLElement {
   constructor() {
     super();
@@ -56,6 +69,11 @@ class BosSalonWorkspace extends HTMLElement {
       selectedMonth: toMonthKey(Date.now()),
       selectedDate: new Date().toISOString().slice(0, 10),
       clientQuery: '',
+      clientView: 'card',
+      selectedClientId: null,
+      selectedClientProfile: null,
+      isEditingClient: false,
+      clientDraft: null,
       loading: false,
       dashboard: null,
       calendar: null,
@@ -141,6 +159,10 @@ class BosSalonWorkspace extends HTMLElement {
       const query = this.state.clientQuery ? `?q=${encodeURIComponent(this.state.clientQuery)}` : '';
       const data = await this.fetchJson(`/api/modules/salon-module/clients${query}`);
       this.state.clients = data.clients || [];
+      this.state.selectedClientId = null;
+      this.state.selectedClientProfile = null;
+      this.state.isEditingClient = false;
+      this.state.clientDraft = null;
       this.renderClients();
       this.emitRuntimeEvent('onLoad', { view: 'clients' });
       return;
@@ -403,12 +425,235 @@ class BosSalonWorkspace extends HTMLElement {
 
       await this.loadView();
     });
+
+    this.querySelectorAll('[data-client-id]').forEach((el) => {
+      el.addEventListener('click', async () => {
+        const clientId = el.getAttribute('data-client-id');
+        if (!clientId) return;
+        await this.openClientProfile(clientId);
+      });
+    });
+
+    this.querySelector('[data-action="client-view-card"]')?.addEventListener('click', () => {
+      this.state.clientView = 'card';
+      this.renderClients();
+    });
+
+    this.querySelector('[data-action="client-view-table"]')?.addEventListener('click', () => {
+      this.state.clientView = 'table';
+      this.renderClients();
+    });
   }
 
-  renderClients() {
+  bindClientProfileActions() {
+    this.querySelector('[data-action="back-to-clients"]')?.addEventListener('click', () => {
+      this.state.selectedClientId = null;
+      this.state.selectedClientProfile = null;
+      this.state.isEditingClient = false;
+      this.state.clientDraft = null;
+      this.renderClients();
+    });
+
+    this.querySelector('[data-action="edit-client"]')?.addEventListener('click', () => {
+      const client = this.state.selectedClientProfile?.client;
+      if (!client) return;
+      this.state.isEditingClient = true;
+      this.state.clientDraft = {
+        first_name: client.first_name || '',
+        last_name: client.last_name || '',
+        email: client.email || '',
+        phone: client.phone || '',
+        cell: client.cell || '',
+        status: client.status || 'active',
+        sms: Boolean(client.sms),
+        notes: client.notes || ''
+      };
+      this.renderClients();
+      this.bindClientProfileActions();
+    });
+
+    this.querySelector('[data-action="cancel-client-edit"]')?.addEventListener('click', () => {
+      this.state.isEditingClient = false;
+      this.state.clientDraft = null;
+      this.renderClients();
+      this.bindClientProfileActions();
+    });
+
+    this.querySelector('[data-action="save-client"]')?.addEventListener('click', async () => {
+      await this.saveClientProfile();
+    });
+  }
+
+  async openClientProfile(clientId) {
+    this.state.selectedClientId = clientId;
+    this.$root.innerHTML = '<div class="salon-empty">Loading client profile...</div>';
+    const data = await this.fetchJson(`/api/modules/salon-module/clients/${encodeURIComponent(clientId)}`);
+    this.state.selectedClientProfile = data;
+    this.state.isEditingClient = false;
+    this.state.clientDraft = null;
+    this.renderClients();
+    this.emitRuntimeEvent('onView', {
+      view: 'clients',
+      clientId: data?.client?.id || clientId,
+      publicId: data?.client?.public_id || null
+    });
+  }
+
+  async saveClientProfile() {
+    const client = this.state.selectedClientProfile?.client;
+    if (!client) return;
+    const form = this.querySelector('[data-role="client-edit-form"]');
+    if (!form) return;
+    const values = Object.fromEntries(new FormData(form).entries());
+
+    const payload = {
+      customer: `${String(values.first_name || '').trim()} ${String(values.last_name || '').trim()}`.trim() || null,
+      first_name: String(values.first_name || '').trim() || null,
+      last_name: String(values.last_name || '').trim() || null,
+      email: String(values.email || '').trim() || null,
+      phone: String(values.phone || '').trim() || null,
+      cell: String(values.cell || '').trim() || null,
+      status: String(values.status || '').trim() || null,
+      sms: values.sms === 'on',
+      notes: String(values.notes || '').trim() || null
+    };
+
+    await this.fetchJson(`/api/customers/${encodeURIComponent(client.public_id || client.id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const refreshed = await this.fetchJson(`/api/modules/salon-module/clients/${encodeURIComponent(client.public_id || client.id)}`);
+    this.state.selectedClientProfile = refreshed;
+    this.state.isEditingClient = false;
+    this.state.clientDraft = null;
+    this.renderClients();
+    this.bindClientProfileActions();
+    this.emitRuntimeEvent('afterSave', {
+      view: 'clients',
+      clientId: refreshed.client?.id || client.id,
+      publicId: refreshed.client?.public_id || null
+    });
+  }
+
+  renderClientProfile() {
+    const profile = this.state.selectedClientProfile || {};
+    const client = profile.client || {};
+    const appointments = profile.appointments || [];
+    const draft = this.state.clientDraft || {};
+
+    const history = appointments
+      .map((item) => `
+        <li class="salon-history-row">
+          <div>
+            <strong>${escapeHtml(item.appointment || 'Appointment')}</strong>
+            <small>${formatDate(item.starts_at)} ${formatTime(item.starts_at)}</small>
+          </div>
+          <div>
+            <small>${escapeHtml(item.staff_name || 'Unassigned')}</small>
+            <small>${item.duration_minutes ? `${item.duration_minutes} min` : ''}</small>
+          </div>
+          <span class="salon-history-status">${escapeHtml(item.status || 'scheduled')}</span>
+        </li>
+      `)
+      .join('');
+
+    const profileMain = this.state.isEditingClient
+      ? `
+        <form data-role="client-edit-form" class="salon-client-edit-form">
+          <label>First Name<input name="first_name" value="${escapeHtml(draft.first_name || '')}" /></label>
+          <label>Last Name<input name="last_name" value="${escapeHtml(draft.last_name || '')}" /></label>
+          <label>Email<input name="email" value="${escapeHtml(draft.email || '')}" /></label>
+          <label>Phone<input name="phone" value="${escapeHtml(draft.phone || '')}" /></label>
+          <label>Cell<input name="cell" value="${escapeHtml(draft.cell || '')}" /></label>
+          <label>Status<input name="status" value="${escapeHtml(draft.status || '')}" /></label>
+          <label class="salon-edit-checkbox"><input type="checkbox" name="sms" ${draft.sms ? 'checked' : ''} /> SMS Opt-in</label>
+          <label class="full">Notes<textarea name="notes">${escapeHtml(draft.notes || '')}</textarea></label>
+        </form>
+      `
+      : `
+        <div class="salon-profile-main">
+          <h4>${escapeHtml(client.name || 'Client')}</h4>
+          <p>${escapeHtml(client.public_id || client.id || '')}</p>
+          <p>${escapeHtml(client.email || 'No email')} • ${escapeHtml(client.phone || 'No phone')}</p>
+          <p>${escapeHtml(client.status || 'active')}</p>
+        </div>
+      `;
+
+    return `
+      <section class="salon-card salon-client-profile">
+        <header class="salon-card-header">
+          <div class="salon-inline-actions">
+            <button type="button" data-action="back-to-clients">← Back</button>
+            ${this.state.isEditingClient
+    ? '<button type="button" data-action="save-client">Save</button><button type="button" data-action="cancel-client-edit">Cancel</button>'
+    : '<button type="button" data-action="edit-client">Edit</button>'}
+          </div>
+          <h3>Client Profile</h3>
+        </header>
+
+        <section class="salon-profile-hero">
+          <div class="salon-profile-photo-wrap">
+            <img class="salon-profile-photo" src="${escapeHtml(avatarUrlFor(client))}" alt="${escapeHtml(client.name || 'Client')}" />
+            <span class="salon-client-initials">${escapeHtml(initialsFor(client.name))}</span>
+          </div>
+          ${profileMain}
+        </section>
+
+        <section class="salon-profile-stats">
+          <article><span>Visits</span><strong>${client.visits || 0}</strong></article>
+          <article><span>Completed</span><strong>${client.completedVisits || 0}</strong></article>
+          <article><span>Scheduled</span><strong>${client.scheduledVisits || 0}</strong></article>
+          <article><span>Upcoming</span><strong>${client.upcomingVisits || 0}</strong></article>
+          <article><span>Last Visit</span><strong>${client.lastVisitDate || 'none'}</strong></article>
+        </section>
+
+        <section class="salon-profile-notes">
+          <h4>Notes</h4>
+          <p>${escapeHtml(client.notes || 'No notes on file')}</p>
+        </section>
+
+        <section class="salon-profile-history">
+          <h4>Appointment History</h4>
+          <ul class="salon-history-list">${history || '<li class="salon-empty-li">No appointments yet.</li>'}</ul>
+        </section>
+      </section>
+    `;
+  }
+
+  renderClientCards() {
+    const cards = this.state.clients
+      .map((client) => `
+        <li>
+          <button type="button" class="salon-client-open salon-client-card" data-client-id="${escapeHtml(client.id)}">
+          <div class="salon-client-photo-wrap">
+            <img class="salon-client-photo" src="${escapeHtml(avatarUrlFor(client))}" alt="${escapeHtml(client.name || 'Client')}" loading="lazy" />
+            <span class="salon-client-initials">${escapeHtml(initialsFor(client.name))}</span>
+          </div>
+          <div class="salon-client-card-body">
+            <strong>${escapeHtml(client.name || 'Client')}</strong>
+            <small>${escapeHtml(client.public_id || client.id || '')}</small>
+            <p>${escapeHtml(client.email || 'No email')}</p>
+            <p>${escapeHtml(client.phone || 'No phone')}</p>
+            <div class="salon-client-meta">
+              <small>${client.visits || 0} visits</small>
+              <small>Last visit: ${client.lastVisitDate || 'none'}</small>
+            </div>
+          </div>
+          </button>
+        </li>
+      `)
+      .join('');
+
+    return `<ul class="salon-client-cards">${cards || '<li class="salon-empty-li">No clients found.</li>'}</ul>`;
+  }
+
+  renderClientTable() {
     const rows = this.state.clients
       .map((client) => `
-        <li class="salon-client-row">
+        <li>
+          <button type="button" class="salon-client-open salon-client-row" data-client-id="${escapeHtml(client.id)}">
           <div>
             <strong>${escapeHtml(client.name || 'Client')}</strong>
             <small>${escapeHtml(client.public_id || client.id || '')}</small>
@@ -421,9 +666,23 @@ class BosSalonWorkspace extends HTMLElement {
             <small>${client.visits || 0} visits</small>
             <small>Last visit: ${client.lastVisitDate || 'none'}</small>
           </div>
+          </button>
         </li>
       `)
       .join('');
+
+    return `<ul class="salon-client-table">${rows || '<li class="salon-empty-li">No clients found.</li>'}</ul>`;
+  }
+
+  renderClients() {
+    if (this.state.selectedClientProfile) {
+      this.$root.innerHTML = this.renderClientProfile();
+      this.bindClientProfileActions();
+      return;
+    }
+
+    const cardActive = this.state.clientView === 'card' ? 'active' : '';
+    const tableActive = this.state.clientView === 'table' ? 'active' : '';
 
     this.$root.innerHTML = `
       <section class="salon-card">
@@ -432,14 +691,16 @@ class BosSalonWorkspace extends HTMLElement {
           <button type="button" data-action="add-client">Add Client</button>
         </header>
 
-        <div class="salon-inline-actions full-width">
+        <div class="salon-inline-actions full-width salon-client-toolbar">
           <input type="search" data-role="client-query" value="${escapeHtml(this.state.clientQuery)}" placeholder="Search clients" />
           <button type="button" data-action="search-clients">Search</button>
+          <div class="salon-view-toggle" role="group" aria-label="Client view mode">
+            <button type="button" data-action="client-view-card" class="${cardActive}">Card</button>
+            <button type="button" data-action="client-view-table" class="${tableActive}">Table</button>
+          </div>
         </div>
 
-        <ul class="salon-client-table">
-          ${rows || '<li class="salon-empty-li">No clients found.</li>'}
-        </ul>
+        ${this.state.clientView === 'card' ? this.renderClientCards() : this.renderClientTable()}
       </section>
     `;
 

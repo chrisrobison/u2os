@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Business OS Tenancy Admin</title>
+    <link rel="stylesheet" href="/admin/styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <header>
+        <h1>Tenancy Admin</h1>
+        <p>Manage customers, tenant instances, and indexed host/domain mappings.</p>
+      </header>
+
+      <section class="grid two">
+        <article class="card">
+          <h2>Customers</h2>
+          <form id="customerForm" class="form-grid">
+            <label>Name<input name="name" required /></label>
+            <label>Status
+              <select name="status">
+                <option value="active">active</option>
+                <option value="inactive">inactive</option>
+              </select>
+            </label>
+            <label class="full">Metadata JSON<textarea name="metadata" rows="4" placeholder='{"plan":"pro"}'></textarea></label>
+            <button type="submit">Create Customer</button>
+          </form>
+          <div id="customerList" class="list"></div>
+        </article>
+
+        <article class="card">
+          <h2>Instances (One DB Per Tenant)</h2>
+          <form id="instanceForm" class="form-grid">
+            <label>Name<input name="name" required /></label>
+            <label>Customer ID<input name="customer_id" placeholder="optional" /></label>
+            <label>Status
+              <select name="status">
+                <option value="active">active</option>
+                <option value="inactive">inactive</option>
+              </select>
+            </label>
+            <label>DB Client
+              <select name="db_client">
+                <option value="sqlite">sqlite</option>
+                <option value="mysql">mysql</option>
+                <option value="postgres">postgres</option>
+              </select>
+            </label>
+            <label class="full">DB Config JSON<textarea name="db_config" rows="5" required placeholder='{"file":"./data/tenant-a.sqlite"}'></textarea></label>
+            <label class="full">App Config JSON<textarea name="app_config" rows="4" placeholder='{"defaultAppId":"salon"}'></textarea></label>
+            <label><input type="checkbox" name="is_default" /> Default tenant</label>
+            <button type="submit">Create Instance</button>
+          </form>
+          <div id="instanceList" class="list"></div>
+        </article>
+      </section>
+
+      <section class="card">
+        <h2>Host + Domain Mappings</h2>
+        <form id="domainForm" class="form-grid">
+          <label>Instance ID<input name="instance_id" required /></label>
+          <label>Host<input name="host" required placeholder="tenant-a.example.com" /></label>
+          <label>Domain<input name="domain" required placeholder="example.com" /></label>
+          <label>Status
+            <select name="status">
+              <option value="active">active</option>
+              <option value="inactive">inactive</option>
+            </select>
+          </label>
+          <button type="submit">Create Mapping</button>
+        </form>
+        <div id="domainList" class="list"></div>
+      </section>
+
+      <p id="statusLine" class="status"></p>
+    </main>
+
+    <script src="/admin/main.js"></script>
+  </body>
+</html>

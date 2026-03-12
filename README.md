@@ -25,6 +25,28 @@ The app uses a connector factory. Set `DB_CLIENT` to switch backend:
 
 Both connectors expose the same interface used by the kernel and modules.
 
+## Multi-Tenant (One DB Per Tenant)
+
+- A separate control-plane DB stores tenancy metadata:
+  - `customers`
+  - `instances` (each instance has its own DB connection config)
+  - `instance_domains` (indexed host/domain lookup per request)
+- Every request resolves tenant by `Host` header + derived domain.
+- Each tenant instance points to its own database (SQLite file, MySQL DB, or Postgres DB).
+- Unknown host/domain mappings are rejected when `TENANCY_STRICT_HOST_MATCH=true`.
+
+Control-plane env vars:
+
+- `CONTROL_DB_CLIENT`
+- `CONTROL_DB_HOST`
+- `CONTROL_DB_PORT`
+- `CONTROL_DB_USER`
+- `CONTROL_DB_PASSWORD`
+- `CONTROL_DB_NAME`
+- `CONTROL_DB_FILE`
+- `TENANCY_BOOTSTRAP_HOST` (default `localhost`)
+- `TENANCY_BOOTSTRAP_DOMAIN` (default `localhost`)
+
 ## Run
 
 1. Copy `.env.example` to `.env` and set DB credentials.
@@ -56,6 +78,7 @@ npm run start
 
 - API: `http://localhost:3010/api`
 - Dashboard: `http://localhost:3010/dashboard`
+- Tenancy Admin: `http://localhost:3010/admin`
 - User App Runtime: `http://localhost:3010/app`
   - Salon vertical app: `http://localhost:3010/app?app=salon`
 
@@ -72,6 +95,16 @@ App runtime configuration is loaded from `config/apps/*.json` (default: `default
 - `GET /api/modules/salon-module/dashboard`
 - `GET /api/modules/salon-module/calendar?month=2026-03&date=2026-03-10`
 - `GET /api/modules/salon-module/clients?q=emma`
+
+Tenancy admin APIs:
+
+- `GET /api/admin/tenancy/summary`
+- `GET /api/admin/tenancy/customers`
+- `POST /api/admin/tenancy/customers`
+- `GET /api/admin/tenancy/instances`
+- `POST /api/admin/tenancy/instances`
+- `GET /api/admin/tenancy/domains`
+- `POST /api/admin/tenancy/domains`
 
 ## Identifier Model
 

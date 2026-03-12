@@ -1,0 +1,145 @@
+:root {
+  --bg: #f4f7fb;
+  --card: #ffffff;
+  --line: #d4dceb;
+  --text: #17212e;
+  --muted: #5d708e;
+  --accent: #0f6b95;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  color: var(--text);
+  background: radial-gradient(circle at top right, #d5ecf5, #f4f7fb 40%);
+}
+
+.layout {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+  display: grid;
+  gap: 16px;
+}
+
+header h1 {
+  margin: 0;
+}
+
+header p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.grid.two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.card h2 {
+  margin: 0 0 12px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(200px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.form-grid .full {
+  grid-column: 1 / -1;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
+
+input,
+select,
+textarea {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--text);
+  background: #fff;
+}
+
+button {
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+.list {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: auto;
+  max-height: 270px;
+}
+
+.list table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.list th,
+.list td {
+  border-bottom: 1px solid var(--line);
+  padding: 8px;
+  text-align: left;
+  vertical-align: top;
+  font-size: 13px;
+}
+
+.list th {
+  background: #f7fafd;
+}
+
+.code {
+  font-family: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+}
+
+.status {
+  margin: 0;
+  color: var(--muted);
+}
+
+@media (max-width: 980px) {
+  .grid.two {
+    grid-template-columns: 1fr;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}

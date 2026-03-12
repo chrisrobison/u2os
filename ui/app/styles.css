@@ -412,6 +412,35 @@ pan-bus {
   flex: 1;
 }
 
+.salon-client-toolbar {
+  align-items: center;
+}
+
+.salon-view-toggle {
+  display: inline-flex;
+  border: 1px solid #b6c4d0;
+  border-radius: 9px;
+  overflow: hidden;
+}
+
+.salon-view-toggle button {
+  border: none;
+  border-right: 1px solid #b6c4d0;
+  background: #f3f7fb;
+  border-radius: 0;
+  min-width: 64px;
+}
+
+.salon-view-toggle button:last-child {
+  border-right: none;
+}
+
+.salon-view-toggle button.active {
+  background: #dceef3;
+  color: #1f4961;
+  font-weight: 700;
+}
+
 .salon-inline-actions input {
   border: 1px solid #b6c4d0;
   border-radius: 8px;
@@ -536,6 +565,231 @@ pan-bus {
   gap: 2px;
 }
 
+.salon-client-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.salon-client-card {
+  border: 1px solid #dbe4ed;
+  border-radius: 11px;
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+  background: #fcfeff;
+}
+
+.salon-client-open {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: inherit;
+  cursor: pointer;
+}
+
+.salon-client-open:hover {
+  border-color: #9eb8cc;
+  box-shadow: 0 2px 10px rgba(25, 48, 71, 0.08);
+}
+
+.salon-client-photo-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #dbe4ed;
+  background: linear-gradient(135deg, #f1f6fb, #e5eef7);
+}
+
+.salon-client-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.salon-client-initials {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  background: rgba(17, 35, 50, 0.72);
+  color: #fff;
+  border-radius: 999px;
+  min-width: 34px;
+  padding: 4px 9px;
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.salon-client-card-body {
+  display: grid;
+  gap: 3px;
+}
+
+.salon-client-card-body p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.83rem;
+}
+
+.salon-client-card-body small {
+  color: var(--muted);
+}
+
+.salon-client-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.salon-client-profile {
+  display: grid;
+  gap: 14px;
+}
+
+.salon-profile-hero {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.salon-profile-photo-wrap {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #dbe4ed;
+  background: linear-gradient(135deg, #f1f6fb, #e5eef7);
+  aspect-ratio: 4 / 3;
+}
+
+.salon-profile-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.salon-profile-main h4 {
+  margin: 0;
+}
+
+.salon-profile-main p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.salon-client-edit-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.salon-client-edit-form label {
+  display: grid;
+  gap: 4px;
+  color: #365168;
+  font-size: 0.8rem;
+}
+
+.salon-client-edit-form input,
+.salon-client-edit-form textarea {
+  border: 1px solid #b6c4d0;
+  border-radius: 8px;
+  padding: 7px 9px;
+  font: inherit;
+  color: var(--ink);
+}
+
+.salon-client-edit-form textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+
+.salon-client-edit-form .full {
+  grid-column: 1 / -1;
+}
+
+.salon-edit-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: end;
+}
+
+.salon-profile-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.salon-profile-stats article {
+  border: 1px solid #dbe4ed;
+  border-radius: 9px;
+  padding: 8px;
+  display: grid;
+  gap: 3px;
+}
+
+.salon-profile-stats span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.salon-profile-stats strong {
+  font-size: 1rem;
+}
+
+.salon-profile-notes h4,
+.salon-profile-history h4 {
+  margin: 0 0 6px;
+}
+
+.salon-profile-notes p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.salon-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.salon-history-row {
+  border: 1px solid #dbe4ed;
+  border-radius: 9px;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: 1.4fr 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.salon-history-row small {
+  margin: 0;
+  color: var(--muted);
+  display: block;
+}
+
+.salon-history-status {
+  border: 1px solid #c4d4e3;
+  background: #eef4fa;
+  color: #365670;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  padding: 3px 9px;
+}
+
 .salon-empty,
 .salon-empty-li {
   color: var(--muted);
@@ -551,6 +805,24 @@ pan-bus {
   .salon-grid-2,
   .salon-client-row {
     grid-template-columns: 1fr;
+  }
+
+  .salon-profile-hero,
+  .salon-profile-stats,
+  .salon-history-row {
+    grid-template-columns: 1fr;
+  }
+
+  .salon-client-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .salon-view-toggle {
+    width: 100%;
+  }
+
+  .salon-view-toggle button {
+    flex: 1;
   }
 }
 
