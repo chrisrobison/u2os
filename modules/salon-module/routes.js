@@ -1,3 +1,5 @@
+const { assertAllowedKeys, validateIdentifier } = require('../../core/validation');
+
 function parseLimit(value, fallback = 50, max = 500) {
   const parsed = Number.parseInt(value, 10);
   if (Number.isNaN(parsed) || parsed <= 0) return fallback;
@@ -226,6 +228,7 @@ module.exports = async function registerSalonRoutes(router, { db, eventBus }) {
 
   router.get('/appointments', async (req, res, next) => {
     try {
+      assertAllowedKeys(req.query || {}, new Set(['q', 'limit', 'offset', 'from', 'to']), 'appointments query');
       const limit = parseLimit(req.query.limit, 100, 500);
       const offset = parseOffset(req.query.offset, 0, 5000);
       const fromDate = req.query.from ? String(req.query.from) : null;
@@ -259,6 +262,28 @@ module.exports = async function registerSalonRoutes(router, { db, eventBus }) {
 
   router.post('/appointments', async (req, res, next) => {
     try {
+      assertAllowedKeys(req.body || {}, new Set([
+        'appointment',
+        'service',
+        'name',
+        'start_at',
+        'scheduled_at',
+        'starts_at',
+        'duration_minutes',
+        'end_at',
+        'ends_at',
+        'customer_id',
+        'customerId',
+        'customer_public_id',
+        'customerPublicId',
+        'staff_user_id',
+        'staffUserId',
+        'staff_public_id',
+        'staffPublicId',
+        'status',
+        'location',
+        'notes'
+      ]), 'appointment payload');
       const startAt = toIso(req.body.start_at || req.body.scheduled_at || req.body.starts_at || null);
       const durationMinutes = Number(req.body.duration_minutes || 0);
       const computedEnd = startAt && durationMinutes > 0
@@ -302,6 +327,7 @@ module.exports = async function registerSalonRoutes(router, { db, eventBus }) {
 
   router.get('/calendar', async (req, res, next) => {
     try {
+      assertAllowedKeys(req.query || {}, new Set(['month', 'date']), 'calendar query');
       const month = req.query.month ? String(req.query.month).slice(0, 7) : null;
       const selectedDate = req.query.date ? String(req.query.date).slice(0, 10) : null;
       const rows = month
@@ -352,6 +378,7 @@ module.exports = async function registerSalonRoutes(router, { db, eventBus }) {
 
   router.get('/clients', async (req, res, next) => {
     try {
+      assertAllowedKeys(req.query || {}, new Set(['q']), 'clients query');
       const q = String(req.query.q || '').trim().toLowerCase();
       const [customers, appointments] = await Promise.all([
         db.list('customers', { limit: 500, offset: 0 }),
@@ -393,7 +420,8 @@ module.exports = async function registerSalonRoutes(router, { db, eventBus }) {
 
   router.get('/clients/:identifier', async (req, res, next) => {
     try {
-      const customer = await db.getByIdentifier('customers', req.params.identifier);
+      const identifier = validateIdentifier(req.params.identifier);
+      const customer = await db.getByIdentifier('customers', identifier);
       if (!customer) {
         return res.status(404).json({ error: 'Client not found' });
       }
@@ -424,6 +452,7 @@ module.exports = async function registerSalonRoutes(router, { db, eventBus }) {
 
   router.get('/dashboard', async (req, res, next) => {
     try {
+      assertAllowedKeys(req.query || {}, new Set(['date']), 'dashboard query');
       const targetDate = req.query.date ? String(req.query.date).slice(0, 10) : dateKey(new Date().toISOString());
       const weekStart = beginOfWeekUtc(targetDate).toISOString().slice(0, 10);
       const weekEnd = endOfWeekUtc(targetDate).toISOString().slice(0, 10);

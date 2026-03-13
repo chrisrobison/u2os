@@ -139,6 +139,22 @@ test('integration: auth, tenancy, IDs, module migrations', async (t) => {
   assert.ok(createCustomer.body.id);
   assert.ok(createCustomer.body.public_id);
 
+  for (let i = 0; i < 3; i += 1) {
+    const extra = await jsonRequest(baseUrl, '/api/customers', {
+      method: 'POST',
+      headers: {
+        'x-forwarded-host': host,
+        Authorization: `Bearer ${ownerToken}`,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        customer: `Cursor Client ${i + 1}`,
+        status: 'active'
+      })
+    });
+    assert.equal(extra.response.status, 201);
+  }
+
   {
     const byUuid = await jsonRequest(baseUrl, `/api/customers/${createCustomer.body.id}`, {
       headers: { 'x-forwarded-host': host, Authorization: `Bearer ${ownerToken}` }
@@ -153,6 +169,22 @@ test('integration: auth, tenancy, IDs, module migrations', async (t) => {
     });
     assert.equal(byPublicId.response.status, 200);
     assert.equal(byPublicId.body.public_id, createCustomer.body.public_id);
+  }
+
+  {
+    const page1 = await jsonRequest(baseUrl, '/api/customers?limit=2&cursor=start', {
+      headers: { 'x-forwarded-host': host, Authorization: `Bearer ${ownerToken}` }
+    });
+    assert.equal(page1.response.status, 200);
+    assert.ok(Array.isArray(page1.body.items));
+    assert.equal(page1.body.items.length, 2);
+    assert.ok(page1.body.nextCursor);
+
+    const page2 = await jsonRequest(baseUrl, `/api/customers?limit=2&cursor=${page1.body.nextCursor}`, {
+      headers: { 'x-forwarded-host': host, Authorization: `Bearer ${ownerToken}` }
+    });
+    assert.equal(page2.response.status, 200);
+    assert.ok(Array.isArray(page2.body.items));
   }
 
   {

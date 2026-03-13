@@ -108,13 +108,7 @@ async function buildServer() {
     return getRequestContext() || defaultTenant;
   }
 
-  const db = tenantManager.createScopedDbProxy(() => {
-    const context = getActiveContext();
-    if (!context || !context.db) {
-      throw new Error('No tenant DB is available for this operation');
-    }
-    return context.db;
-  });
+  const db = tenantManager.createScopedDbProxy(() => getActiveContext());
 
   const eventBus = new EventBus({
     persistEvent: async (eventName, payload) => {

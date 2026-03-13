@@ -315,6 +315,66 @@ function createRepository(connector) {
     return [exact, ...withoutExact];
   }
 
+  function encodeCursor(payload) {
+    return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+  }
+
+  function decodeCursor(cursor) {
+    if (!cursor) return null;
+    try {
+      const parsed = JSON.parse(Buffer.from(String(cursor), 'base64url').toString('utf8'));
+      if (!parsed || typeof parsed !== 'object') return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  async function listWithCursor(entity, options = {}) {
+    const columns = await getColumns(entity);
+    const { limit = 25, cursor = null, orderDirection = 'DESC' } = options;
+    const sortColumn = columns.some((c) => c.name === 'modified')
+      ? 'modified'
+      : (columns.some((c) => c.name === 'created') ? 'created' : (columns[0] && columns[0].name) || 'id');
+    const direction = String(orderDirection || 'DESC').toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+    const cursorPayload = decodeCursor(cursor);
+    const cursorSort = cursorPayload && Object.prototype.hasOwnProperty.call(cursorPayload, 'sort')
+      ? cursorPayload.sort
+      : null;
+    const cursorId = cursorPayload && Object.prototype.hasOwnProperty.call(cursorPayload, 'id')
+      ? cursorPayload.id
+      : null;
+
+    const where = [];
+    const params = [];
+    if (cursorSort != null && cursorId != null && columns.some((c) => c.name === 'id')) {
+      if (direction === 'DESC') {
+        where.push(`(${qid(sortColumn)} < ? OR (${qid(sortColumn)} = ? AND ${qid('id')} < ?))`);
+      } else {
+        where.push(`(${qid(sortColumn)} > ? OR (${qid(sortColumn)} = ? AND ${qid('id')} > ?))`);
+      }
+      params.push(cursorSort, cursorSort, cursorId);
+    }
+
+    const rows = await connector.query(
+      `SELECT * FROM ${qid(entity)}${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${qid(sortColumn)} ${direction}, ${qid('id')} ${direction} LIMIT ?`,
+      [...params, Math.min(limit, 200) + 1]
+    );
+
+    const hasNext = rows.length > Math.min(limit, 200);
+    const pageRows = hasNext ? rows.slice(0, Math.min(limit, 200)) : rows;
+    const mapped = pageRows.map(toModel);
+    const last = mapped[mapped.length - 1];
+    const nextCursor = hasNext && last
+      ? encodeCursor({ sort: last[sortColumn], id: last.id })
+      : null;
+
+    return {
+      items: mapped,
+      nextCursor
+    };
+  }
+
   async function listByFilters(entity, options = {}) {
     const columns = await getColumns(entity);
     const { filters = [], limit = 100, offset = 0, orderBy = null, orderDirection = 'DESC' } = options;
@@ -515,6 +575,7 @@ function createRepository(connector) {
     getByIdentifier,
     resolveId,
     list,
+    listWithCursor,
     listByFilters,
     count,
     update,

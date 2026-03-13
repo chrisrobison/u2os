@@ -60,14 +60,46 @@ async function applyModuleMigrations(db, modulesDir) {
   }
 }
 
-function createScopedDbProxy(getActiveDb) {
+function createScopedDbProxy(getActiveContext) {
+  const tenantBoundMethods = new Set([
+    'create',
+    'getById',
+    'getByPublicId',
+    'getByIdentifier',
+    'resolveId',
+    'list',
+    'listByFilters',
+    'count',
+    'update',
+    'remove',
+    'describe',
+    'refreshSchema',
+    'appendEvent',
+    'listEvents'
+  ]);
+
   return new Proxy({}, {
     get(_target, prop) {
       if (prop === 'then') return undefined;
-      const db = getActiveDb();
+      const context = getActiveContext();
+      if (!context || !context.db) {
+        throw new Error('No tenant DB is available for this operation');
+      }
+      const db = context.db;
       const value = db[prop];
       if (typeof value === 'function') {
-        return (...args) => value.apply(db, args);
+        return (...args) => {
+          if (tenantBoundMethods.has(String(prop))) {
+            const boundTenantId = context.instance && context.instance.id ? context.instance.id : null;
+            if (!boundTenantId) {
+              throw new Error(`Tenant context is required for db.${String(prop)}()`);
+            }
+            if (context.tenantId && context.tenantId !== boundTenantId) {
+              throw new Error(`Tenant context mismatch for db.${String(prop)}()`);
+            }
+          }
+          return value.apply(db, args);
+        };
       }
       return value;
     }

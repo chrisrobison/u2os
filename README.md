@@ -122,6 +122,7 @@ App runtime configuration is loaded from `config/apps/*.json` (default: `default
 - `GET /api/auth/me`
 - `POST /api/customers`
 - `GET /api/invoices?q=acme`
+- `GET /api/customers?limit=50&cursor=<token>` (cursor pagination)
 - `POST /api/payments`
 - `GET /api/events`
 - `GET /api/analytics`

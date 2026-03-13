@@ -36,6 +36,11 @@ function createEntityRouter(db, eventBus, options = {}) {
         const { q } = req.query;
         const limit = parsePositiveInt(req.query.limit, 25, { min: 1, max: 200 });
         const offset = parsePositiveInt(req.query.offset, 0, { min: 0, max: 5000 });
+        const cursor = req.query.cursor ? String(req.query.cursor) : null;
+        if (cursor && !q && typeof db.listWithCursor === 'function') {
+          const page = await db.listWithCursor(entity, { limit, cursor });
+          return res.json(page);
+        }
         const rows = await db.list(entity, {
           q,
           limit,
