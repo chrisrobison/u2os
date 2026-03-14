@@ -49,6 +49,7 @@ Security env vars:
 - `RATE_LIMIT_MAX` (default `300`)
 - `API_BODY_LIMIT` (default `1mb`)
 - `AUTH_BODY_LIMIT` (default `32kb`)
+- `MIGRATIONS_STRICT_STARTUP` (default `true`)
 
 ## Multi-Tenant (One DB Per Tenant)
 
@@ -132,6 +133,10 @@ App runtime configuration is loaded from `config/apps/*.json` (default: `default
 - `GET /api/modules/salon-module/clients?q=emma`
 - `GET /api/system/metrics`
 
+Telemetry notes:
+- every response includes `x-request-id` and `x-trace-id`
+- request logs emit structured JSON with latency, tenant, user, and trace correlation fields
+
 Tenancy admin APIs:
 
 - `GET /api/admin/tenancy/summary`
@@ -154,6 +159,7 @@ Tenancy admin APIs:
 
 - Interface runtime guide: `docs/interface-runtime-guide.md`
 - Backup and restore playbook: `docs/backup-restore-playbook.md`
+- Migration policy: `docs/migration-policy.md`
 
 ## Testing
 

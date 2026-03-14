@@ -28,8 +28,10 @@ async function jsonRequest(baseUrl, routePath, options = {}) {
 
 test('integration: auth, tenancy, IDs, module migrations', async (t) => {
   const tenantDbFile = tempFile('tenant');
+  const tenantDbFileTwo = tempFile('tenant-two');
   const controlDbFile = tempFile('control');
   const host = 'tenant.test.local';
+  const secondHost = 'tenant-two.test.local';
 
   process.env.PORT = '0';
   process.env.DB_CLIENT = 'sqlite';
@@ -52,6 +54,7 @@ test('integration: auth, tenancy, IDs, module migrations', async (t) => {
   t.after(async () => {
     await runtime.shutdown({ exitProcess: false });
     if (fs.existsSync(tenantDbFile)) fs.unlinkSync(tenantDbFile);
+    if (fs.existsSync(tenantDbFileTwo)) fs.unlinkSync(tenantDbFileTwo);
     if (fs.existsSync(controlDbFile)) fs.unlinkSync(controlDbFile);
   });
 
@@ -106,6 +109,31 @@ test('integration: auth, tenancy, IDs, module migrations', async (t) => {
   assert.equal(loginViewer.response.status, 200);
   const viewerToken = loginViewer.body.token;
   assert.ok(viewerToken);
+
+  {
+    const secondInstance = await runtime.controlStore.createInstance({
+      name: 'Second Tenant',
+      status: 'active',
+      db_client: 'sqlite',
+      db_config: { client: 'sqlite', file: tenantDbFileTwo },
+      app_config: {},
+      is_default: false
+    });
+    await runtime.controlStore.createDomain({
+      instance_id: secondInstance.id,
+      host: secondHost,
+      domain: 'test.local',
+      status: 'active'
+    });
+
+    const crossTenant = await jsonRequest(baseUrl, '/api/auth/me', {
+      headers: {
+        'x-forwarded-host': secondHost,
+        Authorization: `Bearer ${ownerToken}`
+      }
+    });
+    assert.equal(crossTenant.response.status, 403);
+  }
 
   {
     const createDenied = await jsonRequest(baseUrl, '/api/customers', {

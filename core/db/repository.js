@@ -568,6 +568,8 @@ function createRepository(connector) {
     transaction: connector.transaction,
     initSchema: connector.initSchema,
     applyMigration: connector.applyMigration,
+    hasMigration: connector.hasMigration,
+    listMigrations: connector.listMigrations,
     close: connector.close,
     create,
     getById,

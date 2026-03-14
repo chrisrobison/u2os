@@ -35,6 +35,9 @@ module.exports = {
     apiBodyLimit: process.env.API_BODY_LIMIT || '1mb',
     authBodyLimit: process.env.AUTH_BODY_LIMIT || '32kb'
   },
+  migrations: {
+    strictStartup: String(process.env.MIGRATIONS_STRICT_STARTUP || 'true').toLowerCase() !== 'false'
+  },
   db: {
     client: (process.env.DB_CLIENT || 'mysql').toLowerCase(),
     host: process.env.DB_HOST || '127.0.0.1',

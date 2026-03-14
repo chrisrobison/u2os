@@ -81,7 +81,8 @@ async function buildServer() {
 
   const tenantManager = createTenantManager({
     controlStore,
-    modulesDir: config.modulesDir
+    modulesDir: config.modulesDir,
+    strictMigrations: config.migrations.strictStartup
   });
 
   await tenantManager.ensureBootstrapTenant({
@@ -95,6 +96,7 @@ async function buildServer() {
   if (!defaultTenant) {
     throw new Error('No active tenant instances found. Add at least one instance and domain mapping.');
   }
+  const warmedTenantCount = await tenantManager.warmActiveTenants();
 
   async function refreshDefaultTenant() {
     const latestDefault = await tenantManager.getDefaultTenant();
@@ -453,6 +455,7 @@ async function buildServer() {
       at: new Date().toISOString(),
       type: 'http_error',
       requestId: req.requestId || null,
+      traceId: req.traceId || null,
       method: req.method,
       path: req.path,
       statusCode,
@@ -461,7 +464,8 @@ async function buildServer() {
     res.status(statusCode).json({
       error: err.message || 'Internal server error',
       details: err.details || null,
-      requestId: req.requestId || null
+      requestId: req.requestId || null,
+      traceId: req.traceId || null
     });
   });
 
@@ -471,6 +475,8 @@ async function buildServer() {
     console.log(`Tenancy admin: http://localhost:${config.port}/admin`);
     console.log(`User app runtime: http://localhost:${config.port}/app`);
     console.log(`Control DB connector: ${controlStore.client}`);
+    console.log(`Migration strict startup: ${config.migrations.strictStartup}`);
+    console.log(`Active tenants warmed: ${warmedTenantCount}`);
     console.log(`Loaded modules: ${modules.map((m) => m.name).join(', ') || '(none)'}`);
   });
 

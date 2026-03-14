@@ -4,6 +4,19 @@ function nowMs() {
   return Date.now();
 }
 
+function parseTraceParent(value) {
+  const input = String(value || '').trim();
+  if (!input) return null;
+  const parts = input.split('-');
+  if (parts.length !== 4) return null;
+  const traceId = parts[1];
+  const parentSpanId = parts[2];
+  if (!/^[a-f0-9]{32}$/i.test(traceId) || !/^[a-f0-9]{16}$/i.test(parentSpanId)) {
+    return null;
+  }
+  return { traceId, parentSpanId };
+}
+
 function toRouteKey(req) {
   const routePath = req.route && req.route.path ? req.route.path : null;
   return `${req.method} ${routePath ? String(routePath) : req.path || ''}`.trim();
@@ -68,8 +81,16 @@ function createRequestTelemetry({ getContext, metrics }) {
   return (req, res, next) => {
     const startedAtMs = nowMs();
     const requestId = String(req.headers['x-request-id'] || '').trim() || uuid();
+    const parsedTraceParent = parseTraceParent(req.headers.traceparent);
+    const traceId = parsedTraceParent
+      ? parsedTraceParent.traceId
+      : (String(req.headers['x-trace-id'] || '').trim() || requestId.replace(/-/g, '').slice(0, 32));
+    const spanId = uuid().replace(/-/g, '').slice(0, 16);
     req.requestId = requestId;
+    req.traceId = traceId;
+    req.spanId = spanId;
     res.setHeader('x-request-id', requestId);
+    res.setHeader('x-trace-id', traceId);
 
     res.on('finish', () => {
       const durationMs = nowMs() - startedAtMs;
@@ -82,6 +103,8 @@ function createRequestTelemetry({ getContext, metrics }) {
         at: new Date().toISOString(),
         type: 'http_request',
         requestId,
+        traceId,
+        spanId,
         method: req.method,
         path: req.path,
         route: routeKey,

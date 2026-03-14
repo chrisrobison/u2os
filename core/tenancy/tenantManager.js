@@ -29,15 +29,16 @@ function extractRequestHost(req, options = {}) {
   return normalizeHost(rawHost);
 }
 
-async function applyModuleMigrations(db, modulesDir) {
+function collectModuleMigrations(modulesDir) {
   const absoluteModulesDir = path.resolve(process.cwd(), modulesDir);
   if (!fs.existsSync(absoluteModulesDir)) {
-    return;
+    return [];
   }
 
   const moduleDirs = fs.readdirSync(absoluteModulesDir)
     .map((name) => path.join(absoluteModulesDir, name))
     .filter((dir) => fs.statSync(dir).isDirectory());
+  const expected = [];
 
   for (const moduleDir of moduleDirs) {
     const manifestPath = path.join(moduleDir, 'manifest.json');
@@ -53,11 +54,43 @@ async function applyModuleMigrations(db, modulesDir) {
       .sort();
 
     for (const file of migrationFiles) {
-      const migrationKey = `${moduleName}:${file}`;
-      const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
-      await db.applyMigration(migrationKey, sql);
+      expected.push({
+        migrationKey: `${moduleName}:${file}`,
+        filePath: path.join(migrationsDir, file)
+      });
     }
   }
+  return expected;
+}
+
+async function applyModuleMigrations(db, modulesDir, { strict = true } = {}) {
+  const expected = collectModuleMigrations(modulesDir);
+  const applied = [];
+
+  for (const item of expected) {
+    const sql = fs.readFileSync(item.filePath, 'utf8');
+    const didApply = await db.applyMigration(item.migrationKey, sql);
+    if (didApply) {
+      applied.push(item.migrationKey);
+    }
+  }
+
+  if (strict) {
+    if (typeof db.hasMigration !== 'function') {
+      throw new Error('Strict migration mode requires db.hasMigration support');
+    }
+    for (const item of expected) {
+      const exists = await db.hasMigration(item.migrationKey);
+      if (!exists) {
+        throw new Error(`Pending migration detected: ${item.migrationKey}`);
+      }
+    }
+  }
+
+  return {
+    expected: expected.map((item) => item.migrationKey),
+    applied
+  };
 }
 
 function createScopedDbProxy(getActiveContext) {
@@ -133,19 +166,20 @@ function getInstanceRevision(instance) {
   ].join('|');
 }
 
-function createTenantManager({ controlStore, modulesDir }) {
+function createTenantManager({ controlStore, modulesDir, strictMigrations = true }) {
   const cache = new Map();
 
   async function buildTenantRuntime(instance) {
     const dbConfig = buildTenantDbConfig(instance);
     const db = await createDataSource(dbConfig);
     await db.initSchema();
-    await applyModuleMigrations(db, modulesDir);
+    const migrationSummary = await applyModuleMigrations(db, modulesDir, { strict: strictMigrations });
 
     return {
       instance,
       revision: getInstanceRevision(instance),
-      db
+      db,
+      migrationSummary
     };
   }
 
@@ -214,6 +248,13 @@ function createTenantManager({ controlStore, modulesDir }) {
     };
   }
 
+  async function warmActiveTenants() {
+    const instances = await controlStore.listInstances();
+    const active = instances.filter((instance) => String(instance.status || '').toLowerCase() === 'active');
+    await Promise.all(active.map((instance) => getOrCreateTenantRuntime(instance)));
+    return active.length;
+  }
+
   async function closeAll() {
     const runtimes = Array.from(cache.values());
     cache.clear();
@@ -242,6 +283,7 @@ function createTenantManager({ controlStore, modulesDir }) {
     resolveTenantForHost,
     ensureBootstrapTenant,
     getDefaultTenant,
+    warmActiveTenants,
     closeAll,
     invalidateInstance,
     invalidateAll

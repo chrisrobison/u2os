@@ -41,7 +41,23 @@ function buildEntitySql(entity) {
     ? schema.columns.map((c) => c.name).filter((name) => name !== 'id')
     : schema.columns
       .map((c) => c.name)
-      .filter((name) => ['status', 'email', 'phone', 'cell', 'organization_id', 'customer_id'].includes(name));
+      .filter((name) => [
+        'status',
+        'email',
+        'phone',
+        'cell',
+        'organization_id',
+        'customer_id',
+        'staff_user_id',
+        'invoice_id',
+        'public_id',
+        'start_at',
+        'end_at',
+        'paid_at',
+        'issue_date',
+        'due_date',
+        'ordered_at'
+      ].includes(name));
 
   const create = `CREATE TABLE IF NOT EXISTS ${qid(entity)} (${columns.join(', ')}) ENGINE=InnoDB;`;
   const uniqueIndexes = schema.columns
@@ -165,6 +181,19 @@ async function createMySqlConnector(config) {
     return true;
   }
 
+  async function hasMigration(migrationKey) {
+    const existing = await query(
+      `SELECT ${qid('migration_key')} FROM ${qid('schema_migrations')} WHERE ${qid('migration_key')} = ? LIMIT 1`,
+      [migrationKey]
+    );
+    return existing.length > 0;
+  }
+
+  async function listMigrations() {
+    const rows = await query(`SELECT ${qid('migration_key')} FROM ${qid('schema_migrations')} ORDER BY ${qid('migration_key')} ASC`);
+    return rows.map((row) => row.migration_key);
+  }
+
   return {
     client: 'mysql',
     escapeId: qid,
@@ -173,6 +202,8 @@ async function createMySqlConnector(config) {
     describeTable,
     initSchema,
     applyMigration,
+    hasMigration,
+    listMigrations,
     close: () => pool.end()
   };
 }
