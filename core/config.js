@@ -17,11 +17,18 @@ module.exports = {
   modulesDir: process.env.MODULES_DIR || 'modules',
   appsDir: process.env.APPS_DIR || 'config/apps',
   defaultAppId: process.env.DEFAULT_APP_ID || 'default',
+  settings: {
+    globalFile: process.env.SETTINGS_GLOBAL_FILE || 'config/settings.json',
+    clientsDir: process.env.CLIENTS_DIR || 'clients'
+  },
   tenancy: {
     strictHostMatch: String(process.env.TENANCY_STRICT_HOST_MATCH || 'true').toLowerCase() !== 'false',
     bootstrapHost: process.env.TENANCY_BOOTSTRAP_HOST || 'localhost',
     bootstrapDomain: process.env.TENANCY_BOOTSTRAP_DOMAIN || 'localhost',
-    trustForwardedHost: String(process.env.TENANCY_TRUST_FORWARDED_HOST || 'false').toLowerCase() === 'true'
+    trustForwardedHost: String(process.env.TENANCY_TRUST_FORWARDED_HOST || 'false').toLowerCase() === 'true',
+    allowOverride: String(process.env.TENANCY_ALLOW_OVERRIDE || 'false').toLowerCase() === 'true',
+    overrideHeader: process.env.TENANCY_OVERRIDE_HEADER || 'x-tenant-id',
+    overrideQueryParam: process.env.TENANCY_OVERRIDE_QUERY_PARAM || 'tenant_id'
   },
   auth: {
     jwtSecret: process.env.AUTH_JWT_SECRET || '',

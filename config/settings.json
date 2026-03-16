@@ -1,0 +1,14 @@
+{
+  "branding": {
+    "productName": "Business OS",
+    "supportEmail": "support@example.com"
+  },
+  "features": {
+    "schemasWorkbench": true,
+    "advancedAnalytics": false
+  },
+  "ui": {
+    "defaultLocale": "en-US",
+    "timezone": "America/Los_Angeles"
+  }
+}

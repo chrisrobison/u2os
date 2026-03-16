@@ -12,7 +12,8 @@
     "db:init": "node scripts/init-db.js",
     "db:seed": "node scripts/seed-sample-data.js",
     "db:migrate:public-ids": "node scripts/migrate-public-ids.js",
-    "auth:create-owner": "node scripts/create-owner-user.js"
+    "auth:create-owner": "node scripts/create-owner-user.js",
+    "admin:create-user": "node scripts/create-admin-user.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

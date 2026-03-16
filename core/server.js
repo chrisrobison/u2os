@@ -13,8 +13,11 @@ const { createTenantManager } = require('./tenancy/tenantManager');
 const { runWithRequestContext, getRequestContext } = require('./requestContext');
 const { createAuthMiddleware } = require('./auth/middleware');
 const { buildAuthConfig, validateAuthConfig } = require('./auth/config');
+const { verifyJwt } = require('./auth/jwt');
 const { createMetricsRegistry, createRequestTelemetry } = require('./observability');
 const { assertAllowedKeys, validateIdentifier } = require('./validation');
+const { SCHEMA_KINDS, lintAndPreview, scaffold } = require('./schemaWorkbench');
+const { loadEffectiveSettings } = require('./settings');
 
 const serverHookRegistry = {
   'server.auditView': async ({ req, appId, navItemId, context, options }) => ({
@@ -78,6 +81,12 @@ async function buildServer() {
 
   const controlStore = await createControlStore(config.controlDb);
   await controlStore.initSchema();
+  const bootstrapAdmin = await controlStore.ensureBootstrapAdminLogin({
+    email: process.env.ADMIN_BOOTSTRAP_EMAIL || 'admin@localhost',
+    password: process.env.ADMIN_BOOTSTRAP_PASSWORD || 'admin12345678',
+    fullName: process.env.ADMIN_BOOTSTRAP_NAME || 'Install Admin',
+    role: process.env.ADMIN_BOOTSTRAP_ROLE || 'owner'
+  });
 
   const tenantManager = createTenantManager({
     controlStore,
@@ -130,45 +139,63 @@ async function buildServer() {
     }
 
     try {
-      const host = tenantManager.extractRequestHost(req, {
-        trustForwardedHost: config.tenancy.trustForwardedHost
-      });
-      if (!host) {
-        console.warn(JSON.stringify({
-          level: 'warn',
-          at: new Date().toISOString(),
-          type: 'tenancy_resolution_missing_host',
-          requestId: req.requestId || null,
-          path: req.path
-        }));
-      }
-      const tenant = await tenantManager.resolveTenantForHost(host);
+      let tenant = null;
+      const tenantOverrideId = config.tenancy.allowOverride
+        ? tenantManager.extractTenantOverride(req, {
+          headerName: config.tenancy.overrideHeader,
+          queryParam: config.tenancy.overrideQueryParam
+        })
+        : '';
 
-      if (!tenant && config.tenancy.strictHostMatch) {
-        console.warn(JSON.stringify({
-          level: 'warn',
-          at: new Date().toISOString(),
-          type: 'tenancy_resolution_miss',
-          requestId: req.requestId || null,
-          host,
-          path: req.path
-        }));
-        if (requestPath.startsWith('/api/')) {
-          return res.status(404).json({ error: `No tenant mapping for host '${host}'` });
+      if (tenantOverrideId) {
+        tenant = await tenantManager.resolveTenantByInstanceId(tenantOverrideId);
+        if (!tenant) {
+          if (requestPath.startsWith('/api/')) {
+            return res.status(404).json({ error: `No active tenant instance '${tenantOverrideId}'` });
+          }
+          return res.status(404).send(`No active tenant instance '${tenantOverrideId}'`);
         }
-        return res.status(404).send(`No tenant mapping for host '${host}'`);
-      }
+      } else {
+        const host = tenantManager.extractRequestHost(req, {
+          trustForwardedHost: config.tenancy.trustForwardedHost
+        });
+        if (!host) {
+          console.warn(JSON.stringify({
+            level: 'warn',
+            at: new Date().toISOString(),
+            type: 'tenancy_resolution_missing_host',
+            requestId: req.requestId || null,
+            path: req.path
+          }));
+        }
+        tenant = await tenantManager.resolveTenantForHost(host);
 
-      if (!tenant && !config.tenancy.strictHostMatch && requestPath.startsWith('/api/')) {
-        console.warn(JSON.stringify({
-          level: 'warn',
-          at: new Date().toISOString(),
-          type: 'tenancy_resolution_fallback_default',
-          requestId: req.requestId || null,
-          host,
-          path: req.path,
-          defaultTenantId: defaultTenant.instance.id
-        }));
+        if (!tenant && config.tenancy.strictHostMatch) {
+          console.warn(JSON.stringify({
+            level: 'warn',
+            at: new Date().toISOString(),
+            type: 'tenancy_resolution_miss',
+            requestId: req.requestId || null,
+            host,
+            path: req.path
+          }));
+          if (requestPath.startsWith('/api/')) {
+            return res.status(404).json({ error: `No tenant mapping for host '${host}'` });
+          }
+          return res.status(404).send(`No tenant mapping for host '${host}'`);
+        }
+
+        if (!tenant && !config.tenancy.strictHostMatch && requestPath.startsWith('/api/')) {
+          console.warn(JSON.stringify({
+            level: 'warn',
+            at: new Date().toISOString(),
+            type: 'tenancy_resolution_fallback_default',
+            requestId: req.requestId || null,
+            host,
+            path: req.path,
+            defaultTenantId: defaultTenant.instance.id
+          }));
+        }
       }
 
       const context = tenant || defaultTenant;
@@ -211,10 +238,222 @@ async function buildServer() {
     res.redirect('/app');
   });
 
+  function extractBearerToken(headerValue) {
+    const value = String(headerValue || '').trim();
+    if (!value) return null;
+    const match = value.match(/^Bearer\s+(.+)$/i);
+    return match ? match[1].trim() : null;
+  }
+
+  function requireControlAdminAuth() {
+    return async (req, res, next) => {
+      const token = extractBearerToken(req.headers.authorization);
+      if (!token) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      let payload;
+      try {
+        payload = verifyJwt(token, authConfig.jwtSecret);
+      } catch {
+        return res.status(401).json({ error: 'Invalid or expired token' });
+      }
+
+      if (payload.scope !== 'admin-control') {
+        return res.status(403).json({ error: 'Invalid token scope for admin control plane' });
+      }
+
+      const adminLogin = await controlStore.getAdminLoginById(payload.sub);
+      if (!adminLogin || String(adminLogin.status || '').toLowerCase() !== 'active') {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      const scopedInstanceIds = adminLogin.is_superuser
+        ? []
+        : await controlStore.listAdminLoginInstanceIds(adminLogin.id);
+
+      req.controlAuth = {
+        id: adminLogin.id,
+        email: adminLogin.email,
+        fullName: adminLogin.full_name || null,
+        role: adminLogin.role,
+        status: adminLogin.status,
+        isSuperuser: Boolean(adminLogin.is_superuser),
+        scopedInstanceIds
+      };
+
+      return next();
+    };
+  }
+
+  function requireControlSuperuser(req, res, next) {
+    if (!req.controlAuth || !req.controlAuth.isSuperuser) {
+      return res.status(403).json({ error: 'Superuser permission required' });
+    }
+    return next();
+  }
+
+  function scopedByInstance(rows, allowedInstanceIds) {
+    const allowed = new Set(allowedInstanceIds || []);
+    return rows.filter((row) => row && allowed.has(row.id || row.instance_id));
+  }
+
+  function summarizeScopedCustomers(customers, instances) {
+    const counts = new Map();
+    for (const instance of instances) {
+      const customerId = instance.customer_id;
+      if (!customerId) continue;
+      counts.set(customerId, (counts.get(customerId) || 0) + 1);
+    }
+    return (customers || [])
+      .filter((customer) => counts.has(customer.id))
+      .map((customer) => ({
+        ...customer,
+        instance_count: counts.get(customer.id) || 0
+      }));
+  }
+
+  async function getScopedTenancySummary(req) {
+    const [customers, instances, domains] = await Promise.all([
+      controlStore.listCustomers(),
+      controlStore.listInstances(),
+      controlStore.listDomains()
+    ]);
+
+    if (req.controlAuth.isSuperuser) {
+      return { customers, instances, domains };
+    }
+
+    const allowedInstanceIds = req.controlAuth.scopedInstanceIds || [];
+    const filteredInstances = scopedByInstance(instances, allowedInstanceIds);
+    const filteredDomains = domains.filter((domain) => allowedInstanceIds.includes(domain.instance_id));
+    const filteredCustomers = summarizeScopedCustomers(customers, filteredInstances);
+
+    return {
+      customers: filteredCustomers,
+      instances: filteredInstances,
+      domains: filteredDomains
+    };
+  }
+
+  function canAccessInstance(req, instanceId) {
+    if (req.controlAuth.isSuperuser) return true;
+    return (req.controlAuth.scopedInstanceIds || []).includes(instanceId);
+  }
+
+  async function resolveClientNameFromInstance(instance) {
+    if (!instance) return null;
+    if (instance.customer_id) {
+      const customer = await controlStore.getCustomer(instance.customer_id);
+      if (customer && customer.name) {
+        return customer.name;
+      }
+    }
+    return instance.name || null;
+  }
+
+  async function loadSettingsForInstance(instance) {
+    const clientName = await resolveClientNameFromInstance(instance);
+    return loadEffectiveSettings({
+      globalSettingsPath: config.settings.globalFile,
+      clientsDir: config.settings.clientsDir,
+      clientName
+    });
+  }
+
+  app.post('/api/admin/auth/login', async (req, res, next) => {
+    try {
+      assertAllowedKeys(req.body || {}, new Set(['email', 'password']), 'admin login payload');
+      const email = String((req.body && req.body.email) || '').trim();
+      const password = String((req.body && req.body.password) || '');
+      if (!email || !password) {
+        return res.status(400).json({ error: 'email and password are required' });
+      }
+
+      const admin = await controlStore.authenticateAdminLogin(email, password);
+      if (!admin) {
+        return res.status(401).json({ error: 'Invalid email or password' });
+      }
+
+      const token = authConfig.signToken({
+        sub: admin.id,
+        scope: 'admin-control',
+        role: admin.role,
+        is_superuser: Boolean(admin.is_superuser)
+      });
+
+      return res.json({
+        token,
+        tokenType: 'Bearer',
+        expiresInSeconds: authConfig.tokenTtlSeconds,
+        user: {
+          id: admin.id,
+          email: admin.email,
+          fullName: admin.full_name || null,
+          role: admin.role,
+          isSuperuser: Boolean(admin.is_superuser)
+        }
+      });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.get('/api/admin/auth/me', requireControlAdminAuth(), async (req, res) => {
+    res.json({
+      user: {
+        id: req.controlAuth.id,
+        email: req.controlAuth.email,
+        fullName: req.controlAuth.fullName,
+        role: req.controlAuth.role,
+        isSuperuser: req.controlAuth.isSuperuser,
+        instanceScope: req.controlAuth.scopedInstanceIds
+      }
+    });
+  });
+
+  app.get('/api/admin/settings/effective', requireControlAdminAuth(), async (req, res, next) => {
+    try {
+      const instanceId = String(req.query.instance_id || req.query.instanceId || '').trim();
+      let instance = null;
+
+      if (instanceId) {
+        if (!canAccessInstance(req, instanceId)) {
+          return res.status(403).json({ error: 'Cannot access settings for this instance' });
+        }
+        instance = await controlStore.getInstance(instanceId);
+        if (!instance) {
+          return res.status(404).json({ error: 'Instance not found' });
+        }
+      } else if (req.controlAuth.isSuperuser) {
+        instance = await controlStore.getDefaultInstance();
+      } else {
+        const firstScoped = (req.controlAuth.scopedInstanceIds || [])[0];
+        if (firstScoped) {
+          instance = await controlStore.getInstance(firstScoped);
+        }
+      }
+
+      const settings = await loadSettingsForInstance(instance);
+      return sendEnvelope(res, {
+        instanceId: instance ? instance.id : null,
+        instanceName: instance ? instance.name : null,
+        clientKey: settings.clientKey,
+        effectiveSettings: settings.effectiveSettings,
+        source: settings.source
+      });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
   const auth = createAuthMiddleware({ db, authConfig });
 
   app.post('/api/auth/login', auth.loginHandler);
-  app.use('/api', auth.authenticateRequest({ allowAnonymousPaths: ['/auth/login'] }));
+  app.use('/api', auth.authenticateRequest({
+    allowAnonymousPaths: ['/auth/login', '/admin/auth/login'],
+    allowAnonymousPrefixes: ['/admin/']
+  }));
   app.get('/api/auth/me', (req, res) => {
     res.json({ user: req.auth || null });
   });
@@ -256,6 +495,20 @@ async function buildServer() {
         description: m.description
       }))
     });
+  });
+
+  app.get('/api/system/settings', async (req, res, next) => {
+    try {
+      const context = getActiveContext();
+      const settings = await loadSettingsForInstance(context.instance);
+      return sendEnvelope(res, {
+        clientKey: settings.clientKey,
+        effectiveSettings: settings.effectiveSettings,
+        source: settings.source
+      });
+    } catch (error) {
+      return next(error);
+    }
   });
 
   app.get('/api/apps', async (req, res, next) => {
@@ -314,20 +567,64 @@ async function buildServer() {
     }
   });
 
-  app.use('/api/admin/tenancy', auth.requireRoles(['owner', 'admin']));
+  app.use('/api/admin/tenancy', requireControlAdminAuth());
+  app.use('/api/admin/schema-workbench', requireControlAdminAuth());
+
+  app.get('/api/admin/schema-workbench/kinds', (req, res) => {
+    sendEnvelope(res, { kinds: SCHEMA_KINDS });
+  });
+
+  app.get('/api/admin/schema-workbench/scaffold/:kind', (req, res, next) => {
+    try {
+      const payload = scaffold(req.params.kind, {
+        appId: req.query.appId,
+        moduleId: req.query.moduleId,
+        processId: req.query.processId,
+        templateId: req.query.templateId,
+        clientId: req.query.clientId,
+        baseAppId: req.query.baseAppId
+      });
+      return sendEnvelope(res, payload);
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.post('/api/admin/schema-workbench/lint', (req, res, next) => {
+    try {
+      const payload = req.body || {};
+      assertAllowedKeys(payload, new Set(['kind', 'jsonText', 'document']), 'schema workbench lint payload');
+      if (typeof payload.kind !== 'string') {
+        return res.status(400).json({ error: 'kind is required' });
+      }
+
+      let document = payload.document;
+      if (payload.jsonText != null) {
+        if (typeof payload.jsonText !== 'string') {
+          return res.status(400).json({ error: 'jsonText must be a string when provided' });
+        }
+        try {
+          document = JSON.parse(payload.jsonText);
+        } catch (error) {
+          return sendEnvelope(res, {
+            ok: false,
+            errors: [`Invalid JSON: ${error.message}`],
+            warnings: [],
+            preview: {}
+          });
+        }
+      }
+
+      const result = lintAndPreview({ kind: payload.kind, document });
+      return sendEnvelope(res, result);
+    } catch (error) {
+      return next(error);
+    }
+  });
 
   app.get('/api/admin/tenancy/summary', async (req, res, next) => {
     try {
-      const [customers, instances, domains] = await Promise.all([
-        controlStore.listCustomers(),
-        controlStore.listInstances(),
-        controlStore.listDomains()
-      ]);
-      sendEnvelope(res, {
-        customers,
-        instances,
-        domains
-      });
+      sendEnvelope(res, await getScopedTenancySummary(req));
     } catch (error) {
       next(error);
     }
@@ -335,13 +632,14 @@ async function buildServer() {
 
   app.get('/api/admin/tenancy/customers', async (req, res, next) => {
     try {
-      sendEnvelope(res, await controlStore.listCustomers());
+      const summary = await getScopedTenancySummary(req);
+      sendEnvelope(res, summary.customers);
     } catch (error) {
       next(error);
     }
   });
 
-  app.post('/api/admin/tenancy/customers', async (req, res, next) => {
+  app.post('/api/admin/tenancy/customers', requireControlSuperuser, async (req, res, next) => {
     try {
       const payload = req.body || {};
       assertAllowedKeys(payload, new Set(['id', 'name', 'status', 'metadata']), 'customer payload');
@@ -352,7 +650,7 @@ async function buildServer() {
     }
   });
 
-  app.put('/api/admin/tenancy/customers/:customerId', async (req, res, next) => {
+  app.put('/api/admin/tenancy/customers/:customerId', requireControlSuperuser, async (req, res, next) => {
     try {
       const customerId = validateIdentifier(req.params.customerId, 'customerId');
       const payload = req.body || {};
@@ -369,13 +667,14 @@ async function buildServer() {
 
   app.get('/api/admin/tenancy/instances', async (req, res, next) => {
     try {
-      sendEnvelope(res, await controlStore.listInstances());
+      const summary = await getScopedTenancySummary(req);
+      sendEnvelope(res, summary.instances);
     } catch (error) {
       next(error);
     }
   });
 
-  app.post('/api/admin/tenancy/instances', async (req, res, next) => {
+  app.post('/api/admin/tenancy/instances', requireControlSuperuser, async (req, res, next) => {
     try {
       const payload = req.body || {};
       assertAllowedKeys(payload, new Set(['id', 'customer_id', 'name', 'status', 'is_default', 'db_client', 'db_config', 'app_config']), 'instance payload');
@@ -391,11 +690,20 @@ async function buildServer() {
   app.put('/api/admin/tenancy/instances/:instanceId', async (req, res, next) => {
     try {
       const instanceId = validateIdentifier(req.params.instanceId, 'instanceId');
+      if (!canAccessInstance(req, instanceId)) {
+        return res.status(403).json({ error: 'Cannot manage this instance' });
+      }
       const payload = req.body || {};
       assertAllowedKeys(payload, new Set(['customer_id', 'name', 'status', 'is_default', 'db_client', 'db_config', 'app_config']), 'instance payload');
+      if (!req.controlAuth.isSuperuser && Object.prototype.hasOwnProperty.call(payload, 'is_default')) {
+        return res.status(403).json({ error: 'Only superusers can change default instance' });
+      }
       const instance = await controlStore.updateInstance(instanceId, payload);
       if (!instance) {
         return res.status(404).json({ error: 'Instance not found' });
+      }
+      if (!canAccessInstance(req, instance.id)) {
+        return res.status(403).json({ error: 'Cannot manage this instance' });
       }
       tenantManager.invalidateInstance(instance.id);
       await refreshDefaultTenant();
@@ -407,7 +715,8 @@ async function buildServer() {
 
   app.get('/api/admin/tenancy/domains', async (req, res, next) => {
     try {
-      sendEnvelope(res, await controlStore.listDomains());
+      const summary = await getScopedTenancySummary(req);
+      sendEnvelope(res, summary.domains);
     } catch (error) {
       next(error);
     }
@@ -417,6 +726,13 @@ async function buildServer() {
     try {
       const payload = req.body || {};
       assertAllowedKeys(payload, new Set(['id', 'instance_id', 'host', 'domain', 'status']), 'domain payload');
+      const targetInstanceId = String(payload.instance_id || '').trim();
+      if (!targetInstanceId) {
+        return res.status(400).json({ error: 'instance_id is required' });
+      }
+      if (!canAccessInstance(req, targetInstanceId)) {
+        return res.status(403).json({ error: 'Cannot manage mappings for this instance' });
+      }
       const domain = await controlStore.createDomain(payload);
       tenantManager.invalidateAll();
       await refreshDefaultTenant();
@@ -431,6 +747,19 @@ async function buildServer() {
       const domainId = validateIdentifier(req.params.domainId, 'domainId');
       const payload = req.body || {};
       assertAllowedKeys(payload, new Set(['instance_id', 'host', 'domain', 'status']), 'domain payload');
+      const existingDomain = await controlStore.getDomain(domainId);
+      if (!existingDomain) {
+        return res.status(404).json({ error: 'Domain mapping not found' });
+      }
+      if (!canAccessInstance(req, existingDomain.instance_id)) {
+        return res.status(403).json({ error: 'Cannot manage mappings for this instance' });
+      }
+      const targetInstanceId = payload.instance_id == null
+        ? existingDomain.instance_id
+        : String(payload.instance_id || '').trim();
+      if (!canAccessInstance(req, targetInstanceId)) {
+        return res.status(403).json({ error: 'Cannot move mapping to this instance' });
+      }
       const domain = await controlStore.updateDomain(domainId, payload);
       if (!domain) {
         return res.status(404).json({ error: 'Domain mapping not found' });
@@ -477,6 +806,7 @@ async function buildServer() {
     console.log(`Control DB connector: ${controlStore.client}`);
     console.log(`Migration strict startup: ${config.migrations.strictStartup}`);
     console.log(`Active tenants warmed: ${warmedTenantCount}`);
+    console.log(`Bootstrap admin: ${bootstrapAdmin.email} (superuser)`);
     console.log(`Loaded modules: ${modules.map((m) => m.name).join(', ') || '(none)'}`);
   });
 

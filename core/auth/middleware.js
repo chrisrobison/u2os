@@ -73,9 +73,15 @@ function createAuthMiddleware({ db, authConfig }) {
 
   function authenticateRequest(options = {}) {
     const allowAnonymousPaths = new Set(options.allowAnonymousPaths || []);
+    const allowAnonymousPrefixes = (options.allowAnonymousPrefixes || [])
+      .map((value) => String(value || '').trim())
+      .filter(Boolean);
 
     return async (req, res, next) => {
-      if (allowAnonymousPaths.has(req.path)) {
+      if (
+        allowAnonymousPaths.has(req.path)
+        || allowAnonymousPrefixes.some((prefix) => req.path.startsWith(prefix))
+      ) {
         return next();
       }
 

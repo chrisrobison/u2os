@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createDataSource } = require('../db');
+const { createAuthStore } = require('../auth/store');
 const { normalizeHost, normalizeDomain } = require('./controlStore');
 
 function isIpAddress(hostname) {
@@ -27,6 +28,21 @@ function extractRequestHost(req, options = {}) {
     : '';
   const rawHost = forwarded || String(req.headers.host || '');
   return normalizeHost(rawHost);
+}
+
+function extractTenantOverride(req, options = {}) {
+  const headerName = String(options.headerName || 'x-tenant-id').trim().toLowerCase();
+  const queryParam = String(options.queryParam || 'tenant_id').trim();
+
+  const rawHeaderValue = headerName ? req.headers[headerName] : null;
+  const headerValue = Array.isArray(rawHeaderValue) ? rawHeaderValue[0] : rawHeaderValue;
+  const fromHeader = String(headerValue || '').trim();
+  if (fromHeader) return fromHeader;
+
+  if (!queryParam || !req.query) return '';
+  const rawQueryValue = req.query[queryParam];
+  const queryValue = Array.isArray(rawQueryValue) ? rawQueryValue[0] : rawQueryValue;
+  return String(queryValue || '').trim();
 }
 
 function collectModuleMigrations(modulesDir) {
@@ -173,6 +189,8 @@ function createTenantManager({ controlStore, modulesDir, strictMigrations = true
     const dbConfig = buildTenantDbConfig(instance);
     const db = await createDataSource(dbConfig);
     await db.initSchema();
+    const authStore = createAuthStore(db);
+    await authStore.ensureSchema(instance.id);
     const migrationSummary = await applyModuleMigrations(db, modulesDir, { strict: strictMigrations });
 
     return {
@@ -219,6 +237,24 @@ function createTenantManager({ controlStore, modulesDir, strictMigrations = true
     return {
       host: normalizedHost,
       domain: normalizedDomain,
+      instance: runtime.instance,
+      db: runtime.db
+    };
+  }
+
+  async function resolveTenantByInstanceId(instanceId) {
+    const normalizedInstanceId = String(instanceId || '').trim();
+    if (!normalizedInstanceId) {
+      return null;
+    }
+    const instance = await controlStore.getInstance(normalizedInstanceId);
+    if (!instance || String(instance.status || '').toLowerCase() !== 'active') {
+      return null;
+    }
+    const runtime = await getOrCreateTenantRuntime(instance);
+    return {
+      host: null,
+      domain: null,
       instance: runtime.instance,
       db: runtime.db
     };
@@ -279,8 +315,10 @@ function createTenantManager({ controlStore, modulesDir, strictMigrations = true
   return {
     extractRequestHost,
     deriveDomainFromHost,
+    extractTenantOverride,
     createScopedDbProxy,
     resolveTenantForHost,
+    resolveTenantByInstanceId,
     ensureBootstrapTenant,
     getDefaultTenant,
     warmActiveTenants,
@@ -294,5 +332,6 @@ module.exports = {
   createTenantManager,
   deriveDomainFromHost,
   extractRequestHost,
+  extractTenantOverride,
   createScopedDbProxy
 };

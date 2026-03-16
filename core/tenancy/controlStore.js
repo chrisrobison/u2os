@@ -2,6 +2,7 @@ const createMySqlConnector = require('../db/connectors/mysql');
 const createPostgresConnector = require('../db/connectors/postgres');
 const createSqliteConnector = require('../db/connectors/sqlite');
 const { uuid } = require('../utils');
+const { hashPassword, verifyPassword } = require('../auth/passwords');
 
 function parseJson(value, fallback = {}) {
   if (!value) return fallback;
@@ -45,6 +46,20 @@ function toRecord(row) {
     ...row,
     is_default: row.is_default === true || row.is_default === 1 || row.is_default === '1'
   };
+}
+
+function toAdminLoginRecord(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    is_superuser: row.is_superuser === true || row.is_superuser === 1 || row.is_superuser === '1'
+  };
+}
+
+function scrubAdminLogin(row) {
+  if (!row) return null;
+  const { password_hash, ...rest } = row;
+  return rest;
 }
 
 async function createControlConnector(config) {
@@ -102,6 +117,23 @@ async function createControlStore(config) {
         ${qid('created_at')} VARCHAR(40) NOT NULL,
         ${qid('updated_at')} VARCHAR(40) NOT NULL
       )`,
+      `CREATE TABLE IF NOT EXISTS ${qid('admin_logins')} (
+        ${qid('id')} VARCHAR(64) PRIMARY KEY,
+        ${qid('email')} VARCHAR(255) NOT NULL,
+        ${qid('full_name')} VARCHAR(255),
+        ${qid('password_hash')} TEXT NOT NULL,
+        ${qid('role')} VARCHAR(32) NOT NULL,
+        ${qid('status')} VARCHAR(32) NOT NULL,
+        ${qid('is_superuser')} INTEGER NOT NULL DEFAULT 0,
+        ${qid('created_at')} VARCHAR(40) NOT NULL,
+        ${qid('updated_at')} VARCHAR(40) NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS ${qid('admin_login_instances')} (
+        ${qid('id')} VARCHAR(64) PRIMARY KEY,
+        ${qid('admin_login_id')} VARCHAR(64) NOT NULL,
+        ${qid('instance_id')} VARCHAR(64) NOT NULL,
+        ${qid('created_at')} VARCHAR(40) NOT NULL
+      )`,
       `CREATE INDEX ${qid('idx_customers_status')} ON ${qid('customers')}(${qid('status')})`,
       `CREATE INDEX ${qid('idx_instances_customer_id')} ON ${qid('instances')}(${qid('customer_id')})`,
       `CREATE INDEX ${qid('idx_instances_status')} ON ${qid('instances')}(${qid('status')})`,
@@ -109,7 +141,12 @@ async function createControlStore(config) {
       `CREATE INDEX ${qid('idx_instance_domains_instance_id')} ON ${qid('instance_domains')}(${qid('instance_id')})`,
       `CREATE INDEX ${qid('idx_instance_domains_host')} ON ${qid('instance_domains')}(${qid('host')})`,
       `CREATE INDEX ${qid('idx_instance_domains_domain')} ON ${qid('instance_domains')}(${qid('domain')})`,
-      `CREATE UNIQUE INDEX ${qid('udx_instance_domains_host_domain')} ON ${qid('instance_domains')}(${qid('host')}, ${qid('domain')})`
+      `CREATE UNIQUE INDEX ${qid('udx_instance_domains_host_domain')} ON ${qid('instance_domains')}(${qid('host')}, ${qid('domain')})`,
+      `CREATE UNIQUE INDEX ${qid('udx_admin_logins_email')} ON ${qid('admin_logins')}(${qid('email')})`,
+      `CREATE INDEX ${qid('idx_admin_logins_status')} ON ${qid('admin_logins')}(${qid('status')})`,
+      `CREATE INDEX ${qid('idx_admin_login_instances_admin')} ON ${qid('admin_login_instances')}(${qid('admin_login_id')})`,
+      `CREATE INDEX ${qid('idx_admin_login_instances_instance')} ON ${qid('admin_login_instances')}(${qid('instance_id')})`,
+      `CREATE UNIQUE INDEX ${qid('udx_admin_login_instances_pair')} ON ${qid('admin_login_instances')}(${qid('admin_login_id')}, ${qid('instance_id')})`
     ];
 
     await runSchemaStatements(statements);
@@ -575,6 +612,167 @@ async function createControlStore(config) {
     return resolveByHostAndDomain(normalizedHost, normalizedDomain);
   }
 
+  async function listAdminLogins() {
+    const rows = await connector.query(
+      `SELECT a.*, COUNT(s.id) AS instance_scope_count
+       FROM ${qid('admin_logins')} a
+       LEFT JOIN ${qid('admin_login_instances')} s ON s.admin_login_id = a.id
+       GROUP BY a.id, a.email, a.full_name, a.password_hash, a.role, a.status, a.is_superuser, a.created_at, a.updated_at
+       ORDER BY a.created_at DESC`
+    );
+    return rows.map((row) => scrubAdminLogin({
+      ...toAdminLoginRecord(row),
+      instance_scope_count: Number(row.instance_scope_count || 0)
+    }));
+  }
+
+  async function getAdminLoginByEmail(email) {
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    if (!normalizedEmail) return null;
+    const rows = await connector.query(
+      `SELECT * FROM ${qid('admin_logins')} WHERE ${qid('email')} = ? LIMIT 1`,
+      [normalizedEmail]
+    );
+    return toAdminLoginRecord(rows[0]);
+  }
+
+  async function getAdminLoginById(id) {
+    const value = String(id || '').trim();
+    if (!value) return null;
+    const rows = await connector.query(
+      `SELECT * FROM ${qid('admin_logins')} WHERE ${qid('id')} = ? LIMIT 1`,
+      [value]
+    );
+    return toAdminLoginRecord(rows[0]);
+  }
+
+  async function createAdminLogin(payload = {}) {
+    const now = new Date().toISOString();
+    const email = String(payload.email || '').trim().toLowerCase();
+    const password = String(payload.password || '');
+    const fullName = String(payload.full_name || payload.fullName || '').trim();
+    const role = String(payload.role || 'admin').trim().toLowerCase();
+    const status = String(payload.status || 'active').trim().toLowerCase();
+    const isSuperuser = payload.is_superuser ? 1 : 0;
+
+    if (!email) {
+      throw new Error('Admin email is required');
+    }
+    if (!password || password.length < 8) {
+      throw new Error('Admin password must be at least 8 characters');
+    }
+
+    const existing = await getAdminLoginByEmail(email);
+    if (existing) {
+      return scrubAdminLogin(existing);
+    }
+
+    const record = {
+      id: payload.id || uuid(),
+      email,
+      full_name: fullName || null,
+      password_hash: hashPassword(password),
+      role,
+      status,
+      is_superuser: isSuperuser,
+      created_at: now,
+      updated_at: now
+    };
+
+    await connector.query(
+      `INSERT INTO ${qid('admin_logins')} (
+        ${qid('id')},
+        ${qid('email')},
+        ${qid('full_name')},
+        ${qid('password_hash')},
+        ${qid('role')},
+        ${qid('status')},
+        ${qid('is_superuser')},
+        ${qid('created_at')},
+        ${qid('updated_at')}
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        record.id,
+        record.email,
+        record.full_name,
+        record.password_hash,
+        record.role,
+        record.status,
+        record.is_superuser,
+        record.created_at,
+        record.updated_at
+      ]
+    );
+
+    const created = await getAdminLoginById(record.id);
+    return scrubAdminLogin(created);
+  }
+
+  async function authenticateAdminLogin(email, password) {
+    const admin = await getAdminLoginByEmail(email);
+    if (!admin) return null;
+    if (String(admin.status || '').toLowerCase() !== 'active') return null;
+    if (!verifyPassword(password, admin.password_hash)) return null;
+    return scrubAdminLogin(admin);
+  }
+
+  async function assignAdminLoginInstance(adminLoginId, instanceId) {
+    const adminId = String(adminLoginId || '').trim();
+    const instId = String(instanceId || '').trim();
+    if (!adminId || !instId) {
+      throw new Error('admin_login_id and instance_id are required');
+    }
+
+    const now = new Date().toISOString();
+    const id = uuid();
+    try {
+      await connector.query(
+        `INSERT INTO ${qid('admin_login_instances')} (
+          ${qid('id')},
+          ${qid('admin_login_id')},
+          ${qid('instance_id')},
+          ${qid('created_at')}
+        ) VALUES (?, ?, ?, ?)`,
+        [id, adminId, instId, now]
+      );
+    } catch (error) {
+      if (!isDuplicateConstraintError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  async function listAdminLoginInstanceIds(adminLoginId) {
+    const adminId = String(adminLoginId || '').trim();
+    if (!adminId) return [];
+    const rows = await connector.query(
+      `SELECT ${qid('instance_id')} FROM ${qid('admin_login_instances')} WHERE ${qid('admin_login_id')} = ?`,
+      [adminId]
+    );
+    return rows.map((row) => row.instance_id).filter(Boolean);
+  }
+
+  async function ensureBootstrapAdminLogin({
+    email = 'admin@localhost',
+    password = 'admin12345678',
+    fullName = 'Install Admin',
+    role = 'owner'
+  } = {}) {
+    const existing = await getAdminLoginByEmail(email);
+    if (existing) {
+      return scrubAdminLogin(existing);
+    }
+
+    return createAdminLogin({
+      email,
+      password,
+      full_name: fullName,
+      role,
+      status: 'active',
+      is_superuser: true
+    });
+  }
+
   return {
     client: connector.client,
     initSchema,
@@ -594,6 +792,14 @@ async function createControlStore(config) {
     getDefaultInstance,
     resolveByHostAndDomain,
     ensureBootstrapTenant,
+    listAdminLogins,
+    getAdminLoginById,
+    getAdminLoginByEmail,
+    createAdminLogin,
+    authenticateAdminLogin,
+    assignAdminLoginInstance,
+    listAdminLoginInstanceIds,
+    ensureBootstrapAdminLogin,
     normalizeHost,
     normalizeDomain
   };

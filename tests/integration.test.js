@@ -45,11 +45,14 @@ test('integration: auth, tenancy, IDs, module migrations', async (t) => {
   process.env.CORS_ALLOWLIST = '';
   process.env.TRUST_PROXY = 'false';
   process.env.TENANCY_TRUST_FORWARDED_HOST = 'true';
+  process.env.TENANCY_ALLOW_OVERRIDE = 'true';
 
   purgeCoreRequireCache();
   const { buildServer } = require('../core/server');
   const runtime = await buildServer();
   const baseUrl = `http://127.0.0.1:${runtime.server.address().port}`;
+  const defaultInstance = await runtime.controlStore.getDefaultInstance();
+  assert.ok(defaultInstance && defaultInstance.id);
 
   t.after(async () => {
     await runtime.shutdown({ exitProcess: false });
@@ -72,6 +75,33 @@ test('integration: auth, tenancy, IDs, module migrations', async (t) => {
     fullName: 'Viewer User',
     role: 'viewer'
   });
+
+  const loginControlAdmin = await jsonRequest(baseUrl, '/api/admin/auth/login', {
+    method: 'POST',
+    headers: {
+      'x-forwarded-host': host,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      email: 'admin@localhost',
+      password: 'admin12345678'
+    })
+  });
+  assert.equal(loginControlAdmin.response.status, 200);
+  const controlToken = loginControlAdmin.body.token;
+  assert.ok(controlToken);
+
+  {
+    const adminSummary = await jsonRequest(baseUrl, '/api/admin/tenancy/summary', {
+      headers: {
+        'x-forwarded-host': host,
+        Authorization: `Bearer ${controlToken}`
+      }
+    });
+    assert.equal(adminSummary.response.status, 200);
+    assert.ok(adminSummary.body.data);
+    assert.ok(Array.isArray(adminSummary.body.data.instances));
+  }
 
   {
     const { response } = await jsonRequest(baseUrl, '/api/system', {
@@ -224,5 +254,58 @@ test('integration: auth, tenancy, IDs, module migrations', async (t) => {
     assert.ok(salon);
     assert.equal(salon.status, 'loaded');
     assert.ok(Array.isArray(salon.migrationsApplied));
+  }
+
+  {
+    const settings = await jsonRequest(baseUrl, '/api/system/settings', {
+      headers: { 'x-forwarded-host': host, Authorization: `Bearer ${ownerToken}` }
+    });
+    assert.equal(settings.response.status, 200);
+    assert.ok(settings.body.data);
+    assert.ok(settings.body.data.effectiveSettings);
+    assert.ok(settings.body.data.source);
+  }
+
+  {
+    const adminSettings = await jsonRequest(baseUrl, '/api/admin/settings/effective', {
+      headers: { 'x-forwarded-host': host, Authorization: `Bearer ${controlToken}` }
+    });
+    assert.equal(adminSettings.response.status, 200);
+    assert.ok(adminSettings.body.data);
+    assert.ok(adminSettings.body.data.effectiveSettings);
+  }
+
+  {
+    const byTenantOverrideHeader = await jsonRequest(baseUrl, '/api/auth/me', {
+      headers: {
+        'x-forwarded-host': 'unknown.example.com',
+        'x-tenant-id': defaultInstance.id,
+        Authorization: `Bearer ${ownerToken}`
+      }
+    });
+    assert.equal(byTenantOverrideHeader.response.status, 200);
+    assert.equal(byTenantOverrideHeader.body.tenantId, defaultInstance.id);
+  }
+
+  {
+    const byTenantOverrideQuery = await jsonRequest(baseUrl, `/api/auth/me?tenant_id=${encodeURIComponent(defaultInstance.id)}`, {
+      headers: {
+        'x-forwarded-host': 'unknown.example.com',
+        Authorization: `Bearer ${ownerToken}`
+      }
+    });
+    assert.equal(byTenantOverrideQuery.response.status, 200);
+    assert.equal(byTenantOverrideQuery.body.tenantId, defaultInstance.id);
+  }
+
+  {
+    const missingOverrideTenant = await jsonRequest(baseUrl, '/api/auth/me', {
+      headers: {
+        'x-forwarded-host': host,
+        'x-tenant-id': 'does-not-exist',
+        Authorization: `Bearer ${ownerToken}`
+      }
+    });
+    assert.equal(missingOverrideTenant.response.status, 404);
   }
 });

@@ -1,0 +1,9 @@
+{
+  "branding": {
+    "productName": "Acme Wellness OS",
+    "supportEmail": "ops@acmewellness.test"
+  },
+  "features": {
+    "advancedAnalytics": true
+  }
+}

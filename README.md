@@ -31,14 +31,19 @@ Both connectors expose the same interface used by the kernel and modules.
   - `/health`
   - `/ready`
   - `POST /api/auth/login`
+  - `POST /api/admin/auth/login`
 - Role model: `owner`, `admin`, `staff`, `viewer`
-- Admin tenancy endpoints (`/api/admin/tenancy/*`) require `owner` or `admin`.
+- Control-plane admin endpoints (`/api/admin/tenancy/*`) require admin-control JWT login.
 - Entity mutation endpoints (`POST/PUT/DELETE` under `/api/*` entity routes) require `owner`, `admin`, or `staff`.
 
 Auth env vars:
 
 - `AUTH_JWT_SECRET` (required, 32+ chars)
 - `AUTH_TOKEN_TTL_SECONDS` (default `28800`, 8 hours)
+- `ADMIN_BOOTSTRAP_EMAIL` (default `admin@localhost`)
+- `ADMIN_BOOTSTRAP_PASSWORD` (default `admin12345678`)
+- `ADMIN_BOOTSTRAP_NAME` (default `Install Admin`)
+- `ADMIN_BOOTSTRAP_ROLE` (default `owner`)
 
 Security env vars:
 
@@ -72,6 +77,21 @@ Control-plane env vars:
 - `CONTROL_DB_FILE`
 - `TENANCY_BOOTSTRAP_HOST` (default `localhost`)
 - `TENANCY_BOOTSTRAP_DOMAIN` (default `localhost`)
+
+## Settings Layering
+
+Configuration can be layered from global defaults + client overrides:
+
+- Global: `config/settings.json` (or `SETTINGS_GLOBAL_FILE`)
+- Client override: `clients/<CLIENT_NAME>/settings.json` (or `CLIENTS_DIR`)
+
+`<CLIENT_NAME>` is derived from control-plane customer name and normalized to lowercase kebab-case.
+Example: `Acme Wellness Group` -> `clients/acme-wellness-group/settings.json`.
+
+API access:
+
+- `GET /api/system/settings` (tenant-scoped effective settings)
+- `GET /api/admin/settings/effective?instance_id=<id>` (admin view for a specific instance)
 
 ## Run
 
@@ -115,6 +135,11 @@ npm run start
 - User App Runtime: `http://localhost:3010/app`
   - Salon vertical app: `http://localhost:3010/app?app=salon`
 
+Admin web login defaults:
+- email: `admin@localhost`
+- password: `admin12345678`
+- Change these with `ADMIN_BOOTSTRAP_*` env vars in production.
+
 App runtime configuration is loaded from `config/apps/*.json` (default: `default.json`).
 
 ## Example APIs
@@ -139,6 +164,8 @@ Telemetry notes:
 
 Tenancy admin APIs:
 
+- `POST /api/admin/auth/login`
+- `GET /api/admin/auth/me`
 - `GET /api/admin/tenancy/summary`
 - `GET /api/admin/tenancy/customers`
 - `POST /api/admin/tenancy/customers`
@@ -146,6 +173,7 @@ Tenancy admin APIs:
 - `POST /api/admin/tenancy/instances`
 - `GET /api/admin/tenancy/domains`
 - `POST /api/admin/tenancy/domains`
+- `GET /api/admin/settings/effective`
 
 ## Identifier Model
 
@@ -157,6 +185,8 @@ Tenancy admin APIs:
 
 ## Developer Docs
 
+- Composable platform terminology + plan: `docs/composable-platform-terminology-and-plan.md`
+- Composable schemas (draft): `docs/composable-schemas.md`
 - Interface runtime guide: `docs/interface-runtime-guide.md`
 - Backup and restore playbook: `docs/backup-restore-playbook.md`
 - Migration policy: `docs/migration-policy.md`
@@ -166,6 +196,9 @@ Tenancy admin APIs:
 ```bash
 npm test
 npm run test:migrations
+
+# Optional control-plane admin user helper
+npm run admin:create-user -- --email admin2@example.com --password 'change-me' --superuser
 ```
 
 ## Docker

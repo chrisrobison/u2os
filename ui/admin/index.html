@@ -7,75 +7,81 @@
     <link rel="stylesheet" href="/admin/styles.css" />
   </head>
   <body>
-    <main class="layout">
-      <header>
-        <h1>Tenancy Admin</h1>
-        <p>Manage customers, tenant instances, and indexed host/domain mappings.</p>
-      </header>
+    <main class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <p class="eyebrow">Business OS</p>
+          <h1>Admin</h1>
+          <p class="subtitle">Tenancy management workspace</p>
+        </div>
 
-      <section class="grid two">
-        <article class="card">
-          <h2>Customers</h2>
-          <form id="customerForm" class="form-grid">
-            <label>Name<input name="name" required /></label>
-            <label>Status
-              <select name="status">
-                <option value="active">active</option>
-                <option value="inactive">inactive</option>
-              </select>
-            </label>
-            <label class="full">Metadata JSON<textarea name="metadata" rows="4" placeholder='{"plan":"pro"}'></textarea></label>
-            <button type="submit">Create Customer</button>
-          </form>
-          <div id="customerList" class="list"></div>
+        <nav class="nav" aria-label="Sections">
+          <button class="nav-item active" type="button" data-section="customers">
+            <span>Customers</span>
+            <span class="count" id="count-customers">0</span>
+          </button>
+          <button class="nav-item" type="button" data-section="instances">
+            <span>Instances</span>
+            <span class="count" id="count-instances">0</span>
+          </button>
+          <button class="nav-item" type="button" data-section="mappings">
+            <span>Mappings</span>
+            <span class="count" id="count-mappings">0</span>
+          </button>
+          <button class="nav-item" type="button" data-section="schemas">
+            <span>Schemas</span>
+            <span class="count" id="count-schemas">6</span>
+          </button>
+        </nav>
+
+        <div class="session">
+          <p class="session-user" id="sessionUser">Not signed in</p>
+          <button id="logoutButton" class="refresh" type="button">Sign Out</button>
+          <button id="refreshButton" class="refresh" type="button">Refresh Data</button>
+        </div>
+      </aside>
+      <div class="resize-handle vertical" id="verticalResizeHandle" role="separator" aria-orientation="vertical" aria-label="Resize sidebar"></div>
+
+      <section class="workspace">
+        <header class="workspace-header">
+          <div>
+            <p class="eyebrow" id="sectionEyebrow">Section</p>
+            <h2 id="sectionTitle">Customers</h2>
+          </div>
+          <p class="status" id="statusLine">Loading...</p>
+        </header>
+
+        <article class="pane pane-table" aria-live="polite">
+          <div class="pane-header">
+            <h3 id="tableTitle">Customers</h3>
+          </div>
+          <div class="table-wrap" id="tableWrap"></div>
         </article>
 
-        <article class="card">
-          <h2>Instances (One DB Per Tenant)</h2>
-          <form id="instanceForm" class="form-grid">
-            <label>Name<input name="name" required /></label>
-            <label>Customer ID<input name="customer_id" placeholder="optional" /></label>
-            <label>Status
-              <select name="status">
-                <option value="active">active</option>
-                <option value="inactive">inactive</option>
-              </select>
-            </label>
-            <label>DB Client
-              <select name="db_client">
-                <option value="sqlite">sqlite</option>
-                <option value="mysql">mysql</option>
-                <option value="postgres">postgres</option>
-              </select>
-            </label>
-            <label class="full">DB Config JSON<textarea name="db_config" rows="5" required placeholder='{"file":"./data/tenant-a.sqlite"}'></textarea></label>
-            <label class="full">App Config JSON<textarea name="app_config" rows="4" placeholder='{"defaultAppId":"salon"}'></textarea></label>
-            <label><input type="checkbox" name="is_default" /> Default tenant</label>
-            <button type="submit">Create Instance</button>
-          </form>
-          <div id="instanceList" class="list"></div>
+        <div class="resize-handle horizontal" id="horizontalResizeHandle" role="separator" aria-orientation="horizontal" aria-label="Resize right panes"></div>
+
+        <article class="pane pane-detail" aria-live="polite">
+          <div class="pane-header">
+            <h3 id="detailTitle">Record details</h3>
+          </div>
+          <div class="detail-wrap" id="detailWrap"></div>
         </article>
       </section>
-
-      <section class="card">
-        <h2>Host + Domain Mappings</h2>
-        <form id="domainForm" class="form-grid">
-          <label>Instance ID<input name="instance_id" required /></label>
-          <label>Host<input name="host" required placeholder="tenant-a.example.com" /></label>
-          <label>Domain<input name="domain" required placeholder="example.com" /></label>
-          <label>Status
-            <select name="status">
-              <option value="active">active</option>
-              <option value="inactive">inactive</option>
-            </select>
-          </label>
-          <button type="submit">Create Mapping</button>
-        </form>
-        <div id="domainList" class="list"></div>
-      </section>
-
-      <p id="statusLine" class="status"></p>
     </main>
+
+    <div class="login-overlay" id="loginOverlay">
+      <section class="login-card">
+        <p class="eyebrow">Control Plane Access</p>
+        <h2>Admin Sign In</h2>
+        <p class="login-subtitle">Use your install admin account to manage customers, instances, and mappings.</p>
+        <form id="loginForm" class="login-form">
+          <label>Email<input type="email" name="email" autocomplete="username" required /></label>
+          <label>Password<input type="password" name="password" autocomplete="current-password" required /></label>
+          <button type="submit">Sign In</button>
+        </form>
+        <p class="login-status" id="loginStatus"></p>
+      </section>
+    </div>
 
     <script src="/admin/main.js"></script>
   </body>
