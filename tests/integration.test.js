@@ -284,7 +284,7 @@ test('integration: auth, tenancy, IDs, module migrations', async (t) => {
       }
     });
     assert.equal(byTenantOverrideHeader.response.status, 200);
-    assert.equal(byTenantOverrideHeader.body.tenantId, defaultInstance.id);
+    assert.equal(byTenantOverrideHeader.body.user.tenantId, defaultInstance.id);
   }
 
   {
@@ -295,7 +295,7 @@ test('integration: auth, tenancy, IDs, module migrations', async (t) => {
       }
     });
     assert.equal(byTenantOverrideQuery.response.status, 200);
-    assert.equal(byTenantOverrideQuery.body.tenantId, defaultInstance.id);
+    assert.equal(byTenantOverrideQuery.body.user.tenantId, defaultInstance.id);
   }
 
   {

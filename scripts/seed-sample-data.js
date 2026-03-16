@@ -25,6 +25,16 @@ async function ensureCount(db, table, minCount, createFn) {
   return rows.concat(created);
 }
 
+async function ensureBy(db, table, predicate, payloadFactory) {
+  const rows = await db.list(table, { limit: 1000, offset: 0 });
+  const existing = rows.find(predicate);
+  if (existing) {
+    return existing;
+  }
+  const payload = await payloadFactory(rows);
+  return db.create(table, payload);
+}
+
 async function main() {
   const db = await createDataSource(config.db);
   await db.initSchema();
@@ -82,6 +92,184 @@ async function main() {
       notes: 'Prefers email communication.'
     };
   });
+
+  const showcaseSpecs = [
+    {
+      firstName: 'Jordan',
+      lastName: 'Rivera',
+      email: 'jordan.rivera+demo@customer.test',
+      salonLocation: 'Mission Studio',
+      paymentMethod: 'card'
+    },
+    {
+      firstName: 'Priya',
+      lastName: 'Patel',
+      email: 'priya.patel+demo@customer.test',
+      salonLocation: 'Sunset Studio',
+      paymentMethod: 'bank_transfer'
+    }
+  ];
+
+  const showcaseCustomers = [];
+  for (let i = 0; i < showcaseSpecs.length; i += 1) {
+    const spec = showcaseSpecs[i];
+    const org = pick(organizations, i);
+    const staff = pick(users, i);
+
+    const customer = await ensureBy(
+      db,
+      'customers',
+      (row) => String(row.email || '').toLowerCase() === spec.email.toLowerCase(),
+      async () => ({
+        customer: `${spec.firstName} ${spec.lastName}`,
+        organization_id: org.id,
+        first_name: spec.firstName,
+        last_name: spec.lastName,
+        email: spec.email,
+        phone: `555-770${i}`,
+        cell: `555-780${i}`,
+        sms: true,
+        status: 'active',
+        notes: 'Showcase customer seeded for end-to-end module testing.'
+      })
+    );
+    showcaseCustomers.push(customer);
+
+    const order = await ensureBy(
+      db,
+      'orders',
+      (row) => String(row.order || '').toUpperCase() === `ORD-DEMO-${i + 1}`,
+      async () => ({
+        order: `ORD-DEMO-${i + 1}`,
+        customer_id: customer.id,
+        organization_id: org.id,
+        status: 'open',
+        total: 199 + i * 49,
+        currency: 'USD',
+        ordered_at: isoOffsetDays(-(i + 1)),
+        due_at: isoOffsetDays(7 + i),
+        notes: 'Showcase order for integration testing.'
+      })
+    );
+
+    const invoice = await ensureBy(
+      db,
+      'invoices',
+      (row) => String(row.invoice_number || '').toUpperCase() === `INV-DEMO-${i + 1}`,
+      async () => ({
+        invoice: `INV-DEMO-${i + 1}`,
+        customer_id: customer.id,
+        organization_id: org.id,
+        invoice_number: `INV-DEMO-${i + 1}`,
+        status: 'sent',
+        issue_date: ymdOffsetDays(-i),
+        due_date: ymdOffsetDays(14 + i),
+        subtotal: 199 + i * 49,
+        tax: Number(((199 + i * 49) * 0.085).toFixed(2)),
+        total: Number(((199 + i * 49) * 1.085).toFixed(2)),
+        currency: 'USD',
+        notes: 'Showcase invoice tied to seeded demo customer.'
+      })
+    );
+
+    await ensureBy(
+      db,
+      'payments',
+      (row) => String(row.reference || '').toUpperCase() === `PAY-DEMO-${i + 1}`,
+      async () => ({
+        payment: `PAY-DEMO-${i + 1}`,
+        invoice_id: invoice.id,
+        customer_id: customer.id,
+        amount: Number((60 + i * 15).toFixed(2)),
+        currency: 'USD',
+        method: spec.paymentMethod,
+        status: 'received',
+        paid_at: isoOffsetDays(-i),
+        reference: `PAY-DEMO-${i + 1}`
+      })
+    );
+
+    await ensureBy(
+      db,
+      'appointments',
+      (row) => String(row.appointment || '').toUpperCase() === `DEMO APPOINTMENT ${i + 1}`,
+      async () => {
+        const start = new Date(Date.now() + (i + 1) * 2 * 60 * 60 * 1000);
+        const end = new Date(start.getTime() + 60 * 60 * 1000);
+        return {
+          appointment: `Demo Appointment ${i + 1}`,
+          customer_id: customer.id,
+          staff_user_id: staff.id,
+          start_at: start.toISOString(),
+          end_at: end.toISOString(),
+          status: 'booked',
+          location: spec.salonLocation,
+          notes: 'Showcase appointment for salon module testing.'
+        };
+      }
+    );
+
+    await ensureBy(
+      db,
+      'tasks',
+      (row) => String(row.task || '').toUpperCase() === `DEMO FOLLOW-UP ${i + 1}`,
+      async () => ({
+        task: `Demo Follow-up ${i + 1}`,
+        customer_id: customer.id,
+        assigned_user_id: staff.id,
+        status: 'open',
+        priority: i % 2 === 0 ? 'high' : 'medium',
+        due_at: isoOffsetDays(2 + i),
+        details: 'Showcase follow-up task linked to demo customer activity.'
+      })
+    );
+
+    await ensureBy(
+      db,
+      'documents',
+      (row) => String(row.document || '').toUpperCase() === `DEMO DOCUMENT ${i + 1}`,
+      async () => ({
+        document: `Demo Document ${i + 1}`,
+        customer_id: customer.id,
+        organization_id: org.id,
+        document_type: 'consent_form',
+        file_url: `https://files.example.org/demo/customers/${i + 1}/consent.pdf`,
+        status: 'active',
+        notes: 'Showcase customer document for retrieval and linking tests.'
+      })
+    );
+
+    await ensureBy(
+      db,
+      'events',
+      (row) => String(row.event || '').toUpperCase() === `DEMO EVENT ${i + 1}`,
+      async () => ({
+        event: `Demo Event ${i + 1}`,
+        event_type: 'showcase.seeded',
+        subject_type: 'customers',
+        subject_id: customer.id,
+        payload: {
+          customer_email: spec.email,
+          type: 'demo_seed'
+        },
+        occurred_at: new Date().toISOString()
+      })
+    );
+
+    await ensureBy(
+      db,
+      'clamps',
+      (row) => String(row.clamp || '').startsWith(`showcase:${customer.id}:`),
+      async () => ({
+        clamp: `showcase:${customer.id}:${order.id}`,
+        local: 'customers',
+        local_id: customer.id,
+        remote: 'orders',
+        remote_id: order.id,
+        context: 'showcase'
+      })
+    );
+  }
 
   const contacts = await ensureCount(db, 'contacts', 8, async (i) => {
     const first = pick(firstNames, i + 3);
@@ -285,6 +473,7 @@ async function main() {
     events: events.length,
     clamps: clamps.length
   };
+  summary.showcase_customers = showcaseCustomers.length;
 
   console.log('Seed complete:', summary);
   await db.close();

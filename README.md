@@ -49,6 +49,9 @@ Security env vars:
 
 - `TRUST_PROXY` (`false` by default)
 - `TENANCY_TRUST_FORWARDED_HOST` (`false` by default)
+- `TENANCY_ALLOW_OVERRIDE` (`false` by default; if `true`, tenant can be selected by explicit request value for local/CI testing)
+- `TENANCY_OVERRIDE_HEADER` (`x-tenant-id` by default)
+- `TENANCY_OVERRIDE_QUERY_PARAM` (`tenant_id` by default)
 - `CORS_ALLOWLIST` (comma-separated origins; empty means allow all origins)
 - `RATE_LIMIT_WINDOW_MS` (default `60000`)
 - `RATE_LIMIT_MAX` (default `300`)
@@ -63,6 +66,8 @@ Security env vars:
   - `instances` (each instance has its own DB connection config)
   - `instance_domains` (indexed host/domain lookup per request)
 - Every request resolves tenant by `Host` header + derived domain.
+- When `TENANCY_ALLOW_OVERRIDE=true`, requests may explicitly choose tenant instance by id using
+  `TENANCY_OVERRIDE_HEADER` or `TENANCY_OVERRIDE_QUERY_PARAM` (useful for local development and automated tests).
 - Each tenant instance points to its own database (SQLite file, MySQL DB, or Postgres DB).
 - Unknown host/domain mappings are rejected when `TENANCY_STRICT_HOST_MATCH=true`.
 
@@ -114,6 +119,15 @@ npm run db:init
 ```bash
 npm run auth:create-owner -- --email owner@example.com --password 'change-this-password' --name 'Owner User'
 ```
+
+Optional sample data for UI/module testing:
+
+```bash
+npm run db:seed
+```
+
+This seeds broad sample records plus two deterministic showcase customers with linked appointments,
+orders, invoices, payments, tasks, documents, events, and clamps.
 
 5. (Upgrade only) If your database already has existing data and you are upgrading to dual IDs,
 run the additive migration/backfill:
