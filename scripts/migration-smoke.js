@@ -5,7 +5,7 @@ const { Pool } = require('pg');
 const { createDataSource } = require('../core/db');
 
 async function runSqliteSmoke() {
-  const file = path.join(os.tmpdir(), `business-os-migration-smoke-${process.pid}-${Date.now()}.sqlite`);
+  const file = path.join(os.tmpdir(), `u2os-migration-smoke-${process.pid}-${Date.now()}.sqlite`);
   const db = await createDataSource({ client: 'sqlite', file });
   try {
     await db.initSchema();
@@ -36,7 +36,7 @@ async function runPostgresSmoke() {
   const user = process.env.MIGRATION_PG_USER || process.env.PGUSER || 'postgres';
   const password = process.env.MIGRATION_PG_PASSWORD || process.env.PGPASSWORD || 'postgres';
   const adminDb = process.env.MIGRATION_PG_ADMIN_DB || 'postgres';
-  const testDb = process.env.MIGRATION_PG_DB || `business_os_smoke_${Date.now()}`;
+  const testDb = process.env.MIGRATION_PG_DB || `u2os_smoke_${Date.now()}`;
 
   const adminPool = new Pool({
     host,

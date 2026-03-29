@@ -1,7 +1,7 @@
 {
   "branding": {
-    "productName": "Business OS",
-    "supportEmail": "support@example.com"
+    "productName": "U2OS",
+    "supportEmail": "support@u2os.com"
   },
   "features": {
     "schemasWorkbench": true,

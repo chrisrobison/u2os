@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://u2os.local/schemas/template.schema.json",
+  "title": "U2OS Template",
+  "description": "Reusable process workspace definition.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "title",
+    "componentTag"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "2026-03-14"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "componentTag": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "componentProps": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "slots": {
+      "type": "object",
+      "description": "Named extension points for app/client overlays.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "component",
+              "text",
+              "action"
+            ]
+          },
+          "required": {
+            "type": "boolean",
+            "default": false
+          },
+          "defaultValue": {}
+        }
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9._:-]+$"
+      },
+      "uniqueItems": true
+    }
+  }
+}

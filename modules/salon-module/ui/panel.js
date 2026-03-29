@@ -1,6 +1,6 @@
-window.BusinessOSPanels = window.BusinessOSPanels || {};
+window.U2OSPanels = window.U2OSPanels || {};
 
-window.BusinessOSPanels['salon-appointments-panel'] = async function renderSalonAppointments(container) {
+window.U2OSPanels['salon-appointments-panel'] = async function renderSalonAppointments(container) {
   container.innerHTML = '<p>Loading salon appointments...</p>';
 
   try {

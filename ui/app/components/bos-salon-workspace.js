@@ -82,7 +82,7 @@ function viewCopy(view) {
   }
   return {
     title: 'Salon Manager',
-    subtitle: 'Operations workspace powered by Business OS.'
+    subtitle: 'Operations workspace powered by U2OS.'
   };
 }
 
@@ -150,7 +150,7 @@ class BosSalonWorkspace extends HTMLElement {
         <header class="salon-header">
           <p class="salon-badge">Salon Manager</p>
           <h2 class="salon-title" data-role="title">Salon Manager</h2>
-          <p class="salon-subtle" data-role="subtitle">Operations workspace powered by Business OS.</p>
+          <p class="salon-subtle" data-role="subtitle">Operations workspace powered by U2OS.</p>
         </header>
         <div data-role="content" class="salon-content"></div>
       </section>

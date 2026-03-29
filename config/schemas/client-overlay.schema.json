@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://u2os.local/schemas/client-overlay.schema.json",
+  "title": "U2OS Client Overlay",
+  "description": "Per-client customizations layered over app wrappers.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "clientId",
+    "baseAppId"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "2026-03-14"
+    },
+    "clientId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "baseAppId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "branding": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "logoUrl": {
+          "type": "string",
+          "minLength": 1
+        },
+        "theme": {
+          "type": "string",
+          "pattern": "^[a-z0-9._-]+$"
+        }
+      }
+    },
+    "moduleOverrides": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "moduleId"
+        ],
+        "properties": {
+          "moduleId": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "icon": {
+            "type": "string",
+            "pattern": "^[a-z0-9._:-]+$"
+          },
+          "hidden": {
+            "type": "boolean",
+            "default": false
+          },
+          "order": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "processOverrides": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "processId"
+        ],
+        "properties": {
+          "processId": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "icon": {
+            "type": "string",
+            "pattern": "^[a-z0-9._:-]+$"
+          },
+          "templateId": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "hidden": {
+            "type": "boolean",
+            "default": false
+          },
+          "order": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "roleMappings": {
+      "type": "object",
+      "description": "Map external client roles/groups to BOS roles/capabilities.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "bosRole": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "admin",
+              "staff",
+              "viewer"
+            ]
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9._:-]+$"
+            },
+            "uniqueItems": true
+          }
+        }
+      }
+    },
+    "customModules": {
+      "type": "array",
+      "items": {
+        "$ref": "./module.schema.json"
+      }
+    },
+    "customProcesses": {
+      "type": "array",
+      "items": {
+        "$ref": "./process.schema.json"
+      }
+    },
+    "customTemplates": {
+      "type": "array",
+      "items": {
+        "$ref": "./template.schema.json"
+      }
+    }
+  }
+}

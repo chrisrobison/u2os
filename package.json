@@ -1,7 +1,7 @@
 {
-  "name": "business-os",
+  "name": "u2os",
   "version": "0.1.0",
-  "description": "Modular Business OS foundation",
+  "description": "U2OS: API-first operating system for modern service businesses",
   "main": "core/server.js",
   "type": "commonjs",
   "scripts": {

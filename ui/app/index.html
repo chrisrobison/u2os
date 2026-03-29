@@ -3,7 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Business OS App Runtime</title>
+    <meta name="description" content="U2OS Workspace runtime for vertical apps, workflows, and day-to-day operations." />
+    <meta property="og:title" content="U2OS Workspace" />
+    <meta property="og:description" content="U2OS Workspace runtime for vertical apps, workflows, and day-to-day operations." />
+    <meta property="og:site_name" content="U2OS" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://u2os.com" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="U2OS Workspace" />
+    <meta name="twitter:description" content="U2OS Workspace runtime for vertical apps, workflows, and day-to-day operations." />
+    <title>U2OS Workspace</title>
     <link rel="stylesheet" href="/app/styles.css" />
     <script type="module" src="https://unpkg.com/@larcjs/core-lite@3.0.1/src/components/pan-bus.mjs"></script>
   </head>
@@ -27,6 +36,23 @@
       </main>
     </div>
 
+    <!--
+      ── Settings nav item ────────────────────────────────────────────────────
+      Navigation is data-driven from the app definition JSON loaded via
+      GET /api/apps/:appId. To surface the settings panel, add a leaf nav
+      item to your app definition file (e.g. config/apps/default.json):
+
+        {
+          "id": "settings",
+          "title": "Settings",
+          "componentTag": "bos-settings-panel"
+        }
+
+      The <bos-settings-panel> custom element is registered by main.js and
+      will be instantiated automatically when the user clicks the nav item.
+      No additional componentProps are required — the component is self-contained.
+      ──────────────────────────────────────────────────────────────────────────
+    -->
     <script type="module" src="/app/main.js"></script>
   </body>
 </html>

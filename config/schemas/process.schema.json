@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://u2os.local/schemas/process.schema.json",
+  "title": "U2OS Process",
+  "description": "A concrete workflow inside a module.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "moduleId",
+    "title",
+    "template",
+    "dataSource"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "2026-03-14"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "moduleId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "icon": {
+      "type": "string",
+      "pattern": "^[a-z0-9._:-]+$"
+    },
+    "order": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0
+    },
+    "template": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "props": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "dataSource": {
+      "$ref": "./datasource.schema.json"
+    },
+    "visibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rolesAny": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "admin",
+              "staff",
+              "viewer"
+            ]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "capabilitiesAny": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9._:-]+$"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    },
+    "hooks": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "onLoad": {
+          "$ref": "#/$defs/hookList"
+        },
+        "onView": {
+          "$ref": "#/$defs/hookList"
+        },
+        "beforeSave": {
+          "$ref": "#/$defs/hookList"
+        },
+        "afterSave": {
+          "$ref": "#/$defs/hookList"
+        },
+        "onSave": {
+          "$ref": "#/$defs/hookList"
+        }
+      }
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9._-]+$"
+      },
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "hook": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "name"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "client",
+            "server"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9._-]+$"
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "hookList": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/hook"
+      }
+    }
+  }
+}

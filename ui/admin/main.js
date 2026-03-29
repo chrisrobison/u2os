@@ -17,9 +17,12 @@ const shell = document.querySelector('.shell');
 const workspace = document.querySelector('.workspace');
 const navButtons = Array.from(document.querySelectorAll('.nav-item'));
 
-const TOKEN_STORAGE_KEY = 'bos_admin_token';
-const SIDEBAR_WIDTH_STORAGE_KEY = 'bos_admin_sidebar_width';
-const TOP_PANE_SIZE_STORAGE_KEY = 'bos_admin_top_pane_size';
+const TOKEN_STORAGE_KEY = 'u2os_admin_token';
+const LEGACY_TOKEN_STORAGE_KEY = 'bos_admin_token';
+const SIDEBAR_WIDTH_STORAGE_KEY = 'u2os_admin_sidebar_width';
+const LEGACY_SIDEBAR_WIDTH_STORAGE_KEY = 'bos_admin_sidebar_width';
+const TOP_PANE_SIZE_STORAGE_KEY = 'u2os_admin_top_pane_size';
+const LEGACY_TOP_PANE_SIZE_STORAGE_KEY = 'bos_admin_top_pane_size';
 
 const state = {
   activeSection: 'customers',
@@ -42,11 +45,11 @@ const state = {
       { id: 'client-overlay', title: 'Client Overlay' }
     ]
   },
-  authToken: localStorage.getItem(TOKEN_STORAGE_KEY) || '',
+  authToken: localStorage.getItem(TOKEN_STORAGE_KEY) || localStorage.getItem(LEGACY_TOKEN_STORAGE_KEY) || '',
   currentUser: null,
   layout: {
-    sidebarWidth: Number.parseInt(localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY) || '260', 10) || 260,
-    topPaneSize: Number.parseFloat(localStorage.getItem(TOP_PANE_SIZE_STORAGE_KEY) || '360') || 360
+    sidebarWidth: Number.parseInt(localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY) || localStorage.getItem(LEGACY_SIDEBAR_WIDTH_STORAGE_KEY) || '260', 10) || 260,
+    topPaneSize: Number.parseFloat(localStorage.getItem(TOP_PANE_SIZE_STORAGE_KEY) || localStorage.getItem(LEGACY_TOP_PANE_SIZE_STORAGE_KEY) || '360') || 360
   }
 };
 
@@ -259,6 +262,118 @@ function renderNav() {
   }
 }
 
+const SCHEMA_FIELDS = {
+  'app-wrapper': [
+    { path: 'app.id', label: 'App ID' },
+    { path: 'app.name', label: 'App Name' }
+  ],
+  module: [
+    { path: 'id', label: 'Module ID' },
+    { path: 'title', label: 'Module Title' },
+    { path: 'icon', label: 'Icon' }
+  ],
+  process: [
+    { path: 'id', label: 'Process ID' },
+    { path: 'moduleId', label: 'Module ID' },
+    { path: 'title', label: 'Process Title' },
+    { path: 'template.id', label: 'Template ID' }
+  ],
+  template: [
+    { path: 'id', label: 'Template ID' },
+    { path: 'title', label: 'Template Title' },
+    { path: 'componentTag', label: 'Component Tag' }
+  ],
+  datasource: [
+    { path: 'type', label: 'Type' },
+    { path: 'returns', label: 'Returns' },
+    { path: 'mode', label: 'Mode' },
+    { path: 'rowLimit', label: 'Row Limit', type: 'number' },
+    { path: 'timeoutMs', label: 'Timeout (ms)', type: 'number' }
+  ],
+  'client-overlay': [
+    { path: 'clientId', label: 'Client ID' },
+    { path: 'baseAppId', label: 'Base App ID' }
+  ]
+};
+
+function getByPath(source, path) {
+  return String(path || '').split('.').reduce((acc, key) => (acc == null ? undefined : acc[key]), source);
+}
+
+function setByPath(target, path, value) {
+  const keys = String(path || '').split('.').filter(Boolean);
+  if (!keys.length) return;
+  let current = target;
+  for (let i = 0; i < keys.length - 1; i += 1) {
+    const key = keys[i];
+    if (!current[key] || typeof current[key] !== 'object' || Array.isArray(current[key])) {
+      current[key] = {};
+    }
+    current = current[key];
+  }
+  const leaf = keys[keys.length - 1];
+  if (value === '' || value == null) {
+    delete current[leaf];
+    return;
+  }
+  current[leaf] = value;
+}
+
+function parseWorkbenchDocument() {
+  const text = document.getElementById('schemaJson')?.value || '';
+  try {
+    return { ok: true, document: JSON.parse(text) };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
+
+function renderSchemaFields(kind, documentValue) {
+  const fields = SCHEMA_FIELDS[kind] || [];
+  if (!fields.length) {
+    return '<p class="empty-state">No guided fields for this kind yet.</p>';
+  }
+  return `
+    <div class="schema-fields-grid">
+      ${fields.map((field) => {
+    const raw = getByPath(documentValue, field.path);
+    return `<label>${escapeHtml(field.label)}<input data-schema-path="${escapeHtml(field.path)}" data-schema-type="${escapeHtml(field.type || 'text')}" value="${escapeHtml(raw == null ? '' : String(raw))}" /></label>`;
+  }).join('')}
+    </div>
+  `;
+}
+
+function syncGuidedFormFromJson() {
+  const parsed = parseWorkbenchDocument();
+  if (!parsed.ok) return;
+  const kind = String(document.getElementById('schemaKind').value || 'app-wrapper');
+  const fields = SCHEMA_FIELDS[kind] || [];
+  fields.forEach((field) => {
+    const input = detailWrap.querySelector(`[data-schema-path="${CSS.escape(field.path)}"]`);
+    if (!input) return;
+    const raw = getByPath(parsed.document, field.path);
+    input.value = raw == null ? '' : String(raw);
+  });
+}
+
+function syncJsonFromGuidedForm() {
+  const parsed = parseWorkbenchDocument();
+  if (!parsed.ok) return;
+  const doc = parsed.document;
+  const kind = String(document.getElementById('schemaKind').value || 'app-wrapper');
+  const fields = SCHEMA_FIELDS[kind] || [];
+  fields.forEach((field) => {
+    const input = detailWrap.querySelector(`[data-schema-path="${CSS.escape(field.path)}"]`);
+    if (!input) return;
+    const textValue = input.value;
+    const nextValue = field.type === 'number'
+      ? (textValue === '' ? '' : Number(textValue))
+      : textValue;
+    setByPath(doc, field.path, Number.isNaN(nextValue) ? '' : nextValue);
+  });
+  document.getElementById('schemaJson').value = JSON.stringify(doc, null, 2);
+}
+
 async function lintSchemaWorkbench() {
   const kind = String(document.getElementById('schemaKind').value || '');
   const jsonText = document.getElementById('schemaJson').value;
@@ -287,8 +402,33 @@ async function lintSchemaWorkbench() {
     }
     resultEl.textContent = lines.join('\n');
     previewEl.textContent = JSON.stringify(payload.preview || {}, null, 2);
+    const saveStatus = document.getElementById('schemaSaveResult');
+    if (saveStatus) saveStatus.textContent = '';
   } catch (error) {
     resultEl.textContent = `Validation failed: ${error.message}`;
+  }
+}
+
+async function saveSchemaWorkbench() {
+  const kind = String(document.getElementById('schemaKind').value || '');
+  const jsonText = document.getElementById('schemaJson').value;
+  const saveAs = String(document.getElementById('schemaSaveAs')?.value || '').trim();
+  const saveResult = document.getElementById('schemaSaveResult');
+  if (saveResult) saveResult.textContent = 'Saving...';
+
+  try {
+    const payload = await fetchJson('/api/admin/schema-workbench/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind, jsonText, saveAs })
+    });
+    if (saveResult) {
+      saveResult.textContent = `✅ Saved to ${payload.path}`;
+    }
+  } catch (error) {
+    if (saveResult) {
+      saveResult.textContent = `Save failed: ${error.message}`;
+    }
   }
 }
 
@@ -309,7 +449,19 @@ async function insertScaffoldFromKind(kind) {
   const suffix = params.toString() ? `?${params.toString()}` : '';
   const payload = await fetchJson(`/api/admin/schema-workbench/scaffold/${encodeURIComponent(kind)}${suffix}`);
   document.getElementById('schemaJson').value = JSON.stringify(payload, null, 2);
+  detailWrap.querySelector('#schemaGuidedFields').innerHTML = renderSchemaFields(kind, payload);
+  bindGuidedFieldEvents();
   await lintSchemaWorkbench();
+}
+
+function bindGuidedFieldEvents() {
+  const fieldInputs = detailWrap.querySelectorAll('[data-schema-path]');
+  fieldInputs.forEach((input) => {
+    input.addEventListener('input', () => {
+      syncJsonFromGuidedForm();
+      lintSchemaWorkbench();
+    });
+  });
 }
 
 function renderSchemaWorkbench() {
@@ -338,22 +490,37 @@ function renderSchemaWorkbench() {
 
   detailWrap.innerHTML = `
     <div class="schema-result">
+      <h4>Guided Fields</h4>
+      <div id="schemaGuidedFields">${renderSchemaFields(state.selectedKeyBySection.schemas || 'app-wrapper', {})}</div>
       <h4>Lint Result</h4>
       <pre id="schemaLintResult" class="raw-json">Select a schema kind and click "Insert scaffold".</pre>
       <h4>Preview</h4>
       <pre id="schemaPreview" class="raw-json"></pre>
+      <h4>Save</h4>
+      <div class="schema-save-row">
+        <input id="schemaSaveAs" placeholder="optional file name override (e.g. support.json)" />
+        <button type="button" id="schemaSaveBtn">Save Schema File</button>
+      </div>
+      <p id="schemaSaveResult" class="empty-state"></p>
       <p class="empty-state">Policy guardrails: read-only SQL only, tenant scoping (:tenantId), and bounded query limits.</p>
     </div>
   `;
 
   document.getElementById('schemaKind').addEventListener('change', (event) => {
     state.selectedKeyBySection.schemas = event.target.value;
+    detailWrap.querySelector('#schemaGuidedFields').innerHTML = renderSchemaFields(event.target.value, parseWorkbenchDocument().document || {});
+    bindGuidedFieldEvents();
   });
   document.getElementById('schemaScaffoldBtn').addEventListener('click', async () => {
     const kind = String(document.getElementById('schemaKind').value || 'app-wrapper');
     await insertScaffoldFromKind(kind);
   });
   document.getElementById('schemaLintBtn').addEventListener('click', lintSchemaWorkbench);
+  document.getElementById('schemaSaveBtn').addEventListener('click', saveSchemaWorkbench);
+  document.getElementById('schemaJson').addEventListener('input', () => {
+    syncGuidedFormFromJson();
+  });
+  bindGuidedFieldEvents();
 }
 
 function renderHeader() {

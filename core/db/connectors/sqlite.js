@@ -73,7 +73,7 @@ function buildEntitySql(entity) {
 }
 
 async function createSqliteConnector(config) {
-  const dbFile = config.file || path.join(process.cwd(), 'data', 'business-os.sqlite');
+  const dbFile = config.file || path.join(process.cwd(), 'data', 'u2os.sqlite');
   const dbDir = path.dirname(dbFile);
   fs.mkdirSync(dbDir, { recursive: true });
 

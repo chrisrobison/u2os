@@ -495,3 +495,34 @@ body {
 .schema-result h4 {
   margin: 0 0 8px;
 }
+
+.schema-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.schema-fields-grid label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.schema-fields-grid input,
+.schema-save-row input,
+.schema-save-row button {
+  border: 1px solid var(--surface-line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  background: #fff;
+}
+
+.schema-save-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  margin-bottom: 6px;
+}

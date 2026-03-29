@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Set up your U2OS workspace in a few quick steps." />
+    <title>Workspace Setup</title>
+    <link rel="stylesheet" href="/onboarding/styles.css" />
+  </head>
+  <body>
+    <div class="wizard-page">
+      <div class="wizard-card" role="main" aria-label="Setup wizard">
+
+        <!-- ── Card header with brand + progress dots ── -->
+        <div class="wizard-card-header">
+          <p class="wizard-brand">U2OS Setup</p>
+          <nav class="wizard-progress" aria-label="Setup progress" id="progressDots">
+            <!-- Rendered by wizard.js -->
+          </nav>
+        </div>
+
+        <!-- ── Error / success banner (shown when needed) ── -->
+        <div class="wizard-banner" id="wizardBanner" role="alert" aria-live="polite"></div>
+
+        <!-- ── Step panels ── -->
+        <div class="wizard-body" id="wizardBody">
+
+          <!-- Step 0: Welcome -->
+          <div class="wizard-step active" id="step-welcome" role="tabpanel" aria-label="Welcome">
+            <div class="wizard-welcome-icon" aria-hidden="true">&#127775;</div>
+            <p class="wizard-step-label">Step 1 of 4</p>
+            <h2>Welcome to U2OS</h2>
+            <p>
+              Let's get your workspace ready in three quick steps. We'll configure
+              your branding, add a contact email, and then you're good to go.
+            </p>
+            <p>This takes less than two minutes.</p>
+          </div>
+
+          <!-- Step 1: Identity / Workspace branding -->
+          <div class="wizard-step" id="step-identity" role="tabpanel" aria-label="Workspace branding">
+            <p class="wizard-step-label">Step 2 of 4</p>
+            <h2>Workspace</h2>
+            <p>Give your workspace a name and look. These settings can be changed later.</p>
+
+            <div class="wizard-field-group">
+              <div class="wizard-field" id="field-productName">
+                <label for="productName">Product name</label>
+                <input
+                  type="text"
+                  id="productName"
+                  name="productName"
+                  placeholder="e.g. Acme Workspace"
+                  autocomplete="organization"
+                />
+                <p class="wizard-field-error" id="error-productName">Product name is required.</p>
+              </div>
+
+              <div class="wizard-field" id="field-logoUrl">
+                <label for="logoUrl">Logo URL <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
+                <input
+                  type="url"
+                  id="logoUrl"
+                  name="logoUrl"
+                  placeholder="https://example.com/logo.png"
+                />
+              </div>
+
+              <div class="wizard-field" id="field-primaryColor">
+                <label for="primaryColorHex">Primary color <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
+                <div class="wizard-color-pair">
+                  <input type="color" id="primaryColor" name="primaryColor" value="#1f8ab4" />
+                  <input
+                    type="text"
+                    id="primaryColorHex"
+                    name="primaryColorHex"
+                    placeholder="#1f8ab4"
+                    maxlength="7"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 2: Contact -->
+          <div class="wizard-step" id="step-contact" role="tabpanel" aria-label="Contact information">
+            <p class="wizard-step-label">Step 3 of 4</p>
+            <h2>Contact</h2>
+            <p>Where should users reach out for support?</p>
+
+            <div class="wizard-field-group">
+              <div class="wizard-field" id="field-supportEmail">
+                <label for="supportEmail">Support email</label>
+                <input
+                  type="email"
+                  id="supportEmail"
+                  name="supportEmail"
+                  placeholder="support@example.com"
+                  autocomplete="email"
+                />
+                <p class="wizard-field-error" id="error-supportEmail">A valid email address is required.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 3: Done -->
+          <div class="wizard-step" id="step-done" role="tabpanel" aria-label="All done">
+            <div class="wizard-ready-icon" aria-hidden="true">&#10003;</div>
+            <p class="wizard-step-label">Step 4 of 4</p>
+            <h2>You're all set!</h2>
+            <p>
+              Your workspace is configured and ready. Click <strong>Open Workspace</strong>
+              to start using U2OS.
+            </p>
+          </div>
+
+        </div>
+
+        <!-- ── Footer navigation ── -->
+        <div class="wizard-footer">
+          <div class="wizard-footer-left">
+            <button class="btn btn-ghost" id="btnBack" type="button" aria-label="Go back" hidden>
+              Back
+            </button>
+            <!-- Skip link: only shown on welcome step -->
+            <button class="wizard-skip" id="btnSkip" type="button">
+              Skip setup
+            </button>
+          </div>
+
+          <button class="btn btn-primary" id="btnNext" type="button">
+            Next
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+    <script src="/onboarding/wizard.js"></script>
+  </body>
+</html>

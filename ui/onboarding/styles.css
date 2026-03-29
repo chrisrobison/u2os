@@ -1,0 +1,392 @@
+/*
+ * ui/onboarding/styles.css
+ *
+ * Onboarding wizard styles. Palette matched to /ui/admin/styles.css.
+ * Dark-navy sidebar tones used only for the background gradient; the
+ * wizard card itself is light for a welcoming first-run feel.
+ */
+
+:root {
+  /* Shared palette (mirrors admin/styles.css) */
+  --ink-1: #e9f0f6;
+  --ink-2: #bfd0df;
+  --ink-3: #95adc1;
+  --panel: #102b3b;
+  --panel-soft: #163749;
+  --accent: #1f8ab4;
+  --accent-strong: #0f6a8e;
+  --surface: #f4f7fa;
+  --surface-line: #d1dde6;
+  --surface-strong: #ffffff;
+  --text: #0f2433;
+  --text-muted: #5a6f80;
+
+  /* Wizard-specific tokens */
+  --card-radius: 18px;
+  --card-max-w: 560px;
+  --step-dot-size: 10px;
+  --transition-speed: 240ms;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  font-size: 15px;
+  color: var(--text);
+  /* Gradient background echoing the admin panel's dark-navy + blue-grey */
+  background: linear-gradient(135deg, var(--panel) 0%, #1a3e55 40%, #2a6080 100%);
+}
+
+/* ── Page shell ─────────────────────────────────────────────────────────── */
+
+.wizard-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+}
+
+/* ── Card ───────────────────────────────────────────────────────────────── */
+
+.wizard-card {
+  width: min(var(--card-max-w), 100%);
+  background: var(--surface-strong);
+  border-radius: var(--card-radius);
+  box-shadow:
+    0 4px 16px rgba(8, 24, 36, 0.18),
+    0 24px 56px rgba(8, 24, 36, 0.28);
+  overflow: hidden;
+}
+
+/* Card header bar with brand mark */
+.wizard-card-header {
+  background: linear-gradient(90deg, var(--panel), var(--panel-soft));
+  color: var(--ink-1);
+  padding: 18px 24px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.wizard-brand {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* ── Progress dots / breadcrumb ─────────────────────────────────────────── */
+
+.wizard-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wizard-step-dot {
+  width: var(--step-dot-size);
+  height: var(--step-dot-size);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  transition: background var(--transition-speed) ease, transform var(--transition-speed) ease;
+}
+
+.wizard-step-dot.done {
+  background: rgba(31, 138, 180, 0.7);
+}
+
+.wizard-step-dot.active {
+  background: #fff;
+  transform: scale(1.35);
+}
+
+.wizard-step-connector {
+  width: 20px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 1px;
+}
+
+/* ── Card body ──────────────────────────────────────────────────────────── */
+
+.wizard-body {
+  padding: 28px 28px 24px;
+}
+
+/* ── Step content ────────────────────────────────────────────────────────── */
+
+.wizard-step {
+  display: none;
+  animation: stepFadeIn var(--transition-speed) ease forwards;
+}
+
+.wizard-step.active {
+  display: block;
+}
+
+@keyframes stepFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.wizard-step-label {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.wizard-step h2 {
+  margin: 0 0 14px;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.wizard-step p {
+  margin: 0 0 20px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+/* Welcome illustration placeholder */
+.wizard-welcome-icon {
+  display: block;
+  width: 60px;
+  height: 60px;
+  margin: 0 0 20px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--accent), var(--panel));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  color: #fff;
+  user-select: none;
+}
+
+/* ── Form fields ─────────────────────────────────────────────────────────── */
+
+.wizard-field-group {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 6px;
+}
+
+.wizard-field {
+  display: grid;
+  gap: 6px;
+}
+
+.wizard-field label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.wizard-field input[type="text"],
+.wizard-field input[type="email"],
+.wizard-field input[type="url"],
+.wizard-field input[type="color"] {
+  width: 100%;
+  border: 1px solid var(--surface-line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--surface);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+  appearance: none;
+}
+
+.wizard-field input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(31, 138, 180, 0.18);
+}
+
+/* Color input pair */
+.wizard-color-pair {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wizard-color-pair input[type="color"] {
+  width: 44px;
+  height: 38px;
+  padding: 2px 4px;
+  cursor: pointer;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.wizard-color-pair input[type="text"] {
+  flex: 1;
+}
+
+/* Field validation error */
+.wizard-field-error {
+  font-size: 12px;
+  color: #c0392b;
+  margin: 0;
+  display: none;
+}
+
+.wizard-field.has-error .wizard-field-error {
+  display: block;
+}
+
+.wizard-field.has-error input {
+  border-color: #c0392b;
+}
+
+/* ── Ready step ──────────────────────────────────────────────────────────── */
+
+.wizard-ready-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  margin: 0 0 20px;
+  font-size: 28px;
+  color: #fff;
+}
+
+/* ── Footer / nav buttons ────────────────────────────────────────────────── */
+
+.wizard-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 28px 22px;
+  border-top: 1px solid var(--surface-line);
+}
+
+.wizard-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.btn {
+  border: none;
+  border-radius: 10px;
+  padding: 10px 20px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 140ms ease, transform 120ms ease;
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--accent-strong);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--surface-line);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* Skip link */
+.wizard-skip {
+  font-size: 13px;
+  color: var(--text-muted);
+  text-decoration: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+}
+
+.wizard-skip:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+/* ── Status / error banner ───────────────────────────────────────────────── */
+
+.wizard-banner {
+  margin: 0 28px 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  display: none;
+}
+
+.wizard-banner.visible {
+  display: block;
+}
+
+.wizard-banner.error {
+  background: #fdf0ef;
+  border: 1px solid #f5c6c2;
+  color: #922;
+}
+
+.wizard-banner.success {
+  background: #eef9f3;
+  border: 1px solid #b7e4cc;
+  color: #166534;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+
+@media (max-width: 600px) {
+  .wizard-body {
+    padding: 20px 18px 18px;
+  }
+
+  .wizard-footer {
+    padding: 14px 18px 18px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .wizard-card-header {
+    padding: 14px 18px;
+  }
+}

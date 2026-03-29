@@ -1,5 +1,20 @@
 import './components/bos-entity-form.js';
 import './components/bos-salon-workspace.js';
+import './components/bos-settings-panel.js';
+
+// ── Onboarding guard ────────────────────────────────────────────────────────
+// Early check: if the tenant hasn't completed onboarding, redirect to the
+// wizard. Fires before navigation renders so the user never sees a half-
+// loaded app. Errors are silently ignored to avoid blocking a network-down
+// scenario.
+fetch('/api/system/onboarding')
+  .then((r) => r.json())
+  .then((onboardingState) => {
+    if (onboardingState && onboardingState.completed === false) {
+      window.location.href = '/onboarding/';
+    }
+  })
+  .catch(() => { /* fail silently — don't block app load on network error */ });
 
 const state = {
   appId: new URLSearchParams(window.location.search).get('app') || 'default',

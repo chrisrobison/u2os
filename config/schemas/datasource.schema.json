@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://u2os.local/schemas/datasource.schema.json",
+  "title": "U2OS Process Data Source",
+  "description": "Declarative data bootstrap configuration for a process.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "type",
+    "returns"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "2026-03-14"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "sql",
+        "queryRef"
+      ]
+    },
+    "query": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Parameterized SQL. Required when type=sql."
+    },
+    "queryRef": {
+      "type": "string",
+      "pattern": "^[a-z0-9._-]+$",
+      "description": "Reference to a named/registered query. Required when type=queryRef."
+    },
+    "params": {
+      "type": "object",
+      "description": "Named parameter bindings. Values may be literals or runtime bindings like $ctx.tenantId.",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "returns": {
+      "type": "string",
+      "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$",
+      "description": "Dataset name exposed to the template runtime."
+    },
+    "timeoutMs": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 30000,
+      "default": 2000
+    },
+    "rowLimit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5000,
+      "default": 200
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "readOnly"
+      ],
+      "default": "readOnly"
+    },
+    "cache": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "ttlMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 3600000
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "request",
+            "user",
+            "tenant"
+          ],
+          "default": "request"
+        }
+      }
+    },
+    "access": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rolesAny": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "admin",
+              "staff",
+              "viewer"
+            ]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "capabilitiesAny": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9._:-]+$"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "tenantScope": {
+          "type": "string",
+          "enum": [
+            "currentTenant"
+          ],
+          "default": "currentTenant"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "sql"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "queryRef"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "queryRef"
+        ]
+      }
+    }
+  ]
+}

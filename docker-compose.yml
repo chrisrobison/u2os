@@ -11,15 +11,15 @@ services:
       DB_CLIENT: postgres
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: business_os
-      DB_PASSWORD: business_os
-      DB_NAME: business_os_tenant
+      DB_USER: u2os
+      DB_PASSWORD: u2os
+      DB_NAME: u2os_tenant
       CONTROL_DB_CLIENT: postgres
       CONTROL_DB_HOST: postgres
       CONTROL_DB_PORT: 5432
-      CONTROL_DB_USER: business_os
-      CONTROL_DB_PASSWORD: business_os
-      CONTROL_DB_NAME: business_os_control
+      CONTROL_DB_USER: u2os
+      CONTROL_DB_PASSWORD: u2os
+      CONTROL_DB_NAME: u2os_control
       AUTH_JWT_SECRET: replace-me-with-at-least-32-chars
       TENANCY_BOOTSTRAP_HOST: localhost
       TENANCY_BOOTSTRAP_DOMAIN: localhost
@@ -31,9 +31,9 @@ services:
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_USER: business_os
-      POSTGRES_PASSWORD: business_os
-      POSTGRES_DB: business_os_tenant
+      POSTGRES_USER: u2os
+      POSTGRES_PASSWORD: u2os
+      POSTGRES_DB: u2os_tenant
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
