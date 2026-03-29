@@ -175,7 +175,7 @@ function loadPanelDefinitions(moduleDir) {
   }
 }
 
-async function loadPlugins({ app, db, eventBus, modulesDir }) {
+async function loadCapabilityPackages({ app, db, eventBus, modulesDir }) {
   const scheduler = createJobScheduler();
   const absoluteModulesDir = path.resolve(process.cwd(), modulesDir);
 
@@ -270,7 +270,10 @@ async function loadPlugins({ app, db, eventBus, modulesDir }) {
     }
   }
 
-  return { modules: loadedModules, scheduler };
+  return { capabilityPackages: loadedModules, modules: loadedModules, scheduler };
 }
 
-module.exports = { loadPlugins };
+module.exports = {
+  loadCapabilityPackages,
+  loadPlugins: loadCapabilityPackages
+};

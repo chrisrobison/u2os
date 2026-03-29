@@ -1,6 +1,8 @@
-# App Definitions
+# Runtime App Definitions
 
-App definitions drive the user-facing runtime at `/app`.
+Runtime app definitions drive the user-facing runtime at `/app`.
+These files are the legacy navigation contract.
+Canonical composable manifests now live in `config/solutions`.
 
 ## File Location
 
@@ -8,6 +10,7 @@ App definitions drive the user-facing runtime at `/app`.
 - Default app file: `config/apps/default.json`
 - Override with env vars:
   - `APPS_DIR` (default `config/apps`)
+  - `SOLUTIONS_DIR` (default `config/solutions`)
   - `DEFAULT_APP_ID` (default `default`)
 
 ## Shape (v1)

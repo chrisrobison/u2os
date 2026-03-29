@@ -1,10 +1,10 @@
 # Interface Runtime Guide
 
-This guide explains how to implement new user-facing interfaces in Business OS using the app-definition runtime (`/app`) and keep the generic dashboard (`/dashboard`) as a raw admin surface.
+This guide explains how to implement new user-facing interfaces in U2OS using the app-definition runtime (`/app`) and keep the generic dashboard (`/dashboard`) as a raw admin surface.
 
 ## Architecture Overview
 
-Business OS has two UI surfaces:
+U2OS has two UI surfaces:
 
 - Admin console: `/dashboard`
   - Schema-driven CRUD over all tables
@@ -13,12 +13,14 @@ Business OS has two UI surfaces:
   - App-definition driven navigation + tabs
   - Uses custom web components for interface screens
   - Uses LARC (`@larcjs/core-lite`) for client event orchestration
+  - Runtime config can be sourced from legacy app definitions (`config/apps`) or composable solutions (`config/solutions`) via the registry adapter
 
 Core files:
 
 - Runtime shell: `ui/app/index.html`, `ui/app/main.js`, `ui/app/styles.css`
 - Base component example: `ui/app/components/bos-entity-form.js`
 - App definition loader/validator: `core/appDefinitions.js`
+- Solution/app registry adapter: `core/registry.js`
 - Runtime APIs and hook execution: `core/server.js`
 - App definitions: `config/apps/*.json`
 

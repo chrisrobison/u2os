@@ -105,6 +105,8 @@ async function createControlStore(config) {
         ${qid('db_client')} VARCHAR(32) NOT NULL,
         ${qid('db_config_json')} TEXT NOT NULL,
         ${qid('app_config_json')} TEXT,
+        ${qid('onboarding_state')} TEXT DEFAULT NULL,
+        ${qid('settings_override')} TEXT DEFAULT NULL,
         ${qid('created_at')} VARCHAR(40) NOT NULL,
         ${qid('updated_at')} VARCHAR(40) NOT NULL
       )`,
@@ -150,6 +152,23 @@ async function createControlStore(config) {
     ];
 
     await runSchemaStatements(statements);
+
+    if (typeof connector.describeTable === 'function') {
+      const columns = await connector.describeTable('instances');
+      const names = new Set((columns || []).map((col) => col.name));
+
+      if (!names.has('onboarding_state')) {
+        await connector.query(
+          `ALTER TABLE ${qid('instances')} ADD COLUMN ${qid('onboarding_state')} TEXT DEFAULT NULL`
+        );
+      }
+
+      if (!names.has('settings_override')) {
+        await connector.query(
+          `ALTER TABLE ${qid('instances')} ADD COLUMN ${qid('settings_override')} TEXT DEFAULT NULL`
+        );
+      }
+    }
   }
 
   async function listCustomers() {
@@ -752,6 +771,56 @@ async function createControlStore(config) {
     return rows.map((row) => row.instance_id).filter(Boolean);
   }
 
+  /**
+   * Persist serialized onboarding state JSON for a single instance.
+   * Safe to call on DBs that pre-date the column — errors are silently ignored
+   * because the column may not exist yet on very old installs without a restart.
+   *
+   * @param {string} instanceId
+   * @param {string} stateJson - JSON-serialized onboarding state
+   */
+  async function updateInstanceOnboardingState(instanceId, stateJson) {
+    const now = new Date().toISOString();
+    try {
+      await connector.query(
+        `UPDATE ${qid('instances')}
+         SET ${qid('onboarding_state')} = ?, ${qid('updated_at')} = ?
+         WHERE ${qid('id')} = ?`,
+        [stateJson, now, instanceId]
+      );
+    } catch (error) {
+      // Column may not exist on DBs that haven't been migrated yet — log and
+      // continue rather than surfacing a confusing error to the end user.
+      const msg = String(error && error.message ? error.message : '');
+      if (!msg.toLowerCase().includes('no such column') && !msg.toLowerCase().includes('unknown column')) {
+        throw error;
+      }
+    }
+  }
+
+  /**
+   * Persist serialized settings-override JSON for a single instance.
+   *
+   * @param {string} instanceId
+   * @param {string} overrideJson - JSON-serialized settings override object
+   */
+  async function updateInstanceSettingsOverride(instanceId, overrideJson) {
+    const now = new Date().toISOString();
+    try {
+      await connector.query(
+        `UPDATE ${qid('instances')}
+         SET ${qid('settings_override')} = ?, ${qid('updated_at')} = ?
+         WHERE ${qid('id')} = ?`,
+        [overrideJson, now, instanceId]
+      );
+    } catch (error) {
+      const msg = String(error && error.message ? error.message : '');
+      if (!msg.toLowerCase().includes('no such column') && !msg.toLowerCase().includes('unknown column')) {
+        throw error;
+      }
+    }
+  }
+
   async function ensureBootstrapAdminLogin({
     email = 'admin@localhost',
     password = 'admin12345678',
@@ -800,6 +869,8 @@ async function createControlStore(config) {
     assignAdminLoginInstance,
     listAdminLoginInstanceIds,
     ensureBootstrapAdminLogin,
+    updateInstanceOnboardingState,
+    updateInstanceSettingsOverride,
     normalizeHost,
     normalizeDomain
   };

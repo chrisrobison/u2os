@@ -1,0 +1,103 @@
+{
+  "schemaVersion": "2026-03-14",
+  "app": {
+    "id": "salon",
+    "name": "Salon Manager",
+    "description": "Composable salon vertical solution"
+  },
+  "templateCatalog": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "salon.workspace.dashboard",
+      "title": "Salon Dashboard",
+      "componentTag": "bos-salon-workspace",
+      "componentProps": {
+        "view": "dashboard"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "salon.workspace.calendar",
+      "title": "Salon Calendar",
+      "componentTag": "bos-salon-workspace",
+      "componentProps": {
+        "view": "calendar"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "salon.workspace.clients",
+      "title": "Salon Clients",
+      "componentTag": "bos-salon-workspace",
+      "componentProps": {
+        "view": "clients"
+      }
+    }
+  ],
+  "processCatalog": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "salon-dashboard",
+      "moduleId": "operations",
+      "title": "Dashboard",
+      "order": 0,
+      "template": {
+        "id": "salon.workspace.dashboard"
+      },
+      "hooks": {
+        "onLoad": [
+          { "type": "client", "name": "client.notifyLoaded" }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "salon-calendar",
+      "moduleId": "operations",
+      "title": "Calendar",
+      "order": 1,
+      "template": {
+        "id": "salon.workspace.calendar"
+      },
+      "hooks": {
+        "onLoad": [
+          { "type": "client", "name": "client.notifyLoaded" }
+        ],
+        "afterSave": [
+          { "type": "client", "name": "client.notifySaved" }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "salon-clients",
+      "moduleId": "operations",
+      "title": "Clients",
+      "order": 2,
+      "template": {
+        "id": "salon.workspace.clients"
+      },
+      "hooks": {
+        "onLoad": [
+          { "type": "client", "name": "client.notifyLoaded" }
+        ],
+        "afterSave": [
+          { "type": "client", "name": "client.notifySaved" }
+        ]
+      }
+    }
+  ],
+  "modules": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "operations",
+      "title": "Operations",
+      "order": 0,
+      "processes": [
+        "salon-dashboard",
+        "salon-calendar",
+        "salon-clients"
+      ]
+    }
+  ]
+}

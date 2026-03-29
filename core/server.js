@@ -1,4 +1,5 @@
 const path = require('path');
+const fs = require('node:fs/promises');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -6,8 +7,8 @@ const rateLimit = require('express-rate-limit');
 const config = require('./config');
 const EventBus = require('./eventBus');
 const createEntityRouter = require('./router');
-const { loadPlugins } = require('./pluginLoader');
-const { loadAppDefinition, listAppIds } = require('./appDefinitions');
+const { loadCapabilityPackages } = require('./pluginLoader');
+const { createSolutionRegistry } = require('./registry');
 const { createControlStore } = require('./tenancy/controlStore');
 const { createTenantManager } = require('./tenancy/tenantManager');
 const { runWithRequestContext, getRequestContext } = require('./requestContext');
@@ -16,8 +17,9 @@ const { buildAuthConfig, validateAuthConfig } = require('./auth/config');
 const { verifyJwt } = require('./auth/jwt');
 const { createMetricsRegistry, createRequestTelemetry } = require('./observability');
 const { assertAllowedKeys, validateIdentifier } = require('./validation');
-const { SCHEMA_KINDS, lintAndPreview, scaffold } = require('./schemaWorkbench');
-const { loadEffectiveSettings } = require('./settings');
+const { SCHEMA_KINDS, lintAndPreview, resolveSaveTarget, scaffold } = require('./schemaWorkbench');
+const { loadEffectiveSettings, deepMerge } = require('./settings');
+const { createSystemRouter } = require('./routes/system');
 
 const serverHookRegistry = {
   'server.auditView': async ({ req, appId, navItemId, context, options }) => ({
@@ -155,6 +157,8 @@ async function buildServer() {
           }
           return res.status(404).send(`No active tenant instance '${tenantOverrideId}'`);
         }
+      } else if (config.tenancy.mode === 'local' && !config.tenancy.strictHostMatch) {
+        tenant = null;
       } else {
         const host = tenantManager.extractRequestHost(req, {
           trustForwardedHost: config.tenancy.trustForwardedHost
@@ -208,6 +212,7 @@ async function buildServer() {
   app.get('/health', (req, res) => {
     res.json({
       ok: true,
+      tenancyMode: config.tenancy.mode,
       controlDbClient: controlStore.client,
       defaultTenantId: defaultTenant.instance.id,
       time: new Date().toISOString()
@@ -361,6 +366,17 @@ async function buildServer() {
     });
   }
 
+  const solutionRegistry = createSolutionRegistry({
+    appsDir: config.appsDir,
+    solutionsDir: config.solutionsDir,
+    clientsDir: config.settings.clientsDir
+  });
+
+  async function resolveClientNameForActiveRequest() {
+    const context = getActiveContext();
+    return resolveClientNameFromInstance(context.instance);
+  }
+
   app.post('/api/admin/auth/login', async (req, res, next) => {
     try {
       assertAllowedKeys(req.body || {}, new Set(['email', 'password']), 'admin login payload');
@@ -462,14 +478,19 @@ async function buildServer() {
     requireEntityMutationRole: auth.requireEntityMutationRole
   }));
 
-  const { modules, scheduler } = await loadPlugins({
+  const { capabilityPackages, modules, scheduler } = await loadCapabilityPackages({
     app,
     db,
     eventBus,
     modulesDir: config.modulesDir
   });
 
+  app.get('/api/system/capability-packages', (req, res) => {
+    sendEnvelope(res, { capabilityPackages, jobs: scheduler.listJobs() });
+  });
+
   app.get('/api/system/modules', (req, res) => {
+    // Backward-compatible alias. "modules" now refers to executable capability packages.
     sendEnvelope(res, { modules, jobs: scheduler.listJobs() });
   });
 
@@ -483,12 +504,19 @@ async function buildServer() {
   app.get('/api/system', (req, res) => {
     const context = getActiveContext();
     sendEnvelope(res, {
-      app: 'business-os',
+      app: 'u2os',
       version: '0.1.0',
       dbClient: db.client,
       tenantId: context.instance.id,
-      modulesLoaded: modules.length,
-      modules: modules.map((m) => ({
+      capabilityPackagesLoaded: capabilityPackages.length,
+      capabilityPackages: capabilityPackages.map((m) => ({
+        name: m.name,
+        version: m.version,
+        slug: m.slug,
+        description: m.description
+      })),
+      modulesLoaded: capabilityPackages.length,
+      modules: capabilityPackages.map((m) => ({
         name: m.name,
         version: m.version,
         slug: m.slug,
@@ -501,9 +529,22 @@ async function buildServer() {
     try {
       const context = getActiveContext();
       const settings = await loadSettingsForInstance(context.instance);
+
+      // Merge any per-instance settings_override stored in the control DB
+      // on top of the effective settings (global + client-file layer).
+      let effectiveSettings = settings.effectiveSettings;
+      const instanceRow = await controlStore.getInstance(context.instance.id);
+      if (instanceRow && instanceRow.settings_override) {
+        let override = {};
+        try { override = JSON.parse(instanceRow.settings_override); } catch { /* ignore */ }
+        if (override && typeof override === 'object') {
+          effectiveSettings = deepMerge(effectiveSettings, override);
+        }
+      }
+
       return sendEnvelope(res, {
         clientKey: settings.clientKey,
-        effectiveSettings: settings.effectiveSettings,
+        effectiveSettings,
         source: settings.source
       });
     } catch (error) {
@@ -511,9 +552,31 @@ async function buildServer() {
     }
   });
 
+  // ── System routes: onboarding wizard + per-tenant settings PUT ────────────
+  // Mount after the GET /api/system/settings handler above (which takes
+  // precedence for GET) so that POST/PUT and /onboarding/* sub-paths are
+  // handled by the dedicated router.
+  const globalSettingsRaw = (() => {
+    try {
+      return require('fs').existsSync(path.resolve(process.cwd(), config.settings.globalFile))
+        ? JSON.parse(require('fs').readFileSync(path.resolve(process.cwd(), config.settings.globalFile), 'utf8'))
+        : {};
+    } catch { return {}; }
+  })();
+
+  const systemRouter = createSystemRouter({
+    controlStore,
+    getActiveContext,
+    loadSettingsForInstance,
+    globalSettings: globalSettingsRaw,
+    updateInstanceOnboardingState: (id, json) => controlStore.updateInstanceOnboardingState(id, json),
+    updateInstanceSettingsOverride: (id, json) => controlStore.updateInstanceSettingsOverride(id, json)
+  });
+  app.use('/api/system', systemRouter);
+
   app.get('/api/apps', async (req, res, next) => {
     try {
-      const appIds = await listAppIds(config.appsDir);
+      const appIds = await solutionRegistry.listRuntimeAppIds();
       res.json({
         defaultAppId: config.defaultAppId,
         apps: appIds
@@ -525,7 +588,8 @@ async function buildServer() {
 
   app.get('/api/apps/:appId', async (req, res, next) => {
     try {
-      const appDefinition = await loadAppDefinition(config.appsDir, req.params.appId);
+      const clientName = await resolveClientNameForActiveRequest();
+      const { appDefinition } = await solutionRegistry.loadRuntimeApp(req.params.appId, { clientName });
       res.json(appDefinition);
     } catch (error) {
       if (error.code === 'ENOENT') {
@@ -540,7 +604,8 @@ async function buildServer() {
 
   app.post('/api/apps/:appId/hooks/:hookName', async (req, res, next) => {
     try {
-      await loadAppDefinition(config.appsDir, req.params.appId);
+      const clientName = await resolveClientNameForActiveRequest();
+      await solutionRegistry.loadRuntimeApp(req.params.appId, { clientName });
       const hookFn = serverHookRegistry[req.params.hookName];
       if (!hookFn) {
         return res.status(404).json({ error: `Unknown server hook '${req.params.hookName}'` });
@@ -562,6 +627,36 @@ async function buildServer() {
       }
       if (error.message && error.message.startsWith('Invalid app id')) {
         return res.status(400).json({ error: error.message });
+      }
+      return next(error);
+    }
+  });
+
+  app.get('/api/solutions', async (req, res, next) => {
+    try {
+      const solutionIds = await solutionRegistry.listSolutionIds();
+      return sendEnvelope(res, { solutions: solutionIds });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.get('/api/solutions/:solutionId', async (req, res, next) => {
+    try {
+      const clientName = await resolveClientNameForActiveRequest();
+      const effective = await solutionRegistry.loadEffectiveSolution(req.params.solutionId, { clientName });
+      return sendEnvelope(res, {
+        appId: effective.appId,
+        sourceModel: effective.sourceModel,
+        source: effective.source,
+        overlayApplied: effective.overlayApplied,
+        overlaySource: effective.overlaySource,
+        clientKey: effective.clientKey,
+        solution: effective.solution
+      });
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        return res.status(404).json({ error: `Unknown solution '${req.params.solutionId}'` });
       }
       return next(error);
     }
@@ -617,6 +712,52 @@ async function buildServer() {
 
       const result = lintAndPreview({ kind: payload.kind, document });
       return sendEnvelope(res, result);
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.post('/api/admin/schema-workbench/save', requireControlSuperuser, async (req, res, next) => {
+    try {
+      const payload = req.body || {};
+      assertAllowedKeys(payload, new Set(['kind', 'jsonText', 'document', 'saveAs']), 'schema workbench save payload');
+      if (typeof payload.kind !== 'string') {
+        return res.status(400).json({ error: 'kind is required' });
+      }
+
+      let document = payload.document;
+      if (payload.jsonText != null) {
+        if (typeof payload.jsonText !== 'string') {
+          return res.status(400).json({ error: 'jsonText must be a string when provided' });
+        }
+        try {
+          document = JSON.parse(payload.jsonText);
+        } catch (error) {
+          return res.status(400).json({ error: `Invalid JSON: ${error.message}` });
+        }
+      }
+
+      const lint = lintAndPreview({ kind: payload.kind, document });
+      if (!lint.ok) {
+        return res.status(400).json({ error: 'Schema is invalid; fix lint errors before saving', details: lint.errors });
+      }
+
+      const relativePath = resolveSaveTarget({
+        kind: payload.kind,
+        document,
+        saveAs: payload.saveAs
+      });
+      const absolutePath = path.resolve(process.cwd(), relativePath);
+      const workspaceRoot = path.resolve(process.cwd());
+      if (!absolutePath.startsWith(`${workspaceRoot}${path.sep}`) && absolutePath !== workspaceRoot) {
+        return res.status(400).json({ error: 'Invalid save path target' });
+      }
+
+      await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+      await fs.writeFile(`${absolutePath}.tmp`, `${JSON.stringify(document, null, 2)}\n`, 'utf8');
+      await fs.rename(`${absolutePath}.tmp`, absolutePath);
+
+      return sendEnvelope(res, { ok: true, path: relativePath });
     } catch (error) {
       return next(error);
     }
@@ -775,6 +916,7 @@ async function buildServer() {
   app.use('/dashboard', express.static(path.join(process.cwd(), 'ui', 'dashboard')));
   app.use('/admin', express.static(path.join(process.cwd(), 'ui', 'admin')));
   app.use('/app', express.static(path.join(process.cwd(), 'ui', 'app')));
+  app.use('/onboarding', express.static(path.join(process.cwd(), 'ui', 'onboarding')));
   app.use('/modules', express.static(path.join(process.cwd(), 'modules')));
 
   app.use((err, req, res, next) => {
@@ -799,15 +941,16 @@ async function buildServer() {
   });
 
   const server = app.listen(config.port, () => {
-    console.log(`Business OS listening on http://localhost:${config.port}`);
+    console.log(`U2OS listening on http://localhost:${config.port}`);
     console.log(`Dashboard: http://localhost:${config.port}/dashboard`);
     console.log(`Tenancy admin: http://localhost:${config.port}/admin`);
     console.log(`User app runtime: http://localhost:${config.port}/app`);
     console.log(`Control DB connector: ${controlStore.client}`);
+    console.log(`Tenancy mode: ${config.tenancy.mode} (strictHostMatch=${config.tenancy.strictHostMatch})`);
     console.log(`Migration strict startup: ${config.migrations.strictStartup}`);
     console.log(`Active tenants warmed: ${warmedTenantCount}`);
     console.log(`Bootstrap admin: ${bootstrapAdmin.email} (superuser)`);
-    console.log(`Loaded modules: ${modules.map((m) => m.name).join(', ') || '(none)'}`);
+    console.log(`Loaded capability packages: ${capabilityPackages.map((m) => m.name).join(', ') || '(none)'}`);
   });
 
   const shutdown = async ({ exitProcess = true } = {}) => {
@@ -823,12 +966,22 @@ async function buildServer() {
   process.on('SIGINT', () => shutdown({ exitProcess: true }));
   process.on('SIGTERM', () => shutdown({ exitProcess: true }));
 
-  return { app, server, db, eventBus, modules, controlStore, shutdown, scheduler };
+  return {
+    app,
+    server,
+    db,
+    eventBus,
+    capabilityPackages,
+    modules: capabilityPackages,
+    controlStore,
+    shutdown,
+    scheduler
+  };
 }
 
 if (require.main === module) {
   buildServer().catch((error) => {
-    console.error('Failed to start Business OS:', error);
+    console.error('Failed to start U2OS:', error);
     process.exit(1);
   });
 }

@@ -1,0 +1,139 @@
+{
+  "schemaVersion": "2026-03-14",
+  "app": {
+    "id": "default",
+    "name": "Business Workspace",
+    "description": "Composable default solution for business staff"
+  },
+  "templateCatalog": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "workspace.entity.customers",
+      "title": "Customers Workspace",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "customers",
+        "title": "Customer Profiles"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "workspace.entity.orders",
+      "title": "Orders Workspace",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "orders",
+        "title": "Order Management"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "workspace.entity.invoices",
+      "title": "Invoices Workspace",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "invoices",
+        "title": "Invoice Desk"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "workspace.entity.appointments",
+      "title": "Appointments Workspace",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "appointments",
+        "title": "Appointments"
+      }
+    }
+  ],
+  "processCatalog": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "customers",
+      "moduleId": "workspace",
+      "title": "Customers",
+      "icon": "users",
+      "order": 0,
+      "template": {
+        "id": "workspace.entity.customers"
+      },
+      "hooks": {
+        "onLoad": [
+          { "type": "client", "name": "client.notifyLoaded" },
+          { "type": "server", "name": "server.auditView", "options": { "area": "customers" } }
+        ],
+        "afterSave": [
+          { "type": "client", "name": "client.notifySaved" }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "orders",
+      "moduleId": "sales",
+      "title": "Orders",
+      "order": 0,
+      "template": {
+        "id": "workspace.entity.orders"
+      },
+      "hooks": {
+        "onLoad": [
+          { "type": "server", "name": "server.auditView", "options": { "area": "orders" } }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "invoices",
+      "moduleId": "sales",
+      "title": "Invoices",
+      "order": 1,
+      "template": {
+        "id": "workspace.entity.invoices"
+      },
+      "hooks": {
+        "afterSave": [
+          { "type": "server", "name": "server.auditSave", "options": { "area": "invoices" } }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "calendar",
+      "moduleId": "workspace",
+      "title": "Calendar",
+      "order": 1,
+      "template": {
+        "id": "workspace.entity.appointments"
+      },
+      "hooks": {
+        "onLoad": [
+          { "type": "client", "name": "client.notifyLoaded" }
+        ]
+      }
+    }
+  ],
+  "modules": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "workspace",
+      "title": "Workspace",
+      "order": 0,
+      "processes": [
+        "customers",
+        "calendar"
+      ]
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "sales",
+      "title": "Sales",
+      "order": 1,
+      "processes": [
+        "orders",
+        "invoices"
+      ]
+    }
+  ]
+}

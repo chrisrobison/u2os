@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "2026-03-14",
+  "clientId": "acme-wellness-group",
+  "baseAppId": "default",
+  "moduleOverrides": [
+    {
+      "moduleId": "sales",
+      "title": "Revenue"
+    }
+  ],
+  "processOverrides": [
+    {
+      "processId": "customers",
+      "title": "Members"
+    }
+  ]
+}

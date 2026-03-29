@@ -7,7 +7,7 @@ const path = require('node:path');
 const { createOwnerUser } = require('../core/auth/bootstrap');
 
 function tempFile(name) {
-  return path.join(os.tmpdir(), `business-os-${process.pid}-${Date.now()}-${name}.sqlite`);
+  return path.join(os.tmpdir(), `u2os-${process.pid}-${Date.now()}-${name}.sqlite`);
 }
 
 function purgeCoreRequireCache() {
@@ -254,6 +254,25 @@ test('integration: auth, tenancy, IDs, module migrations', async (t) => {
     assert.ok(salon);
     assert.equal(salon.status, 'loaded');
     assert.ok(Array.isArray(salon.migrationsApplied));
+  }
+
+  {
+    const packages = await jsonRequest(baseUrl, '/api/system/capability-packages', {
+      headers: { 'x-forwarded-host': host, Authorization: `Bearer ${ownerToken}` }
+    });
+    assert.equal(packages.response.status, 200);
+    const salon = (packages.body.data.capabilityPackages || []).find((item) => item.name === 'salon-module');
+    assert.ok(salon);
+    assert.equal(salon.status, 'loaded');
+  }
+
+  {
+    const solutions = await jsonRequest(baseUrl, '/api/solutions', {
+      headers: { 'x-forwarded-host': host, Authorization: `Bearer ${ownerToken}` }
+    });
+    assert.equal(solutions.response.status, 200);
+    assert.ok(Array.isArray(solutions.body.data.solutions));
+    assert.ok(solutions.body.data.solutions.includes('default'));
   }
 
   {

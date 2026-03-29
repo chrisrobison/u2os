@@ -1,4 +1,7 @@
+const path = require('path');
+
 const SCHEMA_KINDS = [
+  'solution',
   'app-wrapper',
   'module',
   'process',
@@ -192,9 +195,10 @@ function previewFor(kind, doc) {
         title: doc.title || null,
         processCount: Array.isArray(doc.processes) ? doc.processes.length : 0
       };
+    case 'solution':
     case 'app-wrapper':
       return {
-        kind,
+        kind: kind === 'app-wrapper' ? 'solution' : kind,
         appId: doc.app && doc.app.id ? doc.app.id : null,
         appName: doc.app && doc.app.name ? doc.app.name : null,
         moduleCount: Array.isArray(doc.modules) ? doc.modules.length : 0
@@ -281,7 +285,7 @@ function scaffold(kind, opts = {}) {
     };
   }
 
-  if (kind === 'app-wrapper') {
+  if (kind === 'solution' || kind === 'app-wrapper') {
     return {
       schemaVersion,
       app: {
@@ -312,6 +316,39 @@ function scaffold(kind, opts = {}) {
   throw new Error(`Unknown schema kind '${kind}'`);
 }
 
+function sanitizeFileName(input, fallback) {
+  const normalized = String(input || '').trim().replace(/[^a-zA-Z0-9._-]/g, '-');
+  if (!normalized) return fallback;
+  return normalized.endsWith('.json') ? normalized : `${normalized}.json`;
+}
+
+function getDefaultFileName(kind, document) {
+  switch (kind) {
+    case 'solution':
+    case 'app-wrapper':
+      return sanitizeFileName(document?.app?.id || 'app-wrapper', 'app-wrapper.json');
+    case 'client-overlay': {
+      const clientId = sanitizeFileName(document?.clientId || 'client', 'client');
+      const baseAppId = sanitizeFileName(document?.baseAppId || 'default', 'default');
+      return `${clientId}-${baseAppId}`.replace(/\.json/g, '') + '.json';
+    }
+    default:
+      return sanitizeFileName(document?.id || kind, `${kind}.json`);
+  }
+}
+
+function resolveSaveTarget({ kind, document, saveAs }) {
+  const fileName = sanitizeFileName(saveAs, getDefaultFileName(kind, document));
+  if (kind === 'solution' || kind === 'app-wrapper') {
+    return path.join('config', 'solutions', fileName);
+  }
+  if (kind === 'client-overlay') {
+    const clientKey = sanitizeFileName(document?.clientId || 'client', 'client').replace(/\.json$/i, '');
+    return path.join('clients', clientKey, 'schemas', fileName);
+  }
+  return path.join('config', 'schemas', 'workbench', kind, fileName);
+}
+
 function lintAndPreview({ kind, document }) {
   if (!SCHEMA_KINDS.includes(kind)) {
     return { ok: false, errors: [`Unknown schema kind '${kind}'`], warnings: [], preview: {} };
@@ -326,6 +363,7 @@ function lintAndPreview({ kind, document }) {
   }
 
   switch (kind) {
+    case 'solution':
     case 'app-wrapper':
       validateAppWrapper(document, errors, warnings);
       break;
@@ -359,5 +397,6 @@ function lintAndPreview({ kind, document }) {
 module.exports = {
   SCHEMA_KINDS,
   lintAndPreview,
+  resolveSaveTarget,
   scaffold
 };

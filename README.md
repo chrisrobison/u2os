@@ -1,19 +1,22 @@
-# Business OS (Foundation)
+# U2OS (Foundation)
 
-Modular, API-first business operating system with a reusable kernel and dynamically loaded modules.
+U2OS is a modular, API-first operating system for modern service businesses, built on a reusable kernel with dynamically loaded capability packages.
+
+Brand/site: **u2os.com**
 
 ## What is included
 
 - Core kernel (`/core`) with:
   - universal business entity CRUD/search APIs
   - event bus with publish/subscribe
-  - plugin loader
+  - capability package loader
   - modular data connector abstraction
-- Plugin examples (`/modules`):
+- Capability package examples (`/modules`):
   - `salon-module` (appointment scheduling + calendar + appointment events)
-  - `example-module` (minimal reference plugin)
+  - `example-module` (minimal reference capability package)
 - Responsive dashboard (`/ui/dashboard`) with dynamic module panels
-- User app runtime (`/ui/app`) driven by app-definition JSON and component hooks
+- User app runtime (`/ui/app`) driven by runtime app definitions and component hooks
+- Composable solution manifests (`/config/solutions`) for Module/Process/Template hierarchy
 
 ## Data Connector Switching
 
@@ -21,9 +24,9 @@ The app uses a connector factory. Set `DB_CLIENT` to switch backend:
 
 - `DB_CLIENT=mysql`
 - `DB_CLIENT=postgres`
-- `DB_CLIENT=sqlite` (uses `DB_FILE`, defaults to `./data/business-os.sqlite`)
+- `DB_CLIENT=sqlite` (uses `DB_FILE`, defaults to `./data/u2os.sqlite`)
 
-Both connectors expose the same interface used by the kernel and modules.
+Both connectors expose the same interface used by the kernel and capability packages.
 
 ## Authentication + Authorization
 
@@ -59,13 +62,27 @@ Security env vars:
 - `AUTH_BODY_LIMIT` (default `32kb`)
 - `MIGRATIONS_STRICT_STARTUP` (default `true`)
 
-## Multi-Tenant (One DB Per Tenant)
+## Tenancy Packaging Model (Single Product, Multi-Mode)
+
+U2OS now ships as **one product** with a default tenant and three runtime modes:
+
+- `TENANCY_MODE=local` (default): always serve the default tenant unless an explicit override is enabled.
+  - Best for local/self-hosted installs.
+  - No host/domain setup required for a simple install.
+- `TENANCY_MODE=hybrid`: attempt host/domain tenant routing first, then fall back to default tenant.
+  - Best when you want mostly local behavior with optional hosted routing.
+- `TENANCY_MODE=hosted`: require host/domain mapping per request.
+  - Best for managed multi-tenant deployments.
+
+This keeps one codebase for capability packages/business modules/vertical solutions while allowing WordPress-style local installs and hosted tenancy from the same runtime.
+
+### Multi-Tenant Control Plane (One DB Per Tenant)
 
 - A separate control-plane DB stores tenancy metadata:
   - `customers`
   - `instances` (each instance has its own DB connection config)
   - `instance_domains` (indexed host/domain lookup per request)
-- Every request resolves tenant by `Host` header + derived domain.
+- Non-local modes resolve tenant by `Host` header + derived domain.
 - When `TENANCY_ALLOW_OVERRIDE=true`, requests may explicitly choose tenant instance by id using
   `TENANCY_OVERRIDE_HEADER` or `TENANCY_OVERRIDE_QUERY_PARAM` (useful for local development and automated tests).
 - Each tenant instance points to its own database (SQLite file, MySQL DB, or Postgres DB).
@@ -80,6 +97,8 @@ Control-plane env vars:
 - `CONTROL_DB_PASSWORD`
 - `CONTROL_DB_NAME`
 - `CONTROL_DB_FILE`
+- `TENANCY_MODE` (`local` default, or `hybrid` / `hosted`)
+- `TENANCY_STRICT_HOST_MATCH` (default follows mode: false for local/hybrid, true for hosted)
 - `TENANCY_BOOTSTRAP_HOST` (default `localhost`)
 - `TENANCY_BOOTSTRAP_DOMAIN` (default `localhost`)
 
@@ -154,7 +173,7 @@ Admin web login defaults:
 - password: `admin12345678`
 - Change these with `ADMIN_BOOTSTRAP_*` env vars in production.
 
-App runtime configuration is loaded from `config/apps/*.json` (default: `default.json`).
+Runtime app definitions are loaded from `config/apps/*.json` (legacy) and `config/solutions/*.json` (canonical composable model).
 
 ## Example APIs
 
@@ -171,6 +190,9 @@ App runtime configuration is loaded from `config/apps/*.json` (default: `default
 - `GET /api/modules/salon-module/calendar?month=2026-03&date=2026-03-10`
 - `GET /api/modules/salon-module/clients?q=emma`
 - `GET /api/system/metrics`
+- `GET /api/system/capability-packages`
+- `GET /api/solutions`
+- `GET /api/solutions/:solutionId`
 
 Telemetry notes:
 - every response includes `x-request-id` and `x-trace-id`
@@ -200,9 +222,13 @@ Tenancy admin APIs:
 ## Developer Docs
 
 - Composable platform terminology + plan: `docs/composable-platform-terminology-and-plan.md`
+- Architecture language and hierarchy: `docs/architecture-language.md`
 - Composable schemas (draft): `docs/composable-schemas.md`
 - Interface runtime guide: `docs/interface-runtime-guide.md`
 - Backup and restore playbook: `docs/backup-restore-playbook.md`
+- Tenancy packaging model: `docs/tenancy-packaging-model.md`
+- 90-day roadmap: `docs/roadmap-90-day.md`
+- Execution board: `docs/execution-board.md`
 - Migration policy: `docs/migration-policy.md`
 
 ## Testing

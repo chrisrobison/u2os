@@ -12,9 +12,13 @@ function parseCsv(value) {
     .filter(Boolean);
 }
 
+const tenancyMode = String(process.env.TENANCY_MODE || 'local').toLowerCase();
+const strictHostMatchDefault = tenancyMode === 'hosted';
+
 module.exports = {
   port: toInt(process.env.PORT, 3010),
   modulesDir: process.env.MODULES_DIR || 'modules',
+  solutionsDir: process.env.SOLUTIONS_DIR || 'config/solutions',
   appsDir: process.env.APPS_DIR || 'config/apps',
   defaultAppId: process.env.DEFAULT_APP_ID || 'default',
   settings: {
@@ -22,7 +26,8 @@ module.exports = {
     clientsDir: process.env.CLIENTS_DIR || 'clients'
   },
   tenancy: {
-    strictHostMatch: String(process.env.TENANCY_STRICT_HOST_MATCH || 'true').toLowerCase() !== 'false',
+    mode: ['local', 'hybrid', 'hosted'].includes(tenancyMode) ? tenancyMode : 'local',
+    strictHostMatch: String(process.env.TENANCY_STRICT_HOST_MATCH || String(strictHostMatchDefault)).toLowerCase() !== 'false',
     bootstrapHost: process.env.TENANCY_BOOTSTRAP_HOST || 'localhost',
     bootstrapDomain: process.env.TENANCY_BOOTSTRAP_DOMAIN || 'localhost',
     trustForwardedHost: String(process.env.TENANCY_TRUST_FORWARDED_HOST || 'false').toLowerCase() === 'true',
@@ -51,7 +56,7 @@ module.exports = {
     port: toInt(process.env.DB_PORT, 3306),
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'business_os',
+    database: process.env.DB_NAME || 'u2os',
     file: process.env.DB_FILE || ''
   },
   controlDb: {
@@ -60,7 +65,7 @@ module.exports = {
     port: toInt(process.env.CONTROL_DB_PORT, toInt(process.env.DB_PORT, 3306)),
     user: process.env.CONTROL_DB_USER || process.env.DB_USER || 'root',
     password: process.env.CONTROL_DB_PASSWORD || process.env.DB_PASSWORD || '',
-    database: process.env.CONTROL_DB_NAME || 'business_os_control',
-    file: process.env.CONTROL_DB_FILE || './data/business-os-control.sqlite'
+    database: process.env.CONTROL_DB_NAME || 'u2os_control',
+    file: process.env.CONTROL_DB_FILE || './data/u2os-control.sqlite'
   }
 };
