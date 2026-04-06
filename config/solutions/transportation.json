@@ -1,0 +1,232 @@
+{
+  "schemaVersion": "2026-04-06",
+  "app": {
+    "id": "transportation",
+    "name": "Transportation Manager",
+    "description": "Composable transportation vertical for tours and school trips"
+  },
+  "templateCatalog": [
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "transport.workspace.dashboard",
+      "title": "Transportation Dashboard",
+      "componentTag": "bos-transportation-workspace",
+      "componentProps": { "view": "dashboard" }
+    },
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "transport.workspace.calendar",
+      "title": "Transportation Calendar",
+      "componentTag": "bos-transportation-workspace",
+      "componentProps": { "view": "calendar" }
+    },
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "transport.workspace.map",
+      "title": "Transportation Map",
+      "componentTag": "bos-transportation-workspace",
+      "componentProps": { "view": "map" }
+    },
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "transport.entity.requests",
+      "title": "Trip Requests",
+      "componentTag": "bos-entity-form",
+      "componentProps": { "entity": "transportation_requests", "title": "Trip Request Intake" }
+    },
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "transport.entity.trips",
+      "title": "Trips",
+      "componentTag": "bos-entity-form",
+      "componentProps": { "entity": "transportation_trips", "title": "Trip Dispatch Board" }
+    },
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "transport.entity.waypoints",
+      "title": "Waypoints",
+      "componentTag": "bos-entity-form",
+      "componentProps": { "entity": "transportation_waypoints", "title": "Waypoint Planning" }
+    },
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "transport.entity.results",
+      "title": "Trip Results",
+      "componentTag": "bos-entity-form",
+      "componentProps": { "entity": "transportation_trip_results", "title": "Final Trip Results" }
+    },
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "transport.entity.addresses",
+      "title": "Addresses",
+      "componentTag": "bos-entity-form",
+      "componentProps": { "entity": "transportation_addresses", "title": "Address Book" }
+    },
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "transport.entity.drivers",
+      "title": "Drivers",
+      "componentTag": "bos-entity-form",
+      "componentProps": { "entity": "transportation_drivers", "title": "Driver Roster" }
+    },
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "transport.entity.buses",
+      "title": "Buses",
+      "componentTag": "bos-entity-form",
+      "componentProps": { "entity": "transportation_buses", "title": "Fleet" }
+    },
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "transport.entity.invoices",
+      "title": "Transportation Invoices",
+      "componentTag": "bos-entity-form",
+      "componentProps": { "entity": "transportation_invoices", "title": "Transportation Invoices" }
+    },
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "transport.entity.payments",
+      "title": "Transportation Payments",
+      "componentTag": "bos-entity-form",
+      "componentProps": { "entity": "transportation_payments", "title": "Transportation Payments" }
+    }
+  ],
+  "processCatalog": [
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "transport-dashboard",
+      "moduleId": "operations",
+      "title": "Dashboard",
+      "order": 0,
+      "template": { "id": "transport.workspace.dashboard" },
+      "hooks": {
+        "onLoad": [{ "type": "client", "name": "client.notifyLoaded" }]
+      }
+    },
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "transport-calendar",
+      "moduleId": "operations",
+      "title": "Calendar",
+      "order": 1,
+      "template": { "id": "transport.workspace.calendar" },
+      "hooks": {
+        "onLoad": [{ "type": "client", "name": "client.notifyLoaded" }],
+        "afterSave": [{ "type": "client", "name": "client.notifySaved" }]
+      }
+    },
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "transport-map",
+      "moduleId": "operations",
+      "title": "Map",
+      "order": 2,
+      "template": { "id": "transport.workspace.map" },
+      "hooks": {
+        "onLoad": [{ "type": "client", "name": "client.notifyLoaded" }]
+      }
+    },
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "transport-requests",
+      "moduleId": "dispatch",
+      "title": "Trip Requests",
+      "order": 0,
+      "template": { "id": "transport.entity.requests" }
+    },
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "transport-trips",
+      "moduleId": "dispatch",
+      "title": "Trips",
+      "order": 1,
+      "template": { "id": "transport.entity.trips" }
+    },
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "transport-waypoints",
+      "moduleId": "dispatch",
+      "title": "Waypoints",
+      "order": 2,
+      "template": { "id": "transport.entity.waypoints" }
+    },
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "transport-results",
+      "moduleId": "dispatch",
+      "title": "Trip Results",
+      "order": 3,
+      "template": { "id": "transport.entity.results" }
+    },
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "transport-addresses",
+      "moduleId": "resources",
+      "title": "Addresses",
+      "order": 0,
+      "template": { "id": "transport.entity.addresses" }
+    },
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "transport-drivers",
+      "moduleId": "resources",
+      "title": "Drivers",
+      "order": 1,
+      "template": { "id": "transport.entity.drivers" }
+    },
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "transport-buses",
+      "moduleId": "resources",
+      "title": "Buses",
+      "order": 2,
+      "template": { "id": "transport.entity.buses" }
+    },
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "transport-invoices",
+      "moduleId": "billing",
+      "title": "Invoices",
+      "order": 0,
+      "template": { "id": "transport.entity.invoices" }
+    },
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "transport-payments",
+      "moduleId": "billing",
+      "title": "Payments",
+      "order": 1,
+      "template": { "id": "transport.entity.payments" }
+    }
+  ],
+  "modules": [
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "operations",
+      "title": "Operations",
+      "order": 0,
+      "processes": ["transport-dashboard", "transport-calendar", "transport-map"]
+    },
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "dispatch",
+      "title": "Dispatch",
+      "order": 1,
+      "processes": ["transport-requests", "transport-trips", "transport-waypoints", "transport-results"]
+    },
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "resources",
+      "title": "Resources",
+      "order": 2,
+      "processes": ["transport-addresses", "transport-drivers", "transport-buses"]
+    },
+    {
+      "schemaVersion": "2026-04-06",
+      "id": "billing",
+      "title": "Billing",
+      "order": 3,
+      "processes": ["transport-invoices", "transport-payments"]
+    }
+  ]
+}

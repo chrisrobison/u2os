@@ -1,0 +1,41 @@
+{
+  "name": "transportation-module",
+  "version": "0.1.0",
+  "description": "Transportation operations module for local tours and school trips",
+  "features": [
+    "trip-request-intake",
+    "dispatch-calendar",
+    "route-mapping",
+    "trip-results-and-billing"
+  ],
+  "permissions": {
+    "entities": [
+      "customers",
+      "users",
+      "transportation_addresses",
+      "transportation_requests",
+      "transportation_trips",
+      "transportation_waypoints",
+      "transportation_drivers",
+      "transportation_buses",
+      "transportation_invoices",
+      "transportation_payments",
+      "transportation_trip_results"
+    ],
+    "routes": true,
+    "jobs": true,
+    "events": {
+      "publish": [
+        "transportation.request.created",
+        "transportation.trip.scheduled",
+        "transportation.trip.started",
+        "transportation.trip.completed"
+      ],
+      "subscribe": [
+        "transportation.request.created",
+        "transportation.trip.scheduled",
+        "transportation.trip.completed"
+      ]
+    }
+  }
+}

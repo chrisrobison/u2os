@@ -854,14 +854,347 @@ pan-bus {
   padding: 10px;
 }
 
+.transport-workspace {
+  display: grid;
+  gap: 16px;
+}
+
+.transport-header {
+  display: grid;
+  gap: 6px;
+  padding: 18px 20px;
+  border-radius: 14px;
+  border: 1px solid #dbe6d8;
+  background: linear-gradient(180deg, #ffffff 0%, #f4faf2 100%);
+  box-shadow: 0 8px 24px rgba(17, 34, 51, 0.04);
+}
+
+.transport-badge {
+  margin: 0;
+  width: fit-content;
+  font-size: 0.73rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #1a5a37;
+  background: #e5f5e8;
+  border: 1px solid #b6dec0;
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+
+.transport-title {
+  margin: 0;
+  font-size: 1.6rem;
+  line-height: 1.2;
+  color: #123426;
+}
+
+.transport-subtle {
+  margin: 0;
+  color: #547067;
+  font-size: 0.9rem;
+}
+
+.transport-content {
+  display: grid;
+  gap: 14px;
+}
+
+.transport-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.transport-card {
+  border: 1px solid #d5e1d1;
+  background: #fff;
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: 0 8px 24px rgba(17, 34, 51, 0.04);
+}
+
+.transport-grid-2 {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr);
+  gap: 12px;
+}
+
+.transport-grid-2 .transport-wide {
+  grid-column: 1 / -1;
+}
+
+.transport-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.transport-card-header h3 {
+  margin: 0;
+  color: #1a3e2c;
+  font-size: 1.1rem;
+}
+
+.transport-card-header button,
+.transport-inline-actions button,
+.transport-row-actions button {
+  border: 1px solid #bfd5c4;
+  background: #edf8ef;
+  color: #1b5f38;
+  border-radius: 10px;
+  padding: 7px 11px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.transport-card-header button:hover,
+.transport-inline-actions button:hover,
+.transport-row-actions button:hover {
+  background: #e2f3e7;
+  border-color: #94c6a1;
+}
+
+.transport-inline-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.transport-list,
+.transport-stop-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.transport-list-row {
+  border: 1px solid #d5e1d1;
+  border-radius: 11px;
+  background: #f6faf5;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: minmax(180px, 1.5fr) minmax(170px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.transport-list-row.compact {
+  grid-template-columns: minmax(180px, 1.4fr) minmax(120px, 0.9fr) auto;
+}
+
+.transport-list-row p,
+.transport-list-row small {
+  margin: 0;
+  color: #5f776f;
+  display: block;
+}
+
+.transport-list-row strong {
+  font-size: 0.92rem;
+}
+
+.transport-row-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.transport-status {
+  display: inline-block;
+  margin-top: 4px;
+  border: 1px solid #bed8c6;
+  background: #e7f4ea;
+  color: #1f6038;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  padding: 3px 9px;
+}
+
+.transport-status.scheduled {
+  border-color: #c8d9ef;
+  background: #ebf3ff;
+  color: #1b4f8d;
+}
+
+.transport-status.in_progress {
+  border-color: #f0d9b0;
+  background: #fff6e7;
+  color: #8b4a10;
+}
+
+.transport-status.completed {
+  border-color: #b6dec0;
+  background: #e7f7eb;
+  color: #1a6c3d;
+}
+
+.transport-status.cancelled {
+  border-color: #e5c7c7;
+  background: #fff0f0;
+  color: #8d2f2f;
+}
+
+.transport-weekdays,
+.transport-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.transport-weekdays span {
+  color: #688178;
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.transport-day {
+  border: 1px solid #cfe1d2;
+  border-radius: 10px;
+  min-height: 60px;
+  background: #f8fcf7;
+  cursor: pointer;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 3px;
+  font: inherit;
+}
+
+.transport-day small {
+  color: #5f776f;
+  font-size: 0.65rem;
+}
+
+.transport-day.active {
+  border-color: #3a8d59;
+  background: #2b7b49;
+  color: #fff;
+}
+
+.transport-day.muted {
+  border-style: dashed;
+  background: #fbfdfb;
+  cursor: default;
+}
+
+.transport-field {
+  display: grid;
+  gap: 4px;
+  color: #315646;
+  font-size: 0.83rem;
+}
+
+.transport-field select {
+  border: 1px solid #bfd5c4;
+  border-radius: 10px;
+  padding: 7px 10px;
+  font: inherit;
+  color: #1d3b2d;
+  background: #fff;
+}
+
+.transport-stop-row {
+  border: 1px solid #d5e1d1;
+  border-radius: 10px;
+  background: #f6faf5;
+  padding: 8px 10px;
+  display: grid;
+  gap: 2px;
+}
+
+.transport-stop-row small {
+  color: #5f776f;
+}
+
+.transport-route-plot {
+  width: 100%;
+  height: auto;
+  display: block;
+  border: 1px solid #d5e1d1;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f8fcf7, #eff8f2);
+}
+
+.transport-route-plot rect {
+  fill: #f4faf3;
+  stroke: #d5e1d1;
+  stroke-width: 1.5;
+}
+
+.transport-route-plot polyline {
+  fill: none;
+  stroke: #2b7b49;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.transport-route-plot circle {
+  fill: #1f6038;
+  stroke: #fff;
+  stroke-width: 2;
+}
+
+.transport-route-plot text {
+  fill: #1c3f2f;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.transport-map-empty {
+  border: 1px dashed #bfd5c4;
+  border-radius: 10px;
+  padding: 14px;
+  color: #5f776f;
+  background: #f8fcf7;
+}
+
+.transport-map-links {
+  margin-top: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.transport-map-links a {
+  color: #1b5f38;
+  text-decoration: none;
+}
+
+.transport-map-links a:hover {
+  text-decoration: underline;
+}
+
+.transport-empty,
+.transport-empty-li {
+  color: var(--muted);
+  padding: 10px;
+}
+
 @media (max-width: 1080px) {
   .salon-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .transport-metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .salon-dashboard-grid,
   .salon-grid-2,
   .salon-client-row {
+    grid-template-columns: 1fr;
+  }
+
+  .transport-grid-2,
+  .transport-list-row,
+  .transport-list-row.compact {
     grid-template-columns: 1fr;
   }
 
@@ -915,6 +1248,10 @@ pan-bus {
 
 @media (max-width: 640px) {
   .salon-metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .transport-metric-grid {
     grid-template-columns: 1fr;
   }
 

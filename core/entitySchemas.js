@@ -45,6 +45,19 @@ const schemas = {
       { name: 'notes', type: 'text' }
     ]
   },
+  pet: {
+    singular: 'pet',
+    fields: [
+      { name: 'customer_id', type: 'id' },
+      { name: 'species', type: 'string' },
+      { name: 'breed', type: 'string' },
+      { name: 'sex', type: 'string' },
+      { name: 'birth_date', type: 'date' },
+      { name: 'weight', type: 'money' },
+      { name: 'status', type: 'string' },
+      { name: 'notes', type: 'text' }
+    ]
+  },
   contacts: {
     singular: 'contact',
     fields: [
@@ -103,6 +116,146 @@ const schemas = {
       { name: 'end_at', type: 'datetime' },
       { name: 'status', type: 'string' },
       { name: 'location', type: 'string' },
+      { name: 'notes', type: 'text' }
+    ]
+  },
+  transportation_addresses: {
+    singular: 'transportation_address',
+    fields: [
+      { name: 'label', type: 'string' },
+      { name: 'location_type', type: 'string' },
+      { name: 'line1', type: 'string' },
+      { name: 'line2', type: 'string' },
+      { name: 'city', type: 'string' },
+      { name: 'state', type: 'string' },
+      { name: 'postal_code', type: 'string' },
+      { name: 'country', type: 'string' },
+      { name: 'latitude', type: 'money' },
+      { name: 'longitude', type: 'money' },
+      { name: 'place_id', type: 'string' },
+      { name: 'notes', type: 'text' }
+    ]
+  },
+  transportation_requests: {
+    singular: 'transportation_request',
+    fields: [
+      { name: 'customer_id', type: 'id' },
+      { name: 'trip_date', type: 'date' },
+      { name: 'pickup_address_id', type: 'id' },
+      { name: 'dropoff_address_id', type: 'id' },
+      { name: 'requested_head_count', type: 'integer' },
+      { name: 'school_name', type: 'string' },
+      { name: 'trip_type', type: 'string' },
+      { name: 'requested_departure_at', type: 'datetime' },
+      { name: 'requested_return_at', type: 'datetime' },
+      { name: 'status', type: 'string' },
+      { name: 'quoted_amount', type: 'money' },
+      { name: 'currency', type: 'string' },
+      { name: 'notes', type: 'text' }
+    ]
+  },
+  transportation_trips: {
+    singular: 'transportation_trip',
+    fields: [
+      { name: 'request_id', type: 'id' },
+      { name: 'customer_id', type: 'id' },
+      { name: 'driver_id', type: 'id' },
+      { name: 'bus_id', type: 'id' },
+      { name: 'trip_date', type: 'date' },
+      { name: 'pickup_address_id', type: 'id' },
+      { name: 'dropoff_address_id', type: 'id' },
+      { name: 'planned_head_count', type: 'integer' },
+      { name: 'planned_departure_at', type: 'datetime' },
+      { name: 'planned_arrival_at', type: 'datetime' },
+      { name: 'status', type: 'string' },
+      { name: 'route_name', type: 'string' },
+      { name: 'route_notes', type: 'text' }
+    ]
+  },
+  transportation_waypoints: {
+    singular: 'transportation_waypoint',
+    fields: [
+      { name: 'trip_id', type: 'id' },
+      { name: 'address_id', type: 'id' },
+      { name: 'waypoint_order', type: 'integer' },
+      { name: 'planned_arrival_at', type: 'datetime' },
+      { name: 'planned_departure_at', type: 'datetime' },
+      { name: 'status', type: 'string' },
+      { name: 'notes', type: 'text' }
+    ]
+  },
+  transportation_drivers: {
+    singular: 'transportation_driver',
+    fields: [
+      { name: 'user_id', type: 'id' },
+      { name: 'license_number', type: 'string' },
+      { name: 'license_class', type: 'string' },
+      { name: 'license_expires_on', type: 'date' },
+      { name: 'phone', type: 'phone' },
+      { name: 'status', type: 'string' },
+      { name: 'home_base_address_id', type: 'id' },
+      { name: 'notes', type: 'text' }
+    ]
+  },
+  transportation_buses: {
+    singular: 'transportation_bus',
+    fields: [
+      { name: 'bus_number', type: 'string' },
+      { name: 'plate_number', type: 'string' },
+      { name: 'make', type: 'string' },
+      { name: 'model', type: 'string' },
+      { name: 'capacity', type: 'integer' },
+      { name: 'wheelchair_accessible', type: 'boolean' },
+      { name: 'status', type: 'string' },
+      { name: 'depot_address_id', type: 'id' },
+      { name: 'odometer_reading', type: 'money' },
+      { name: 'notes', type: 'text' }
+    ]
+  },
+  transportation_invoices: {
+    singular: 'transportation_invoice',
+    fields: [
+      { name: 'trip_id', type: 'id' },
+      { name: 'request_id', type: 'id' },
+      { name: 'customer_id', type: 'id' },
+      { name: 'invoice_number', type: 'string' },
+      { name: 'status', type: 'string' },
+      { name: 'issue_date', type: 'date' },
+      { name: 'due_date', type: 'date' },
+      { name: 'subtotal', type: 'money' },
+      { name: 'tax', type: 'money' },
+      { name: 'total', type: 'money' },
+      { name: 'currency', type: 'string' },
+      { name: 'notes', type: 'text' }
+    ]
+  },
+  transportation_payments: {
+    singular: 'transportation_payment',
+    fields: [
+      { name: 'transportation_invoice_id', type: 'id' },
+      { name: 'customer_id', type: 'id' },
+      { name: 'amount', type: 'money' },
+      { name: 'currency', type: 'string' },
+      { name: 'method', type: 'string' },
+      { name: 'status', type: 'string' },
+      { name: 'paid_at', type: 'datetime' },
+      { name: 'reference', type: 'string' },
+      { name: 'notes', type: 'text' }
+    ]
+  },
+  transportation_trip_results: {
+    singular: 'transportation_trip_result',
+    fields: [
+      { name: 'trip_id', type: 'id' },
+      { name: 'actual_head_count', type: 'integer' },
+      { name: 'actual_departure_at', type: 'datetime' },
+      { name: 'actual_arrival_at', type: 'datetime' },
+      { name: 'actual_miles', type: 'money' },
+      { name: 'fuel_cost', type: 'money' },
+      { name: 'toll_cost', type: 'money' },
+      { name: 'incident_notes', type: 'text' },
+      { name: 'completion_status', type: 'string' },
+      { name: 'recorded_by_driver_id', type: 'id' },
       { name: 'notes', type: 'text' }
     ]
   },
