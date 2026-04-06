@@ -1,0 +1,160 @@
+{
+  "schemaVersion": "2026-03-14",
+  "app": {
+    "id": "fitness-studio",
+    "name": "Fitness Studio",
+    "description": "Solution for personal trainers and fitness studios with recurring billing workflows"
+  },
+  "templateCatalog": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "fitness.workspace.members",
+      "title": "Members",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "customers",
+        "title": "Members"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "fitness.workspace.sessions",
+      "title": "Training Sessions",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "appointments",
+        "title": "Training Sessions"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "fitness.workspace.services",
+      "title": "Programs",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "services",
+        "title": "Programs"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "fitness.workspace.recurring-billing",
+      "title": "Recurring Billing",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "invoices",
+        "title": "Recurring Billing"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "fitness.workspace.payments",
+      "title": "Payments",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "payments",
+        "title": "Payments"
+      }
+    }
+  ],
+  "processCatalog": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "fitness-members",
+      "moduleId": "operations",
+      "title": "Members",
+      "order": 0,
+      "template": { "id": "fitness.workspace.members" },
+      "hooks": {
+        "onLoad": [
+          { "type": "client", "name": "client.notifyLoaded" }
+        ],
+        "afterSave": [
+          { "type": "client", "name": "client.notifySaved" }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "fitness-sessions",
+      "moduleId": "operations",
+      "title": "Sessions",
+      "order": 1,
+      "template": { "id": "fitness.workspace.sessions" },
+      "hooks": {
+        "onLoad": [
+          { "type": "client", "name": "client.notifyLoaded" }
+        ],
+        "afterSave": [
+          { "type": "client", "name": "client.notifySaved" }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "fitness-programs",
+      "moduleId": "operations",
+      "title": "Programs",
+      "order": 2,
+      "template": { "id": "fitness.workspace.services" },
+      "hooks": {
+        "onLoad": [
+          { "type": "server", "name": "server.auditView", "options": { "area": "fitness-programs" } }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "fitness-recurring-billing",
+      "moduleId": "billing",
+      "title": "Recurring Billing",
+      "order": 0,
+      "template": { "id": "fitness.workspace.recurring-billing" },
+      "tags": ["recurring-billing"],
+      "hooks": {
+        "onLoad": [
+          { "type": "server", "name": "server.auditView", "options": { "area": "recurring-billing" } }
+        ],
+        "afterSave": [
+          { "type": "server", "name": "server.auditSave", "options": { "area": "recurring-billing" } }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "fitness-payments",
+      "moduleId": "billing",
+      "title": "Payments",
+      "order": 1,
+      "template": { "id": "fitness.workspace.payments" },
+      "hooks": {
+        "onLoad": [
+          { "type": "server", "name": "server.auditView", "options": { "area": "payments" } }
+        ]
+      }
+    }
+  ],
+  "modules": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "operations",
+      "title": "Operations",
+      "order": 0,
+      "processes": [
+        "fitness-members",
+        "fitness-sessions",
+        "fitness-programs"
+      ]
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "billing",
+      "title": "Billing",
+      "order": 1,
+      "processes": [
+        "fitness-recurring-billing",
+        "fitness-payments"
+      ]
+    }
+  ]
+}

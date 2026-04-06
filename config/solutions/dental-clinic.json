@@ -1,0 +1,186 @@
+{
+  "schemaVersion": "2026-03-14",
+  "app": {
+    "id": "dental-clinic",
+    "name": "Dental Clinic",
+    "description": "Solution for dental and orthodontic practices with patient, treatment, and claims workflows"
+  },
+  "templateCatalog": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "dental.workspace.patients",
+      "title": "Patients",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "customers",
+        "title": "Patients"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "dental.workspace.calendar",
+      "title": "Schedule",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "appointments",
+        "title": "Schedule"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "dental.workspace.treatment-plans",
+      "title": "Treatment Plans",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "tasks",
+        "title": "Treatment Plans"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "dental.workspace.procedures",
+      "title": "Procedures",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "services",
+        "title": "Procedures"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "dental.workspace.insurance-claims",
+      "title": "Insurance Claims",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "orders",
+        "title": "Insurance Claims"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "dental.workspace.invoices",
+      "title": "Invoices",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "invoices",
+        "title": "Invoices"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "dental.workspace.payments",
+      "title": "Payments",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "payments",
+        "title": "Payments"
+      }
+    }
+  ],
+  "processCatalog": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "dental-patients",
+      "moduleId": "clinical",
+      "title": "Patients",
+      "order": 0,
+      "template": { "id": "dental.workspace.patients" },
+      "hooks": {
+        "onLoad": [
+          { "type": "client", "name": "client.notifyLoaded" }
+        ],
+        "afterSave": [
+          { "type": "client", "name": "client.notifySaved" }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "dental-calendar",
+      "moduleId": "clinical",
+      "title": "Schedule",
+      "order": 1,
+      "template": { "id": "dental.workspace.calendar" },
+      "hooks": {
+        "afterSave": [
+          { "type": "client", "name": "client.notifySaved" }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "dental-treatment-plans",
+      "moduleId": "clinical",
+      "title": "Treatment Plans",
+      "order": 2,
+      "template": { "id": "dental.workspace.treatment-plans" },
+      "tags": ["treatment-plans"]
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "dental-procedures",
+      "moduleId": "clinical",
+      "title": "Procedures",
+      "order": 3,
+      "template": { "id": "dental.workspace.procedures" }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "dental-claims",
+      "moduleId": "billing",
+      "title": "Insurance Claims",
+      "order": 0,
+      "template": { "id": "dental.workspace.insurance-claims" },
+      "tags": ["insurance-claims"],
+      "hooks": {
+        "onLoad": [
+          { "type": "server", "name": "server.auditView", "options": { "area": "insurance-claims" } }
+        ],
+        "afterSave": [
+          { "type": "server", "name": "server.auditSave", "options": { "area": "insurance-claims" } }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "dental-invoices",
+      "moduleId": "billing",
+      "title": "Invoices",
+      "order": 1,
+      "template": { "id": "dental.workspace.invoices" }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "dental-payments",
+      "moduleId": "billing",
+      "title": "Payments",
+      "order": 2,
+      "template": { "id": "dental.workspace.payments" }
+    }
+  ],
+  "modules": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "clinical",
+      "title": "Clinical",
+      "order": 0,
+      "processes": [
+        "dental-patients",
+        "dental-calendar",
+        "dental-treatment-plans",
+        "dental-procedures"
+      ]
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "billing",
+      "title": "Billing",
+      "order": 1,
+      "processes": [
+        "dental-claims",
+        "dental-invoices",
+        "dental-payments"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,160 @@
+{
+  "schemaVersion": "2026-03-14",
+  "app": {
+    "id": "home-services",
+    "name": "Home Services",
+    "description": "Solution for field service businesses such as cleaners, landscapers, and HVAC"
+  },
+  "templateCatalog": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "home.workspace.customers",
+      "title": "Customers",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "customers",
+        "title": "Customers"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "home.workspace.schedule",
+      "title": "Job Schedule",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "appointments",
+        "title": "Job Schedule"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "home.workspace.work-orders",
+      "title": "Work Orders",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "tasks",
+        "title": "Work Orders"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "home.workspace.services",
+      "title": "Service Catalog",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "services",
+        "title": "Service Catalog"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "home.workspace.invoices",
+      "title": "Invoices",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "invoices",
+        "title": "Invoices"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "home.workspace.payments",
+      "title": "Payments",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "payments",
+        "title": "Payments"
+      }
+    }
+  ],
+  "processCatalog": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "home-customers",
+      "moduleId": "operations",
+      "title": "Customers",
+      "order": 0,
+      "template": { "id": "home.workspace.customers" },
+      "hooks": {
+        "onLoad": [
+          { "type": "client", "name": "client.notifyLoaded" }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "home-schedule",
+      "moduleId": "operations",
+      "title": "Schedule",
+      "order": 1,
+      "template": { "id": "home.workspace.schedule" },
+      "hooks": {
+        "afterSave": [
+          { "type": "client", "name": "client.notifySaved" }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "home-work-orders",
+      "moduleId": "operations",
+      "title": "Work Orders",
+      "order": 2,
+      "template": { "id": "home.workspace.work-orders" },
+      "tags": ["field-service"]
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "home-services",
+      "moduleId": "operations",
+      "title": "Services",
+      "order": 3,
+      "template": { "id": "home.workspace.services" }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "home-invoices",
+      "moduleId": "billing",
+      "title": "Invoices",
+      "order": 0,
+      "template": { "id": "home.workspace.invoices" },
+      "hooks": {
+        "afterSave": [
+          { "type": "server", "name": "server.auditSave", "options": { "area": "home-invoices" } }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "home-payments",
+      "moduleId": "billing",
+      "title": "Payments",
+      "order": 1,
+      "template": { "id": "home.workspace.payments" }
+    }
+  ],
+  "modules": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "operations",
+      "title": "Operations",
+      "order": 0,
+      "processes": [
+        "home-customers",
+        "home-schedule",
+        "home-work-orders",
+        "home-services"
+      ]
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "billing",
+      "title": "Billing",
+      "order": 1,
+      "processes": [
+        "home-invoices",
+        "home-payments"
+      ]
+    }
+  ]
+}

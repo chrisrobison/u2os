@@ -1,0 +1,174 @@
+{
+  "schemaVersion": "2026-03-14",
+  "app": {
+    "id": "auto-repair",
+    "name": "Auto Repair Shop",
+    "description": "Solution for auto repair operations with vehicle, work order, and parts/labor workflows"
+  },
+  "templateCatalog": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "auto.workspace.customers",
+      "title": "Customers",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "customers",
+        "title": "Customers"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "auto.workspace.vehicles",
+      "title": "Vehicle Records",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "documents",
+        "title": "Vehicle Records"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "auto.workspace.work-orders",
+      "title": "Work Orders",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "orders",
+        "title": "Work Orders"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "auto.workspace.parts",
+      "title": "Parts Catalog",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "products",
+        "title": "Parts Catalog"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "auto.workspace.labor",
+      "title": "Labor Catalog",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "services",
+        "title": "Labor Catalog"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "auto.workspace.invoices",
+      "title": "Invoices",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "invoices",
+        "title": "Invoices"
+      }
+    }
+  ],
+  "processCatalog": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "auto-customers",
+      "moduleId": "front-office",
+      "title": "Customers",
+      "order": 0,
+      "template": { "id": "auto.workspace.customers" },
+      "hooks": {
+        "onLoad": [
+          { "type": "client", "name": "client.notifyLoaded" }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "auto-vehicles",
+      "moduleId": "front-office",
+      "title": "Vehicle Records",
+      "order": 1,
+      "template": { "id": "auto.workspace.vehicles" },
+      "tags": ["car-item"],
+      "hooks": {
+        "afterSave": [
+          { "type": "server", "name": "server.auditSave", "options": { "area": "vehicles" } }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "auto-work-orders",
+      "moduleId": "service",
+      "title": "Work Orders",
+      "order": 0,
+      "template": { "id": "auto.workspace.work-orders" },
+      "tags": ["work-orders"],
+      "hooks": {
+        "onLoad": [
+          { "type": "server", "name": "server.auditView", "options": { "area": "work-orders" } }
+        ],
+        "afterSave": [
+          { "type": "server", "name": "server.auditSave", "options": { "area": "work-orders" } }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "auto-parts",
+      "moduleId": "service",
+      "title": "Parts",
+      "order": 1,
+      "template": { "id": "auto.workspace.parts" },
+      "tags": ["parts-line-items"]
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "auto-labor",
+      "moduleId": "service",
+      "title": "Labor",
+      "order": 2,
+      "template": { "id": "auto.workspace.labor" },
+      "tags": ["labor-line-items"]
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "auto-invoices",
+      "moduleId": "billing",
+      "title": "Invoices",
+      "order": 0,
+      "template": { "id": "auto.workspace.invoices" }
+    }
+  ],
+  "modules": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "front-office",
+      "title": "Front Office",
+      "order": 0,
+      "processes": [
+        "auto-customers",
+        "auto-vehicles"
+      ]
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "service",
+      "title": "Service Bay",
+      "order": 1,
+      "processes": [
+        "auto-work-orders",
+        "auto-parts",
+        "auto-labor"
+      ]
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "billing",
+      "title": "Billing",
+      "order": 2,
+      "processes": [
+        "auto-invoices"
+      ]
+    }
+  ]
+}

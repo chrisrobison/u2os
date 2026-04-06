@@ -1,0 +1,134 @@
+{
+  "schemaVersion": "2026-03-14",
+  "app": {
+    "id": "pet-care",
+    "name": "Pet Grooming & Vet",
+    "description": "Pet care solution based on the salon flow with added pet records"
+  },
+  "templateCatalog": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "pet-care.workspace.dashboard",
+      "title": "Pet Care Dashboard",
+      "componentTag": "bos-salon-workspace",
+      "componentProps": {
+        "view": "dashboard"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "pet-care.workspace.calendar",
+      "title": "Pet Care Calendar",
+      "componentTag": "bos-salon-workspace",
+      "componentProps": {
+        "view": "calendar"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "pet-care.workspace.clients",
+      "title": "Pet Parents",
+      "componentTag": "bos-salon-workspace",
+      "componentProps": {
+        "view": "clients"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "pet-care.workspace.pet-records",
+      "title": "Pet Records",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "pet",
+        "title": "Pet Records"
+      }
+    }
+  ],
+  "processCatalog": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "pet-care-dashboard",
+      "moduleId": "operations",
+      "title": "Dashboard",
+      "order": 0,
+      "template": {
+        "id": "pet-care.workspace.dashboard"
+      },
+      "hooks": {
+        "onLoad": [
+          { "type": "client", "name": "client.notifyLoaded" }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "pet-care-calendar",
+      "moduleId": "operations",
+      "title": "Calendar",
+      "order": 1,
+      "template": {
+        "id": "pet-care.workspace.calendar"
+      },
+      "hooks": {
+        "onLoad": [
+          { "type": "client", "name": "client.notifyLoaded" }
+        ],
+        "afterSave": [
+          { "type": "client", "name": "client.notifySaved" }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "pet-care-clients",
+      "moduleId": "operations",
+      "title": "Pet Parents",
+      "order": 2,
+      "template": {
+        "id": "pet-care.workspace.clients"
+      },
+      "hooks": {
+        "onLoad": [
+          { "type": "client", "name": "client.notifyLoaded" }
+        ],
+        "afterSave": [
+          { "type": "client", "name": "client.notifySaved" }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "pet-care-pet-records",
+      "moduleId": "operations",
+      "title": "Pet Records",
+      "order": 3,
+      "template": {
+        "id": "pet-care.workspace.pet-records"
+      },
+      "hooks": {
+        "onLoad": [
+          { "type": "client", "name": "client.notifyLoaded" },
+          { "type": "server", "name": "server.auditView", "options": { "area": "pet-records" } }
+        ],
+        "afterSave": [
+          { "type": "client", "name": "client.notifySaved" },
+          { "type": "server", "name": "server.auditSave", "options": { "area": "pet-records" } }
+        ]
+      }
+    }
+  ],
+  "modules": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "operations",
+      "title": "Operations",
+      "order": 0,
+      "processes": [
+        "pet-care-dashboard",
+        "pet-care-calendar",
+        "pet-care-clients",
+        "pet-care-pet-records"
+      ]
+    }
+  ]
+}

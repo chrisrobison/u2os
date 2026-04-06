@@ -1,0 +1,161 @@
+{
+  "schemaVersion": "2026-03-14",
+  "app": {
+    "id": "property-management",
+    "name": "Property Management",
+    "description": "Solution for residential and small commercial property managers"
+  },
+  "templateCatalog": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "property.workspace.properties",
+      "title": "Properties",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "organizations",
+        "title": "Properties"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "property.workspace.tenants",
+      "title": "Tenants",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "customers",
+        "title": "Tenants"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "property.workspace.leases",
+      "title": "Leases",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "orders",
+        "title": "Leases"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "property.workspace.maintenance",
+      "title": "Maintenance Tickets",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "tasks",
+        "title": "Maintenance Tickets"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "property.workspace.rent-invoices",
+      "title": "Rent Invoices",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "invoices",
+        "title": "Rent Invoices"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "property.workspace.payments",
+      "title": "Rent Payments",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "payments",
+        "title": "Rent Payments"
+      }
+    }
+  ],
+  "processCatalog": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "property-properties",
+      "moduleId": "portfolio",
+      "title": "Properties",
+      "order": 0,
+      "template": { "id": "property.workspace.properties" },
+      "tags": ["asset-records"]
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "property-tenants",
+      "moduleId": "portfolio",
+      "title": "Tenants",
+      "order": 1,
+      "template": { "id": "property.workspace.tenants" },
+      "hooks": {
+        "afterSave": [
+          { "type": "client", "name": "client.notifySaved" }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "property-leases",
+      "moduleId": "portfolio",
+      "title": "Leases",
+      "order": 2,
+      "template": { "id": "property.workspace.leases" },
+      "tags": ["lease-management"]
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "property-maintenance",
+      "moduleId": "operations",
+      "title": "Maintenance",
+      "order": 0,
+      "template": { "id": "property.workspace.maintenance" },
+      "tags": ["work-orders"]
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "property-rent-invoices",
+      "moduleId": "billing",
+      "title": "Rent Invoices",
+      "order": 0,
+      "template": { "id": "property.workspace.rent-invoices" },
+      "tags": ["recurring-billing"]
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "property-payments",
+      "moduleId": "billing",
+      "title": "Payments",
+      "order": 1,
+      "template": { "id": "property.workspace.payments" }
+    }
+  ],
+  "modules": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "portfolio",
+      "title": "Portfolio",
+      "order": 0,
+      "processes": [
+        "property-properties",
+        "property-tenants",
+        "property-leases"
+      ]
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "operations",
+      "title": "Operations",
+      "order": 1,
+      "processes": [
+        "property-maintenance"
+      ]
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "billing",
+      "title": "Billing",
+      "order": 2,
+      "processes": [
+        "property-rent-invoices",
+        "property-payments"
+      ]
+    }
+  ]
+}

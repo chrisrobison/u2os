@@ -1,0 +1,186 @@
+{
+  "schemaVersion": "2026-03-14",
+  "app": {
+    "id": "equipment-rental",
+    "name": "Equipment Rental",
+    "description": "Solution for rental businesses managing inventory, reservations, and returns"
+  },
+  "templateCatalog": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "rental.workspace.customers",
+      "title": "Customers",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "customers",
+        "title": "Customers"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "rental.workspace.assets",
+      "title": "Assets",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "products",
+        "title": "Assets"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "rental.workspace.reservations",
+      "title": "Reservations",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "appointments",
+        "title": "Reservations"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "rental.workspace.rental-orders",
+      "title": "Rental Orders",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "orders",
+        "title": "Rental Orders"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "rental.workspace.checklists",
+      "title": "Check In/Out",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "tasks",
+        "title": "Check In/Out"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "rental.workspace.invoices",
+      "title": "Invoices",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "invoices",
+        "title": "Invoices"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "rental.workspace.payments",
+      "title": "Payments",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "payments",
+        "title": "Payments"
+      }
+    }
+  ],
+  "processCatalog": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "rental-customers",
+      "moduleId": "front-desk",
+      "title": "Customers",
+      "order": 0,
+      "template": { "id": "rental.workspace.customers" }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "rental-assets",
+      "moduleId": "inventory",
+      "title": "Assets",
+      "order": 0,
+      "template": { "id": "rental.workspace.assets" },
+      "tags": ["asset-records"]
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "rental-reservations",
+      "moduleId": "operations",
+      "title": "Reservations",
+      "order": 0,
+      "template": { "id": "rental.workspace.reservations" },
+      "hooks": {
+        "afterSave": [
+          { "type": "client", "name": "client.notifySaved" }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "rental-orders",
+      "moduleId": "operations",
+      "title": "Rental Orders",
+      "order": 1,
+      "template": { "id": "rental.workspace.rental-orders" }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "rental-checklists",
+      "moduleId": "operations",
+      "title": "Check In/Out",
+      "order": 2,
+      "template": { "id": "rental.workspace.checklists" },
+      "tags": ["checkin-checkout"]
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "rental-invoices",
+      "moduleId": "billing",
+      "title": "Invoices",
+      "order": 0,
+      "template": { "id": "rental.workspace.invoices" }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "rental-payments",
+      "moduleId": "billing",
+      "title": "Payments",
+      "order": 1,
+      "template": { "id": "rental.workspace.payments" }
+    }
+  ],
+  "modules": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "front-desk",
+      "title": "Front Desk",
+      "order": 0,
+      "processes": [
+        "rental-customers"
+      ]
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "inventory",
+      "title": "Inventory",
+      "order": 1,
+      "processes": [
+        "rental-assets"
+      ]
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "operations",
+      "title": "Operations",
+      "order": 2,
+      "processes": [
+        "rental-reservations",
+        "rental-orders",
+        "rental-checklists"
+      ]
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "billing",
+      "title": "Billing",
+      "order": 3,
+      "processes": [
+        "rental-invoices",
+        "rental-payments"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,168 @@
+{
+  "schemaVersion": "2026-03-14",
+  "app": {
+    "id": "legal-accounting",
+    "name": "Legal & Accounting",
+    "description": "Solution for small legal and accounting practices with billable-hours workflow"
+  },
+  "templateCatalog": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "practice.workspace.clients",
+      "title": "Clients",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "customers",
+        "title": "Clients"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "practice.workspace.matters",
+      "title": "Matters",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "tasks",
+        "title": "Matters"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "practice.workspace.time-entries",
+      "title": "Time Entries",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "events",
+        "title": "Time Entries"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "practice.workspace.invoices",
+      "title": "Invoices",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "invoices",
+        "title": "Billable Invoices"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "practice.workspace.payments",
+      "title": "Payments",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "payments",
+        "title": "Payments"
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "practice.workspace.documents",
+      "title": "Documents",
+      "componentTag": "bos-entity-form",
+      "componentProps": {
+        "entity": "documents",
+        "title": "Client Documents"
+      }
+    }
+  ],
+  "processCatalog": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "practice-clients",
+      "moduleId": "practice",
+      "title": "Clients",
+      "order": 0,
+      "template": { "id": "practice.workspace.clients" },
+      "hooks": {
+        "onLoad": [
+          { "type": "client", "name": "client.notifyLoaded" }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "practice-matters",
+      "moduleId": "practice",
+      "title": "Matters",
+      "order": 1,
+      "template": { "id": "practice.workspace.matters" },
+      "hooks": {
+        "afterSave": [
+          { "type": "server", "name": "server.auditSave", "options": { "area": "matters" } }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "practice-time-entries",
+      "moduleId": "practice",
+      "title": "Time Entries",
+      "order": 2,
+      "template": { "id": "practice.workspace.time-entries" },
+      "tags": ["billable-hours"],
+      "hooks": {
+        "onLoad": [
+          { "type": "server", "name": "server.auditView", "options": { "area": "time-entries" } }
+        ],
+        "afterSave": [
+          { "type": "server", "name": "server.auditSave", "options": { "area": "time-entries" } }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "practice-documents",
+      "moduleId": "practice",
+      "title": "Documents",
+      "order": 3,
+      "template": { "id": "practice.workspace.documents" }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "practice-invoices",
+      "moduleId": "billing",
+      "title": "Invoices",
+      "order": 0,
+      "template": { "id": "practice.workspace.invoices" },
+      "hooks": {
+        "afterSave": [
+          { "type": "server", "name": "server.auditSave", "options": { "area": "practice-invoices" } }
+        ]
+      }
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "practice-payments",
+      "moduleId": "billing",
+      "title": "Payments",
+      "order": 1,
+      "template": { "id": "practice.workspace.payments" }
+    }
+  ],
+  "modules": [
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "practice",
+      "title": "Practice",
+      "order": 0,
+      "processes": [
+        "practice-clients",
+        "practice-matters",
+        "practice-time-entries",
+        "practice-documents"
+      ]
+    },
+    {
+      "schemaVersion": "2026-03-14",
+      "id": "billing",
+      "title": "Billing",
+      "order": 1,
+      "processes": [
+        "practice-invoices",
+        "practice-payments"
+      ]
+    }
+  ]
+}
