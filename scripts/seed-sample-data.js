@@ -457,6 +457,186 @@ async function main() {
     };
   });
 
+  const transportationAddresses = await ensureCount(db, 'transportation_addresses', 16, async (i) => {
+    const city = i % 2 === 0 ? 'San Francisco' : 'Oakland';
+    return {
+      transportation_address: `Transport Address ${i + 1}`,
+      label: i % 4 === 0 ? `School Campus ${i + 1}` : `Tour Stop ${i + 1}`,
+      location_type: pick(['pickup', 'dropoff', 'waypoint', 'depot'], i),
+      line1: `${700 + i} Transit Blvd`,
+      line2: i % 3 === 0 ? `Suite ${100 + i}` : null,
+      city,
+      state: 'CA',
+      postal_code: `94${(100 + i).toString().padStart(3, '0')}`,
+      country: 'US',
+      latitude: 37.65 + (i * 0.015),
+      longitude: -122.55 + (i * 0.018),
+      place_id: `seed-place-${i + 1}`,
+      notes: 'Seeded transportation location.'
+    };
+  });
+
+  const transportationDrivers = await ensureCount(db, 'transportation_drivers', 8, async (i) => {
+    const user = pick(users, i);
+    return {
+      transportation_driver: `${user.first_name || 'Driver'} ${user.last_name || ''}`.trim(),
+      user_id: user.id,
+      license_number: `CDL-${5000 + i}`,
+      license_class: i % 2 === 0 ? 'B' : 'C',
+      license_expires_on: ymdOffsetDays(365 + i * 30),
+      phone: user.phone || user.cell || `555-880${i}`,
+      status: i % 5 === 0 ? 'inactive' : 'active',
+      home_base_address_id: pick(transportationAddresses, i).id,
+      notes: 'Seeded transportation driver record.'
+    };
+  });
+
+  const transportationBuses = await ensureCount(db, 'transportation_buses', 8, async (i) => ({
+    transportation_bus: `Bus ${i + 1}`,
+    bus_number: `BUS-${100 + i}`,
+    plate_number: `8ABC${(30 + i).toString().padStart(2, '0')}`,
+    make: pick(['Blue Bird', 'Thomas', 'Ford', 'Chevy'], i),
+    model: pick(['Vision', 'Saf-T-Liner', 'Transit', 'Express'], i),
+    capacity: 24 + (i * 4),
+    wheelchair_accessible: i % 2 === 0,
+    status: i % 6 === 0 ? 'maintenance' : 'available',
+    depot_address_id: pick(transportationAddresses, i + 2).id,
+    odometer_reading: 45000 + i * 3200,
+    notes: 'Seeded fleet vehicle.'
+  }));
+
+  const transportationRequests = await ensureCount(db, 'transportation_requests', 18, async (i) => {
+    const customer = pick(customers, i);
+    const pickup = pick(transportationAddresses, i);
+    const dropoff = pick(transportationAddresses, i + 3);
+    const tripDate = ymdOffsetDays(i - 4);
+    return {
+      transportation_request: `Trip Request ${i + 1}`,
+      customer_id: customer.id,
+      trip_date: tripDate,
+      pickup_address_id: pickup.id,
+      dropoff_address_id: dropoff.id,
+      requested_head_count: 20 + (i % 4) * 10,
+      school_name: i % 2 === 0 ? `School District ${i + 1}` : `Tour Group ${i + 1}`,
+      trip_type: i % 2 === 0 ? 'school-trip' : 'local-tour',
+      requested_departure_at: new Date(`${tripDate}T08:00:00.000Z`).toISOString(),
+      requested_return_at: new Date(`${tripDate}T14:00:00.000Z`).toISOString(),
+      status: pick(['requested', 'pending', 'quoted', 'approved'], i),
+      quoted_amount: 450 + i * 35,
+      currency: 'USD',
+      notes: 'Seeded transportation request.'
+    };
+  });
+
+  const transportationTrips = await ensureCount(db, 'transportation_trips', 18, async (i) => {
+    const request = pick(transportationRequests, i);
+    const driver = pick(transportationDrivers, i);
+    const bus = pick(transportationBuses, i);
+    const tripDate = request.trip_date || ymdOffsetDays(i - 4);
+    const plannedDeparture = new Date(`${tripDate}T08:00:00.000Z`);
+    plannedDeparture.setUTCHours(8 + (i % 4), 0, 0, 0);
+    const plannedArrival = new Date(plannedDeparture.getTime() + (90 + i * 5) * 60 * 1000);
+
+    return {
+      transportation_trip: `Trip ${i + 1}`,
+      request_id: request.id,
+      customer_id: request.customer_id,
+      driver_id: driver.id,
+      bus_id: bus.id,
+      trip_date: tripDate,
+      pickup_address_id: request.pickup_address_id,
+      dropoff_address_id: request.dropoff_address_id,
+      planned_head_count: request.requested_head_count || 30,
+      planned_departure_at: plannedDeparture.toISOString(),
+      planned_arrival_at: plannedArrival.toISOString(),
+      status: pick(['scheduled', 'in_progress', 'completed'], i),
+      route_name: `${request.trip_type || 'route'} ${i + 1}`,
+      route_notes: 'Seeded transportation trip.'
+    };
+  });
+
+  const transportationWaypoints = await ensureCount(db, 'transportation_waypoints', 30, async (i) => {
+    const trip = pick(transportationTrips, i);
+    const address = pick(transportationAddresses, i + 5);
+    const depart = trip.planned_departure_at
+      ? new Date(trip.planned_departure_at)
+      : new Date(`${trip.trip_date || ymdOffsetDays(0)}T08:00:00.000Z`);
+    const arrival = new Date(depart.getTime() + (25 + (i % 4) * 10) * 60 * 1000);
+    return {
+      transportation_waypoint: `Waypoint ${i + 1}`,
+      trip_id: trip.id,
+      address_id: address.id,
+      waypoint_order: (i % 3) + 1,
+      planned_arrival_at: arrival.toISOString(),
+      planned_departure_at: new Date(arrival.getTime() + 10 * 60 * 1000).toISOString(),
+      status: 'scheduled',
+      notes: 'Seeded waypoint stop.'
+    };
+  });
+
+  const transportationTripResults = await ensureCount(db, 'transportation_trip_results', 10, async (i) => {
+    const trip = pick(transportationTrips.filter((row) => row.status === 'completed') || transportationTrips, i);
+    const driver = pick(transportationDrivers, i);
+    const departure = trip.planned_departure_at
+      ? new Date(trip.planned_departure_at)
+      : new Date(`${trip.trip_date || ymdOffsetDays(0)}T08:00:00.000Z`);
+    const arrival = trip.planned_arrival_at
+      ? new Date(trip.planned_arrival_at)
+      : new Date(departure.getTime() + 100 * 60 * 1000);
+    return {
+      transportation_trip_result: `Trip Result ${i + 1}`,
+      trip_id: trip.id,
+      actual_head_count: Math.max(8, Number(trip.planned_head_count || 30) - (i % 3)),
+      actual_departure_at: new Date(departure.getTime() + (i % 5) * 60 * 1000).toISOString(),
+      actual_arrival_at: new Date(arrival.getTime() + (i % 6) * 60 * 1000).toISOString(),
+      actual_miles: 18 + i * 2.5,
+      fuel_cost: 22 + i * 1.8,
+      toll_cost: i % 4 === 0 ? 12 + i : 0,
+      incident_notes: i % 5 === 0 ? 'Minor delay due to traffic.' : null,
+      completion_status: 'completed',
+      recorded_by_driver_id: driver.id,
+      notes: 'Seeded final trip outcome.'
+    };
+  });
+
+  const transportationInvoices = await ensureCount(db, 'transportation_invoices', 14, async (i) => {
+    const trip = pick(transportationTrips, i);
+    const request = pick(transportationRequests, i);
+    const subtotal = 450 + i * 42;
+    const tax = Number((subtotal * 0.0825).toFixed(2));
+    return {
+      transportation_invoice: `Transportation Invoice ${i + 1}`,
+      trip_id: trip.id,
+      request_id: request.id,
+      customer_id: trip.customer_id || request.customer_id,
+      invoice_number: `TIN-${9000 + i}`,
+      status: i % 4 === 0 ? 'paid' : 'sent',
+      issue_date: ymdOffsetDays(-i),
+      due_date: ymdOffsetDays(14 - i),
+      subtotal,
+      tax,
+      total: subtotal + tax,
+      currency: 'USD',
+      notes: 'Seeded transportation invoice.'
+    };
+  });
+
+  const transportationPayments = await ensureCount(db, 'transportation_payments', 12, async (i) => {
+    const invoice = pick(transportationInvoices, i);
+    return {
+      transportation_payment: `Transportation Payment ${i + 1}`,
+      transportation_invoice_id: invoice.id,
+      customer_id: invoice.customer_id,
+      amount: Number((Math.max(150, Number(invoice.total || 0) * 0.5)).toFixed(2)),
+      currency: 'USD',
+      method: i % 2 === 0 ? 'card' : 'ach',
+      status: i % 3 === 0 ? 'pending' : 'received',
+      paid_at: isoOffsetDays(-i),
+      reference: `TPY-${9100 + i}`,
+      notes: 'Seeded transportation payment.'
+    };
+  });
+
   const summary = {
     organizations: organizations.length,
     users: users.length,
@@ -468,6 +648,15 @@ async function main() {
     appointments: appointments.length,
     invoices: invoices.length,
     payments: payments.length,
+    transportation_addresses: transportationAddresses.length,
+    transportation_drivers: transportationDrivers.length,
+    transportation_buses: transportationBuses.length,
+    transportation_requests: transportationRequests.length,
+    transportation_trips: transportationTrips.length,
+    transportation_waypoints: transportationWaypoints.length,
+    transportation_trip_results: transportationTripResults.length,
+    transportation_invoices: transportationInvoices.length,
+    transportation_payments: transportationPayments.length,
     documents: documents.length,
     tasks: tasks.length,
     events: events.length,

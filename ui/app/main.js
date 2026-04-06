@@ -1,5 +1,6 @@
 import './components/bos-entity-form.js';
 import './components/bos-salon-workspace.js';
+import './components/bos-transportation-workspace.js';
 import './components/bos-settings-panel.js';
 
 // ── Onboarding guard ────────────────────────────────────────────────────────

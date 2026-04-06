@@ -1,0 +1,149 @@
+{
+  "version": "1.0",
+  "app": {
+    "id": "transportation",
+    "name": "Transportation Manager",
+    "description": "Business vertical workspace for local tours and school trips"
+  },
+  "navigation": [
+    {
+      "id": "transportation-operations",
+      "title": "Operations",
+      "children": [
+        {
+          "id": "transportation-dashboard",
+          "title": "Dashboard",
+          "componentTag": "bos-transportation-workspace",
+          "componentProps": { "view": "dashboard" },
+          "hooks": {
+            "onLoad": [{ "type": "client", "name": "client.notifyLoaded" }]
+          }
+        },
+        {
+          "id": "transportation-calendar",
+          "title": "Calendar",
+          "componentTag": "bos-transportation-workspace",
+          "componentProps": { "view": "calendar" },
+          "hooks": {
+            "onLoad": [{ "type": "client", "name": "client.notifyLoaded" }],
+            "afterSave": [{ "type": "client", "name": "client.notifySaved" }]
+          }
+        },
+        {
+          "id": "transportation-map",
+          "title": "Map",
+          "componentTag": "bos-transportation-workspace",
+          "componentProps": { "view": "map" },
+          "hooks": {
+            "onLoad": [{ "type": "client", "name": "client.notifyLoaded" }]
+          }
+        }
+      ]
+    },
+    {
+      "id": "transportation-dispatch",
+      "title": "Dispatch Data",
+      "children": [
+        {
+          "id": "transportation-requests",
+          "title": "Trip Requests",
+          "componentTag": "bos-entity-form",
+          "componentProps": {
+            "entity": "transportation_requests",
+            "title": "Trip Request Intake"
+          },
+          "hooks": {
+            "afterSave": [{ "type": "client", "name": "client.notifySaved" }]
+          }
+        },
+        {
+          "id": "transportation-trips",
+          "title": "Trips",
+          "componentTag": "bos-entity-form",
+          "componentProps": {
+            "entity": "transportation_trips",
+            "title": "Trip Dispatch Board"
+          },
+          "hooks": {
+            "afterSave": [{ "type": "client", "name": "client.notifySaved" }]
+          }
+        },
+        {
+          "id": "transportation-waypoints",
+          "title": "Waypoints",
+          "componentTag": "bos-entity-form",
+          "componentProps": {
+            "entity": "transportation_waypoints",
+            "title": "Waypoint Planning"
+          }
+        },
+        {
+          "id": "transportation-trip-results",
+          "title": "Trip Results",
+          "componentTag": "bos-entity-form",
+          "componentProps": {
+            "entity": "transportation_trip_results",
+            "title": "Final Trip Results"
+          }
+        }
+      ]
+    },
+    {
+      "id": "transportation-resources",
+      "title": "Resources",
+      "children": [
+        {
+          "id": "transportation-addresses",
+          "title": "Addresses",
+          "componentTag": "bos-entity-form",
+          "componentProps": {
+            "entity": "transportation_addresses",
+            "title": "Address Book"
+          }
+        },
+        {
+          "id": "transportation-drivers",
+          "title": "Drivers",
+          "componentTag": "bos-entity-form",
+          "componentProps": {
+            "entity": "transportation_drivers",
+            "title": "Driver Roster"
+          }
+        },
+        {
+          "id": "transportation-buses",
+          "title": "Buses",
+          "componentTag": "bos-entity-form",
+          "componentProps": {
+            "entity": "transportation_buses",
+            "title": "Fleet"
+          }
+        }
+      ]
+    },
+    {
+      "id": "transportation-billing",
+      "title": "Billing",
+      "children": [
+        {
+          "id": "transportation-invoices",
+          "title": "Invoices",
+          "componentTag": "bos-entity-form",
+          "componentProps": {
+            "entity": "transportation_invoices",
+            "title": "Transportation Invoices"
+          }
+        },
+        {
+          "id": "transportation-payments",
+          "title": "Payments",
+          "componentTag": "bos-entity-form",
+          "componentProps": {
+            "entity": "transportation_payments",
+            "title": "Transportation Payments"
+          }
+        }
+      ]
+    }
+  ]
+}
