@@ -21,6 +21,7 @@ const { SCHEMA_KINDS, lintAndPreview, resolveSaveTarget, scaffold } = require('.
 const { loadEffectiveSettings, deepMerge } = require('./settings');
 const { createSystemRouter } = require('./routes/system');
 const { createRealtimeGateway } = require('./realtimeGateway');
+const { initializeCoreBridge } = require('./index');
 
 const serverHookRegistry = {
   'server.auditView': async ({ req, appId, navItemId, context, options }) => ({
@@ -1003,8 +1004,21 @@ async function buildServer() {
     console.log(`Realtime gateway: ws://${host === '::' ? '127.0.0.1' : host}:${port}${config.realtime.path}`);
   }
 
+  const mindGraphBridge = initializeCoreBridge({
+    eventBus,
+    logger: console
+  });
+
+  if (mindGraphBridge) {
+    const bridgeConfig = mindGraphBridge.getConfig();
+    console.log(`MindGraph bridge: ws://127.0.0.1:${bridgeConfig.wsPort}`);
+  }
+
   const shutdown = async ({ exitProcess = true } = {}) => {
     scheduler.stopAll();
+    if (mindGraphBridge) {
+      await mindGraphBridge.close();
+    }
     if (realtimeGateway) {
       await realtimeGateway.close();
     }
@@ -1029,7 +1043,8 @@ async function buildServer() {
     controlStore,
     shutdown,
     scheduler,
-    realtimeGateway
+    realtimeGateway,
+    mindGraphBridge
   };
 }
 
