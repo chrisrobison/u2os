@@ -1,4 +1,5 @@
 const { assertAllowedKeys, validateIdentifier } = require('../../core/validation');
+const { EVENTS } = require('../../core/events/event-registry');
 
 function parseLimit(value, fallback = 50, max = 500) {
   const parsed = Number.parseInt(value, 10);
@@ -309,7 +310,7 @@ module.exports = async function registerSalonRoutes(router, { db, eventBus }) {
       };
 
       const appointment = await db.create('appointments', payload);
-      await eventBus.publish('appointment.booked', {
+      await eventBus.publish(EVENTS.APPOINTMENT.BOOKED, {
         appointmentId: appointment.id,
         customerId: appointment.customer_id || null,
         startAt: appointment.start_at || null,

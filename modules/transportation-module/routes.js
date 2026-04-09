@@ -1,4 +1,5 @@
 const { assertAllowedKeys, validateIdentifier, badRequest } = require('../../core/validation');
+const { EVENTS } = require('../../core/events/event-registry');
 
 function parseLimit(value, fallback = 50, max = 500) {
   const parsed = Number.parseInt(value, 10);
@@ -630,7 +631,7 @@ module.exports = async function registerTransportationRoutes(router, { db, event
       const created = await db.create('transportation_requests', payload);
       const [hydrated] = await hydrateRequests([created]);
 
-      await eventBus.publish('transportation.request.created', {
+      await eventBus.publish(EVENTS.TRANSPORTATION.REQUEST.CREATED, {
         requestId: created.id,
         requestPublicId: created.public_id || null,
         tripDate: created.trip_date || null,
@@ -831,7 +832,7 @@ module.exports = async function registerTransportationRoutes(router, { db, event
 
       const [hydrated] = await hydrateTrips([created], { includeWaypoints: true });
 
-      await eventBus.publish('transportation.trip.scheduled', {
+      await eventBus.publish(EVENTS.TRANSPORTATION.TRIP.SCHEDULED, {
         tripId: created.id,
         tripPublicId: created.public_id || null,
         tripDate: created.trip_date || null,
@@ -856,7 +857,7 @@ module.exports = async function registerTransportationRoutes(router, { db, event
         status: 'in_progress'
       });
 
-      await eventBus.publish('transportation.trip.started', {
+      await eventBus.publish(EVENTS.TRANSPORTATION.TRIP.STARTED, {
         tripId: trip.id,
         tripPublicId: trip.public_id || null,
         startedAt: new Date().toISOString()
@@ -923,7 +924,7 @@ module.exports = async function registerTransportationRoutes(router, { db, event
         status: 'completed'
       });
 
-      await eventBus.publish('transportation.trip.completed', {
+      await eventBus.publish(EVENTS.TRANSPORTATION.TRIP.COMPLETED, {
         tripId: trip.id,
         tripPublicId: trip.public_id || null,
         resultId: result.id,

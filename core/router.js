@@ -6,6 +6,7 @@ const {
   validateIdentifier,
   badRequest
 } = require('./validation');
+const { EVENTS, getEntityEventName } = require('./events/event-registry');
 
 function createEntityRouter(db, eventBus, options = {}) {
   const router = express.Router();
@@ -19,7 +20,7 @@ function createEntityRouter(db, eventBus, options = {}) {
       try {
         validateEntityPayload(entity, req.body || {}, { partial: false });
         const created = await db.create(entity, req.body || {});
-        await eventBus.publish(`${entity.slice(0, -1)}.created`, {
+        await eventBus.publish(getEntityEventName(entity, 'CREATED'), {
           entity,
           id: created.id,
           public_id: created.public_id || null,
@@ -74,7 +75,7 @@ function createEntityRouter(db, eventBus, options = {}) {
           return res.status(404).json({ error: `${entity} record not found` });
         }
 
-        await eventBus.publish(`${entity.slice(0, -1)}.updated`, {
+        await eventBus.publish(getEntityEventName(entity, 'UPDATED'), {
           entity,
           id: updated.id,
           public_id: updated.public_id || null,
@@ -99,7 +100,7 @@ function createEntityRouter(db, eventBus, options = {}) {
           return res.status(404).json({ error: `${entity} record not found` });
         }
 
-        await eventBus.publish(`${entity.slice(0, -1)}.deleted`, {
+        await eventBus.publish(getEntityEventName(entity, 'DELETED'), {
           entity,
           id: existing.id,
           public_id: existing.public_id || null
@@ -192,7 +193,7 @@ function createEntityRouter(db, eventBus, options = {}) {
         context: context || null
       });
 
-      await eventBus.publish('clamp.created', { id: clamp.id, record: clamp });
+      await eventBus.publish(EVENTS.CLAMP.CREATED, { id: clamp.id, record: clamp });
       return res.status(201).json(clamp);
     } catch (error) {
       return next(error);
