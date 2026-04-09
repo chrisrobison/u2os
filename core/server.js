@@ -20,6 +20,7 @@ const { assertAllowedKeys, validateIdentifier } = require('./validation');
 const { SCHEMA_KINDS, lintAndPreview, resolveSaveTarget, scaffold } = require('./schemaWorkbench');
 const { loadEffectiveSettings, deepMerge } = require('./settings');
 const { createSystemRouter } = require('./routes/system');
+const { createRealtimeGateway } = require('./realtimeGateway');
 
 const serverHookRegistry = {
   'server.auditView': async ({ req, appId, navItemId, context, options }) => ({
@@ -127,7 +128,9 @@ async function buildServer() {
     persistEvent: async (eventName, payload) => {
       const context = getActiveContext();
       await context.db.appendEvent(eventName, payload);
-    }
+    },
+    resolveContext: () => getRequestContext() || getActiveContext(),
+    replayLimit: config.realtime.backlogSize
   });
 
   app.use(async (req, res, next) => {
@@ -203,7 +206,12 @@ async function buildServer() {
       }
 
       const context = tenant || defaultTenant;
-      return runWithRequestContext(context, () => next());
+      const requestContext = {
+        ...context,
+        requestId: req.requestId || null,
+        traceId: req.traceId || null
+      };
+      return runWithRequestContext(requestContext, () => next());
     } catch (error) {
       return next(error);
     }
@@ -953,8 +961,53 @@ async function buildServer() {
     console.log(`Loaded capability packages: ${capabilityPackages.map((m) => m.name).join(', ') || '(none)'}`);
   });
 
+  async function resolveTenantForRealtimeSocket(req, tokenPayload) {
+    const tokenTenantId = String(tokenPayload && tokenPayload.tid ? tokenPayload.tid : '').trim();
+    if (tokenTenantId) {
+      const tokenTenant = await tenantManager.resolveTenantByInstanceId(tokenTenantId);
+      if (tokenTenant) {
+        return tokenTenant;
+      }
+      return null;
+    }
+
+    const host = tenantManager.extractRequestHost(req, {
+      trustForwardedHost: config.tenancy.trustForwardedHost
+    });
+    const resolved = await tenantManager.resolveTenantForHost(host);
+    if (resolved) {
+      return resolved;
+    }
+    if (config.tenancy.mode === 'local' || !config.tenancy.strictHostMatch) {
+      return defaultTenant;
+    }
+    return null;
+  }
+
+  const realtimeGateway = config.realtime.enabled
+    ? createRealtimeGateway({
+      server,
+      eventBus,
+      authConfig,
+      path: config.realtime.path,
+      replayLimit: config.realtime.replayLimit,
+      maxSubscriptions: config.realtime.maxSubscriptions,
+      resolveTenantForSocket: resolveTenantForRealtimeSocket
+    })
+    : null;
+
+  if (realtimeGateway) {
+    const address = server.address();
+    const host = address && address.address ? address.address : '127.0.0.1';
+    const port = address && address.port ? address.port : config.port;
+    console.log(`Realtime gateway: ws://${host === '::' ? '127.0.0.1' : host}:${port}${config.realtime.path}`);
+  }
+
   const shutdown = async ({ exitProcess = true } = {}) => {
     scheduler.stopAll();
+    if (realtimeGateway) {
+      await realtimeGateway.close();
+    }
     await tenantManager.closeAll();
     await controlStore.close();
     await new Promise((resolve) => server.close(resolve));
@@ -975,7 +1028,8 @@ async function buildServer() {
     modules: capabilityPackages,
     controlStore,
     shutdown,
-    scheduler
+    scheduler,
+    realtimeGateway
   };
 }
 

@@ -9,6 +9,7 @@ Brand/site: **u2os.com**
 - Core kernel (`/core`) with:
   - universal business entity CRUD/search APIs
   - event bus with publish/subscribe
+  - realtime WebSocket gateway for tenant-scoped event streaming
   - capability package loader
   - modular data connector abstraction
 - Capability package examples (`/modules`):
@@ -60,6 +61,11 @@ Security env vars:
 - `RATE_LIMIT_MAX` (default `300`)
 - `API_BODY_LIMIT` (default `1mb`)
 - `AUTH_BODY_LIMIT` (default `32kb`)
+- `REALTIME_ENABLED` (default `true`)
+- `REALTIME_PATH` (default `/ws/events`)
+- `REALTIME_REPLAY_LIMIT` (default `200`)
+- `REALTIME_BACKLOG_SIZE` (default `2000`)
+- `REALTIME_MAX_SUBSCRIPTIONS` (default `32`)
 - `MIGRATIONS_STRICT_STARTUP` (default `true`)
 
 ## Tenancy Packaging Model (Single Product, Multi-Mode)
@@ -162,6 +168,7 @@ npm run start
 ```
 
 - API: `http://localhost:3010/api`
+- Realtime: `ws://localhost:3010/ws/events?token=<jwt>&topics=customer.created,transportation.*`
 - Readiness: `http://localhost:3010/ready`
 - Dashboard: `http://localhost:3010/dashboard`
 - Tenancy Admin: `http://localhost:3010/admin`
@@ -185,6 +192,7 @@ Runtime app definitions are loaded from `config/apps/*.json` (legacy) and `confi
 - `POST /api/payments`
 - `GET /api/events`
 - `GET /api/analytics`
+- `WS /ws/events` (JWT required; topic-based subscribe/replay)
 - `POST /api/modules/salon-module/appointments`
 - `GET /api/modules/salon-module/dashboard`
 - `GET /api/modules/salon-module/calendar?month=2026-03&date=2026-03-10`
@@ -210,6 +218,40 @@ Tenancy admin APIs:
 - `GET /api/admin/tenancy/domains`
 - `POST /api/admin/tenancy/domains`
 - `GET /api/admin/settings/effective`
+
+## Realtime Gateway
+
+- WebSocket endpoint defaults to `/ws/events`.
+- Authentication:
+  - pass tenant JWT via query string `token=<jwt>` or `Authorization: Bearer <jwt>` during upgrade.
+  - admin control-plane tokens are rejected for this stream.
+- Subscription model:
+  - pass initial subscriptions as `topics=customer.created,transportation.*`.
+  - supported topic formats: exact event (`customer.created`), prefix wildcard (`transportation.*`), context (`context:transportation`), entity (`entity:trip`), or `*`.
+  - clients can also send runtime messages:
+    - `{ "kind": "subscribe", "topics": ["customer.created"] }`
+    - `{ "kind": "unsubscribe", "topics": ["customer.created"] }`
+    - `{ "kind": "sync", "since": 42 }`
+- Replay:
+  - include `since=<sequence>` in query string or use `sync` to request missed events.
+  - replay uses tenant-scoped in-memory backlog (`REALTIME_BACKLOG_SIZE`).
+- Event envelope sent to clients:
+
+```json
+{
+  "id": "uuid",
+  "type": "customer.created",
+  "version": "v1",
+  "ts": "2026-04-08T00:00:00.000Z",
+  "sequence": 17,
+  "tenantId": "tenant-instance-id",
+  "actorId": "user-id",
+  "correlationId": "trace-id",
+  "context": "customer",
+  "entity": "customers",
+  "payload": {}
+}
+```
 
 ## Identifier Model
 

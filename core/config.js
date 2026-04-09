@@ -47,6 +47,13 @@ module.exports = {
     apiBodyLimit: process.env.API_BODY_LIMIT || '1mb',
     authBodyLimit: process.env.AUTH_BODY_LIMIT || '32kb'
   },
+  realtime: {
+    enabled: String(process.env.REALTIME_ENABLED || 'true').toLowerCase() !== 'false',
+    path: process.env.REALTIME_PATH || '/ws/events',
+    replayLimit: toInt(process.env.REALTIME_REPLAY_LIMIT, 200),
+    backlogSize: toInt(process.env.REALTIME_BACKLOG_SIZE, 2000),
+    maxSubscriptions: toInt(process.env.REALTIME_MAX_SUBSCRIPTIONS, 32)
+  },
   migrations: {
     strictStartup: String(process.env.MIGRATIONS_STRICT_STARTUP || 'true').toLowerCase() !== 'false'
   },
