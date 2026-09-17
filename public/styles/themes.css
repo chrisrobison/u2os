@@ -1,0 +1,145 @@
+/*
+ * U2OS theme tokens.
+ *
+ * Design intent: an "instrument panel" for a persistent agent, not a SaaS
+ * admin kit. Depth comes from layered flat surfaces + hairline borders, not
+ * drop shadows. Color is mostly neutral (cool ink / paper); three signal
+ * hues are reserved for state (teal = live/active, amber = awaiting your
+ * decision, clay = destructive/rejected) and used sparingly, never as
+ * page-wide decoration.
+ *
+ * Fonts are system stacks on purpose: U2OS is local-first (see
+ * docs/architecture.md), so the shell never phones out to a font CDN just
+ * to render itself. Three stacks, three jobs: --font-ui for structural
+ * chrome, --font-mono for system data (timestamps, ids, raw values),
+ * --font-voice for the agent's own words (briefing prose, its chat
+ * bubbles) so its voice reads distinctly from the instrumentation around it.
+ */
+
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
+  --font-voice: ui-serif, "New York", "Iowan Old Style", Georgia, "Times New Roman", serif;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.9375rem;
+  --text-md: 1.0625rem;
+  --text-lg: 1.3125rem;
+  --text-xl: 1.75rem;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-full: 999px;
+
+  --border-width: 1px;
+  --nav-width: 232px;
+  --agent-width: 360px;
+
+  /* ---- light (default) ---- */
+  --bg-page: #EEF1F2;
+  --bg-panel: #E4E9EA;
+  --bg-card: #FCFDFD;
+  --bg-raised: #EEF1F2;
+  --bg-input: #FFFFFF;
+  --border-color: #CBD3D5;
+  --border-strong: #AEB8BB;
+
+  --text-primary: #171B1E;
+  --text-secondary: #4B565C;
+  --text-tertiary: #7B8489;
+
+  --accent-active: #1E8F82;
+  --accent-active-soft: #DAF0EC;
+  --accent-pending: #9A6A0C;
+  --accent-pending-soft: #F5E7CC;
+  --accent-danger: #A8402F;
+  --accent-danger-soft: #F5DED9;
+
+  --focus-ring: #1E8F82;
+  --scrollbar-thumb: #C2CACC;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-page: #0D1116;
+    --bg-panel: #12171D;
+    --bg-card: #171D24;
+    --bg-raised: #1E262F;
+    --bg-input: #1B222A;
+    --border-color: #2A333D;
+    --border-strong: #3A4550;
+
+    --text-primary: #E7ECEF;
+    --text-secondary: #9FADB8;
+    --text-tertiary: #67747F;
+
+    --accent-active: #4BC2B3;
+    --accent-active-soft: #1D3A37;
+    --accent-pending: #E0AC52;
+    --accent-pending-soft: #423619;
+    --accent-danger: #D97C6B;
+    --accent-danger-soft: #3F241F;
+
+    --focus-ring: #4BC2B3;
+    --scrollbar-thumb: #303A44;
+  }
+}
+
+/* Manual override always wins, in either direction, regardless of the OS. */
+:root[data-theme="light"] {
+  --bg-page: #EEF1F2;
+  --bg-panel: #E4E9EA;
+  --bg-card: #FCFDFD;
+  --bg-raised: #EEF1F2;
+  --bg-input: #FFFFFF;
+  --border-color: #CBD3D5;
+  --border-strong: #AEB8BB;
+
+  --text-primary: #171B1E;
+  --text-secondary: #4B565C;
+  --text-tertiary: #7B8489;
+
+  --accent-active: #1E8F82;
+  --accent-active-soft: #DAF0EC;
+  --accent-pending: #9A6A0C;
+  --accent-pending-soft: #F5E7CC;
+  --accent-danger: #A8402F;
+  --accent-danger-soft: #F5DED9;
+
+  --focus-ring: #1E8F82;
+  --scrollbar-thumb: #C2CACC;
+}
+
+:root[data-theme="dark"] {
+  --bg-page: #0D1116;
+  --bg-panel: #12171D;
+  --bg-card: #171D24;
+  --bg-raised: #1E262F;
+  --bg-input: #1B222A;
+  --border-color: #2A333D;
+  --border-strong: #3A4550;
+
+  --text-primary: #E7ECEF;
+  --text-secondary: #9FADB8;
+  --text-tertiary: #67747F;
+
+  --accent-active: #4BC2B3;
+  --accent-active-soft: #1D3A37;
+  --accent-pending: #E0AC52;
+  --accent-pending-soft: #423619;
+  --accent-danger: #D97C6B;
+  --accent-danger-soft: #3F241F;
+
+  --focus-ring: #4BC2B3;
+  --scrollbar-thumb: #303A44;
+}

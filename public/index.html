@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>U2OS</title>
+  <meta name="description" content="U2OS -- a persistent personal digital agent.">
+  <meta name="theme-color" content="#0D1116">
+  <link rel="stylesheet" href="/styles/themes.css">
+  <link rel="stylesheet" href="/styles/base.css">
+  <script>
+    // Applied before first paint so the manual theme override (if any)
+    // never flashes the wrong theme while the stylesheets are already
+    // parsed. themes.css still handles the no-override case via
+    // prefers-color-scheme.
+    (function () {
+      try {
+        var stored = localStorage.getItem('u2-theme');
+        if (stored === 'light' || stored === 'dark') {
+          document.documentElement.dataset.theme = stored;
+        }
+      } catch (e) {
+        /* private mode / storage disabled -- fall back to prefers-color-scheme */
+      }
+    })();
+  </script>
+</head>
+<body>
+  <u2-app></u2-app>
+  <script type="module" src="/components/u2-app.js"></script>
+</body>
+</html>

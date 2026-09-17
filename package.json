@@ -1,0 +1,20 @@
+{
+  "name": "u2os",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "U2OS - a persistent personal digital agent platform (Phase 1 backend).",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test tests/*.test.js",
+    "seed": "node server/seed/seed.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  }
+}

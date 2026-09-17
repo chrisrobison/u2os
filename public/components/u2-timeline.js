@@ -1,0 +1,104 @@
+import { escapeHtml, formatTime, emptyState } from './util.js';
+import { getEvents } from '../services/api.js';
+
+const EVENT_LABELS = {
+  'calendar.event_added': 'Added a calendar event',
+  'calendar.event_changed': 'Rescheduled a calendar event',
+  'calendar.event_approaching': 'Noticed an event coming up',
+  'email.received': 'Received an email',
+  'email.sent': 'Sent an email',
+  'contact.birthday_approaching': 'Noticed an upcoming birthday',
+  'task.created': 'Created a task',
+  'task.completed': 'Completed a task',
+  'task.overdue': 'Flagged an overdue task',
+  'notification.sent': 'Sent a notification',
+  'agent.message.received': 'Read your message',
+  'agent.action.proposed': 'Proposed an action',
+  'agent.action.approved': 'You approved an action',
+  'agent.action.rejected': 'You cancelled an action',
+  'agent.action.completed': 'Finished an action',
+  'agent.action.failed': 'An action failed',
+  'user.feedback': 'Recorded your feedback',
+  'memory.fact_recorded': 'Remembered something new',
+  'memory.relationship_recorded': 'Recorded a relationship',
+  'commitment.made': 'Noted a commitment',
+};
+
+function humanizeEvent(evt) {
+  const label = EVENT_LABELS[evt.type] || evt.type.replace(/[._]+/g, ' ');
+  const title = evt.data?.after?.title || evt.data?.title;
+  return title ? `${label}: "${title}"` : label;
+}
+
+// property `events` -> render exactly what's given, no live merge (used
+// when a parent already owns a fixed list). If left unset, this component
+// fetches GET /api/events?limit=20 itself on connect and stays live via the
+// window `u2-event` CustomEvent bus.
+export class U2Timeline extends HTMLElement {
+  constructor() {
+    super();
+    this._events = null;
+    this._standalone = false;
+    this._onWindowEvent = this._onWindowEvent.bind(this);
+  }
+
+  set events(list) {
+    this._standalone = false;
+    this._events = Array.isArray(list) ? list.slice() : [];
+    this._render();
+  }
+
+  get events() {
+    return this._events || [];
+  }
+
+  async connectedCallback() {
+    window.addEventListener('u2-event', this._onWindowEvent);
+    if (this._events === null) {
+      this._standalone = true;
+      this.innerHTML = emptyState('Loading activity...');
+      try {
+        const { events } = await getEvents({ limit: 20 });
+        this._events = events;
+        this._render();
+      } catch (err) {
+        this.innerHTML = `<div class="load-error">Couldn't load activity: ${escapeHtml(err.message)}</div>`;
+      }
+    } else {
+      this._render();
+    }
+  }
+
+  disconnectedCallback() {
+    window.removeEventListener('u2-event', this._onWindowEvent);
+  }
+
+  _onWindowEvent(e) {
+    if (!this._standalone) return; // parent owns the list for a non-standalone instance
+    this._events = [e.detail, ...(this._events || [])].slice(0, 50);
+    this._render(true);
+  }
+
+  _render(highlightFirst = false) {
+    this.classList.add('u2-timeline');
+    const events = this._events || [];
+    if (!events.length) {
+      this.innerHTML = emptyState('No activity yet.');
+      return;
+    }
+
+    this.innerHTML = events
+      .map((evt, i) => {
+        const when = formatTime(evt.timestamp || evt.createdAt);
+        return `
+          <div class="u2-timeline__item ${highlightFirst && i === 0 ? 'is-new' : ''}">
+            <span class="u2-timeline__time">${escapeHtml(when)}</span>
+            <span class="u2-timeline__label">${escapeHtml(humanizeEvent(evt))}</span>
+          </div>
+        `;
+      })
+      .join('');
+  }
+}
+
+customElements.define('u2-timeline', U2Timeline);
