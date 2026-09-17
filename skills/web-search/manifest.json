@@ -1,0 +1,15 @@
+{
+  "id": "brave-search",
+  "name": "Brave Search",
+  "version": "0.1.0",
+  "domain": "web",
+  "provides": ["web.search"],
+  "auth": {
+    "type": "api_key",
+    "provider": "brave",
+    "scopes": []
+  },
+  "config": [],
+  "eventsEmitted": [],
+  "permissions": ["network:api.search.brave.com"]
+}

@@ -1,5 +1,5 @@
 import { Tool } from './tool.js';
-import { buildNotification } from '../integrations/mock-notifications-provider.js';
+import { getProvider } from '../integrations/provider-registry.js';
 
 export class NotificationsSendTool extends Tool {
   get name() { return 'notifications.send'; }
@@ -13,10 +13,11 @@ export class NotificationsSendTool extends Tool {
     };
   }
   async execute(args, context) {
-    const notification = buildNotification(args);
+    const provider = getProvider('notifications');
+    const notification = await provider.send(args);
     context.eventBus.publish({
       type: 'notification.sent',
-      source: 'mock-notifications',
+      source: provider.id,
       actor: context.actor,
       subject: { type: 'notification', id: null },
       data: notification,

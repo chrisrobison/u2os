@@ -1,0 +1,16 @@
+{
+  "id": "google-calendar",
+  "name": "Google Calendar",
+  "version": "0.1.0",
+  "domain": "calendar",
+  "provides": ["calendar.list", "calendar.create", "calendar.reschedule"],
+  "auth": {
+    "type": "oauth2",
+    "provider": "google",
+    "service": "calendar",
+    "scopes": ["https://www.googleapis.com/auth/calendar"]
+  },
+  "config": [{ "key": "syncIntervalMinutes", "type": "number", "default": 5 }],
+  "eventsEmitted": ["calendar.event_added", "calendar.event_changed"],
+  "permissions": ["network:googleapis.com"]
+}

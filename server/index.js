@@ -10,6 +10,8 @@ import { Agent } from './agent/agent.js';
 import { Router } from './api/router.js';
 import { serveStatic } from './api/static.js';
 import { runSeed } from './seed/seed.js';
+import { ensureDefaultConnectorsConfig } from './integrations/connectors-config.js';
+import { startAll as startSyncScheduler } from './integrations/sync-scheduler.js';
 
 import { registerHealthRoutes } from './api/routes/health.js';
 import { registerAgentRoutes } from './api/routes/agent.js';
@@ -21,6 +23,7 @@ import { registerEmailRoutes } from './api/routes/email.js';
 import { registerContactsRoutes } from './api/routes/contacts.js';
 import { registerMemoryRoutes } from './api/routes/memory.js';
 import { registerDashboardRoutes } from './api/routes/dashboard.js';
+import { registerConnectorRoutes } from './api/routes/connectors.js';
 
 export async function startServer({ port } = {}) {
   const resolvedPort = port ?? (Number(process.env.PORT) || 4000);
@@ -39,6 +42,14 @@ export async function startServer({ port } = {}) {
 
   const ownerEntityId = runSeed({ eventBus });
 
+  // Phase 3: connectors.yaml is written with all-mock defaults on first run
+  // (same idempotent pattern as policies-loader.js), then sync-scheduler
+  // starts a poll timer only for domains with an actually-connected real
+  // provider -- with zero connectors configured this starts zero timers and
+  // changes no other startup behavior.
+  ensureDefaultConnectorsConfig(dataDir);
+  startSyncScheduler({ db, eventBus, dataDir });
+
   const agent = new Agent({ modelProvider, policyEngine, toolRegistry, eventBus, ownerEntityId });
 
   const router = new Router();
@@ -53,6 +64,7 @@ export async function startServer({ port } = {}) {
   registerContactsRoutes(router);
   registerMemoryRoutes(router);
   registerDashboardRoutes(router);
+  registerConnectorRoutes(router, { db, eventBus });
 
   const server = http.createServer(async (req, res) => {
     if (req.url.startsWith('/api/')) {

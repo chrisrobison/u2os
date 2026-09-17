@@ -5,6 +5,8 @@ import { newId } from '../db/ids.js';
 
 const OWNER_ADDRESS = 'chris@u2os.local';
 
+export const id = 'mock-email';
+
 export function searchEmails({ query, folder } = {}) {
   const db = getDb();
   const clauses = [];

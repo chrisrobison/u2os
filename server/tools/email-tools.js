@@ -1,5 +1,6 @@
 import { Tool } from './tool.js';
-import * as emailProvider from '../integrations/mock-email-provider.js';
+import { getProvider } from '../integrations/provider-registry.js';
+import * as mockEmailProvider from '../integrations/mock-email-provider.js';
 
 export class EmailSearchTool extends Tool {
   get name() { return 'email.search'; }
@@ -9,7 +10,15 @@ export class EmailSearchTool extends Tool {
     return { type: 'object', properties: { query: { type: 'string' }, folder: { type: 'string' } } };
   }
   async execute(args) {
-    return emailProvider.searchEmails(args);
+    const provider = getProvider('email');
+    // Real providers expose listEmails({folder}) (no free-text query
+    // support per docs/connectors.md); the mock's richer searchEmails
+    // (subject/body/from LIKE query) stays available whichever provider is
+    // active, matching this tool's existing return contract exactly.
+    if (provider.id === mockEmailProvider.id) {
+      return provider.searchEmails(args);
+    }
+    return provider.listEmails(args);
   }
 }
 
@@ -21,7 +30,13 @@ export class EmailReadTool extends Tool {
     return { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] };
   }
   async execute(args) {
-    const email = emailProvider.markRead(args.id);
+    const provider = getProvider('email');
+    if (provider.id === mockEmailProvider.id) {
+      const email = provider.markRead(args.id);
+      if (!email) throw new Error(`No such email: ${args.id}`);
+      return email;
+    }
+    const email = await provider.getEmail(args.id);
     if (!email) throw new Error(`No such email: ${args.id}`);
     return email;
   }
@@ -39,8 +54,11 @@ export class EmailDraftTool extends Tool {
     };
   }
   async execute(args) {
-    // Draft category: no send, no event, per docs/tools.md.
-    return emailProvider.createDraft(args);
+    // Draft category: no send, no event, per docs/tools.md. Drafts are
+    // always local-only (no real provider has a draft concept wired up this
+    // phase), so this keeps using the mock/local store regardless of the
+    // active email provider.
+    return mockEmailProvider.createDraft(args);
   }
 }
 
@@ -56,10 +74,11 @@ export class EmailSendTool extends Tool {
     };
   }
   async execute(args, context) {
-    const email = emailProvider.sendEmail(args);
+    const provider = getProvider('email');
+    const email = await provider.sendEmail(args);
     context.eventBus.publish({
       type: 'email.sent',
-      source: 'mock-email',
+      source: provider.id,
       actor: context.actor,
       subject: { type: 'email', id: email.id },
       data: { to: email.to_addr, subject: email.subject },

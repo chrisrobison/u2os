@@ -1,0 +1,16 @@
+{
+  "id": "google-contacts",
+  "name": "Google Contacts",
+  "version": "0.1.0",
+  "domain": "contacts",
+  "provides": ["contacts.search"],
+  "auth": {
+    "type": "oauth2",
+    "provider": "google",
+    "service": "contacts",
+    "scopes": ["https://www.googleapis.com/auth/contacts.readonly"]
+  },
+  "config": [{ "key": "syncIntervalMinutes", "type": "number", "default": 5 }],
+  "eventsEmitted": ["contacts.synced"],
+  "permissions": ["network:googleapis.com"]
+}

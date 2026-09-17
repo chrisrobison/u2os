@@ -40,6 +40,15 @@ calendar:
                           # reschedule (a 'personal' event) to genuinely require
                           # confirmation. Add `personal: autonomous` yourself once you
                           # actually want personal reschedules to be autonomous.
+                          #
+                          # ⚠️ If you've connected a real Google Calendar (see
+                          # docs/connectors.md), know that EVERY event synced from it
+                          # is tagged category:'personal' -- Google gives us nothing
+                          # more specific to key off yet. Setting `personal: autonomous`
+                          # then means ALL of your real calendar's reschedules become
+                          # autonomous, not just the ones you'd personally call
+                          # "personal". Leave this at `confirm` unless you're sure
+                          # that's what you want.
 
 contacts:
   search: always

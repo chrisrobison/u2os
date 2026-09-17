@@ -1,0 +1,19 @@
+{
+  "id": "gmail",
+  "name": "Gmail",
+  "version": "0.1.0",
+  "domain": "email",
+  "provides": ["email.search", "email.read", "email.send"],
+  "auth": {
+    "type": "oauth2",
+    "provider": "google",
+    "service": "gmail",
+    "scopes": [
+      "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/gmail.send"
+    ]
+  },
+  "config": [{ "key": "syncIntervalMinutes", "type": "number", "default": 5 }],
+  "eventsEmitted": ["email.received", "email.sent"],
+  "permissions": ["network:googleapis.com"]
+}

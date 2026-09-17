@@ -1,5 +1,5 @@
 import { Tool } from './tool.js';
-import * as calendarProvider from '../integrations/mock-calendar-provider.js';
+import { getProvider } from '../integrations/provider-registry.js';
 
 export class CalendarListTool extends Tool {
   get name() { return 'calendar.list'; }
@@ -9,7 +9,8 @@ export class CalendarListTool extends Tool {
     return { type: 'object', properties: { from: { type: 'string' }, to: { type: 'string' } } };
   }
   async execute(args) {
-    return calendarProvider.listEvents(args);
+    const provider = getProvider('calendar');
+    return provider.listEvents(args);
   }
 }
 
@@ -31,10 +32,11 @@ export class CalendarCreateTool extends Tool {
     };
   }
   async execute(args, context) {
-    const event = calendarProvider.createEvent(args);
+    const provider = getProvider('calendar'); // resolved per-call, so switching providers takes effect without a restart
+    const event = await provider.createEvent(args);
     context.eventBus.publish({
       type: 'calendar.event_added',
-      source: 'mock-calendar',
+      source: provider.id,
       actor: context.actor,
       subject: { type: 'calendar_event', id: event.id },
       data: { after: event },
@@ -56,14 +58,15 @@ export class CalendarRescheduleTool extends Tool {
     };
   }
   async execute(args, context) {
-    const change = calendarProvider.rescheduleEvent(args.eventId, {
+    const provider = getProvider('calendar');
+    const change = await provider.rescheduleEvent(args.eventId, {
       newStartAt: args.newStartAt,
       newEndAt: args.newEndAt,
     });
     if (!change) throw new Error(`No such calendar event: ${args.eventId}`);
     context.eventBus.publish({
       type: 'calendar.event_changed',
-      source: 'mock-calendar',
+      source: provider.id,
       actor: context.actor,
       subject: { type: 'calendar_event', id: args.eventId },
       data: { before: change.before, after: change.after },

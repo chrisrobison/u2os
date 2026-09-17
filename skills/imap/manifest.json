@@ -1,0 +1,17 @@
+{
+  "id": "imap",
+  "name": "IMAP",
+  "version": "0.1.0",
+  "domain": "email",
+  "provides": ["email.search", "email.read", "email.send"],
+  "auth": {
+    "type": "app_password",
+    "provider": "imap",
+    "scopes": []
+  },
+  "config": [{ "key": "syncIntervalMinutes", "type": "number", "default": 5 }],
+  "eventsEmitted": ["email.received"],
+  "permissions": ["network:*"],
+  "status": "stub",
+  "notes": "Fast-follow per docs/connectors.md -- manifest is real, provider module does not exist yet. connectors.yaml accepts 'imap' as email.active; provider-registry falls back to mock (no module to even attempt connecting to) until this is implemented."
+}

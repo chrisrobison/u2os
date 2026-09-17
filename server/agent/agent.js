@@ -1,6 +1,6 @@
 import { newId } from '../db/ids.js';
 import { recordAudit, updateAgentAction, getAgentAction } from '../policy/policy-engine.js';
-import { getEvent as getCalendarEvent } from '../integrations/mock-calendar-provider.js';
+import { getCachedCalendarEvent } from '../integrations/calendar-store.js';
 import { detectAndRecordCommitment } from '../memory/projector.js';
 
 /**
@@ -177,9 +177,14 @@ export class Agent {
   // calendar.reschedule's policy sub-category is resolved from the target
   // event's category (personal/interviews/...), not from the reschedule
   // arguments themselves (eventId/newStartAt/newEndAt carry no category).
+  // Reads the local calendar_events mirror directly (see
+  // integrations/calendar-store.js) rather than through whichever calendar
+  // provider is currently active -- intentional, not a shortcut: policy
+  // context resolution must stay fast and must not depend on a live network
+  // call to a real provider.
   _buildEvalContext(tool, args) {
     if (tool.name === 'calendar.reschedule' && args?.eventId) {
-      const event = getCalendarEvent(args.eventId);
+      const event = getCachedCalendarEvent(args.eventId);
       if (event) return { category: event.category, event };
     }
     return {};

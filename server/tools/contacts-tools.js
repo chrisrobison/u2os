@@ -1,5 +1,5 @@
 import { Tool } from './tool.js';
-import * as contactsProvider from '../integrations/mock-contacts-provider.js';
+import { getProvider } from '../integrations/provider-registry.js';
 
 export class ContactsSearchTool extends Tool {
   get name() { return 'contacts.search'; }
@@ -9,6 +9,7 @@ export class ContactsSearchTool extends Tool {
     return { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] };
   }
   async execute(args) {
-    return contactsProvider.searchContacts(args);
+    const provider = getProvider('contacts');
+    return provider.searchContacts(args);
   }
 }

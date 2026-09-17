@@ -7,6 +7,7 @@ const ROUTES = [
   ['#/tasks', 'Tasks'],
   ['#/projects', 'Projects'],
   ['#/dashboards', 'Dashboards'],
+  ['#/connectors', 'Connectors'],
 ];
 
 // Left navigation. Highlights the current hash route and stays in sync

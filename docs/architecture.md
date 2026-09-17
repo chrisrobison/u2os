@@ -4,7 +4,7 @@ U2OS is a persistent personal digital agent: **observe → remember → anticipa
 
 It is not a chatbot with a database attached. It is a small operating system for a person's digital life, built around an append-only **event log**, a structured **memory** of entities and relationships, a **policy engine** that gates every consequential action, and a **tool layer** that actually does things. The LLM is one replaceable component inside this system, not the system itself.
 
-This document describes the Phase 1 vertical slice: the minimum end-to-end architecture needed to run the scenario in [Vertical slice](#vertical-slice-acceptance-test) for real, with mocked integrations.
+This document describes the Phase 1 vertical slice: the minimum end-to-end architecture needed to run the scenario in [Vertical slice](#vertical-slice-acceptance-test) for real, with mocked integrations. Phase 3 (see `docs/connectors.md`) adds real, swappable connectors (Google Calendar/Gmail/Contacts, Brave Search, webhook notifications) behind the exact same tool interfaces — nothing in this document's core loop changes.
 
 ## Runtime & deployment shape (Phase 1)
 
@@ -127,17 +127,19 @@ server/
     memory/             entity/fact/relationship store, memory projector (event → memory)
     policy/             policy engine, policies.yaml loader
     tools/              Tool base class, ToolRegistry, mock tool implementations
-    integrations/       mock provider adapters used by tools (mock-calendar, mock-email, ...)
+    integrations/       provider adapters used by tools (mock-*, plus real google-calendar/gmail/google-contacts/brave-search/webhook-notify — see docs/connectors.md), provider-registry.js, connectors-config.js, sync-scheduler.js, oauth/
+    security/           credential vault (encryption at rest) — docs/connectors.md
     db/                 schema.sql, connection singleton, migrations runner
     seed/               demo data seeding script
+skills/                 connector manifests (metadata: capabilities/scopes/permissions) — docs/connectors.md
 public/
     index.html
-    components/         u2-app.js, u2-dashboard.js, u2-card.js, u2-agent.js, u2-approval.js, ...
+    components/         u2-app.js, u2-dashboard.js, u2-card.js, u2-agent.js, u2-approval.js, u2-connectors.js, ...
     services/           api.js, events.js
     styles/             base.css, themes.css
 data/                   .gitkeep only — real data lives in ~/.u2os, not the repo
 tests/                  node:test suites mirroring server/ modules
-docs/                   architecture.md, events.md, tools.md, policies.md, dashboards.md
+docs/                   architecture.md, events.md, tools.md, policies.md, dashboards.md, connectors.md
 ```
 
 ## Technical debt / known gaps after Phase 1
@@ -146,5 +148,12 @@ docs/                   architecture.md, events.md, tools.md, policies.md, dashb
 - No auth/session model yet — single-owner, single-session assumption (fine for local-first Phase 1, must be addressed before multi-device/Phase 4+).
 - SSE has no reconnect/backoff hardening yet.
 - `node:sqlite` is still flagged experimental by Node upstream; acceptable for Phase 1, worth revisiting before production packaging.
-- No credential encryption yet (no real credentials exist yet either — mock tools only).
+- Credential encryption landed in Phase 3 (see docs/connectors.md) for the connectors that need it; nothing in Phase 1 needed it since only mock tools existed.
+
+## Technical debt / known gaps after Phase 3
+
+See docs/connectors.md's own notes (Gmail send has no MIME/attachment support, Google Calendar events default to `category: 'personal'` since Google has no equivalent field, polling-based sync rather than real-time push webhooks, CalDAV/IMAP are stubbed not implemented). Additionally:
+
+- The OAuth `state` cache is in-memory only — restarting the server mid-consent-flow invalidates any in-flight authorization attempt (acceptable; the user just retries "Connect").
+- No token revocation call to Google on disconnect yet — disconnecting clears U2OS's local copy of the tokens but doesn't proactively revoke them at Google; the user can also revoke access directly from their Google Account's third-party access settings.
 - Dashboard cards (`<u2-dashboard>`) render once from the schema fetched at route load; they do not yet subscribe to the SSE stream to live-refresh in place. Live updates today work by re-navigating (the SPA router re-fetches), and the agent conversation panel and its inline approval cards *do* update live within the tab that made the request. Wiring `<u2-dashboard>` itself to `services/events.js` is straightforward follow-up work, not a redesign.

@@ -7,6 +7,7 @@ import './u2-dashboard.js';
 import './u2-schedule.js';
 import './u2-task-list.js';
 import './u2-email-summary.js';
+import './u2-connectors.js';
 
 const THEME_KEY = 'u2-theme';
 
@@ -129,6 +130,9 @@ export class U2App extends HTMLElement {
       case 'tasks':
         this._renderTasks();
         break;
+      case 'connectors':
+        this._renderConnectors();
+        break;
       default:
         this._renderNotFound(hash);
     }
@@ -231,6 +235,13 @@ export class U2App extends HTMLElement {
     } catch (err) {
       this._setWorkspace(this._header('Tasks'), this._error(err));
     }
+  }
+
+  _renderConnectors() {
+    // u2-connectors owns its own header, data-fetching, and state -- same
+    // "self-fetching custom element" pattern as u2-timeline's standalone
+    // mode. Nothing for u2-app to await or wrap here.
+    this._setWorkspace('', document.createElement('u2-connectors'));
   }
 
   async _renderEntityList({ title, linkBase, type }) {

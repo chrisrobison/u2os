@@ -1,0 +1,15 @@
+{
+  "id": "webhook",
+  "name": "Webhook Notifications",
+  "version": "0.1.0",
+  "domain": "notifications",
+  "provides": ["notifications.send"],
+  "auth": {
+    "type": "webhook_url",
+    "provider": "generic",
+    "scopes": []
+  },
+  "config": [{ "key": "format", "type": "string", "default": "json", "enum": ["json", "ntfy"] }],
+  "eventsEmitted": ["notification.sent"],
+  "permissions": ["network:*"]
+}

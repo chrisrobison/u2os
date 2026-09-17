@@ -1,0 +1,17 @@
+{
+  "id": "caldav",
+  "name": "CalDAV",
+  "version": "0.1.0",
+  "domain": "calendar",
+  "provides": ["calendar.list", "calendar.create", "calendar.reschedule"],
+  "auth": {
+    "type": "basic",
+    "provider": "caldav",
+    "scopes": []
+  },
+  "config": [{ "key": "syncIntervalMinutes", "type": "number", "default": 5 }],
+  "eventsEmitted": ["calendar.event_added", "calendar.event_changed"],
+  "permissions": ["network:*"],
+  "status": "stub",
+  "notes": "Fast-follow per docs/connectors.md -- manifest is real, provider module does not exist yet. connectors.yaml accepts 'caldav' as calendar.active; provider-registry falls back to mock (no module to even attempt connecting to) until this is implemented."
+}

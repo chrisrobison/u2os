@@ -4,6 +4,8 @@
 import { getDb } from '../db/connection.js';
 import { newId } from '../db/ids.js';
 
+export const id = 'mock-calendar';
+
 export function listEvents({ from, to } = {}) {
   const db = getDb();
   const clauses = [];

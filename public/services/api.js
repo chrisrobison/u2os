@@ -104,3 +104,53 @@ export function rejectAction(id, rejectedBy = 'user') {
 export function getEvents({ type, since, correlationId, limit } = {}) {
   return request(`/api/events${qs({ type, since, correlationId, limit })}`);
 }
+
+export function getConnectors() {
+  return request('/api/connectors');
+}
+
+export function saveGoogleCredentials({ clientId, clientSecret } = {}) {
+  return request('/api/connectors/google/credentials', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ clientId, clientSecret }),
+  });
+}
+
+export function saveWebSearchCredentials({ apiKey } = {}) {
+  return request('/api/connectors/web-search/credentials', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ apiKey }),
+  });
+}
+
+export function saveNotifyWebhookCredentials({ webhookUrl, format } = {}) {
+  return request('/api/connectors/notify-webhook/credentials', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ webhookUrl, format }),
+  });
+}
+
+export function disconnectGoogleService(service) {
+  return request(`/api/connectors/google/disconnect${qs({ service })}`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+  });
+}
+
+export function setActiveProvider(domain, providerId) {
+  return request(`/api/connectors/${encodeURIComponent(domain)}/active`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ providerId }),
+  });
+}
+
+export function triggerSync(domain) {
+  return request(`/api/connectors/${encodeURIComponent(domain)}/sync`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+  });
+}
