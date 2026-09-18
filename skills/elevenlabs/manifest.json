@@ -1,0 +1,17 @@
+{
+  "id": "elevenlabs",
+  "name": "ElevenLabs",
+  "version": "0.1.0",
+  "domain": "text-to-speech",
+  "provides": ["voice.speak"],
+  "auth": {
+    "type": "api_key",
+    "provider": "elevenlabs",
+    "scopes": []
+  },
+  "config": [{ "key": "voiceId", "type": "string", "default": "" }],
+  "eventsEmitted": [],
+  "permissions": ["network:api.elevenlabs.io"],
+  "status": "stub",
+  "notes": "Fast-follow per docs/voice.md -- manifest is real, provider module does not exist yet. The browser's native SpeechSynthesis API is the working Phase 4 default; this would be a pluggable cloud TTS upgrade (more natural voice) for users who supply their own ElevenLabs API key."
+}

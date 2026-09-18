@@ -1,0 +1,17 @@
+{
+  "id": "deepgram",
+  "name": "Deepgram",
+  "version": "0.1.0",
+  "domain": "speech-to-text",
+  "provides": ["voice.transcribe"],
+  "auth": {
+    "type": "api_key",
+    "provider": "deepgram",
+    "scopes": []
+  },
+  "config": [{ "key": "model", "type": "string", "default": "nova-2" }],
+  "eventsEmitted": [],
+  "permissions": ["network:api.deepgram.com"],
+  "status": "stub",
+  "notes": "Fast-follow per docs/voice.md -- manifest is real, provider module does not exist yet. The browser's native Web Speech API is the working Phase 4 default; this would be a pluggable cloud STT upgrade (better accuracy/streaming) for users who supply their own Deepgram API key, per PROMPT.md's 'Bring Your Own AI' model routing principle (small local/browser model for simple cases, specialized cloud model when configured)."
+}

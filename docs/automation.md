@@ -1,0 +1,92 @@
+# U2OS Automation: Task/Trigger Engine (PROMPT.md §9) + Proactive Agent (Phase 6)
+
+These two are built together because they're one mechanism: the trigger engine is the scheduler/rule-matcher that decides **when** to look at something; the proactive agent's event evaluation is what decides **what to do** once something's worth looking at. Neither is useful alone — PROMPT.md's own examples (`WHEN email.received IF sender==recruiter THEN notify owner`) are a single rule spanning both.
+
+## Why this needs a real design doc
+
+Everything so far in U2OS only acts when the user is actively talking to it. This is the subsystem that makes it "operate when the user is not actively interacting with it" (PROMPT.md §9's opening line) — genuinely new capability, not a refinement of something that already existed.
+
+## Data model (`server/db/schema.sql` additions)
+
+```sql
+CREATE TABLE IF NOT EXISTS triggers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL,             -- 'timer' | 'schedule' | 'event_rule' | 'condition_watch'
+  enabled INTEGER NOT NULL DEFAULT 1,
+  config TEXT NOT NULL DEFAULT '{}',   -- JSON, shape depends on `kind` -- see below
+  last_fired_at TEXT,
+  next_check_at TEXT,              -- for timer/schedule/condition_watch; NULL for event_rule (event-driven, not polled)
+  source TEXT NOT NULL DEFAULT 'system',  -- 'system' (seeded) | 'user' (created via API)
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_triggers_kind ON triggers(kind);
+```
+
+`config` shapes:
+
+- `timer`: `{ fireAt: <ISO> }` — fires once, then disables itself.
+- `schedule`: `{ everyMinutes: N }` or `{ dailyAt: "HH:MM" }` — recurring.
+- `event_rule`: `{ eventType: "email.received", when: { path: "data.from", equals: "..." } | { path, matches: <regex> }, action: <see Actions below> }` — matched against every published event, not polled.
+- `condition_watch`: `{ check: "calendar_approaching" | "task_overdue" | "birthday_approaching", params: {...} }` — one of a small fixed set of built-in condition checks (not arbitrary user code — same "trusted primitives, not arbitrary execution" principle as the dashboard schema).
+
+## Trigger Engine (`server/triggers/trigger-engine.js`)
+
+Two halves:
+
+1. **Event-driven** (`kind: 'event_rule'`): subscribes to the event bus (`eventBus.subscribe('*', ...)`) at startup, matches every incoming event against enabled `event_rule` triggers' `eventType`/`when` clause, and if matched, hands off to `runAction()`.
+2. **Polled** (`kind: 'timer' | 'schedule' | 'condition_watch'`): a single `setInterval` tick (default every 60s, configurable) that finds triggers whose `next_check_at <= now`, evaluates them, runs `runAction()` for any that fire, and reschedules `next_check_at` (once-only for `timer`, recurring for `schedule`, and for `condition_watch` re-checks the built-in condition each tick — e.g. "is any calendar event now within 60 minutes and not already flagged" — publishing the relevant synthetic event, per below, only once per underlying object so it doesn't re-notify every tick).
+
+Built-in `condition_watch` checks produce the previously-reserved synthetic events from `docs/events.md`:
+
+- `calendar_approaching` → publishes `calendar.event_approaching` (`data: { eventId, minutesUntil }`) once per event crossing the configured lead time (default 60 min), tracked via a small `trigger_fired_log` table (`trigger_id, object_id, fired_at`, unique on `(trigger_id, object_id)`) so it never double-fires for the same event.
+- `task_overdue` → publishes `task.overdue` for any open task whose `due_at` has passed, same dedupe mechanism.
+- `birthday_approaching` → publishes `contact.birthday_approaching` for any Person entity with a `birthday`-keyed fact within N days, same dedupe mechanism (re-checked yearly by nature of the date comparison, dedupe key includes the year so it fires again next year).
+
+`stopAll()`/`resetForTests()` mirror `sync-scheduler.js`'s existing hermetic-testing pattern — reuse that exact shape, don't invent a new one.
+
+## Actions (what `runAction()` can do)
+
+A fixed, small, trusted set — **never arbitrary code**, same principle as tools/dashboards:
+
+```
+notify        -> policy-gated notifications.send (through agent.evaluateAndMaybeExecute, so it's audited like everything else)
+create_task   -> policy-gated tasks.create
+evaluate      -> hand the triggering event to the proactive agent's evaluateEvent() (below) for a full ignore/remember/notify/.../act decision instead of a fixed action
+```
+
+Every trigger firing publishes its own `agent.action.completed`/`.failed`-shaped bookkeeping the same way tool executions do, so triggers show up in the activity feed like everything else — no silent background magic (PROMPT.md §14's explicit "never feel like it is mysteriously doing things behind the user's back" applies just as much to scheduled automation as to chat-driven actions).
+
+## Proactive agent: `agent.evaluateEvent(event, context)`
+
+This is the method sketched as an abstraction back in Phase 1's `model-provider.js` interface but never implemented — Phase 6 implements it for real (still backed by the deterministic mock model, same honesty rule as everywhere else: real pipeline, a clearly-labeled deterministic mock model behind it, not a real LLM call).
+
+For each event it's asked to evaluate, it answers PROMPT.md's own checklist and returns one of:
+
+```
+ignore      -> no-op, nothing recorded beyond the original event already in the log
+remember    -> write a fact/relationship via the memory store (provenance: 'agent:evaluateEvent', inferred: true), no user-facing action
+notify      -> policy-gated notifications.send
+recommend   -> policy-gated tool proposal at LEVEL 1 (surfaced in the UI as a suggestion, not auto-executed and not blocking on approval either -- a new, lighter-weight "recommendation" concept distinct from a pending approval; rendered as a dismissible card, feeds Phase 7's feedback loop when accepted/dismissed)
+prepare     -> policy-gated draft-category tool call (e.g. email.draft) -- level 2, nothing sent
+request_approval -> the existing pending-action flow (level 3, unchanged)
+act         -> autonomous execution through the existing policy-gated pipeline (level 4, unchanged -- evaluateEvent choosing "act" does not bypass policy-engine.evaluate(), it just means the agent decided to *propose* an action; the policy engine still has final say on whether that requires approval)
+```
+
+Wired to fire on the event types PROMPT.md explicitly lists as proactive-worthy: `email.received`, `calendar.event_approaching`, `task.overdue`, `calendar.event_changed` (conflict detection), `project.changed`... — Phase 6's initial implementation covers `email.received` (recruiter-sender heuristic → `notify`), `calendar.event_approaching` (→ `prepare`: generates a "before-meeting" dashboard via the Phase 2 dynamic-dashboard generator and attaches it to a recommendation card), `task.overdue` (→ `notify`), and `commitment.made` (→ `act`: auto-creates the linked task, tying together with `memory/projector.js`'s existing commitment detection). Document any event type left unwired as a clearly-labeled gap, not silently ignored-and-unmentioned.
+
+## Seed data
+
+`server/seed/seed.js` gains a small set of demo triggers matching PROMPT.md's own worked examples verbatim, so the feature is visibly alive immediately after install, not just present in code:
+
+```
+WHEN email.received IF sender contains "recruiter"/"talent" THEN notify prominently
+WHEN calendar.event_approaching AT 60 minutes before THEN prepare a briefing
+WHEN commitment.made IF no task exists THEN create task
+```
+
+## What this explicitly does not do
+
+- No arbitrary user-authored automation scripting language — triggers are structured data (`kind`/`config`), matched and executed by fixed, audited, policy-gated engine code, never `eval`'d or interpreted as code. This is the same "trusted primitives" boundary as tools and dashboards, applied to automation.
+- Does not modify policy/security configuration based on trigger outcomes (explicitly forbidden, same as the existing Phase 7 feedback-loop rule).
