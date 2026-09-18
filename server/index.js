@@ -28,6 +28,7 @@ import { registerMemoryRoutes } from './api/routes/memory.js';
 import { registerDashboardRoutes } from './api/routes/dashboard.js';
 import { registerConnectorRoutes } from './api/routes/connectors.js';
 import { registerExportRoutes } from './api/routes/export.js';
+import { registerVoiceRoutes } from './api/routes/voice.js';
 
 export async function startServer({ port } = {}) {
   const resolvedPort = port ?? (Number(process.env.PORT) || 4000);
@@ -75,6 +76,7 @@ export async function startServer({ port } = {}) {
   registerDashboardRoutes(router, { agent });
   registerConnectorRoutes(router, { db, eventBus });
   registerExportRoutes(router);
+  registerVoiceRoutes(router);
 
   // Minimal HTTP access log (method, path, status, duration_ms) wrapped
   // around the existing router/static dispatch. This only observes the

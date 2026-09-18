@@ -85,6 +85,34 @@ export function sendAgentMessage(text, actorId) {
   });
 }
 
+// Phase 4/5 voice entry point (docs/voice.md). `speaker` is
+// `{ cluster, identity, confidence }` -- pass the Phase 4 stub or a real
+// Phase 5 voiceprint-service result, either way. Response shape is
+// identical to sendAgentMessage()'s, so callers render both the same way.
+export function sendVoiceMessage(text, speaker) {
+  return request('/api/agent/voice-message', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ text, speaker }),
+  });
+}
+
+export function getVoiceEnrollment() {
+  return request('/api/voice/enrollment');
+}
+
+export function saveVoiceEnrollment(vector) {
+  return request('/api/voice/enrollment', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ vector }),
+  });
+}
+
+export function deleteVoiceEnrollment() {
+  return request('/api/voice/enrollment', { method: 'DELETE' });
+}
+
 export function getPendingActions() {
   return request('/api/actions/pending');
 }

@@ -9,6 +9,7 @@ const ROUTES = [
   ['#/dashboards', 'Dashboards'],
   ['#/activity', 'Activity'],
   ['#/connectors', 'Connectors'],
+  ['#/voice', 'Voice'],
 ];
 
 // Left navigation. Highlights the current hash route and stays in sync

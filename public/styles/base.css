@@ -523,17 +523,45 @@ u2-app {
 }
 
 .status-pill[data-state="thinking"] .status-pill__dot,
-.status-pill[data-state="acting"] .status-pill__dot {
+.status-pill[data-state="acting"] .status-pill__dot,
+.status-pill[data-state="listening"] .status-pill__dot,
+.status-pill[data-state="owner-speaking"] .status-pill__dot,
+.status-pill[data-state="other-speaker"] .status-pill__dot,
+.status-pill[data-state="speaking"] .status-pill__dot {
   background: var(--accent-active);
   animation: u2-breathe 1.6s ease-in-out infinite;
 }
-.status-pill[data-state="waiting"] .status-pill__dot { background: var(--accent-pending); }
+.status-pill[data-state="waiting"] .status-pill__dot,
+.status-pill[data-state="waiting-for-approval"] .status-pill__dot { background: var(--accent-pending); }
 .status-pill[data-state="idle"] .status-pill__dot { background: var(--text-tertiary); }
+.status-pill[data-state="other-speaker"] .status-pill__dot { background: var(--accent-pending); }
 
 @keyframes u2-breathe {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
 }
+
+/* ---------- u2-agent-status (Phase 4/5 voice status pill) ---------- */
+
+.u2-agent-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.agent-status__speaker {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+.agent-status__speaker[data-known="true"] { color: var(--accent-active); }
+
+/* ---------- mic toggle (Phase 4/5 voice input) ---------- */
+
+.agent-panel__mic.is-active {
+  border-color: var(--accent-active);
+  color: var(--accent-active);
+}
+.agent-panel__mic:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .agent-panel__transcript {
   flex: 1;

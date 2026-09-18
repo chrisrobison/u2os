@@ -3,6 +3,7 @@ import { recordAudit, updateAgentAction, getAgentAction } from '../policy/policy
 import { getCachedCalendarEvent } from '../integrations/calendar-store.js';
 import { detectAndRecordCommitment } from '../memory/projector.js';
 import { generateDashboard as buildDashboard } from './dashboard-planner.js';
+import { applyVoiceAuthorization } from '../voice/authorize.js';
 
 /**
  * Agent: the orchestrator. Calls the model provider to get a plan, then for
@@ -32,7 +33,12 @@ export class Agent {
     return buildDashboard({ context, params });
   }
 
-  async handleMessage({ text, actorId = 'user' }) {
+  // `voice` is `{ confidence: number } | undefined` -- undefined for the
+  // existing text-chat path (POST /api/agent/message), which must remain
+  // byte-identical to before Phase 4/5. Only POST /api/agent/voice-message
+  // ever passes it. See server/voice/authorize.js for the one place it
+  // actually changes anything.
+  async handleMessage({ text, actorId = 'user', voice } = {}) {
     const correlationId = newId('corr');
     const actor = { type: 'user', id: actorId };
     const planContext = { toolRegistry: this.toolRegistry, eventBus: this.eventBus, correlationId, actor };
@@ -59,6 +65,7 @@ export class Agent {
         reasoningSummary: plan.reasoning_summary,
         correlationId,
         actor,
+        voice,
       });
       results.push(outcome);
       if (outcome.status === 'pending') pendingActionIds.push(outcome.id);
@@ -86,10 +93,16 @@ export class Agent {
    * of calling a tool directly -- "policy gates everything consequential"
    * applies regardless of which HTTP route triggered it.
    */
-  async evaluateAndMaybeExecute({ tool: toolName, arguments: args, requestedBy, requestText, reasoningSummary, correlationId, actor }) {
+  async evaluateAndMaybeExecute({ tool: toolName, arguments: args, requestedBy, requestText, reasoningSummary, correlationId, actor, voice }) {
     const tool = this.toolRegistry.get(toolName);
     const evalContext = this._buildEvalContext(tool, args);
-    const evaluation = this.policyEngine.evaluate({ tool, arguments: args, context: evalContext });
+    const rawEvaluation = this.policyEngine.evaluate({ tool, arguments: args, context: evalContext });
+    // Additive-only voice gate (server/voice/authorize.js): a no-op unless
+    // `voice` is present, and even then only ever tightens `rawEvaluation`,
+    // never loosens it. The audit row below records the (possibly
+    // voice-adjusted) `policyRule`/`requiresApproval`, so a voice-forced
+    // approval is always inspectable in the audit trail, never silent.
+    const evaluation = applyVoiceAuthorization({ evaluation: rawEvaluation, voice });
 
     const auditRow = recordAudit({
       requestedBy,

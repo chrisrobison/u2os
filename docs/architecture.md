@@ -145,7 +145,7 @@ docs/                   architecture.md, events.md, tools.md, policies.md, dashb
 ## Technical debt / known gaps after Phase 1
 
 - Model provider is a deterministic mock, not a real LLM call yet.
-- No auth/session model yet — single-owner, single-session assumption (fine for local-first Phase 1, must be addressed before multi-device/Phase 4+).
+- No auth/session model yet — single-owner, single-session assumption. This is fine for a machine only the owner can reach, but it means EVERY route is equally unauthenticated right now: approving/rejecting a pending consequential action (`POST /api/actions/:id/approve`), saving connector credentials, and (as of Phase 4/5) writing the voice enrollment voiceprint all have the same exposure if someone else can reach the server on the network. This has been "must be addressed before multi-device" debt since Phase 1 and still is — treat it as one gap to close with a real auth layer, not something to patch inconsistently one route at a time.
 - SSE has no reconnect/backoff hardening yet.
 - `node:sqlite` is still flagged experimental by Node upstream; acceptable for Phase 1, worth revisiting before production packaging.
 - Credential encryption landed in Phase 3 (see docs/connectors.md) for the connectors that need it; nothing in Phase 1 needed it since only mock tools existed.
