@@ -4,6 +4,9 @@ import { getCachedCalendarEvent } from '../integrations/calendar-store.js';
 import { detectAndRecordCommitment } from '../memory/projector.js';
 import { generateDashboard as buildDashboard } from './dashboard-planner.js';
 import { applyVoiceAuthorization } from '../voice/authorize.js';
+import { createRecommendation } from './recommendation-store.js';
+import { findEntities } from '../memory/entity-store.js';
+import * as tasksProvider from '../integrations/mock-tasks-provider.js';
 
 /**
  * Agent: the orchestrator. Calls the model provider to get a plan, then for
@@ -144,6 +147,187 @@ export class Agent {
     }
 
     return this._execute(auditRow.id, tool, args, { correlationId, actor });
+  }
+
+  /**
+   * PROMPT.md §9 / docs/automation.md's proactive agent. Given an event
+   * (from the trigger engine's 'evaluate' action, or any other caller),
+   * decides one of ignore|remember|notify|recommend|prepare|request_approval|act
+   * and performs the corresponding side effect.
+   *
+   * NON-NEGOTIABLE INVARIANT: choosing 'act' (or 'request_approval') is a
+   * PROPOSAL, never a bypass. Every side effect that touches a tool goes
+   * through evaluateAndMaybeExecute() -- the exact same policy-gated,
+   * audited pipeline chat/voice messages use. The policy engine still has
+   * final say on whether it actually executes autonomously or needs
+   * approval; this method cannot and does not skip that gate.
+   *
+   * Only the four event types docs/automation.md names for this phase are
+   * wired below (email.received, calendar.event_approaching, task.overdue,
+   * commitment.made). Every other event type is a documented gap, not a
+   * silent one: it returns 'ignore' rather than crashing or doing something
+   * undocumented.
+   */
+  async evaluateEvent(event, context = {}) {
+    const correlationId = context.correlationId || event.correlationId || newId('corr');
+    const actor = context.actor || { type: 'agent', id: 'agent_default' };
+    const ctx = { correlationId, actor };
+
+    switch (event.type) {
+      case 'email.received':
+        return this._evaluateEmailReceived(event, ctx);
+      case 'calendar.event_approaching':
+        return this._evaluateCalendarApproaching(event, ctx);
+      case 'task.overdue':
+        return this._evaluateTaskOverdue(event, ctx);
+      case 'commitment.made':
+        return this._evaluateCommitmentMade(event, ctx);
+      default:
+        return {
+          decision: 'ignore',
+          eventType: event.type,
+          reason: 'No evaluateEvent rule wired for this event type yet (documented gap -- see docs/automation.md).',
+        };
+    }
+  }
+
+  // email.received -> notify: recruiter/talent sender heuristic.
+  async _evaluateEmailReceived(event, { correlationId, actor }) {
+    const from = String(event.data?.from || '').toLowerCase();
+    const subject = String(event.data?.subject || '').toLowerCase();
+    const looksLikeRecruiter = /recruiter|talent/.test(from) || /recruiter|talent/.test(subject);
+
+    if (!looksLikeRecruiter) {
+      return { decision: 'ignore', eventType: event.type, reason: 'Sender/subject does not match the recruiter/talent heuristic.' };
+    }
+
+    const outcome = await this.evaluateAndMaybeExecute({
+      tool: 'notifications.send',
+      arguments: {
+        title: 'Recruiter email',
+        body: `New email from ${event.data?.from || 'unknown sender'}: ${event.data?.subject || '(no subject)'}`,
+        priority: 'high',
+      },
+      requestedBy: 'agent:evaluateEvent',
+      requestText: `email.received from ${event.data?.from}`,
+      reasoningSummary: 'Sender/subject matched the recruiter/talent heuristic.',
+      correlationId,
+      actor,
+    });
+    return { decision: 'notify', eventType: event.type, outcome };
+  }
+
+  // calendar.event_approaching -> prepare: generate a before-meeting
+  // dashboard (reusing the existing Phase 2 dashboard-planner, never
+  // reimplemented) and attach it to a dismissible recommendation.
+  async _evaluateCalendarApproaching(event, { correlationId, actor }) {
+    const eventId = event.data?.eventId || event.subject?.id;
+    const calendarEvent = eventId ? getCachedCalendarEvent(eventId) : null;
+
+    let dashboard = null;
+    let personId = null;
+    let reasoningSummary = `Meeting ${eventId} is approaching (${event.data?.minutesUntil ?? '?'} minute(s) out).`;
+
+    if (calendarEvent) {
+      const firstAttendee = (calendarEvent.attendees || [])[0];
+      const attendeeName = typeof firstAttendee === 'string' ? firstAttendee : firstAttendee?.name;
+      if (attendeeName) {
+        const [person] = findEntities({ type: 'Person', query: attendeeName });
+        if (person) personId = person.id;
+      }
+    }
+
+    if (personId) {
+      try {
+        dashboard = this.generateDashboard({ context: 'before-meeting', params: { personId } });
+        reasoningSummary += ' Generated a before-meeting dashboard.';
+      } catch (err) {
+        reasoningSummary += ` Could not generate a before-meeting dashboard: ${err.message}.`;
+      }
+    } else {
+      reasoningSummary += ' No matching Person entity found for the meeting attendee; recommendation has no dashboard attached.';
+    }
+
+    const recommendation = createRecommendation({
+      decision: 'prepare',
+      eventType: event.type,
+      eventId,
+      reasoningSummary,
+      dashboard,
+      correlationId,
+    });
+
+    // No tool was called (dashboard generation isn't a tool), so this is
+    // the bookkeeping event for this decision -- still visible in the
+    // activity feed like everything else (PROMPT.md §14).
+    this.eventBus.publish({
+      type: 'agent.action.completed',
+      source: 'agent',
+      actor,
+      subject: { type: 'recommendation', id: recommendation.id },
+      data: { decision: 'prepare', eventType: event.type, recommendationId: recommendation.id },
+      metadata: { correlationId, provenance: 'agent:evaluateEvent' },
+    });
+
+    return { decision: 'prepare', eventType: event.type, recommendation };
+  }
+
+  // task.overdue -> notify.
+  async _evaluateTaskOverdue(event, { correlationId, actor }) {
+    const title = event.data?.title || 'a task';
+    const outcome = await this.evaluateAndMaybeExecute({
+      tool: 'notifications.send',
+      arguments: {
+        title: 'Overdue task',
+        body: `"${title}" was due ${event.data?.dueAt || 'earlier'} and is still open.`,
+        priority: 'normal',
+      },
+      requestedBy: 'agent:evaluateEvent',
+      requestText: `task.overdue: ${title}`,
+      reasoningSummary: `Task "${title}" is overdue.`,
+      correlationId,
+      actor,
+    });
+    return { decision: 'notify', eventType: event.type, outcome };
+  }
+
+  // commitment.made -> act: auto-create the linked task (ties into
+  // memory/projector.js's detectAndRecordCommitment). Skips if a task
+  // already exists for this commitment (the seed trigger's own "IF no task
+  // exists" condition, enforced here since event_rule's `when` clause can't
+  // express a cross-table existence check).
+  async _evaluateCommitmentMade(event, { correlationId, actor }) {
+    const commitmentId = event.subject?.id;
+    const description = event.data?.description;
+
+    if (!description) {
+      return { decision: 'ignore', eventType: event.type, reason: 'commitment.made event carried no description.' };
+    }
+
+    if (commitmentId) {
+      const existingTasks = tasksProvider.listTasks({}).filter((t) => t.related_entity_id === commitmentId);
+      if (existingTasks.length) {
+        return {
+          decision: 'ignore',
+          eventType: event.type,
+          reason: `A task already exists for this commitment (${existingTasks[0].id}).`,
+        };
+      }
+    }
+
+    // This is a PROPOSAL through the same policy-gated pipeline as
+    // everything else -- the policy engine still decides whether
+    // tasks.create actually executes autonomously or needs approval.
+    const outcome = await this.evaluateAndMaybeExecute({
+      tool: 'tasks.create',
+      arguments: { title: description, relatedEntityId: commitmentId },
+      requestedBy: 'agent:evaluateEvent',
+      requestText: `commitment.made: ${description}`,
+      reasoningSummary: `Auto-creating a task for the commitment "${description}".`,
+      correlationId,
+      actor,
+    });
+    return { decision: 'act', eventType: event.type, outcome };
   }
 
   async approveAction(id, approvedBy) {

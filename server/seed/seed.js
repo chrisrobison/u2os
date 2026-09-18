@@ -11,6 +11,7 @@ import { recordRelationship } from '../memory/relationship-store.js';
 import * as calendarProvider from '../integrations/mock-calendar-provider.js';
 import * as emailProvider from '../integrations/mock-email-provider.js';
 import * as tasksProvider from '../integrations/mock-tasks-provider.js';
+import { createTrigger } from '../triggers/trigger-engine.js';
 
 export function runSeed({ eventBus } = {}) {
   ensureDefaultPolicies();
@@ -158,6 +159,49 @@ export function runSeed({ eventBus } = {}) {
       metadata: { provenance: 'seed' },
     });
   }
+
+  // Phase 6 / PROMPT.md §9: three demo triggers matching PROMPT.md's own
+  // worked examples verbatim (docs/automation.md's "Seed data" section):
+  //
+  //   WHEN email.received IF sender contains "recruiter"/"talent" THEN notify prominently
+  //   WHEN calendar.event_approaching AT 60 minutes before THEN prepare a briefing
+  //   WHEN commitment.made IF no task exists THEN create task
+  //
+  // Each uses action.kind: 'evaluate' so the actual decision logic lives in
+  // one place -- agent.evaluateEvent()'s own event-type handlers -- rather
+  // than being duplicated between a trigger's fixed action and the
+  // proactive agent's heuristic for the same event type.
+  createTrigger({
+    name: 'Notify on recruiter/talent emails',
+    kind: 'event_rule',
+    config: {
+      eventType: 'email.received',
+      when: { path: 'data.from', matches: 'recruiter|talent' },
+      action: { kind: 'evaluate' },
+    },
+    source: 'system',
+  });
+
+  createTrigger({
+    name: 'Prepare a briefing before upcoming meetings',
+    kind: 'condition_watch',
+    config: {
+      check: 'calendar_approaching',
+      params: { leadMinutes: 60 },
+      action: { kind: 'evaluate' },
+    },
+    source: 'system',
+  });
+
+  createTrigger({
+    name: 'Auto-create a task when a commitment is made',
+    kind: 'event_rule',
+    config: {
+      eventType: 'commitment.made',
+      action: { kind: 'evaluate' },
+    },
+    source: 'system',
+  });
 
   console.log('[seed] demo data created.');
   return chris.id;

@@ -12,6 +12,7 @@ export class Router {
   get(path, handler) { this._add('GET', path, handler); }
   post(path, handler) { this._add('POST', path, handler); }
   put(path, handler) { this._add('PUT', path, handler); }
+  patch(path, handler) { this._add('PATCH', path, handler); }
   delete(path, handler) { this._add('DELETE', path, handler); }
 
   _add(method, path, handler) {
@@ -49,7 +50,7 @@ export class Router {
     req.query = Object.fromEntries(url.searchParams.entries());
 
     try {
-      if (req.method === 'POST' || req.method === 'PUT') {
+      if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
         req.body = await readJsonBody(req);
       }
       await match.handler(req, res);

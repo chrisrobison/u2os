@@ -6,6 +6,7 @@ import path from 'node:path';
 import { startServer } from '../server/index.js';
 import { closeAllForTests } from '../server/db/connection.js';
 import * as syncScheduler from '../server/integrations/sync-scheduler.js';
+import * as triggerEngine from '../server/triggers/trigger-engine.js';
 
 // Same boot/teardown pattern as tests/export-route.test.js: a real scratch
 // U2OS_HOME, a real HTTP server on an ephemeral port, real seeded data.
@@ -17,6 +18,7 @@ function tempHome() {
 
 async function cleanup(dir, handle) {
   syncScheduler.stopAll();
+  await triggerEngine.stopAll();
   if (handle?.server) {
     await new Promise((resolve) => handle.server.close(resolve));
   }

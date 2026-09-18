@@ -6,6 +6,7 @@ import path from 'node:path';
 import { startServer } from '../server/index.js';
 import { closeAllForTests } from '../server/db/connection.js';
 import * as syncScheduler from '../server/integrations/sync-scheduler.js';
+import * as triggerEngine from '../server/triggers/trigger-engine.js';
 
 // server/voice/enrollment-store.js + the POST/GET/DELETE
 // /api/voice/enrollment route it backs -- the server-side half of Phase
@@ -22,6 +23,7 @@ function tempHome() {
 
 async function cleanup(dir, handle) {
   syncScheduler.stopAll();
+  await triggerEngine.stopAll();
   if (handle?.server) {
     await new Promise((resolve) => handle.server.close(resolve));
   }

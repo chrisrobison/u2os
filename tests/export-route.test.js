@@ -7,6 +7,7 @@ import { startServer } from '../server/index.js';
 import { writeEncryptedFile } from '../server/security/vault.js';
 import { closeAllForTests } from '../server/db/connection.js';
 import * as syncScheduler from '../server/integrations/sync-scheduler.js';
+import * as triggerEngine from '../server/triggers/trigger-engine.js';
 
 function tempHome() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-export-test-'));
@@ -16,6 +17,7 @@ function tempHome() {
 
 async function cleanup(dir, handle) {
   syncScheduler.stopAll();
+  await triggerEngine.stopAll();
   if (handle?.server) {
     await new Promise((resolve) => handle.server.close(resolve));
   }

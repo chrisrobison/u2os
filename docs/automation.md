@@ -90,3 +90,17 @@ WHEN commitment.made IF no task exists THEN create task
 
 - No arbitrary user-authored automation scripting language — triggers are structured data (`kind`/`config`), matched and executed by fixed, audited, policy-gated engine code, never `eval`'d or interpreted as code. This is the same "trusted primitives" boundary as tools and dashboards, applied to automation.
 - Does not modify policy/security configuration based on trigger outcomes (explicitly forbidden, same as the existing Phase 7 feedback-loop rule).
+
+## Security note: `when.matches` is a ReDoS surface, and is validated accordingly
+
+`event_rule` triggers' `config.when.matches` becomes a live `RegExp` tested against every matching event, inline inside the event bus's synchronous dispatch loop (`matchesWhen()` in `server/triggers/trigger-engine.js`). A security review caught this as exploitable: a catastrophic-backtracking pattern (e.g. `^(a+)+$`) accepted with no validation could hang the entire single-threaded server for every user via one `POST /api/triggers` plus any subsequent ordinary event — verified live, 20+ seconds of hang from a 39-character input.
+
+Fixed in `server/triggers/regex-safety.js`, enforced at the HTTP boundary (`server/api/routes/triggers.js`'s `POST`/`PATCH /api/triggers`), before a pattern ever reaches storage:
+
+1. Length cap (200 chars).
+2. A fast heuristic reject for the textbook nested-quantifier shape (`(a+)+`, `(a*)*`, ...).
+3. A real timed probe: the pattern is tested against a couple of adversarial strings inside a disposable `Worker` thread with a hard timeout, forcibly terminated if it doesn't finish in time. This is the actual guarantee (the heuristic above is just a cheap fast-path; plenty of unsafe patterns, like ambiguous alternation `(a|a)+`, don't match it but are still caught by the timed probe). A `vm.Script` timeout was deliberately not used instead — V8's regex backtracking isn't reliably interruptible via `vm`'s interrupt checks, so that approach could itself hang.
+
+This validation runs once, at creation/update time — never on the hot per-event path, so it can afford to cost a few milliseconds without affecting event throughput. As defense-in-depth, `matchesWhen()` also caps the length of the value it tests against (2000 chars) and each trigger's `when` evaluation is now individually wrapped so one bad/stale pattern can't stop other enabled triggers from being checked against the same event.
+
+The same review also found `schedule` triggers had no minimum `everyMinutes`, letting an external caller create a tight-loop trigger that would spam a notification/task on every tick forever — fixed with a floor (1 minute) enforced at the same HTTP boundary (internal/test callers that construct a `schedule` trigger directly, bypassing the route, are unaffected — see `tests/trigger-engine.test.js`'s sub-minute stress test, which is intentionally exempt since it's not attacker-reachable input).

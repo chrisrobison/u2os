@@ -12,6 +12,7 @@ import { serveStatic } from './api/static.js';
 import { runSeed } from './seed/seed.js';
 import { ensureDefaultConnectorsConfig } from './integrations/connectors-config.js';
 import { startAll as startSyncScheduler } from './integrations/sync-scheduler.js';
+import * as triggerEngine from './triggers/trigger-engine.js';
 import { startMdns } from './discovery/mdns.js';
 import { log } from './logging/logger.js';
 import { generateOrLoadMasterKey } from './security/vault.js';
@@ -29,6 +30,8 @@ import { registerDashboardRoutes } from './api/routes/dashboard.js';
 import { registerConnectorRoutes } from './api/routes/connectors.js';
 import { registerExportRoutes } from './api/routes/export.js';
 import { registerVoiceRoutes } from './api/routes/voice.js';
+import { registerTriggerRoutes } from './api/routes/triggers.js';
+import { registerRecommendationRoutes } from './api/routes/recommendations.js';
 
 export async function startServer({ port } = {}) {
   const resolvedPort = port ?? (Number(process.env.PORT) || 4000);
@@ -62,6 +65,15 @@ export async function startServer({ port } = {}) {
 
   const agent = new Agent({ modelProvider, policyEngine, toolRegistry, eventBus, ownerEntityId });
 
+  // Phase 6 / PROMPT.md §9: trigger engine. Event-driven half subscribes to
+  // the event bus immediately; polled half ticks every `tickMs` (default
+  // 60s -- overridable via U2OS_TRIGGER_TICK_MS, mainly for tests/manual
+  // verification). Every action it runs goes through
+  // agent.evaluateAndMaybeExecute()/agent.evaluateEvent() -- this is a new
+  // *source* of proposed actions, never a bypass of the policy engine.
+  const triggerTickMs = Number(process.env.U2OS_TRIGGER_TICK_MS) || undefined;
+  triggerEngine.startAll({ eventBus, agent, ...(triggerTickMs ? { tickMs: triggerTickMs } : {}) });
+
   const router = new Router();
   const startTime = Date.now();
   registerHealthRoutes(router, { dataDir, dbPath, startTime });
@@ -77,6 +89,8 @@ export async function startServer({ port } = {}) {
   registerConnectorRoutes(router, { db, eventBus });
   registerExportRoutes(router);
   registerVoiceRoutes(router);
+  registerTriggerRoutes(router);
+  registerRecommendationRoutes(router);
 
   // Minimal HTTP access log (method, path, status, duration_ms) wrapped
   // around the existing router/static dispatch. This only observes the

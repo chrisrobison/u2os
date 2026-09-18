@@ -120,6 +120,55 @@ CREATE TABLE IF NOT EXISTS agent_actions (
   updated_at TEXT NOT NULL
 );
 
+-- Phase 6 / PROMPT.md §9: Task/Trigger Engine + Proactive Agent additions.
+-- See docs/automation.md for the full design contract this mirrors exactly.
+CREATE TABLE IF NOT EXISTS triggers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL,             -- 'timer' | 'schedule' | 'event_rule' | 'condition_watch'
+  enabled INTEGER NOT NULL DEFAULT 1,
+  config TEXT NOT NULL DEFAULT '{}',   -- JSON, shape depends on `kind`
+  last_fired_at TEXT,
+  next_check_at TEXT,              -- for timer/schedule; NULL for event_rule/condition_watch (not next_check_at-scheduled)
+  source TEXT NOT NULL DEFAULT 'system',  -- 'system' (seeded) | 'user' (created via API)
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_triggers_kind ON triggers(kind);
+
+-- Dedupe log for condition_watch built-in checks (calendar_approaching,
+-- task_overdue, birthday_approaching) so the same underlying object never
+-- double-fires the same trigger. object_id encodes whatever makes the
+-- object unique per firing (birthday_approaching includes the year so it
+-- naturally fires again next year).
+CREATE TABLE IF NOT EXISTS trigger_fired_log (
+  id TEXT PRIMARY KEY,
+  trigger_id TEXT NOT NULL REFERENCES triggers(id),
+  object_id TEXT NOT NULL,
+  fired_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_trigger_fired_unique ON trigger_fired_log(trigger_id, object_id);
+
+-- agent.evaluateEvent()'s 'recommend'/'prepare' decisions: a lightweight,
+-- dismissible suggestion distinct from a pending agent_actions approval --
+-- it is never auto-executed and never blocks on approval. Optionally carries
+-- a dashboard schema (the before-meeting briefing for calendar.event_approaching).
+CREATE TABLE IF NOT EXISTS recommendations (
+  id TEXT PRIMARY KEY,
+  decision TEXT NOT NULL,          -- 'recommend' | 'prepare'
+  event_type TEXT,
+  event_id TEXT,
+  tool TEXT,
+  arguments TEXT,
+  reasoning_summary TEXT,
+  dashboard TEXT,                  -- JSON dashboard schema, or NULL
+  status TEXT NOT NULL DEFAULT 'open',  -- 'open' | 'accepted' | 'dismissed'
+  correlation_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_recommendations_status ON recommendations(status);
+
 CREATE TABLE IF NOT EXISTS conversation_messages (
   id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL,

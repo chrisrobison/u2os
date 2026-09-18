@@ -16,6 +16,7 @@ import {
 } from '../server/agent/dashboard-planner.js';
 import { startServer } from '../server/index.js';
 import * as syncScheduler from '../server/integrations/sync-scheduler.js';
+import * as triggerEngine from '../server/triggers/trigger-engine.js';
 
 function tempHome() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-dashboard-test-'));
@@ -39,6 +40,7 @@ function seedDemoData() {
 
 async function cleanupServer(dir, handle) {
   syncScheduler.stopAll();
+  await triggerEngine.stopAll();
   if (handle?.server) {
     await new Promise((resolve) => handle.server.close(resolve));
   }
