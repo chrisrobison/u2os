@@ -32,6 +32,7 @@ import { registerExportRoutes } from './api/routes/export.js';
 import { registerVoiceRoutes } from './api/routes/voice.js';
 import { registerTriggerRoutes } from './api/routes/triggers.js';
 import { registerRecommendationRoutes } from './api/routes/recommendations.js';
+import { registerFeedbackRoutes } from './api/routes/feedback.js';
 
 export async function startServer({ port } = {}) {
   const resolvedPort = port ?? (Number(process.env.PORT) || 4000);
@@ -78,7 +79,7 @@ export async function startServer({ port } = {}) {
   const startTime = Date.now();
   registerHealthRoutes(router, { dataDir, dbPath, startTime });
   registerAgentRoutes(router, { agent });
-  registerActionRoutes(router, { agent });
+  registerActionRoutes(router, { agent, eventBus });
   registerEventRoutes(router, { db, sseHub });
   registerCalendarRoutes(router);
   registerTaskRoutes(router, { agent });
@@ -91,6 +92,7 @@ export async function startServer({ port } = {}) {
   registerVoiceRoutes(router);
   registerTriggerRoutes(router);
   registerRecommendationRoutes(router);
+  registerFeedbackRoutes(router, { eventBus });
 
   // Minimal HTTP access log (method, path, status, duration_ms) wrapped
   // around the existing router/static dispatch. This only observes the

@@ -36,15 +36,44 @@ export function markRead(id) {
   return getEmail(id);
 }
 
-export function createDraft({ to, subject, body, inReplyTo = null }) {
+// `correlationId`: the drafting request's correlation id, stored as
+// provenance/context on the row (visible via the API, useful for the
+// activity feed and debugging) but NOT used to link a draft to a later
+// send -- see the comment on getDraftById() below for why matching by
+// correlationId alone was removed.
+export function createDraft({ to, subject, body, inReplyTo = null }, correlationId = null) {
   const db = getDb();
   const id = newId('email');
   const now = new Date().toISOString();
   db.prepare(
-    `INSERT INTO emails (id, thread_id, from_addr, to_addr, subject, body, folder, is_read, received_at, created_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`
-  ).run(id, inReplyTo, OWNER_ADDRESS, JSON.stringify(Array.isArray(to) ? to : [to]), subject, body, 'drafts', 1, null, now);
+    `INSERT INTO emails (id, thread_id, from_addr, to_addr, subject, body, folder, is_read, received_at, created_at, correlation_id)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+  ).run(id, inReplyTo, OWNER_ADDRESS, JSON.stringify(Array.isArray(to) ? to : [to]), subject, body, 'drafts', 1, null, now, correlationId);
   return getEmail(id);
+}
+
+/**
+ * Looks up a specific draft by id, only returning it if it's still actually
+ * in the drafts folder. Used by server/feedback/email-edit-detector.js to
+ * compare an email.send call against the EXACT draft it claims to originate
+ * from (email.send's optional `draftId` argument), never a guess.
+ *
+ * A previous version of this matched by correlation_id alone ("most recent
+ * draft sharing this exact correlation id") instead of requiring an
+ * explicit draftId. That was unsound the moment more than one draft could
+ * share a correlation id (e.g. one turn drafting two different emails) --
+ * verified in security review to produce false-positive 'edited' feedback
+ * (misattributing a send to the wrong draft, or flagging a send that was
+ * never drafted at all) once anything proposes more than one email.draft
+ * per turn. Fixed by requiring the caller to say exactly which draft a send
+ * follows from; no draftId means no detection, a false negative rather than
+ * a false positive, matching this codebase's established fail-safe rule.
+ */
+export function getDraftById(id) {
+  if (!id) return null;
+  const db = getDb();
+  const row = db.prepare("SELECT * FROM emails WHERE id = ? AND folder = 'drafts'").get(id);
+  return row ? rowToEmail(row) : null;
 }
 
 export function sendEmail({ to, subject, body, inReplyTo = null }) {

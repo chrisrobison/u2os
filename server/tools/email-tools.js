@@ -53,12 +53,17 @@ export class EmailDraftTool extends Tool {
       required: ['to', 'subject', 'body'],
     };
   }
-  async execute(args) {
+  async execute(args, context) {
     // Draft category: no send, no event, per docs/tools.md. Drafts are
     // always local-only (no real provider has a draft concept wired up this
     // phase), so this keeps using the mock/local store regardless of the
-    // active email provider.
-    return mockEmailProvider.createDraft(args);
+    // active email provider. `context?.correlationId` is stored on the row
+    // as provenance/context (not used for edit-detection matching -- see
+    // getDraftById()'s comment in mock-email-provider.js for why). The
+    // returned draft's `id` is what a later email.send should pass back as
+    // its own `draftId` argument if it wants Phase 7's edit-detection
+    // (server/feedback/email-edit-detector.js) to compare against it.
+    return mockEmailProvider.createDraft(args, context?.correlationId ?? null);
   }
 }
 
@@ -69,7 +74,20 @@ export class EmailSendTool extends Tool {
   get schema() {
     return {
       type: 'object',
-      properties: { to: {}, subject: { type: 'string' }, body: { type: 'string' }, inReplyTo: { type: 'string' } },
+      properties: {
+        to: {},
+        subject: { type: 'string' },
+        body: { type: 'string' },
+        inReplyTo: { type: 'string' },
+        // Optional. When this send follows from editing a specific
+        // email.draft result, the caller (the model/planner) should pass
+        // that draft's id here -- it's inert for the actual send operation
+        // itself, but lets Phase 7's feedback loop
+        // (server/feedback/email-edit-detector.js) compare the sent
+        // content against that EXACT draft, unambiguously, rather than
+        // guessing which past draft this "probably" came from.
+        draftId: { type: 'string' },
+      },
       required: ['to', 'subject', 'body'],
     };
   }

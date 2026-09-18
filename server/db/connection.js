@@ -49,11 +49,35 @@ export function getDb() {
   db = new DatabaseSync(dbPath);
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA foreign_keys = ON;');
+
+  // Additive-only migration, run BEFORE schema.sql executes: Phase 7 added
+  // emails.correlation_id (see docs/feedback.md's email-edit-detection) to a
+  // table that already shipped in earlier phases. schema.sql's own
+  // `CREATE TABLE IF NOT EXISTS emails` is a no-op against an existing
+  // database, so it can never add a column to an already-existing table --
+  // and schema.sql's `CREATE INDEX ... ON emails(correlation_id)` would
+  // fail outright against a pre-Phase-7 emails table that lacks the column.
+  // Ensuring the column exists first keeps schema.sql itself pure
+  // idempotent DDL for every table, old and new alike.
+  ensureColumn(db, 'emails', 'correlation_id', 'TEXT');
+
   const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
   db.exec(schema);
 
   dbCache.set(dbPath, db);
   return db;
+}
+
+function ensureColumn(db, table, column, type) {
+  const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table);
+  // Table doesn't exist yet -- schema.sql (executed right after this
+  // function returns) will create it from scratch with the column already
+  // in place, so there is nothing to migrate.
+  if (!tableExists) return;
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!columns.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  }
 }
 
 export function withTransaction(db, fn) {

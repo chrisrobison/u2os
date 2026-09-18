@@ -85,8 +85,16 @@ CREATE TABLE IF NOT EXISTS emails (
   folder TEXT DEFAULT 'inbox',
   is_read INTEGER DEFAULT 0,
   received_at TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  -- Phase 7: set on email.draft, carried through so a later email.send
+  -- sharing the same request-scoped correlation_id can be compared against
+  -- it for auto-detected-edit feedback (docs/feedback.md). NULL for emails
+  -- that predate Phase 7 or were never drafted through this path (e.g.
+  -- seeded/received mail). Pre-existing installs get this column added by
+  -- server/db/connection.js's additive migration, run before this file.
+  correlation_id TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_emails_correlation ON emails(correlation_id);
 
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
@@ -177,3 +185,20 @@ CREATE TABLE IF NOT EXISTS conversation_messages (
   correlation_id TEXT,
   created_at TEXT NOT NULL
 );
+
+-- Phase 7 / PROMPT.md's feedback loop, per docs/feedback.md's schema exactly.
+-- Feedback is data like everything else in U2OS: it may only ever influence
+-- *prioritization* (what gets surfaced, how urgently, in what order) --
+-- nothing in this table is ever read by server/policy/policy-engine.js, and
+-- nothing that reads this table may write to policies.yaml or construct a
+-- PolicyEngine differently. See server/feedback/prioritizer.js.
+CREATE TABLE IF NOT EXISTS feedback_events (
+  id TEXT PRIMARY KEY,
+  subject_type TEXT NOT NULL,     -- 'agent_action' | 'recommendation' | 'dashboard_card' | 'notification'
+  subject_id TEXT NOT NULL,
+  outcome TEXT NOT NULL,          -- 'accepted' | 'rejected' | 'edited' | 'ignored' | 'postponed' | 'dismissed' | 'marked_useful'
+  detail TEXT NOT NULL DEFAULT '{}',  -- JSON, e.g. { editedFields: [...] } for an 'edited' outcome
+  correlation_id TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_subject ON feedback_events(subject_type, subject_id);

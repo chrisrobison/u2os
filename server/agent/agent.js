@@ -7,6 +7,8 @@ import { applyVoiceAuthorization } from '../voice/authorize.js';
 import { createRecommendation } from './recommendation-store.js';
 import { findEntities } from '../memory/entity-store.js';
 import * as tasksProvider from '../integrations/mock-tasks-provider.js';
+import { scoreForSuggestion } from '../feedback/prioritizer.js';
+import { detectEmailEdit } from '../feedback/email-edit-detector.js';
 
 /**
  * Agent: the orchestrator. Calls the model provider to get a plan, then for
@@ -192,6 +194,16 @@ export class Agent {
   }
 
   // email.received -> notify: recruiter/talent sender heuristic.
+  //
+  // Phase 7 / docs/feedback.md's named borderline case: once the heuristic
+  // matches, this is no longer a strict binary (notify or not) -- it's a
+  // three-way choice among notify/recommend/ignore, and
+  // server/feedback/prioritizer.js's scoreForSuggestion() nudges which one
+  // fires based on how the user has responded to past recruiter
+  // notifications. This ONLY changes which of notify/recommend/ignore is
+  // chosen here; it never changes whether notifications.send itself is
+  // policy-gated -- evaluateAndMaybeExecute() below still runs it through
+  // the exact same policy engine as every other proposed action, unchanged.
   async _evaluateEmailReceived(event, { correlationId, actor }) {
     const from = String(event.data?.from || '').toLowerCase();
     const subject = String(event.data?.subject || '').toLowerCase();
@@ -201,20 +213,57 @@ export class Agent {
       return { decision: 'ignore', eventType: event.type, reason: 'Sender/subject does not match the recruiter/talent heuristic.' };
     }
 
+    const feedbackAdjustment = scoreForSuggestion({ tool: 'notifications.send', domain: 'email', requestedBy: 'agent:evaluateEvent' });
+    const reasoningSummary = `Sender/subject matched the recruiter/talent heuristic. Feedback adjustment: ${feedbackAdjustment.adjustment} (${feedbackAdjustment.reason})`;
+    const notificationArgs = {
+      title: 'Recruiter email',
+      body: `New email from ${event.data?.from || 'unknown sender'}: ${event.data?.subject || '(no subject)'}`,
+      priority: 'high',
+    };
+
+    // Repeated negative feedback on this domain suppresses the notification
+    // entirely -- "quietly deprioritized toward ignore", per docs/feedback.md.
+    if (feedbackAdjustment.adjustment <= -0.15) {
+      return {
+        decision: 'ignore',
+        eventType: event.type,
+        reason: `${reasoningSummary}. Suppressed: repeated negative feedback on this domain.`,
+        feedbackAdjustment,
+      };
+    }
+
+    // Mildly negative feedback downgrades notify -> a lower-urgency,
+    // dismissible recommendation instead of an immediate notification.
+    if (feedbackAdjustment.adjustment < 0) {
+      const recommendation = createRecommendation({
+        decision: 'recommend',
+        eventType: event.type,
+        tool: 'notifications.send',
+        arguments: notificationArgs,
+        reasoningSummary: `${reasoningSummary}. Downgraded from notify to a lower-urgency recommendation.`,
+        correlationId,
+      });
+      this.eventBus.publish({
+        type: 'agent.action.completed',
+        source: 'agent',
+        actor,
+        subject: { type: 'recommendation', id: recommendation.id },
+        data: { decision: 'recommend', eventType: event.type, recommendationId: recommendation.id, feedbackAdjustment },
+        metadata: { correlationId, provenance: 'agent:evaluateEvent' },
+      });
+      return { decision: 'recommend', eventType: event.type, recommendation, feedbackAdjustment };
+    }
+
     const outcome = await this.evaluateAndMaybeExecute({
       tool: 'notifications.send',
-      arguments: {
-        title: 'Recruiter email',
-        body: `New email from ${event.data?.from || 'unknown sender'}: ${event.data?.subject || '(no subject)'}`,
-        priority: 'high',
-      },
+      arguments: notificationArgs,
       requestedBy: 'agent:evaluateEvent',
       requestText: `email.received from ${event.data?.from}`,
-      reasoningSummary: 'Sender/subject matched the recruiter/talent heuristic.',
+      reasoningSummary,
       correlationId,
       actor,
     });
-    return { decision: 'notify', eventType: event.type, outcome };
+    return { decision: 'notify', eventType: event.type, outcome, feedbackAdjustment };
   }
 
   // calendar.event_approaching -> prepare: generate a before-meeting
@@ -411,6 +460,20 @@ export class Agent {
         data: { tool: tool.name, result },
         metadata: { correlationId, provenance: 'agent:execute' },
       });
+
+      // Phase 7 / docs/feedback.md: best-effort auto-detected "edited before
+      // send" feedback. See server/feedback/email-edit-detector.js for
+      // exactly what this can and can't catch -- it never affects whether
+      // this send executed (that already happened, above), only whether a
+      // feedback_events row gets written for later prioritization.
+      if (tool.name === 'email.send') {
+        try {
+          detectEmailEdit({ actionId, correlationId, args, eventBus: this.eventBus });
+        } catch (err) {
+          console.error('[agent] email edit-detection failed', err);
+        }
+      }
+
       return { id: actionId, status: 'executed', tool: tool.name, arguments: args, result };
     } catch (err) {
       updateAgentAction(actionId, { status: 'failed', result: { error: err.message } });
