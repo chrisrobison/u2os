@@ -5,7 +5,15 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SUBDIRS = ['config', 'policies', 'db', 'credentials', 'cache'];
+// SECURITY: 'credentials' is deliberately excluded here. It must never be
+// created with this loop's default (umask-dependent, often 0755)
+// permissions even momentarily -- server/security/vault.js owns creating it
+// itself, always explicitly at 0700, via ensureCredentialsDir() (called from
+// generateOrLoadMasterKey()/writeEncryptedFile()). server/index.js calls
+// generateOrLoadMasterKey() during startup specifically so that directory
+// exists at the correct permissions from the very first boot, not lazily
+// whenever the owner happens to save their first real credential.
+const SUBDIRS = ['config', 'policies', 'db', 'cache'];
 
 /**
  * Local-first data directory. Default ~/.u2os, overridable via U2OS_HOME.

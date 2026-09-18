@@ -1,0 +1,18 @@
+node_modules
+.git
+tests
+data
+*.log
+.env
+# Real ~/.u2os-shaped local dev artifacts -- never bake a developer's own
+# local data directory into an image.
+.u2os
+
+# Not needed inside the image.
+docs
+deploy
+PROMPT.md
+README.md
+Dockerfile
+docker-compose.yml
+.dockerignore

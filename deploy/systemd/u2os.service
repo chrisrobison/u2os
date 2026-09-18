@@ -1,0 +1,28 @@
+# U2OS systemd unit (Linux). Per docs/deployment.md §3.
+#
+# Template -- adjust WorkingDirectory/User/paths to your install location,
+# then install per the steps in docs/deployment.md's "Linux (systemd)
+# install steps" section.
+[Unit]
+Description=U2OS personal digital agent platform
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=u2os
+Group=u2os
+WorkingDirectory=/opt/u2os
+Environment=U2OS_HOME=/var/lib/u2os
+Environment=NODE_ENV=production
+Environment=LOG_FORMAT=json
+ExecStart=/usr/bin/node server/index.js
+Restart=on-failure
+RestartSec=5
+# Least privilege (PROMPT.md §17): no new privileges, and the service only
+# needs write access to its own data directory.
+NoNewPrivileges=true
+ReadWritePaths=/var/lib/u2os
+
+[Install]
+WantedBy=multi-user.target

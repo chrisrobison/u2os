@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { encrypt, decrypt, readEncryptedFile, writeEncryptedFile, generateOrLoadMasterKey } from '../server/security/vault.js';
+import { ensureDataDirs } from '../server/db/connection.js';
 
 function tempHome() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-vault-test-'));
@@ -95,6 +96,38 @@ test('master key file is created once with restrictive permissions', () => {
     const key2 = generateOrLoadMasterKey(dir);
     assert.deepEqual(key1, key2);
   } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('ensureDataDirs() never creates credentials/ itself -- only generateOrLoadMasterKey() may, always at 0700', () => {
+  // Regression test for a gap caught during deployment-phase Docker
+  // verification: server/db/connection.js's generic SUBDIRS loop used to
+  // include 'credentials', which meant that directory existed at whatever
+  // mkdirSync's default (umask-dependent, often 0755) permissions produced
+  // from the moment the server booted, until the first time a real
+  // credential was saved triggered vault.js's own 0700 chmod. Empty at that
+  // point, so not an active leak, but a real window of laxer-than-intended
+  // permissions this test now pins shut: ensureDataDirs() must not create
+  // the directory at all, so there is no window where it exists without the
+  // correct mode.
+  const dir = tempHome();
+  try {
+    process.env.U2OS_HOME = dir;
+    ensureDataDirs();
+    assert.equal(
+      fs.existsSync(path.join(dir, 'credentials')),
+      false,
+      'ensureDataDirs() must not create credentials/ -- server/index.js is responsible for calling generateOrLoadMasterKey() at boot instead'
+    );
+
+    generateOrLoadMasterKey(dir);
+    if (process.platform !== 'win32') {
+      const dirMode = fs.statSync(path.join(dir, 'credentials')).mode & 0o777;
+      assert.equal(dirMode, 0o700);
+    }
+  } finally {
+    delete process.env.U2OS_HOME;
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

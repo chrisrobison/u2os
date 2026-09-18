@@ -41,6 +41,14 @@ export function getDashboard() {
   return request('/api/dashboard/morning');
 }
 
+export function generateDashboard(context, params = {}) {
+  return request('/api/dashboard/generate', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ context, params }),
+  });
+}
+
 export function getTasks(status) {
   return request(`/api/tasks${qs({ status })}`);
 }

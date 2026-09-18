@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- U2OS launchd plist (macOS). Per docs/deployment.md §4.
+
+     Template -- adjust the node/server paths and U2OS_HOME to your install
+     location, then install per the steps in docs/deployment.md's "macOS
+     (launchd) install steps" section. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.u2os.server</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/node</string>
+    <string>/opt/u2os/server/index.js</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/opt/u2os</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>U2OS_HOME</key>
+    <string>/Users/Shared/u2os</string>
+    <key>NODE_ENV</key>
+    <string>production</string>
+    <key>LOG_FORMAT</key>
+    <string>json</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/Shared/u2os/logs/u2os.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/Shared/u2os/logs/u2os.error.log</string>
+</dict>
+</plist>

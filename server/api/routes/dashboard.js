@@ -1,29 +1,32 @@
 import { sendJson } from '../router.js';
-import { validateDashboard } from '../dashboard-schema.js';
-import * as calendarProvider from '../../integrations/mock-calendar-provider.js';
-import * as tasksProvider from '../../integrations/mock-tasks-provider.js';
-import { listPendingActions } from '../../policy/policy-engine.js';
+import { DashboardNotFoundError, InvalidDashboardContextError } from '../../agent/dashboard-planner.js';
 
-export function registerDashboardRoutes(router) {
+export function registerDashboardRoutes(router, { agent }) {
+  // Backwards-compatible route: still returns the same "Morning Briefing"
+  // schema as before, but now delegates to agent.generateDashboard() --
+  // one code path for every dashboard context, not a separate hardcoded
+  // handler that bypasses the provider registry.
   router.get('/api/dashboard/morning', async (_req, res) => {
-    const now = new Date();
-    const today = now.toDateString();
+    try {
+      const schema = agent.generateDashboard({ context: 'morning' });
+      sendJson(res, 200, schema);
+    } catch (err) {
+      sendJson(res, 500, { error: err.message });
+    }
+  });
 
-    const todaysEvents = calendarProvider.listEvents({}).filter((e) => new Date(e.start_at).toDateString() === today);
-    const priorityTasks = tasksProvider.listTasks({ status: 'open' }).slice(0, 5);
-    const pendingActions = listPendingActions();
-
-    const schema = {
-      title: 'Morning Briefing',
-      layout: 'dashboard',
-      components: [
-        { type: 'schedule', source: 'calendar.today', data: { events: todaysEvents } },
-        { type: 'task-list', source: 'tasks.priority', data: { tasks: priorityTasks } },
-        { type: 'approval', source: 'actions.pending', data: { actions: pendingActions } },
-      ],
-    };
-
-    validateDashboard(schema);
-    sendJson(res, 200, schema);
+  // POST /api/dashboard/generate { context: 'morning'|'before-meeting'|'project', params?: {...} }
+  // -> a dashboard schema composed from real context data, validated
+  // against the same allowlist as every other dashboard schema.
+  router.post('/api/dashboard/generate', async (req, res) => {
+    const { context, params } = req.body || {};
+    try {
+      const schema = agent.generateDashboard({ context, params: params || {} });
+      sendJson(res, 200, schema);
+    } catch (err) {
+      if (err instanceof DashboardNotFoundError) return sendJson(res, 404, { error: err.message });
+      if (err instanceof InvalidDashboardContextError) return sendJson(res, 400, { error: err.message });
+      sendJson(res, 500, { error: err.message });
+    }
   });
 }

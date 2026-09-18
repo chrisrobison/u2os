@@ -6,6 +6,7 @@
 import { newId } from '../db/ids.js';
 import { loadConnectorsConfig, DOMAINS } from './connectors-config.js';
 import { resolveConnectedRealProvider, recordSyncSuccess, recordSyncError } from './provider-registry.js';
+import { log } from '../logging/logger.js';
 
 const DEFAULT_INTERVAL_MINUTES = 5;
 
@@ -59,6 +60,12 @@ async function runSync(domain, { db, eventBus, dataDir } = {}) {
     return result;
   } catch (err) {
     recordSyncError(domain, err);
+    // SECURITY: err.message is guaranteed secret-free by provider modules
+    // (see recordSyncError's comment above) -- safe to log in full.
+    log.error('sync-scheduler', `sync failed for domain "${domain}"`, {
+      domain,
+      error: err?.message || String(err),
+    });
     throw err;
   }
 }

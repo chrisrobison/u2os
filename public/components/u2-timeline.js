@@ -32,13 +32,23 @@ function humanizeEvent(evt) {
 
 // property `events` -> render exactly what's given, no live merge (used
 // when a parent already owns a fixed list). If left unset, this component
-// fetches GET /api/events?limit=20 itself on connect and stays live via the
-// window `u2-event` CustomEvent bus.
+// fetches GET /api/events?limit=<limit> itself on connect and stays live via
+// the window `u2-event` CustomEvent bus.
+//
+// property/attribute `limit` -> how many events the standalone fetch asks
+// for (and the cap applied to the live-merged list). Defaults to 20 (the
+// small dashboard-card usage); a full-page view like #/activity sets this
+// higher (e.g. 50) before the element connects.
 export class U2Timeline extends HTMLElement {
+  static get observedAttributes() {
+    return ['limit'];
+  }
+
   constructor() {
     super();
     this._events = null;
     this._standalone = false;
+    this._limit = 20;
     this._onWindowEvent = this._onWindowEvent.bind(this);
   }
 
@@ -52,13 +62,26 @@ export class U2Timeline extends HTMLElement {
     return this._events || [];
   }
 
+  set limit(value) {
+    const n = Number(value);
+    this._limit = Number.isFinite(n) && n > 0 ? n : 20;
+  }
+
+  get limit() {
+    return this._limit;
+  }
+
+  attributeChangedCallback(name, _oldValue, newValue) {
+    if (name === 'limit') this.limit = newValue;
+  }
+
   async connectedCallback() {
     window.addEventListener('u2-event', this._onWindowEvent);
     if (this._events === null) {
       this._standalone = true;
       this.innerHTML = emptyState('Loading activity...');
       try {
-        const { events } = await getEvents({ limit: 20 });
+        const { events } = await getEvents({ limit: this._limit });
         this._events = events;
         this._render();
       } catch (err) {
@@ -75,7 +98,7 @@ export class U2Timeline extends HTMLElement {
 
   _onWindowEvent(e) {
     if (!this._standalone) return; // parent owns the list for a non-standalone instance
-    this._events = [e.detail, ...(this._events || [])].slice(0, 50);
+    this._events = [e.detail, ...(this._events || [])].slice(0, this._limit);
     this._render(true);
   }
 

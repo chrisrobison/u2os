@@ -12,6 +12,9 @@ import { serveStatic } from './api/static.js';
 import { runSeed } from './seed/seed.js';
 import { ensureDefaultConnectorsConfig } from './integrations/connectors-config.js';
 import { startAll as startSyncScheduler } from './integrations/sync-scheduler.js';
+import { startMdns } from './discovery/mdns.js';
+import { log } from './logging/logger.js';
+import { generateOrLoadMasterKey } from './security/vault.js';
 
 import { registerHealthRoutes } from './api/routes/health.js';
 import { registerAgentRoutes } from './api/routes/agent.js';
@@ -24,11 +27,17 @@ import { registerContactsRoutes } from './api/routes/contacts.js';
 import { registerMemoryRoutes } from './api/routes/memory.js';
 import { registerDashboardRoutes } from './api/routes/dashboard.js';
 import { registerConnectorRoutes } from './api/routes/connectors.js';
+import { registerExportRoutes } from './api/routes/export.js';
 
 export async function startServer({ port } = {}) {
   const resolvedPort = port ?? (Number(process.env.PORT) || 4000);
 
   const dataDir = ensureDataDirs();
+  // SECURITY: create the credentials/ dir + master key now, at 0700, rather
+  // than lazily on first credential save -- see the comment on SUBDIRS in
+  // server/db/connection.js for why this can't just be another entry in
+  // that generic loop.
+  generateOrLoadMasterKey(dataDir);
   const db = getDb();
   const dbPath = getDbPath();
 
@@ -63,10 +72,25 @@ export async function startServer({ port } = {}) {
   registerEmailRoutes(router);
   registerContactsRoutes(router);
   registerMemoryRoutes(router);
-  registerDashboardRoutes(router);
+  registerDashboardRoutes(router, { agent });
   registerConnectorRoutes(router, { db, eventBus });
+  registerExportRoutes(router);
 
+  // Minimal HTTP access log (method, path, status, duration_ms) wrapped
+  // around the existing router/static dispatch. This only observes the
+  // request/response lifecycle via res's 'finish' event -- it never
+  // changes which handler runs or how it responds.
   const server = http.createServer(async (req, res) => {
+    const startedAt = Date.now();
+    res.on('finish', () => {
+      log.info('http', `${req.method} ${req.url}`, {
+        method: req.method,
+        path: req.url,
+        status: res.statusCode,
+        duration_ms: Date.now() - startedAt,
+      });
+    });
+
     if (req.url.startsWith('/api/')) {
       await router.handle(req, res);
     } else {
@@ -75,19 +99,26 @@ export async function startServer({ port } = {}) {
   });
 
   await new Promise((resolve) => server.listen(resolvedPort, resolve));
+  // resolvedPort may be 0 (OS picks an ephemeral port, e.g. in tests) --
+  // use the actually-bound port for mDNS/logging, not the requested one.
+  const boundPort = server.address().port;
 
-  console.log('U2OS server listening');
-  console.log(`  port:     ${resolvedPort}`);
-  console.log(`  data dir: ${dataDir}`);
-  console.log(`  database: ${dbPath}`);
+  // Best-effort mDNS advertisement (server/discovery/mdns.js) -- never
+  // blocks or fails startup. Stop it automatically whenever the HTTP server
+  // is closed (tests included) so no test run is left holding an open
+  // multicast socket.
+  const mdnsHandle = startMdns({ port: boundPort });
+  server.on('close', () => mdnsHandle?.stop());
 
-  return { server, port: resolvedPort, dataDir, dbPath, agent, eventBus, toolRegistry, policyEngine };
+  log.info('server', 'U2OS server listening', { port: boundPort, dataDir, dbPath });
+
+  return { server, port: boundPort, dataDir, dbPath, agent, eventBus, toolRegistry, policyEngine, mdns: mdnsHandle };
 }
 
 const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
 if (isMain) {
   startServer().catch((err) => {
-    console.error('Failed to start U2OS server', err);
+    log.error('server', 'Failed to start U2OS server', { error: err?.message || String(err) });
     process.exit(1);
   });
 }

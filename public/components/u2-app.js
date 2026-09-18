@@ -8,6 +8,17 @@ import './u2-schedule.js';
 import './u2-task-list.js';
 import './u2-email-summary.js';
 import './u2-connectors.js';
+import './u2-timeline.js';
+
+// Dashboard contexts the #/dashboards picker offers, per PROMPT.md section
+// 10's examples + docs/dashboards.md's Phase 2 contexts. 'before-meeting'
+// and 'project' each need the user to pick which person/project via a
+// <select> populated from /api/memory/entities.
+const DASHBOARD_CONTEXTS = [
+  { id: 'morning', label: 'Morning' },
+  { id: 'before-meeting', label: 'Before a meeting', entityType: 'Person', paramKey: 'personId' },
+  { id: 'project', label: 'Project', entityType: 'Project', paramKey: 'projectId' },
+];
 
 const THEME_KEY = 'u2-theme';
 
@@ -110,8 +121,13 @@ export class U2App extends HTMLElement {
       case undefined:
       case 'home':
       case 'briefing':
-      case 'dashboards':
         this._renderDashboard();
+        break;
+      case 'dashboards':
+        this._renderDashboards();
+        break;
+      case 'activity':
+        this._renderActivity();
         break;
       case 'memory':
         if (sub) this._renderEntityDetail(sub);
@@ -179,6 +195,109 @@ export class U2App extends HTMLElement {
     } catch (err) {
       this._setWorkspace(this._header('Briefing'), this._error(err));
     }
+  }
+
+  // Context picker for dynamically-generated dashboards (PROMPT.md section
+  // 10 / docs/dashboards.md's Phase 2 contexts). 'Morning' generates
+  // immediately; 'Before a meeting' and 'Project' first populate a <select>
+  // from real memory entities, then POST /api/dashboard/generate with the
+  // chosen id. The result renders through the existing generic
+  // <u2-dashboard>, same as the static morning route.
+  async _renderDashboards() {
+    const wrap = document.createElement('div');
+
+    const toggle = document.createElement('div');
+    toggle.className = 'folder-toggle';
+    wrap.appendChild(toggle);
+
+    const select = document.createElement('select');
+    select.className = 'connector-select';
+    select.style.display = 'block';
+    select.style.marginBottom = 'var(--space-4)';
+    select.hidden = true;
+    wrap.appendChild(select);
+
+    let body = this._loading('Loading briefing...');
+    wrap.appendChild(body);
+
+    this._setWorkspace(this._header('Dashboards'), wrap);
+
+    const setBody = (node) => {
+      body.replaceWith(node);
+      body = node;
+    };
+
+    const generateFor = async (contextDef, entityId) => {
+      setBody(this._loading('Loading briefing...'));
+      try {
+        const params = contextDef.paramKey && entityId ? { [contextDef.paramKey]: entityId } : {};
+        const schema = await api.generateDashboard(contextDef.id, params);
+        const dashboardEl = document.createElement('u2-dashboard');
+        dashboardEl.schema = schema;
+        setBody(dashboardEl);
+      } catch (err) {
+        setBody(this._error(err));
+      }
+    };
+
+    let activeContextId = DASHBOARD_CONTEXTS[0].id;
+
+    const selectContext = async (contextDef) => {
+      activeContextId = contextDef.id;
+      toggle.querySelectorAll('button').forEach((btn) => {
+        btn.classList.toggle('is-active', btn.dataset.context === contextDef.id);
+      });
+
+      if (!contextDef.entityType) {
+        select.hidden = true;
+        select.innerHTML = '';
+        await generateFor(contextDef, null);
+        return;
+      }
+
+      select.hidden = false;
+      setBody(this._loading('Loading...'));
+      try {
+        const { entities } = await api.getMemoryEntities({ type: contextDef.entityType });
+        select.innerHTML = entities
+          .map((entity) => `<option value="${escapeHtml(entity.id)}">${escapeHtml(entity.name)}</option>`)
+          .join('');
+        if (!entities.length) {
+          setBody(this._error(new Error(`No ${contextDef.entityType.toLowerCase()} records found yet.`)));
+          return;
+        }
+        await generateFor(contextDef, select.value);
+      } catch (err) {
+        setBody(this._error(err));
+      }
+    };
+
+    select.addEventListener('change', () => {
+      const contextDef = DASHBOARD_CONTEXTS.find((c) => c.id === activeContextId);
+      if (contextDef) generateFor(contextDef, select.value);
+    });
+
+    for (const contextDef of DASHBOARD_CONTEXTS) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = contextDef.label;
+      btn.dataset.context = contextDef.id;
+      btn.addEventListener('click', () => selectContext(contextDef));
+      toggle.appendChild(btn);
+    }
+
+    await selectContext(DASHBOARD_CONTEXTS[0]);
+  }
+
+  _renderActivity() {
+    // u2-timeline self-fetches GET /api/events and live-subscribes to the
+    // SSE `u2-event` bus -- nothing for u2-app to await or wrap, same
+    // "self-fetching custom element" pattern as _renderConnectors(). The
+    // small dashboard-card usage keeps the default limit of 20; this
+    // full-page view asks for more.
+    const el = document.createElement('u2-timeline');
+    el.limit = 50;
+    this._setWorkspace(this._header('Activity', 'Everything the agent has done, in order'), el);
   }
 
   async _renderMail() {

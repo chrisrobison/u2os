@@ -1,0 +1,42 @@
+# Per docs/deployment.md §2.
+services:
+  u2os:
+    build: .
+    image: u2os
+    ports:
+      - "4000:4000"
+    environment:
+      - U2OS_HOME=/data
+      # Docker/systemd's expected default -- log aggregators parse
+      # structured JSON lines rather than free text. See
+      # server/logging/logger.js.
+      - LOG_FORMAT=json
+      # Multicast is frequently blocked in container networking; leave mDNS
+      # on by default (it fails soft with a warning, per
+      # server/discovery/mdns.js) but this is the knob to silence it with
+      # U2OS_MDNS=0 if the warning noise is unwanted.
+      - U2OS_MDNS=${U2OS_MDNS:-1}
+    volumes:
+      # Named volume mounted at /data -- the container-world equivalent of
+      # ~/.u2os (see docs/architecture.md's "Local-first data directory"
+      # section): same logical structure (config/, policies/, db/,
+      # credentials/, cache/), just rooted at /data instead of ~/.u2os.
+      - u2os-data:/data
+    restart: unless-stopped
+    healthcheck:
+      # node:22-slim ships a global fetch (Node 18+) but no curl/wget by
+      # default -- use it directly instead of adding a package.
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:4000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  u2os-data:

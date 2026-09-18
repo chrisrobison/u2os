@@ -7,6 +7,7 @@ const ROUTES = [
   ['#/tasks', 'Tasks'],
   ['#/projects', 'Projects'],
   ['#/dashboards', 'Dashboards'],
+  ['#/activity', 'Activity'],
   ['#/connectors', 'Connectors'],
 ];
 

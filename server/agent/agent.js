@@ -2,6 +2,7 @@ import { newId } from '../db/ids.js';
 import { recordAudit, updateAgentAction, getAgentAction } from '../policy/policy-engine.js';
 import { getCachedCalendarEvent } from '../integrations/calendar-store.js';
 import { detectAndRecordCommitment } from '../memory/projector.js';
+import { generateDashboard as buildDashboard } from './dashboard-planner.js';
 
 /**
  * Agent: the orchestrator. Calls the model provider to get a plan, then for
@@ -18,6 +19,17 @@ export class Agent {
     this.toolRegistry = toolRegistry;
     this.eventBus = eventBus;
     this.ownerEntityId = ownerEntityId;
+  }
+
+  /**
+   * Composes a dashboard schema from real calendar/tasks/memory data for
+   * the requested context ('morning' | 'before-meeting' | 'project') --
+   * delegates to dashboard-planner.js, which is also responsible for
+   * running the result through validateDashboard() before it ever reaches
+   * an HTTP response (see docs/dashboards.md).
+   */
+  generateDashboard({ context, params = {} } = {}) {
+    return buildDashboard({ context, params });
   }
 
   async handleMessage({ text, actorId = 'user' }) {

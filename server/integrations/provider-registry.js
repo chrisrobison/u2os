@@ -19,6 +19,7 @@ import * as googleContacts from './google-contacts-provider.js';
 import * as braveSearch from './brave-search-provider.js';
 import * as webhookNotify from './webhook-notify-provider.js';
 import { loadConnectorsConfig, validProviderIdsFor, DOMAINS } from './connectors-config.js';
+import { log } from '../logging/logger.js';
 
 const MOCK_PROVIDERS = {
   calendar: mockCalendar,
@@ -80,8 +81,10 @@ export function getProvider(domain, { dataDir } = {}) {
   const warnKey = `${domain}:${activeId}`;
   if (!warnedOnce.has(warnKey)) {
     warnedOnce.add(warnKey);
-    console.warn(
-      `[provider-registry] domain "${domain}" is configured for "${activeId}" but that connector is not connected yet -- falling back to mock.`
+    log.warn(
+      'provider-registry',
+      `domain "${domain}" is configured for "${activeId}" but that connector is not connected yet -- falling back to mock.`,
+      { domain, activeId }
     );
   }
   return mockProvider;
