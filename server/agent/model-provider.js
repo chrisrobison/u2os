@@ -16,6 +16,12 @@
  */
 export class ModelProvider {
   id = 'model-provider';
+  // 'local_model' | 'configured_remote_model' -- the data-processing
+  // privacy destination this provider represents (see
+  // server/policy/data-processing-policy.js). Every real subclass must set
+  // this; it is used to decide what context may be sent to it, separate
+  // from tool authorization.
+  destination = 'configured_remote_model';
   /** @returns {Promise<Plan>} */
   async plan(_context, _objective) {
     throw new Error('plan() not implemented');

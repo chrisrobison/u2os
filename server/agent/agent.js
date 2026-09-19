@@ -27,7 +27,7 @@ import { registerBuiltinEvaluators } from './proactive/builtin-evaluators.js';
  * action must pass through, regardless of which service proposed it.
  */
 export class Agent {
-  constructor({ modelProvider, modelRouter, policyEngine, toolRegistry, eventBus, ownerEntityId = null, evaluatorRegistry, embeddingProvider = null } = {}) {
+  constructor({ modelProvider, modelRouter, policyEngine, toolRegistry, eventBus, ownerEntityId = null, evaluatorRegistry, embeddingProvider = null, dataProcessingPolicy } = {}) {
     this.modelProvider = modelProvider;
     this.modelRouter = modelRouter;
     this.policyEngine = policyEngine;
@@ -36,7 +36,7 @@ export class Agent {
     this.ownerEntityId = ownerEntityId;
 
     this.contextAssembler = new ContextAssembler({ toolRegistry, eventBus, ownerEntityId, embeddingProvider });
-    this.planner = new Planner({ modelProvider, modelRouter, role: 'planner' });
+    this.planner = new Planner({ modelProvider, modelRouter, role: 'planner', dataProcessingPolicy });
     this.actionEvaluator = new ActionEvaluator({ toolRegistry, policyEngine });
     this.actionExecutor = new ActionExecutor({ eventBus });
     this.approvalManager = new ApprovalManager({ eventBus, actionEvaluator: this.actionEvaluator, actionExecutor: this.actionExecutor });

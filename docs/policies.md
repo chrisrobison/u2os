@@ -93,6 +93,22 @@ what tool executed it    tool, arguments
 the result               result, status
 ```
 
+## Data-processing privacy policy (separate from the above)
+
+Everything above answers "may this tool execute?" A SEPARATE question, answered by `server/policy/data-processing-policy.js` and `~/.u2os/policies/data-processing.yaml`, is "may this DATA reach this DESTINATION?" -- e.g. a local model may be allowed to summarize a sensitive document while the same content is forbidden from ever reaching a remote inference API, independent of whether any tool is involved at all.
+
+Classifications (least to most restrictive): `public`, `personal`, `private`, `sensitive`. Every fact carries one (`facts.classification`, default `personal`); people/commitments/events are not yet independently classified. Destinations: `local_model`, `configured_remote_model`, `external_tool`, `local_ui`. Each `ModelProvider` classifies its own `destination` from its configured endpoint (loopback/private-network baseUrl -> `local_model`, else `configured_remote_model` -- `server/agent/provider-destination.js`), never from model output.
+
+```yaml
+sensitive:
+  local_models: allow
+  remote_models: never
+  external_tools: never
+  local_ui: allow
+```
+
+Enforcement point: `Planner._planWith()` filters `personalContext` for the SPECIFIC provider it's about to call (re-filtered again if a fallback provider with a different destination ends up handling the request), immediately before that provider's `plan()` call -- not earlier in `ContextAssembler`, since the destination isn't known until a provider is actually resolved. A `confirm` decision is currently treated the same as `never` (omit): there is no interactive mid-request confirmation mechanism yet, so omitting is the conservative, fail-safe choice, not a claim that confirmation is implemented. Every withheld fact is recorded on an `agent.context_restricted` event (docs/events.md) -- this is never a silent leak and never a silent restriction either.
+
 ## What Phase 1 deliberately does not do
 
 - Does not let learned behavior change policy automatically (PROMPT.md explicitly forbids this: "Do not automatically modify security or authorization policies based on learned behavior").

@@ -1,13 +1,21 @@
 import { ModelProvider } from './model-provider.js';
 import { validatePlanWithRepair } from './plan-validator.js';
 import { PLANNER_SYSTEM_PROMPT, buildPlanRequestPayload } from './prompt-payload.js';
+import { classifyProviderDestination } from './provider-destination.js';
 
 export class OpenAICompatibleProvider extends ModelProvider {
-  constructor({ baseUrl, model, apiKey = null, timeoutMs = 30000, fetchImpl = fetch }) {
+  constructor({ baseUrl, model, apiKey = null, timeoutMs = 30000, fetchImpl = fetch, destination = null }) {
     super();
     if (!baseUrl || !model) throw new Error('OpenAI-compatible provider requires baseUrl and model');
     this.id = `openai-compatible:${model}`;
     this.baseUrl = baseUrl.replace(/\/$/, ''); this.model = model; this.apiKey = apiKey; this.timeoutMs = timeoutMs; this.fetchImpl = fetchImpl;
+    // 'local_model' for loopback/private-network endpoints (Ollama,
+    // llama.cpp, LM Studio running on this machine or the LAN), else
+    // 'configured_remote_model' -- see provider-destination.js. Pass an
+    // explicit `destination` to override the heuristic (e.g. a
+    // self-hosted server reachable via a public hostname the owner still
+    // considers "local" for privacy purposes).
+    this.destination = classifyProviderDestination(this.baseUrl, destination);
   }
   async plan(context, objective) {
     const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), this.timeoutMs);

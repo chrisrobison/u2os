@@ -1,0 +1,195 @@
+// Data-processing privacy policy (PLAN.md Phase 6): a separate gate from
+// tool authorization, governing what DATA may reach which DESTINATION.
+// These tests exist specifically to prove the headline scenario from the
+// spec: a user can permit a local model to see sensitive content while
+// forbidding that same content from ever reaching a remote provider.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { DataProcessingPolicy } from '../server/policy/data-processing-policy.js';
+import { classifyProviderDestination } from '../server/agent/provider-destination.js';
+import { filterPersonalContextForDestination } from '../server/agent/context-privacy-filter.js';
+import { MockModelProvider } from '../server/agent/mock-model-provider.js';
+import { OpenAICompatibleProvider } from '../server/agent/openai-compatible-provider.js';
+import { AnthropicProvider } from '../server/agent/anthropic-provider.js';
+import { Planner } from '../server/agent/planner.js';
+import { createToolRegistry } from '../server/tools/register-all.js';
+
+function testPolicies() {
+  return {
+    public: { local_models: 'allow', remote_models: 'allow', external_tools: 'allow', local_ui: 'allow' },
+    personal: { local_models: 'allow', remote_models: 'allow', external_tools: 'confirm', local_ui: 'allow' },
+    private: { local_models: 'allow', remote_models: 'confirm', external_tools: 'confirm', local_ui: 'allow' },
+    sensitive: { local_models: 'allow', remote_models: 'never', external_tools: 'never', local_ui: 'allow' },
+  };
+}
+
+// --- DataProcessingPolicy.evaluate() ------------------------------------
+
+test('sensitive data is allowed to a local model but never a remote one -- the headline scenario from the spec', () => {
+  const policy = new DataProcessingPolicy({ policies: testPolicies() });
+  assert.equal(policy.evaluate({ classification: 'sensitive', destination: 'local_model' }).decision, 'allow');
+  assert.equal(policy.evaluate({ classification: 'sensitive', destination: 'configured_remote_model' }).decision, 'never');
+});
+
+test('private data requires confirmation before reaching a remote model, but is allowed locally', () => {
+  const policy = new DataProcessingPolicy({ policies: testPolicies() });
+  assert.equal(policy.evaluate({ classification: 'private', destination: 'configured_remote_model' }).decision, 'confirm');
+  assert.equal(policy.evaluate({ classification: 'private', destination: 'local_model' }).decision, 'allow');
+});
+
+test('public and personal data may reach a remote model', () => {
+  const policy = new DataProcessingPolicy({ policies: testPolicies() });
+  assert.equal(policy.evaluate({ classification: 'public', destination: 'configured_remote_model' }).decision, 'allow');
+  assert.equal(policy.evaluate({ classification: 'personal', destination: 'configured_remote_model' }).decision, 'allow');
+});
+
+test('an unrecognized classification fails safe to confirm, never to silent allow', () => {
+  const policy = new DataProcessingPolicy({ policies: testPolicies() });
+  const result = policy.evaluate({ classification: 'top-secret', destination: 'configured_remote_model' });
+  assert.equal(result.decision, 'confirm');
+});
+
+test('an unrecognized destination fails toward the strictest common category (remote_models) rather than assuming safety', () => {
+  const policy = new DataProcessingPolicy({ policies: testPolicies() });
+  const result = policy.evaluate({ classification: 'sensitive', destination: 'some_new_destination_type' });
+  assert.equal(result.decision, 'never');
+});
+
+test('a missing rule for a known classification/destination pair fails safe to confirm', () => {
+  const policy = new DataProcessingPolicy({ policies: { personal: { local_models: 'allow' } } });
+  const result = policy.evaluate({ classification: 'personal', destination: 'configured_remote_model' });
+  assert.equal(result.decision, 'confirm');
+  assert.match(result.rule, /missing/);
+});
+
+// --- classifyProviderDestination() ------------------------------------
+
+test('loopback and private-network base URLs classify as local_model; public hosts classify as configured_remote_model', () => {
+  assert.equal(classifyProviderDestination('http://127.0.0.1:11434'), 'local_model');
+  assert.equal(classifyProviderDestination('http://localhost:11434'), 'local_model');
+  assert.equal(classifyProviderDestination('http://192.168.1.50:11434'), 'local_model');
+  assert.equal(classifyProviderDestination('http://10.0.0.5:11434'), 'local_model');
+  assert.equal(classifyProviderDestination('https://api.openai.com'), 'configured_remote_model');
+  assert.equal(classifyProviderDestination('https://api.anthropic.com'), 'configured_remote_model');
+});
+
+test('an explicit destination override always wins over the URL heuristic', () => {
+  assert.equal(classifyProviderDestination('http://127.0.0.1:11434', 'configured_remote_model'), 'configured_remote_model');
+});
+
+test('real providers classify their own destination: Mock is always local, OpenAI-compatible/Anthropic follow the baseUrl heuristic', () => {
+  assert.equal(new MockModelProvider().destination, 'local_model');
+  assert.equal(new OpenAICompatibleProvider({ baseUrl: 'http://127.0.0.1:11434', model: 'm' }).destination, 'local_model');
+  assert.equal(new OpenAICompatibleProvider({ baseUrl: 'https://api.hosted-llm.example', model: 'm' }).destination, 'configured_remote_model');
+  assert.equal(new AnthropicProvider({ apiKey: 'k', model: 'claude-test' }).destination, 'configured_remote_model');
+});
+
+// --- filterPersonalContextForDestination() ------------------------------
+
+function personalContextWith(facts) {
+  return { objective: 'x', relevantPeople: [{ id: 'p1', name: 'Sarah', matchedOn: 'x', facts, relationshipCount: 0 }], commitments: [], recentEvents: [], provenanceRefs: [], truncated: false };
+}
+
+test('a sensitive fact is omitted from context bound for a remote model, but kept for a local model', () => {
+  const policy = new DataProcessingPolicy({ policies: testPolicies() });
+  const facts = [{ factId: 'f1', key: 'medical', value: 'has a penicillin allergy', classification: 'sensitive', confidence: 1, inferred: false }];
+
+  const forRemote = filterPersonalContextForDestination(personalContextWith(facts), 'configured_remote_model', policy);
+  assert.equal(forRemote.context.relevantPeople[0].facts.length, 0);
+  assert.equal(forRemote.omitted.length, 1);
+  assert.equal(forRemote.omitted[0].classification, 'sensitive');
+  assert.equal(forRemote.omitted[0].decision, 'never');
+
+  const forLocal = filterPersonalContextForDestination(personalContextWith(facts), 'local_model', policy);
+  assert.equal(forLocal.context.relevantPeople[0].facts.length, 1);
+  assert.equal(forLocal.omitted.length, 0);
+});
+
+test('a fact with no explicit classification defaults to "personal" for filtering purposes', () => {
+  const policy = new DataProcessingPolicy({ policies: testPolicies() });
+  const facts = [{ factId: 'f1', key: 'note', value: 'likes coffee', confidence: 1, inferred: false }]; // no classification field
+  const result = filterPersonalContextForDestination(personalContextWith(facts), 'configured_remote_model', policy);
+  assert.equal(result.context.relevantPeople[0].facts.length, 1, 'personal data is allowed to remote models by default policy');
+});
+
+test('when nothing is omitted, the original context object is returned unchanged (no dataProcessingRestricted flag noise)', () => {
+  const policy = new DataProcessingPolicy({ policies: testPolicies() });
+  const facts = [{ factId: 'f1', key: 'note', value: 'likes coffee', classification: 'public', confidence: 1, inferred: false }];
+  const input = personalContextWith(facts);
+  const result = filterPersonalContextForDestination(input, 'configured_remote_model', policy);
+  assert.equal(result.context, input);
+  assert.equal(result.omitted.length, 0);
+});
+
+// --- End-to-end through Planner: the actual enforcement point ----------
+
+test('END TO END: Planner withholds sensitive context from a remote provider and records what was withheld, but still lets planning proceed with the rest', async () => {
+  const policy = new DataProcessingPolicy({ policies: testPolicies() });
+  const registry = createToolRegistry();
+
+  let receivedPersonalContext = null;
+  const remoteProvider = {
+    id: 'fake-remote',
+    destination: 'configured_remote_model',
+    plan: async (context) => {
+      receivedPersonalContext = context.personalContext;
+      return { reasoning_summary: 'ok', actions: [] };
+    },
+  };
+
+  const events = [];
+  const fakeEventBus = { publish: (e) => events.push(e) };
+
+  const planner = new Planner({ modelProvider: remoteProvider, dataProcessingPolicy: policy });
+  const facts = [
+    { factId: 'f1', key: 'medical', value: 'has a penicillin allergy', classification: 'sensitive', confidence: 1, inferred: false },
+    { factId: 'f2', key: 'preference', value: 'prefers morning meetings', classification: 'personal', confidence: 1, inferred: false },
+  ];
+  const planContext = {
+    toolRegistry: registry,
+    eventBus: fakeEventBus,
+    correlationId: 'corr_1',
+    actor: { type: 'user', id: 'user' },
+    personalContext: personalContextWith(facts),
+  };
+
+  await planner.plan(planContext, 'anything');
+
+  const remainingFacts = receivedPersonalContext.relevantPeople[0].facts;
+  assert.equal(remainingFacts.length, 1);
+  assert.equal(remainingFacts[0].factId, 'f2', 'the personal fact must still reach the remote provider');
+  assert.ok(!remainingFacts.some((f) => f.classification === 'sensitive'), 'the sensitive fact must NEVER reach the remote provider');
+
+  assert.deepEqual(planner.lastOmittedContext.map((o) => o.id), ['f1']);
+  assert.ok(events.some((e) => e.type === 'agent.context_restricted'), 'withholding context must be auditable, never silent');
+});
+
+test('END TO END: the SAME sensitive fact reaches a LOCAL provider unfiltered', async () => {
+  const policy = new DataProcessingPolicy({ policies: testPolicies() });
+  const registry = createToolRegistry();
+
+  let receivedPersonalContext = null;
+  const localProvider = {
+    id: 'fake-local',
+    destination: 'local_model',
+    plan: async (context) => {
+      receivedPersonalContext = context.personalContext;
+      return { reasoning_summary: 'ok', actions: [] };
+    },
+  };
+
+  const planner = new Planner({ modelProvider: localProvider, dataProcessingPolicy: policy });
+  const facts = [{ factId: 'f1', key: 'medical', value: 'has a penicillin allergy', classification: 'sensitive', confidence: 1, inferred: false }];
+  const planContext = {
+    toolRegistry: registry,
+    eventBus: { publish: () => {} },
+    correlationId: 'corr_2',
+    actor: { type: 'user', id: 'user' },
+    personalContext: personalContextWith(facts),
+  };
+
+  await planner.plan(planContext, 'anything');
+
+  assert.equal(receivedPersonalContext.relevantPeople[0].facts.length, 1);
+  assert.equal(planner.lastOmittedContext.length, 0);
+});

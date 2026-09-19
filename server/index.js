@@ -4,6 +4,7 @@ import { EventBus } from './events/event-bus.js';
 import { SseHub } from './events/sse-hub.js';
 import { initProjector } from './memory/projector.js';
 import { PolicyEngine } from './policy/policy-engine.js';
+import { DataProcessingPolicy } from './policy/data-processing-policy.js';
 import { createToolRegistry } from './tools/register-all.js';
 import { createModelRouter } from './agent/provider-config.js';
 import { Agent } from './agent/agent.js';
@@ -62,6 +63,10 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   initProjector(eventBus);
 
   const policyEngine = new PolicyEngine();
+  // Separate from tool-authorization policy above: governs what DATA may
+  // reach which model/destination (server/policy/data-processing-policy.js,
+  // docs/policies.md). Loaded from its own <U2OS_HOME>/policies/data-processing.yaml.
+  const dataProcessingPolicy = new DataProcessingPolicy();
   const toolRegistry = createToolRegistry();
   // ModelRouter subsumes the old single-provider construction: a plain
   // config.json {provider,baseUrl,model} (still what POST /api/model
@@ -100,7 +105,7 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   ensureDefaultConnectorsConfig(dataDir);
   startSyncScheduler({ db, eventBus, dataDir });
 
-  const agent = new Agent({ modelRouter, policyEngine, toolRegistry, eventBus, ownerEntityId, embeddingProvider });
+  const agent = new Agent({ modelRouter, policyEngine, toolRegistry, eventBus, ownerEntityId, embeddingProvider, dataProcessingPolicy });
 
   // Phase 6 / PROMPT.md §9: trigger engine. Event-driven half subscribes to
   // the event bus immediately; polled half ticks every `tickMs` (default

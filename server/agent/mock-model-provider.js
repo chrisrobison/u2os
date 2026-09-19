@@ -11,6 +11,9 @@ const SCHEDULE_QUERY_PATTERN = /\b(what'?s|show|list)\b.*\b(calendar|schedule|to
 
 export class MockModelProvider extends ModelProvider {
   id = 'mock-model-provider';
+  // Deterministic, in-process, no network I/O of any kind -- always local
+  // for data-processing privacy purposes (server/policy/data-processing-policy.js).
+  destination = 'local_model';
   async plan(context, objective) {
     const text = String(objective || '').trim();
 

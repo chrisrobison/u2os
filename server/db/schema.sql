@@ -42,6 +42,11 @@ CREATE TABLE IF NOT EXISTS facts (
   observed_at TEXT NOT NULL,
   last_confirmed_at TEXT,
   provenance TEXT NOT NULL DEFAULT '{}',
+  -- Data-processing privacy policy (PLAN.md Phase 6), separate from tool
+  -- authorization: public | personal | private | sensitive. Governs whether
+  -- this fact may be included in context sent to a remote model provider --
+  -- see server/policy/data-processing-policy.js.
+  classification TEXT NOT NULL DEFAULT 'personal',
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_facts_entity ON facts(entity_id);

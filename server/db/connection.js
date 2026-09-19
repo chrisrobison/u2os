@@ -62,6 +62,15 @@ export function getDb() {
   ensureColumn(db, 'emails', 'correlation_id', 'TEXT');
   ensureColumn(db, 'agent_actions', 'rejected_by', 'TEXT');
   ensureColumn(db, 'agent_actions', 'rejected_at', 'TEXT');
+  // Data-processing privacy policy (PLAN.md Phase 6): every fact gets a
+  // classification (public/personal/private/sensitive) used to decide
+  // whether it may reach a remote model provider, separate from tool
+  // authorization. Existing rows default to 'personal' -- the same default
+  // recordFact() itself uses for a fact with no classification specified --
+  // so nothing that was already in memory becomes accidentally MORE
+  // restricted OR less restricted than it would have been if classified at
+  // write time.
+  ensureColumn(db, 'facts', 'classification', "TEXT NOT NULL DEFAULT 'personal'");
 
   const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
   db.exec(schema);

@@ -15,15 +15,22 @@ export function recordFact({
   inferred = false,
   observedAt,
   provenance = {},
+  // Data-processing privacy classification (PLAN.md Phase 6), separate from
+  // tool-authorization policy: public | personal | private | sensitive.
+  // Defaults to 'personal' -- explicit facts a user states about their own
+  // life are personal by default, never silently public or silently
+  // sensitive. Callers that know a fact is more sensitive (or more
+  // shareable) should say so explicitly.
+  classification = 'personal',
 }) {
   const db = getDb();
   const id = newId('fact');
   const now = new Date().toISOString();
   const observed = observedAt || now;
   db.prepare(
-    `INSERT INTO facts (id, entity_id, key, value, source, confidence, inferred, observed_at, last_confirmed_at, provenance, created_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`
-  ).run(id, entityId, key, JSON.stringify(value), source, confidence, inferred ? 1 : 0, observed, null, JSON.stringify(provenance), now);
+    `INSERT INTO facts (id, entity_id, key, value, source, confidence, inferred, observed_at, last_confirmed_at, provenance, classification, created_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+  ).run(id, entityId, key, JSON.stringify(value), source, confidence, inferred ? 1 : 0, observed, null, JSON.stringify(provenance), classification, now);
   return getFact(id);
 }
 

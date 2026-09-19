@@ -154,6 +154,7 @@ export class ContextAssembler {
       source: f.source,
       observedAt: f.observed_at,
       lastConfirmedAt: f.last_confirmed_at,
+      classification: f.classification || 'personal',
     }));
 
     let ranked;
@@ -175,6 +176,7 @@ export class ContextAssembler {
       source: f.source,
       observedAt: f.observedAt,
       lastConfirmedAt: f.lastConfirmedAt,
+      classification: f.classification,
       ...(relevanceById ? { relevance: relevanceById.get(f.id) } : {}),
     }));
   }

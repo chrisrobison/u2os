@@ -1,6 +1,7 @@
 import { ModelProvider } from './model-provider.js';
 import { validatePlanWithRepair } from './plan-validator.js';
 import { PLANNER_SYSTEM_PROMPT, buildPlanRequestPayload } from './prompt-payload.js';
+import { classifyProviderDestination } from './provider-destination.js';
 
 const SYSTEM_PROMPT = `${PLANNER_SYSTEM_PROMPT} Respond with raw JSON only -- no prose, no markdown code fences.`;
 
@@ -16,7 +17,7 @@ const SYSTEM_PROMPT = `${PLANNER_SYSTEM_PROMPT} Respond with raw JSON only -- no
  * inspectable than adding a dependency for it.
  */
 export class AnthropicProvider extends ModelProvider {
-  constructor({ apiKey, model, baseUrl = 'https://api.anthropic.com', timeoutMs = 30000, apiVersion = '2023-06-01', fetchImpl = fetch }) {
+  constructor({ apiKey, model, baseUrl = 'https://api.anthropic.com', timeoutMs = 30000, apiVersion = '2023-06-01', fetchImpl = fetch, destination = null }) {
     super();
     if (!apiKey || !model) throw new Error('Anthropic provider requires apiKey and model');
     this.id = `anthropic:${model}`;
@@ -26,6 +27,11 @@ export class AnthropicProvider extends ModelProvider {
     this.timeoutMs = timeoutMs;
     this.apiVersion = apiVersion;
     this.fetchImpl = fetchImpl;
+    // Almost always 'configured_remote_model' (the default baseUrl is
+    // Anthropic's hosted API); classified the same way as the
+    // OpenAI-compatible provider so a local Anthropic-API-compatible proxy
+    // can still be recognized as local. See provider-destination.js.
+    this.destination = classifyProviderDestination(this.baseUrl, destination);
   }
 
   async plan(context, objective) {
