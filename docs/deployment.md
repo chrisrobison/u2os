@@ -27,7 +27,7 @@ Start on loopback and create the owner passphrase in the UI. There is no reset b
 
 Compose listens on `0.0.0.0` inside the container but publishes `127.0.0.1:4000:4000` by default. Changing it to `4000:4000` commonly publishes to the host LAN. The public redacted `/api/health` remains suitable for healthchecks.
 
-A new non-loopback instance refuses startup until an owner exists. Initialize its data on loopback before enabling the container bind. This fail-closed bootstrap limitation is deliberate.
+A new non-loopback instance refuses startup until an owner exists. Initialize a Compose volume without exposing HTTP by running `docker compose run --rm u2os npm run setup-owner`; the masked prompt writes only the scrypt hash into the mounted `U2OS_HOME`. Then start normally with `docker compose up -d`. This keeps the bootstrap fail-closed.
 
 Systemd and launchd templates under `deploy/` retain loopback. Change the bind only after setup and intentionally. mDNS is disabled on loopback and best-effort on LAN binds. Use a firewall and carefully configured TLS reverse proxy for intentional remote access.
 

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { startServer } from '../server/index.js';
+import { startServer } from './helpers/authed-server.js';
 import { getDb, closeAllForTests } from '../server/db/connection.js';
 import { EventBus } from '../server/events/event-bus.js';
 import { initProjector } from '../server/memory/projector.js';
@@ -80,7 +80,7 @@ test('POST /api/actions/:id/approve writes an "accepted" feedback_events row, un
   const dir = tempHome('u2os-feedback-approve-');
   let handle;
   try {
-    handle = await startServer({ port: 0, disableAuthForTests: true });
+    handle = await startServer({ port: 0 });
     const port = handle.server.address().port;
 
     const agentRes = await postJson(port, '/api/agent/message', {
@@ -111,7 +111,7 @@ test('POST /api/actions/:id/reject writes a "rejected" feedback_events row, unch
   const dir = tempHome('u2os-feedback-reject-');
   let handle;
   try {
-    handle = await startServer({ port: 0, disableAuthForTests: true });
+    handle = await startServer({ port: 0 });
     const port = handle.server.address().port;
 
     const agentRes = await postJson(port, '/api/agent/message', {
@@ -137,7 +137,7 @@ test('POST /api/feedback validates subjectType/subjectId/outcome (400s) and work
   const dir = tempHome('u2os-feedback-post-');
   let handle;
   try {
-    handle = await startServer({ port: 0, disableAuthForTests: true });
+    handle = await startServer({ port: 0 });
     const port = handle.server.address().port;
 
     const missingSubjectType = await postJson(port, '/api/feedback', { subjectId: 'x', outcome: 'dismissed' });
@@ -182,7 +182,7 @@ test('POST /api/feedback for a recommendation dismiss also updates the recommend
   const dir = tempHome('u2os-feedback-rec-');
   let handle;
   try {
-    handle = await startServer({ port: 0, disableAuthForTests: true });
+    handle = await startServer({ port: 0 });
     const port = handle.server.address().port;
 
     // Query directly rather than through /api/calendar/events' time-window
@@ -559,7 +559,7 @@ test('policies.yaml is byte-identical before and after a feedback-heavy scenario
     const before = fs.readFileSync(file);
     const statBefore = fs.statSync(file);
 
-    handle = await startServer({ port: 0, disableAuthForTests: true });
+    handle = await startServer({ port: 0 });
     const port = handle.server.address().port;
 
     const agentRes = await postJson(port, '/api/agent/message', {

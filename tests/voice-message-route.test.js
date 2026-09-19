@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { startServer } from '../server/index.js';
+import { startServer } from './helpers/authed-server.js';
 import { closeAllForTests } from '../server/db/connection.js';
 import * as syncScheduler from '../server/integrations/sync-scheduler.js';
 import * as triggerEngine from '../server/triggers/trigger-engine.js';
@@ -40,7 +40,7 @@ test('POST /api/agent/voice-message: a low-confidence speaker forces an otherwis
   const dir = tempHome();
   let handle;
   try {
-    handle = await startServer({ port: 0, disableAuthForTests: true });
+    handle = await startServer({ port: 0 });
     const port = handle.server.address().port;
 
     const { status, body } = await postJson(port, '/api/agent/voice-message', {
@@ -65,7 +65,7 @@ test('POST /api/agent/voice-message: a high-confidence speaker leaves an autonom
   const dir = tempHome();
   let handle;
   try {
-    handle = await startServer({ port: 0, disableAuthForTests: true });
+    handle = await startServer({ port: 0 });
     const port = handle.server.address().port;
 
     const { status, body } = await postJson(port, '/api/agent/voice-message', {
@@ -85,7 +85,7 @@ test('POST /api/agent/voice-message: a reschedule (already confirm-gated by the 
   const dir = tempHome();
   let handle;
   try {
-    handle = await startServer({ port: 0, disableAuthForTests: true });
+    handle = await startServer({ port: 0 });
     const port = handle.server.address().port;
 
     const { status, body } = await postJson(port, '/api/agent/voice-message', {
@@ -106,7 +106,7 @@ test('POST /api/agent/message (the pre-existing, non-voice route) is completely 
   const dir = tempHome();
   let handle;
   try {
-    handle = await startServer({ port: 0, disableAuthForTests: true });
+    handle = await startServer({ port: 0 });
     const port = handle.server.address().port;
 
     const { status, body } = await postJson(port, '/api/agent/message', {
@@ -137,7 +137,7 @@ test('POST /api/agent/voice-message with no `speaker` field at all fails safe to
   const dir = tempHome();
   let handle;
   try {
-    handle = await startServer({ port: 0, disableAuthForTests: true });
+    handle = await startServer({ port: 0 });
     const port = handle.server.address().port;
 
     const { status, body } = await postJson(port, '/api/agent/voice-message', {
@@ -158,7 +158,7 @@ test('POST /api/agent/voice-message with speaker:null also fails safe to confide
   const dir = tempHome();
   let handle;
   try {
-    handle = await startServer({ port: 0, disableAuthForTests: true });
+    handle = await startServer({ port: 0 });
     const port = handle.server.address().port;
 
     const { status, body } = await postJson(port, '/api/agent/voice-message', {

@@ -38,7 +38,7 @@ import { registerRecommendationRoutes } from './api/routes/recommendations.js';
 import { registerFeedbackRoutes } from './api/routes/feedback.js';
 import { registerAuthRoutes } from './api/routes/auth.js';
 
-export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsoluteSeconds, disableAuthForTests = false } = {}) {
+export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsoluteSeconds } = {}) {
 
   const dataDir = ensureDataDirs();
   // SECURITY: create the credentials/ dir + master key now, at 0700, rather
@@ -85,8 +85,7 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   const triggerTickMs = Number(process.env.U2OS_TRIGGER_TICK_MS) || undefined;
   triggerEngine.startAll({ eventBus, agent, ...(triggerTickMs ? { tickMs: triggerTickMs } : {}) });
 
-  if (disableAuthForTests && !process.env.NODE_TEST_CONTEXT) throw new Error('disableAuthForTests is only available under node:test');
-  const router = new Router({ auth: disableAuthForTests ? null : auth, publicOrigin });
+  const router = new Router({ auth, publicOrigin });
   const startTime = Date.now();
   registerAuthRoutes(router, { auth });
   registerHealthRoutes(router, { dataDir, dbPath, startTime });

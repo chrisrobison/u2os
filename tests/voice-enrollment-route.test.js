@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { startServer } from '../server/index.js';
+import { startServer } from './helpers/authed-server.js';
 import { closeAllForTests } from '../server/db/connection.js';
 import * as syncScheduler from '../server/integrations/sync-scheduler.js';
 import * as triggerEngine from '../server/triggers/trigger-engine.js';
@@ -36,7 +36,7 @@ test('GET /api/voice/enrollment starts out "not enrolled" with no vector', async
   const dir = tempHome();
   let handle;
   try {
-    handle = await startServer({ port: 0, disableAuthForTests: true });
+    handle = await startServer({ port: 0 });
     const port = handle.server.address().port;
     const res = await fetch(`http://127.0.0.1:${port}/api/voice/enrollment`);
     const body = await res.json();
@@ -53,7 +53,7 @@ test('POST /api/voice/enrollment persists the vector, and GET returns it back (s
   const dir = tempHome();
   let handle;
   try {
-    handle = await startServer({ port: 0, disableAuthForTests: true });
+    handle = await startServer({ port: 0 });
     const port = handle.server.address().port;
     const vector = [0.1, 0.2, 0.3, 0.4];
 
@@ -85,7 +85,7 @@ test('POST /api/voice/enrollment rejects a missing/empty vector with 400', async
   const dir = tempHome();
   let handle;
   try {
-    handle = await startServer({ port: 0, disableAuthForTests: true });
+    handle = await startServer({ port: 0 });
     const port = handle.server.address().port;
 
     for (const body of [{}, { vector: [] }, { vector: 'nope' }]) {
@@ -105,7 +105,7 @@ test('DELETE /api/voice/enrollment clears a previously-saved enrollment', async 
   const dir = tempHome();
   let handle;
   try {
-    handle = await startServer({ port: 0, disableAuthForTests: true });
+    handle = await startServer({ port: 0 });
     const port = handle.server.address().port;
 
     await fetch(`http://127.0.0.1:${port}/api/voice/enrollment`, {
