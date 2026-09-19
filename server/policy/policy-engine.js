@@ -65,7 +65,7 @@ export class PolicyEngine {
       if (subCategory && opPolicy[subCategory] !== undefined) {
         levelKey = opPolicy[subCategory];
         rule = `${domain}.${operation}.${subCategory}:${levelKey}`;
-      } else if (opPolicy.default !== undefined) {
+      } else if (subCategory && opPolicy.default !== undefined) {
         levelKey = opPolicy.default;
         rule = `${domain}.${operation}.default:${levelKey}`;
       } else {
@@ -166,16 +166,20 @@ export function updateAgentAction(id, patch = {}) {
   const status = patch.status ?? existing.status;
   const approvedBy = patch.approvedBy !== undefined ? patch.approvedBy : existing.approved_by;
   const approvedAt = patch.approvedAt !== undefined ? patch.approvedAt : existing.approved_at;
+  const rejectedBy = patch.rejectedBy !== undefined ? patch.rejectedBy : existing.rejected_by;
+  const rejectedAt = patch.rejectedAt !== undefined ? patch.rejectedAt : existing.rejected_at;
   const result =
     patch.result !== undefined
       ? JSON.stringify(patch.result)
       : existing.result
         ? JSON.stringify(existing.result)
         : null;
-  db.prepare('UPDATE agent_actions SET status = ?, approved_by = ?, approved_at = ?, result = ?, updated_at = ? WHERE id = ?').run(
+  db.prepare('UPDATE agent_actions SET status = ?, approved_by = ?, approved_at = ?, rejected_by = ?, rejected_at = ?, result = ?, updated_at = ? WHERE id = ?').run(
     status,
     approvedBy,
     approvedAt,
+    rejectedBy,
+    rejectedAt,
     result,
     now,
     id

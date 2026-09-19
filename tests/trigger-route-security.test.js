@@ -46,7 +46,7 @@ test('POST /api/triggers rejects a catastrophic-backtracking when.matches patter
   const dir = tempHome();
   let handle;
   try {
-    handle = await startServer({ port: 0 });
+    handle = await startServer({ port: 0, disableAuthForTests: true });
     const port = handle.server.address().port;
 
     const { status, body } = await postJson(port, '/api/triggers', {
@@ -66,7 +66,7 @@ test('POST /api/triggers rejects a slow-but-not-obviously-nested pattern via the
   const dir = tempHome();
   let handle;
   try {
-    handle = await startServer({ port: 0 });
+    handle = await startServer({ port: 0, disableAuthForTests: true });
     const port = handle.server.address().port;
 
     const { status, body } = await postJson(port, '/api/triggers', {
@@ -86,7 +86,7 @@ test('POST /api/triggers still accepts a legitimate simple when.matches pattern 
   const dir = tempHome();
   let handle;
   try {
-    handle = await startServer({ port: 0 });
+    handle = await startServer({ port: 0, disableAuthForTests: true });
     const port = handle.server.address().port;
 
     const { status, body } = await postJson(port, '/api/triggers', {
@@ -106,7 +106,7 @@ test('POST /api/triggers rejects an oversized when.matches pattern', async () =>
   const dir = tempHome();
   let handle;
   try {
-    handle = await startServer({ port: 0 });
+    handle = await startServer({ port: 0, disableAuthForTests: true });
     const port = handle.server.address().port;
 
     const { status, body } = await postJson(port, '/api/triggers', {
@@ -126,7 +126,7 @@ test('POST /api/triggers rejects a schedule with everyMinutes below the floor (s
   const dir = tempHome();
   let handle;
   try {
-    handle = await startServer({ port: 0 });
+    handle = await startServer({ port: 0, disableAuthForTests: true });
     const port = handle.server.address().port;
 
     const { status, body } = await postJson(port, '/api/triggers', {
@@ -146,7 +146,7 @@ test('PATCH /api/triggers/:id also runs the same validation when config is updat
   const dir = tempHome();
   let handle;
   try {
-    handle = await startServer({ port: 0 });
+    handle = await startServer({ port: 0, disableAuthForTests: true });
     const port = handle.server.address().port;
 
     const { body: created } = await postJson(port, '/api/triggers', {

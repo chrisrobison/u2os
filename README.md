@@ -1,10 +1,10 @@
 # U2OS
 
-U2OS is a local-first personal digital agent platform built around a durable loop:
+U2OS is **the operating system for your digital self**: a local-first, user-owned evented counterpart built around a durable loop:
 
 > Observe → remember → anticipate → act → observe outcome → learn.
 
-It is designed as a persistent service rather than a chat transcript or desktop wrapper. Events, structured memory, policies, tools, automations, and feedback belong to one user-controlled agent; the model is replaceable infrastructure.
+It is not a chatbot or desktop wrapper. Events, structured memory, policies, tools, automations, and feedback belong to one user-controlled agent; the model is replaceable infrastructure. The name means “the second you” plus “operating system.” See [Architecture](docs/architecture.md) for the current system and [PLAN.md](PLAN.md) for the roadmap; [PROMPT.md](PROMPT.md) is the historical product specification, not onboarding documentation.
 
 ## Project status
 
@@ -22,7 +22,7 @@ U2OS is currently a working pre-alpha prototype. The repository implements the s
 - Outcome feedback that adjusts prioritization without weakening authorization policies
 - Docker, systemd, launchd, mDNS, health checks, structured logs, backup/restore, and portable JSON export
 
-This is not production-ready. The most important missing boundary is owner authentication: all HTTP routes currently assume a trusted single-owner network. Do not expose the server directly to the public internet. Other major limitations include the deterministic mock planner, simplified speaker verification, several placeholder dashboard components, no general request/action rate limits, and limited browser-level test coverage. See [PLAN.md](PLAN.md) for the prioritized path forward.
+This is not production-ready. A single-owner passphrase, expiring sessions, CSRF protection, request limits, and loopback-default networking now protect the HTTP boundary. Do not expose the server directly to the public internet. Major limitations include the deterministic mock planner, simplified speaker verification, several placeholder dashboard components, in-process-only rate limits, and limited browser-level test coverage.
 
 ## Architecture
 
@@ -72,6 +72,8 @@ npm start
 ```
 
 Open <http://localhost:4000>.
+
+On first visit, create the required owner passphrase. Later visits show the login form before any private API or interface data is available.
 
 On first start, U2OS creates its local data directory at `~/.u2os/`. Set `U2OS_HOME` to use another location. The directory contains configuration, policies, the SQLite database, encrypted connector credentials, and cache data. Real user data is not stored in the repository.
 
@@ -131,7 +133,7 @@ The planner is still `MockModelProvider`, a deterministic intent matcher for dem
 
 ## Security warning
 
-U2OS currently has no owner login or authenticated session layer. Anyone who can reach the HTTP service can access its APIs, including memory, events, connector configuration, voice enrollment, triggers, and action approvals. Run it only on a trusted machine/network until the first milestone in [PLAN.md](PLAN.md) is complete.
+U2OS binds to `127.0.0.1` by default and requires owner login for private APIs. This is still a pre-alpha single-owner service, not an internet-facing product. LAN binding is an explicit configuration decision; use a trusted TLS reverse proxy and firewall if you make one. Backups contain the credential master key and owner hash and are as sensitive as the live identity store. See [SECURITY.md](SECURITY.md).
 
 Security properties already present include policy enforcement outside the planner, append-only action/event auditing, encrypted connector secrets, OAuth state validation, secret-redacted APIs, safe dashboard schemas, and regression tests preventing feedback or voice confidence from loosening authorization policy.
 

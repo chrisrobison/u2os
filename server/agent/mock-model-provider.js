@@ -10,6 +10,7 @@ const REMINDER_PATTERN = /\bremind me to\s+(.+?)[.!]?$/i;
 const SCHEDULE_QUERY_PATTERN = /\b(what'?s|show|list)\b.*\b(calendar|schedule|today)\b/i;
 
 export class MockModelProvider extends ModelProvider {
+  id = 'mock-model-provider';
   async plan(context, objective) {
     const text = String(objective || '').trim();
 

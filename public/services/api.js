@@ -4,8 +4,13 @@
 // message when present) on a non-2xx response.
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
+let csrfToken = null;
 
 async function request(path, options = {}) {
+  const method = (options.method || 'GET').toUpperCase();
+  if (csrfToken && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    options.headers = { ...(options.headers || {}), 'X-U2OS-CSRF': csrfToken };
+  }
   const res = await fetch(path, options);
   const text = await res.text();
   let body;
@@ -22,6 +27,21 @@ async function request(path, options = {}) {
 
   return body;
 }
+
+export async function getAuthStatus() {
+  const status = await request('/api/auth/status');
+  csrfToken = status.csrfToken;
+  return status;
+}
+export async function setupOwner(passphrase) {
+  const result = await request('/api/auth/setup', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ passphrase }) });
+  csrfToken = result.csrfToken; return result;
+}
+export async function login(passphrase) {
+  const result = await request('/api/auth/login', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ passphrase }) });
+  csrfToken = result.csrfToken; return result;
+}
+export async function logout() { const result = await request('/api/auth/logout', { method: 'POST' }); csrfToken = null; return result; }
 
 function qs(params = {}) {
   const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '');
@@ -77,11 +97,11 @@ export function getMemoryEntity(id) {
   return request(`/api/memory/entities/${encodeURIComponent(id)}`);
 }
 
-export function sendAgentMessage(text, actorId) {
+export function sendAgentMessage(text) {
   return request('/api/agent/message', {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ text, actorId }),
+    body: JSON.stringify({ text }),
   });
 }
 
@@ -121,19 +141,19 @@ export function getAction(id) {
   return request(`/api/actions/${encodeURIComponent(id)}`);
 }
 
-export function approveAction(id, approvedBy = 'user') {
+export function approveAction(id) {
   return request(`/api/actions/${encodeURIComponent(id)}/approve`, {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ approvedBy }),
+    body: JSON.stringify({}),
   });
 }
 
-export function rejectAction(id, rejectedBy = 'user') {
+export function rejectAction(id) {
   return request(`/api/actions/${encodeURIComponent(id)}/reject`, {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ rejectedBy }),
+    body: JSON.stringify({}),
   });
 }
 

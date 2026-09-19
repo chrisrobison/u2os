@@ -15,6 +15,7 @@
  * @property {Array<{tool: string, arguments: object}>} actions
  */
 export class ModelProvider {
+  id = 'model-provider';
   /** @returns {Promise<Plan>} */
   async plan(_context, _objective) {
     throw new Error('plan() not implemented');

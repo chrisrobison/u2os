@@ -23,6 +23,9 @@
   <dict>
     <key>U2OS_HOME</key>
     <string>/Users/Shared/u2os</string>
+    <!-- Keep loopback unless intentional LAN/reverse-proxy access is configured after owner setup. -->
+    <key>U2OS_BIND</key>
+    <string>127.0.0.1</string>
     <key>NODE_ENV</key>
     <string>production</string>
     <key>LOG_FORMAT</key>

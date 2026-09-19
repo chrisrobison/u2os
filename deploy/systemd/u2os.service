@@ -14,6 +14,9 @@ User=u2os
 Group=u2os
 WorkingDirectory=/opt/u2os
 Environment=U2OS_HOME=/var/lib/u2os
+# Loopback is the safe default. Set U2OS_BIND explicitly only after owner
+# setup when intentional LAN/reverse-proxy access is required.
+Environment=U2OS_BIND=127.0.0.1
 Environment=NODE_ENV=production
 Environment=LOG_FORMAT=json
 ExecStart=/usr/bin/node server/index.js

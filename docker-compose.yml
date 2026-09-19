@@ -4,9 +4,10 @@ services:
     build: .
     image: u2os
     ports:
-      - "4000:4000"
+      - "127.0.0.1:4000:4000"
     environment:
       - U2OS_HOME=/data
+      - U2OS_BIND=0.0.0.0
       # Docker/systemd's expected default -- log aggregators parse
       # structured JSON lines rather than free text. See
       # server/logging/logger.js.

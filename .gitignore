@@ -2,3 +2,13 @@ node_modules/
 /data/*.sqlite
 *.log
 .env
+.env.*
+!.env.example
+.DS_Store
+coverage/
+.nyc_output/
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

@@ -40,7 +40,7 @@ test('POST /api/agent/voice-message: a low-confidence speaker forces an otherwis
   const dir = tempHome();
   let handle;
   try {
-    handle = await startServer({ port: 0 });
+    handle = await startServer({ port: 0, disableAuthForTests: true });
     const port = handle.server.address().port;
 
     const { status, body } = await postJson(port, '/api/agent/voice-message', {
@@ -65,7 +65,7 @@ test('POST /api/agent/voice-message: a high-confidence speaker leaves an autonom
   const dir = tempHome();
   let handle;
   try {
-    handle = await startServer({ port: 0 });
+    handle = await startServer({ port: 0, disableAuthForTests: true });
     const port = handle.server.address().port;
 
     const { status, body } = await postJson(port, '/api/agent/voice-message', {
@@ -85,7 +85,7 @@ test('POST /api/agent/voice-message: a reschedule (already confirm-gated by the 
   const dir = tempHome();
   let handle;
   try {
-    handle = await startServer({ port: 0 });
+    handle = await startServer({ port: 0, disableAuthForTests: true });
     const port = handle.server.address().port;
 
     const { status, body } = await postJson(port, '/api/agent/voice-message', {
@@ -106,7 +106,7 @@ test('POST /api/agent/message (the pre-existing, non-voice route) is completely 
   const dir = tempHome();
   let handle;
   try {
-    handle = await startServer({ port: 0 });
+    handle = await startServer({ port: 0, disableAuthForTests: true });
     const port = handle.server.address().port;
 
     const { status, body } = await postJson(port, '/api/agent/message', {
@@ -137,7 +137,7 @@ test('POST /api/agent/voice-message with no `speaker` field at all fails safe to
   const dir = tempHome();
   let handle;
   try {
-    handle = await startServer({ port: 0 });
+    handle = await startServer({ port: 0, disableAuthForTests: true });
     const port = handle.server.address().port;
 
     const { status, body } = await postJson(port, '/api/agent/voice-message', {
@@ -158,7 +158,7 @@ test('POST /api/agent/voice-message with speaker:null also fails safe to confide
   const dir = tempHome();
   let handle;
   try {
-    handle = await startServer({ port: 0 });
+    handle = await startServer({ port: 0, disableAuthForTests: true });
     const port = handle.server.address().port;
 
     const { status, body } = await postJson(port, '/api/agent/voice-message', {

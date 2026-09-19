@@ -16,6 +16,9 @@ import * as triggerEngine from './triggers/trigger-engine.js';
 import { startMdns } from './discovery/mdns.js';
 import { log } from './logging/logger.js';
 import { generateOrLoadMasterKey } from './security/vault.js';
+import { AuthService } from './security/auth.js';
+import fs from 'node:fs';
+import path from 'node:path';
 
 import { registerHealthRoutes } from './api/routes/health.js';
 import { registerAgentRoutes } from './api/routes/agent.js';
@@ -33,9 +36,9 @@ import { registerVoiceRoutes } from './api/routes/voice.js';
 import { registerTriggerRoutes } from './api/routes/triggers.js';
 import { registerRecommendationRoutes } from './api/routes/recommendations.js';
 import { registerFeedbackRoutes } from './api/routes/feedback.js';
+import { registerAuthRoutes } from './api/routes/auth.js';
 
-export async function startServer({ port } = {}) {
-  const resolvedPort = port ?? (Number(process.env.PORT) || 4000);
+export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsoluteSeconds, disableAuthForTests = false } = {}) {
 
   const dataDir = ensureDataDirs();
   // SECURITY: create the credentials/ dir + master key now, at 0700, rather
@@ -45,6 +48,13 @@ export async function startServer({ port } = {}) {
   generateOrLoadMasterKey(dataDir);
   const db = getDb();
   const dbPath = getDbPath();
+  const config = readConfig(dataDir);
+  const resolvedPort = port ?? (process.env.PORT !== undefined ? Number(process.env.PORT) : Number(config.port ?? 4000));
+  const resolvedBind = bind ?? process.env.U2OS_BIND ?? config.bind ?? '127.0.0.1';
+  const publicOrigin = process.env.U2OS_PUBLIC_ORIGIN || config.publicOrigin || null;
+  const auth = new AuthService(db, { idleSeconds: sessionIdleSeconds, absoluteSeconds: sessionAbsoluteSeconds });
+  if (!isLoopback(resolvedBind) && !auth.hasOwner()) throw new Error('Refusing non-loopback bind before owner authentication is configured. Complete setup on loopback first.');
+  if (!isLoopback(resolvedBind)) log.warn('server', 'U2OS is explicitly listening on a non-loopback address; do not expose it to the public internet', { bind: resolvedBind });
 
   const eventBus = new EventBus(db);
   const sseHub = new SseHub(eventBus);
@@ -75,8 +85,10 @@ export async function startServer({ port } = {}) {
   const triggerTickMs = Number(process.env.U2OS_TRIGGER_TICK_MS) || undefined;
   triggerEngine.startAll({ eventBus, agent, ...(triggerTickMs ? { tickMs: triggerTickMs } : {}) });
 
-  const router = new Router();
+  if (disableAuthForTests && !process.env.NODE_TEST_CONTEXT) throw new Error('disableAuthForTests is only available under node:test');
+  const router = new Router({ auth: disableAuthForTests ? null : auth, publicOrigin });
   const startTime = Date.now();
+  registerAuthRoutes(router, { auth });
   registerHealthRoutes(router, { dataDir, dbPath, startTime });
   registerAgentRoutes(router, { agent });
   registerActionRoutes(router, { agent, eventBus });
@@ -109,6 +121,7 @@ export async function startServer({ port } = {}) {
       });
     });
 
+    setSecurityHeaders(res);
     if (req.url.startsWith('/api/')) {
       await router.handle(req, res);
     } else {
@@ -116,7 +129,7 @@ export async function startServer({ port } = {}) {
     }
   });
 
-  await new Promise((resolve) => server.listen(resolvedPort, resolve));
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(resolvedPort, resolvedBind, resolve); });
   // resolvedPort may be 0 (OS picks an ephemeral port, e.g. in tests) --
   // use the actually-bound port for mDNS/logging, not the requested one.
   const boundPort = server.address().port;
@@ -125,12 +138,21 @@ export async function startServer({ port } = {}) {
   // blocks or fails startup. Stop it automatically whenever the HTTP server
   // is closed (tests included) so no test run is left holding an open
   // multicast socket.
-  const mdnsHandle = startMdns({ port: boundPort });
+  const mdnsHandle = !isLoopback(resolvedBind) ? startMdns({ port: boundPort }) : null;
   server.on('close', () => mdnsHandle?.stop());
 
-  log.info('server', 'U2OS server listening', { port: boundPort, dataDir, dbPath });
+  log.info('server', 'U2OS server listening', { bind: resolvedBind, port: boundPort, dataDir, dbPath });
 
-  return { server, port: boundPort, dataDir, dbPath, agent, eventBus, toolRegistry, policyEngine, mdns: mdnsHandle };
+  return { server, port: boundPort, bind: resolvedBind, dataDir, dbPath, agent, eventBus, toolRegistry, policyEngine, auth, mdns: mdnsHandle };
+}
+
+function readConfig(dataDir) { try { return JSON.parse(fs.readFileSync(path.join(dataDir, 'config', 'config.json'), 'utf8')); } catch { return {}; } }
+function isLoopback(host) { return host === '127.0.0.1' || host === '::1' || host === 'localhost'; }
+function setSecurityHeaders(res) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
 }
 
 const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;

@@ -60,6 +60,8 @@ export function getDb() {
   // Ensuring the column exists first keeps schema.sql itself pure
   // idempotent DDL for every table, old and new alike.
   ensureColumn(db, 'emails', 'correlation_id', 'TEXT');
+  ensureColumn(db, 'agent_actions', 'rejected_by', 'TEXT');
+  ensureColumn(db, 'agent_actions', 'rejected_at', 'TEXT');
 
   const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
   db.exec(schema);

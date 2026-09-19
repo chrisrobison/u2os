@@ -19,18 +19,18 @@ This is the release blocker for use beyond a trusted loopback-only development e
 
 ### Work
 
-- Introduce first-run owner setup with a securely hashed passphrase or passkey.
-- Add authenticated, expiring server sessions using secure, HTTP-only cookies.
-- Require authentication for private reads and every state-changing route.
-- Add CSRF protection for cookie-authenticated writes, including approvals and connector changes.
-- Bind to loopback by default; require explicit configuration to listen on the LAN.
-- Add trusted-proxy and secure-cookie configuration for reverse-proxy deployments.
-- Protect SSE connections and ensure reconnects cannot bypass session expiry.
-- Add a global JSON request-size limit and route-specific limits for large payloads.
-- Add rate limits for login attempts, action approvals, agent requests, triggers, connector writes, and voice enrollment.
-- Validate `Origin`/`Host` where appropriate and add baseline security headers.
-- Stop accepting caller-supplied `approvedBy`/`rejectedBy` identities; derive the owner from the authenticated session.
-- Document a recovery procedure that does not silently weaken credential or policy protection.
+- [x] Introduce first-run owner setup with a securely hashed passphrase.
+- [x] Add authenticated, idle/absolute-expiring server sessions using secure, HTTP-only cookies.
+- [x] Require authentication for private reads and every state-changing route.
+- [x] Add CSRF protection for cookie-authenticated writes, including approvals and connector changes.
+- [x] Bind to loopback by default; require explicit configuration to listen on the LAN.
+- [x] Add trusted-proxy and secure-cookie configuration for reverse-proxy deployments.
+- [x] Protect SSE connections and ensure reconnects cannot bypass session expiry.
+- [x] Add a global JSON request-size limit (no current enrollment payload needs an exception).
+- [x] Add in-process rate limits for login attempts, action approvals, agent requests, triggers, connector writes, and voice enrollment.
+- [x] Validate `Origin`/`Host` where appropriate and add baseline security headers.
+- [x] Stop accepting caller-supplied identities; derive the owner from the authenticated session.
+- [x] Document recovery without a credential or policy backdoor.
 
 ### Acceptance criteria
 

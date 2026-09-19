@@ -14,7 +14,7 @@ export function registerActionRoutes(router, { agent, eventBus } = {}) {
   });
 
   router.post('/api/actions/:id/approve', async (req, res) => {
-    const approvedBy = req.body?.approvedBy || 'user';
+    const approvedBy = req.owner.id;
     const actionBefore = getAgentAction(req.params.id);
     try {
       const result = await agent.approveAction(req.params.id, approvedBy);
@@ -31,7 +31,7 @@ export function registerActionRoutes(router, { agent, eventBus } = {}) {
   });
 
   router.post('/api/actions/:id/reject', async (req, res) => {
-    const rejectedBy = req.body?.rejectedBy || 'user';
+    const rejectedBy = req.owner.id;
     const actionBefore = getAgentAction(req.params.id);
     try {
       const result = await agent.rejectAction(req.params.id, rejectedBy);

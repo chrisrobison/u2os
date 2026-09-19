@@ -175,7 +175,7 @@ test('GET /api/dashboard/morning still works identically after the provider-regi
   const dir = tempHome();
   let handle;
   try {
-    handle = await startServer({ port: 0 });
+    handle = await startServer({ port: 0, disableAuthForTests: true });
     const port = handle.server.address().port;
 
     const res = await fetch(`http://127.0.0.1:${port}/api/dashboard/morning`);
@@ -196,7 +196,7 @@ test('POST /api/dashboard/generate returns schemas that differ meaningfully acro
   const dir = tempHome();
   let handle;
   try {
-    handle = await startServer({ port: 0 });
+    handle = await startServer({ port: 0, disableAuthForTests: true });
     const port = handle.server.address().port;
     const base = `http://127.0.0.1:${port}`;
 

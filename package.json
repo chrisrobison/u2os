@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "U2OS - a persistent personal digital agent platform (Phase 1 backend).",
+  "description": "U2OS — the user-owned operating system for your digital self.",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",

@@ -50,7 +50,7 @@ test('GET /api/export returns the documented domains and never leaks credentials
     );
     writeEncryptedFile('web-search', { apiKey: 'FAKE_EXPORT_BRAVE_API_KEY_VALUE' }, dir);
 
-    handle = await startServer({ port: 0 });
+    handle = await startServer({ port: 0, disableAuthForTests: true });
     const port = handle.server.address().port;
 
     const res = await fetch(`http://127.0.0.1:${port}/api/export`);

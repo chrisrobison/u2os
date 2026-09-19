@@ -10,7 +10,7 @@ export function registerAgentRoutes(router, { agent }) {
     if (!text || typeof text !== 'string') {
       return sendJson(res, 400, { error: 'text is required' });
     }
-    const actorId = req.body?.actorId || 'user';
+    const actorId = req.owner.id;
     const result = await agent.handleMessage({ text, actorId });
     sendJson(res, 200, result);
   });
@@ -39,7 +39,7 @@ export function registerAgentRoutes(router, { agent }) {
       return sendJson(res, 400, { error: 'text is required' });
     }
     const speaker = req.body?.speaker;
-    const actorId = speaker?.identity || 'unknown';
+    const actorId = req.owner.id;
     const confidence = typeof speaker?.confidence === 'number' && Number.isFinite(speaker.confidence) ? speaker.confidence : 0;
     const voice = { confidence };
     const result = await agent.handleMessage({ text, actorId, voice });

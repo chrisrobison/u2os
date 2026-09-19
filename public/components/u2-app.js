@@ -49,9 +49,17 @@ function effectiveTheme() {
 // routing into the workspace pane, and one shared SSE connection kept
 // alive across route changes.
 export class U2App extends HTMLElement {
-  connectedCallback() {
+  async connectedCallback() {
     if (this._built) return;
     this._built = true;
+
+    try {
+      const status = await api.getAuthStatus();
+      if (!status.authenticated) return this._renderAuth(status.setupRequired);
+    } catch (err) {
+      this.innerHTML = `<main class="workspace"><div class="load-error">Unable to contact U2OS: ${escapeHtml(err.message)}</div></main>`;
+      return;
+    }
 
     this.innerHTML = `
       <div class="shell">
@@ -86,6 +94,20 @@ export class U2App extends HTMLElement {
       this._route();
     });
     this._route();
+  }
+
+  _renderAuth(setupRequired) {
+    this.innerHTML = `<main class="workspace" style="max-width:32rem;margin:10vh auto">
+      <div class="workspace__header"><div class="workspace__title">${setupRequired ? 'Set up U2OS' : 'Unlock U2OS'}</div>
+      <div class="workspace__subtitle">${setupRequired ? 'Create the single-owner passphrase. Passkeys can be added in a later release.' : 'Enter your owner passphrase.'}</div></div>
+      <form class="dashboard-card"><label>Passphrase <input name="passphrase" type="password" minlength="12" required autocomplete="${setupRequired ? 'new-password' : 'current-password'}"></label>
+      <button type="submit">${setupRequired ? 'Create owner' : 'Log in'}</button><div class="load-error" hidden></div></form></main>`;
+    const form = this.querySelector('form');
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault(); const error = form.querySelector('.load-error'); error.hidden = true;
+      try { if (setupRequired) await api.setupOwner(form.passphrase.value); else await api.login(form.passphrase.value); this._built = false; this.connectedCallback(); }
+      catch { error.textContent = 'Unable to authenticate.'; error.hidden = false; }
+    });
   }
 
   _toggleTheme() {

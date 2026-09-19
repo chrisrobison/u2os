@@ -122,11 +122,31 @@ CREATE TABLE IF NOT EXISTS agent_actions (
   status TEXT NOT NULL DEFAULT 'pending',
   approved_by TEXT,
   approved_at TEXT,
+  rejected_by TEXT,
+  rejected_at TEXT,
   result TEXT,
   correlation_id TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS owners (
+  id TEXT PRIMARY KEY,
+  passphrase_hash TEXT NOT NULL,
+  salt TEXT NOT NULL,
+  scrypt_params TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  id_hash TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL REFERENCES owners(id),
+  csrf_token TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_owner ON sessions(owner_id);
 
 -- Phase 6 / PROMPT.md §9: Task/Trigger Engine + Proactive Agent additions.
 -- See docs/automation.md for the full design contract this mirrors exactly.

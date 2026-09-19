@@ -112,7 +112,7 @@ export class Agent {
     const auditRow = recordAudit({
       requestedBy,
       requestText,
-      model: 'mock-model-provider',
+      model: this.modelProvider.id || this.modelProvider.name || 'unknown-model-provider',
       tool: toolName,
       arguments: args,
       reasoningSummary,
@@ -420,7 +420,7 @@ export class Agent {
     if (!action) throw new Error(`No such action: ${id}`);
     if (action.status !== 'pending') throw new Error(`Action ${id} is not pending (status=${action.status})`);
 
-    updateAgentAction(id, { status: 'rejected', approvedBy: rejectedBy, approvedAt: new Date().toISOString() });
+    updateAgentAction(id, { status: 'rejected', rejectedBy, rejectedAt: new Date().toISOString() });
     this.eventBus.publish({
       type: 'agent.action.rejected',
       source: 'user',

@@ -51,7 +51,7 @@ test('GET /api/connectors never leaks a stored secret, access token, or client s
     writeEncryptedFile('web-search', { apiKey: 'FAKE_BRAVE_API_KEY_VALUE' }, dir);
     writeEncryptedFile('notify-webhook', { webhookUrl: 'https://ntfy.sh/FAKE_TOPIC_VALUE', format: 'ntfy' }, dir);
 
-    handle = await startServer({ port: 0 });
+    handle = await startServer({ port: 0, disableAuthForTests: true });
     const port = handle.server.address().port;
 
     const res = await fetch(`http://127.0.0.1:${port}/api/connectors`);
@@ -80,7 +80,7 @@ test('OAuth callback rejects an unknown/never-issued state instead of silently a
   const dir = tempHome();
   let handle;
   try {
-    handle = await startServer({ port: 0 });
+    handle = await startServer({ port: 0, disableAuthForTests: true });
     const port = handle.server.address().port;
 
     const res = await fetch(
@@ -104,7 +104,7 @@ test(
     const dir = tempHome();
     let handle;
     try {
-      handle = await startServer({ port: 0 });
+      handle = await startServer({ port: 0, disableAuthForTests: true });
 
       // Configure the domain for the real connector, but never connect it
       // (no stored Google tokens) -- provider-registry must fall back to
