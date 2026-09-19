@@ -11,9 +11,15 @@ It is not a chatbot or desktop wrapper. Events, structured memory, policies, too
 U2OS is currently a working pre-alpha prototype. The repository implements the seven development phases in [PROMPT.md](PROMPT.md), plus the deployment milestone, as tested vertical slices:
 
 - Persistent SQLite event log with normalized events, correlation, provenance, subscriptions, filtered history, and SSE delivery
-- Structured entities, facts, relationships, commitments, and memory provenance
+- Structured entities, facts, relationships, commitments, and memory provenance, including a per-fact data-processing privacy classification
+- An Agent orchestrator decomposed into focused services (ContextAssembler, Planner, ActionEvaluator, ActionExecutor, ApprovalManager, EvaluatorRegistry) rather than one growing class
+- Real OpenAI-compatible and Anthropic model providers alongside the deterministic `MockModelProvider`, selected per-role by a `ModelRouter` with one deterministic fallback retry
+- A strict, validated plan schema (bounded action count/argument depth, `dependsOn`, `memoryCandidates`) with one bounded, non-fabricating repair pass before a malformed plan is rejected outright
+- Bounded, ranked, provenance-tagged personal-context assembly for planning requests, with optional semantic (embedding-based) fact re-ranking over the same structured memory -- never a vector-database replacement
+- A data-processing privacy policy, separate from tool authorization, governing what data may reach a local vs. remote model provider
+- Prompt-injection containment tests proving retrieved content cannot register tools, authorize actions, or alter policy/routing configuration
 - Tool registry and a policy engine outside the model execution path
-- Audited consequential actions with explicit approval or hard policy blocks
+- Audited consequential actions with explicit approval or hard policy blocks, plus an explainability query (`explainAction()` / `GET /api/actions/:id/explain`) tying a decision to its model, policy rule, retrieved-context provenance, and full event chain
 - Native Web Component interface with morning, meeting, and project dashboards
 - Google Calendar, Gmail, Google Contacts, Brave Search, and webhook connector adapters, with mock fallbacks
 - Encrypted local credential storage and Google OAuth support
@@ -22,7 +28,7 @@ U2OS is currently a working pre-alpha prototype. The repository implements the s
 - Outcome feedback that adjusts prioritization without weakening authorization policies
 - Docker, systemd, launchd, mDNS, health checks, structured logs, backup/restore, and portable JSON export
 
-This is not production-ready. A single-owner passphrase, expiring sessions, CSRF protection, request limits, and loopback-default networking now protect the HTTP boundary. Do not expose the server directly to the public internet. Major limitations include the deterministic mock planner, simplified speaker verification, several placeholder dashboard components, in-process-only rate limits, and limited browser-level test coverage.
+This is not production-ready. A single-owner passphrase, expiring sessions, CSRF protection, request limits, and loopback-default networking now protect the HTTP boundary. Do not expose the server directly to the public internet. `MockModelProvider` remains the default until a real provider is configured (see [docs/models.md](docs/models.md)). Major limitations include simplified speaker verification, several placeholder dashboard components, in-process-only rate limits, no HTTP route yet for multi-provider/role model configuration, memory-candidate confirmation still being a manual step rather than a dedicated API/UI, and limited browser-level test coverage.
 
 ## Architecture
 
@@ -94,7 +100,7 @@ npm run dev
 npm test
 ```
 
-The current suite contains 101 Node tests covering the event bus, memory, policy enforcement, tools, the complete approval vertical slice, dashboard generation, connectors and OAuth security, encrypted credentials, deployment utilities, triggers, proactive decisions, feedback, and voice authorization.
+The current suite contains 197 Node tests covering the event bus, memory, policy enforcement, tools, the complete approval vertical slice, dashboard generation, connectors and OAuth security, encrypted credentials, deployment utilities, triggers, proactive decisions, feedback, voice authorization, the Agent-refactor regression suite, model providers and routing, the strict plan schema, real bounded context assembly, semantic memory retrieval, the data-processing privacy policy, prompt-injection containment, the intelligent end-to-end vertical slice, and explainability.
 
 ## Data operations
 
@@ -132,13 +138,13 @@ The Compose configuration stores U2OS data in a named volume and exposes the ser
 
 Mock calendar, email, contacts, search, and notification providers work without external accounts. Real adapters are available for Google Calendar, Gmail, Google Contacts, Brave Search, and generic webhooks. CalDAV, IMAP, Deepgram, and ElevenLabs currently have manifests only and are not implemented providers.
 
-The default planner is still `MockModelProvider`, a deterministic intent matcher for demonstration workflows. An opt-in OpenAI-compatible provider can target a local or hosted endpoint, but role-based routing and broader context assembly remain unfinished Milestone 2 work. Voice similarity uses a lightweight browser-side DSP fingerprint and must not be treated as authentication.
+The default planner is still `MockModelProvider`, a deterministic intent matcher for demonstration workflows and the offline/test fixture. Opt-in OpenAI-compatible and Anthropic providers can target a local or hosted endpoint, routed per-role by `ModelRouter` and given bounded, ranked, provenance-tagged personal context by `ContextAssembler` (docs/models.md, docs/architecture.md). No HTTP route yet configures multi-provider/role setups -- only a single provider via `POST /api/model`. Voice similarity uses a lightweight browser-side DSP fingerprint and must not be treated as authentication.
 
 ## Security warning
 
 U2OS binds to `127.0.0.1` by default and requires owner login for private APIs. This is still a pre-alpha single-owner service, not an internet-facing product. LAN binding is an explicit configuration decision; use a trusted TLS reverse proxy and firewall if you make one. Backups contain the credential master key and owner hash and are as sensitive as the live identity store. See [SECURITY.md](SECURITY.md).
 
-Security properties already present include policy enforcement outside the planner, append-only action/event auditing, encrypted connector secrets, OAuth state validation, secret-redacted APIs, safe dashboard schemas, and regression tests preventing feedback or voice confidence from loosening authorization policy.
+Security properties already present include policy enforcement outside the planner, a separate data-processing privacy policy governing what data may reach a local vs. remote model, prompt-injection containment tests, append-only action/event auditing with retrieved-context provenance, encrypted connector secrets, OAuth state validation, secret-redacted APIs, safe dashboard schemas, and regression tests preventing feedback or voice confidence from loosening authorization policy.
 
 ## Repository layout
 

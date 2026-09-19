@@ -1,6 +1,6 @@
 # U2OS architecture
 
-U2OS is a persistent personal digital agent—an operating system for a person's digital self—not a chatbot with storage attached. Its durable loop is **observe → remember → anticipate → act → observe outcome → learn**. The append-only event log is the source of truth; structured memory is a projection; models are replaceable infrastructure.
+U2OS is a persistent personal digital agent—an operating system for a person's digital self—not a chatbot with storage attached. Its durable loop is **observe → remember → anticipate → act → observe outcome → learn**. The append-only event log is the immutable history, provenance, correlation, and replay spine; SQLite's relational tables (entities/facts/relationships/tasks/calendar_events/agent_actions/...) are the authoritative, directly-queried materialized application state; models are replaceable infrastructure. See "Event log and operational state" below for why this is a deliberate choice, not an inconsistency.
 
 ## Runtime and authority
 
@@ -77,6 +77,17 @@ This is containment, not a guarantee that a sufficiently capable model can never
 Structured entities/facts/relationships remain the authoritative store (PLAN.md Phase 5 is explicit that this is not a vector-database migration). `server/agent/embeddings/` defines an `EmbeddingProvider` abstraction (`embed`/`embedBatch`) alongside `ModelProvider`, with a deterministic `MockEmbeddingProvider` (offline default, same honesty rule as `MockModelProvider` -- a crude word-hash sketch, not real semantic understanding) and a real `OpenAICompatibleEmbeddingProvider` (`POST <baseUrl>/v1/embeddings`). `ModelRouter` resolves either kind for a role the same way -- it's capability-agnostic; a caller resolving the `embeddings` role gets back whatever type that role's config declares.
 
 `server/memory/embedding-store.js` stores one vector per `(subjectType, subjectId, model)` as plain JSON in a new `embeddings` SQLite table -- no vector database, no ANN index; cosine similarity is computed application-side (`server/memory/semantic-retrieval.js`), which is sufficient at personal scale (dozens to low thousands of facts). `rankFactsHybrid()` combines semantic similarity with recency, confidence, exact-word overlap, and an explicit inferred-fact penalty into one score, returning every fact annotated with a `_relevance` breakdown -- a purely vector-similarity result is deliberately not treated as sufficient on its own. `ContextAssembler` uses this automatically once constructed with an `embeddingProvider`; `server/index.js` only does so when the owner has explicitly configured an `embeddings` role (see docs/models.md's "DOCUMENTED FOOTGUN" note -- silently reusing a planning-model provider for embeddings would hand it something whose `.embed()` doesn't exist).
+
+## Event log and operational state
+
+U2OS is **not** a pure event-sourced system, and PLAN.md's Phase 10 makes that an explicit architectural stance rather than an unresolved inconsistency between documentation and implementation:
+
+- The **event log** (`events` table, `server/events/`) is the immutable history: every observation, decision, and outcome is appended once and never mutated. It carries correlation (`correlation_id`) and causation (`causation_id`) so a chain of related activity can be reconstructed, and it is what `GET /api/events`, the SSE activity feed, and `explainAction()`'s related-events list all read from directly -- there is no separate "history" store to keep in sync.
+- **Operational relational tables** (`entities`, `facts`, `relationships`, `tasks`, `calendar_events`, `emails`, `agent_actions`, `embeddings`, ...) are the **authoritative, directly-queried application state**. Routes and tools read and write these tables directly, not by replaying the event log on every request -- that would be needlessly slow and complex for a single-process personal agent.
+- A `memory.fact_recorded`-style event and its corresponding `facts` row are **produced together, from the same code path**, not derived from each other after the fact. The event documents that the write happened (for history/audit/explainability); the row is what every other read in the system actually queries.
+- Some projections (the memory projector's calendar-attendee facts, commitment detection) are, in practice, rebuildable from the event log if it were replayed from scratch -- but U2OS does not currently ship a replay-to-rebuild tool, and growing one is optional future work, not a requirement for the architecture to make sense today.
+
+This keeps the event log doing what it's actually good for here -- history, correlation, provenance, explainability, real-time delivery -- without taking on full event-sourcing's complexity (snapshotting, replay-on-read, eventual-consistency reasoning) for a single-user, single-process, personal agent where direct relational queries are simpler, faster, and just as correct.
 
 ## Approval vertical slice
 

@@ -1,6 +1,8 @@
 # U2OS Event Model
 
-The event log is the connective tissue of U2OS. Nothing important happens without an event being published. This document defines the envelope, the Phase 1 event taxonomy, and the persistence schema.
+The event log is the connective tissue of U2OS. Nothing important happens without an event being published. This document defines the envelope, the event taxonomy, and the persistence schema.
+
+**Architectural stance (PLAN.md Phase 10):** the event log is the immutable history/provenance/correlation/replay spine, not the primary read path for application state. SQLite's relational tables (entities, facts, relationships, tasks, calendar_events, agent_actions, ...) are the authoritative, directly-queried materialized state; routes and tools read/write those tables directly. An event and its corresponding row are written together from the same code path, not derived from one another. See docs/architecture.md's "Event log and operational state" for the full reasoning -- U2OS is deliberately not a pure event-sourced system.
 
 ## Envelope
 
@@ -55,7 +57,7 @@ CREATE INDEX idx_events_correlation ON events(correlation_id);
 
 The log is append-only. Nothing ever updates or deletes a row here (export/GDPR-style deletion is a separate, explicit, audited operation — not implemented in Phase 1).
 
-## Phase 1 event taxonomy
+## Event taxonomy
 
 Emitted by mock tools/integrations:
 
