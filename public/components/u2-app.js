@@ -154,7 +154,7 @@ export class U2App extends HTMLElement {
         break;
       case 'memory':
         if (sub) this._renderEntityDetail(sub);
-        else this._renderEntityList({ title: 'Memory', linkBase: '#/memory' });
+        else this._renderMemory();
         break;
       case 'projects':
         if (sub) this._renderEntityDetail(sub);
@@ -393,6 +393,32 @@ export class U2App extends HTMLElement {
     // u2-voice (Phase 5 enrollment) is the same self-fetching pattern as
     // u2-connectors -- nothing for u2-app to await or wrap here either.
     this._setWorkspace('', document.createElement('u2-voice'));
+  }
+
+  async _renderMemory() {
+    this._setWorkspace(this._header('Memory'), this._loading('Loading...'));
+    try {
+      const [{ entities }, { candidates }] = await Promise.all([api.getMemoryEntities(), api.getMemoryCandidates()]);
+      const wrap = document.createElement('div');
+      if (candidates.length) {
+        const heading = document.createElement('div'); heading.className = 'entity-detail__section-title'; heading.textContent = 'Pending memories'; wrap.appendChild(heading);
+        for (const candidate of candidates) {
+          const card = document.createElement('form'); card.className = 'dashboard-card';
+          card.innerHTML = `<p>${escapeHtml(candidate.content)}</p><label>Attach to <select name="entityId" required>${entities.map((e) => `<option value="${escapeHtml(e.id)}">${escapeHtml(e.name || e.id)}</option>`).join('')}</select></label><label>Fact key <input name="key" required placeholder="preference"></label><button type="submit">Accept</button> <button type="button" data-reject>Reject</button>`;
+          card.addEventListener('submit', async (event) => { event.preventDefault(); await api.acceptMemoryCandidate(candidate.id, { entityId: card.elements.entityId.value, key: card.elements.key.value }); this._renderMemory(); });
+          card.querySelector('[data-reject]').addEventListener('click', async () => { await api.rejectMemoryCandidate(candidate.id); this._renderMemory(); });
+          wrap.appendChild(card);
+        }
+      }
+      const list = document.createElement('div'); list.className = 'entity-list';
+      for (const entity of entities) {
+        const row = document.createElement('div'); row.className = 'entity-row';
+        row.innerHTML = `<span class="entity-row__name">${escapeHtml(entity.name)}</span><span class="entity-row__type">${escapeHtml(entity.type)}</span>`;
+        row.addEventListener('click', () => { window.location.hash = `#/memory/${encodeURIComponent(entity.id)}`; }); list.appendChild(row);
+      }
+      if (!entities.length) list.innerHTML = '<div class="empty-state">Nothing here yet.</div>';
+      wrap.appendChild(list); this._setWorkspace(this._header('Memory'), wrap);
+    } catch (err) { this._setWorkspace(this._header('Memory'), this._error(err)); }
   }
 
   async _renderEntityList({ title, linkBase, type }) {

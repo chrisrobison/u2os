@@ -42,6 +42,12 @@ export function startAll({ db, eventBus, dataDir } = {}) {
   return { started: [...timers.keys()] };
 }
 
+/** Re-read connector configuration after a runtime connect/disconnect or
+ * provider switch and make the timer set match it immediately. */
+export function reconcile(options = {}) {
+  return startAll(options);
+}
+
 /** Clears every interval this module started. Call from tests' cleanup and
  * before the process exits so nothing keeps it alive. */
 export function stopAll() {

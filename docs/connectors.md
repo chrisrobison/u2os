@@ -94,6 +94,8 @@ A provider module for a given domain must export the same function shape the moc
 
 Real providers additionally implement `async syncChanges({ db, eventBus, correlationId })` (calendar/email/contacts only — web/notifications are call-and-response, nothing to sync) called by `sync-scheduler.js`. `syncChanges` fetches recent upstream state, **upserts into the existing `calendar_events` / `emails` / `entities` tables** (no schema changes — see ID convention below), and publishes exactly the event types the mocks already publish (`calendar.event_added`, `calendar.event_changed`, `email.received`), with `source` set to the real provider id (`google-calendar`, `gmail`) instead of `mock-*`. Consumers (memory projector, dashboards, activity feed) do not need to know or care which source produced an event.
 
+The scheduler reconciles its per-domain timers immediately after OAuth completion, disconnect, or an active-provider change. Connecting a provider at runtime therefore does not require a server restart before recurring sync begins.
+
 **ID convention** so tool-level operations (e.g. "reschedule event X") work identically regardless of provider: real rows use a provider-prefixed id, e.g. `gcal_<googleEventId>`, `gmail_<messageId>`. This also makes accidental id collisions between providers structurally impossible.
 
 ## `server/integrations/provider-registry.js`

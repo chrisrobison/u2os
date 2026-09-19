@@ -1,6 +1,6 @@
 # U2OS Dynamic Dashboards
 
-Status: schema defined in Phase 1 groundwork; full dynamic generation (agent composing arbitrary layouts from context) is Phase 2. This document specifies the contract so Phase 1's static "morning" dashboard and Phase 2's generator emit the same shape.
+Status: implemented for `morning`, `before-meeting`, and `project` contexts. Schemas are composed from live calendar/task/memory data and validated before delivery. Several richer component types still render placeholders.
 
 ## Principle
 
@@ -38,10 +38,10 @@ The LLM never emits HTML/JS. It emits a JSON **dashboard schema**. The frontend 
 
 (`<u2-person>`, `<u2-project>`, `<u2-photo-grid>`, `<u2-document>`, `<u2-map>`, `<u2-chart>`, `<u2-conversation>`, `<u2-agent-status>` are reserved component names for Phase 2+ dashboards — e.g. "before a meeting" and "project work" briefings — and are not required to render anything in Phase 1 beyond a placeholder.)
 
-## Phase 1 scope
+## Current scope
 
-`GET /api/dashboard/morning` returns a static instance of this schema (still going through the same validator Phase 2's generator will use) populated from live data: today's calendar, priority tasks, and the pending-approvals list — enough to prove the render pipeline end to end before the agent generates layouts dynamically.
+`GET /api/dashboard/morning` remains the compatibility route. `POST /api/dashboard/generate` accepts `morning`, `before-meeting`, or `project` plus context parameters and composes the schema from live data.
 
 ## Server-side validation
 
-`server/api/dashboard-schema.js` exports `validateDashboard(schema)` which throws if `layout`, any `components[].type`, or any `components[].source` falls outside the allowlists above. No dashboard schema reaches the HTTP response without passing this.
+`server/api/dashboard-schema.js` exports `validateDashboard(schema)`. It rejects unknown fields, unregistered layouts/types/sources, excessive component counts, oversized data, unsafe object keys, and excessive nesting. No dashboard schema reaches the HTTP response without passing this.

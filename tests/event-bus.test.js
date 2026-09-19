@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { EventBus } from '../server/events/event-bus.js';
 import { getDb } from '../server/db/connection.js';
+import { listEventsAfterId } from '../server/events/log.js';
 
 function tempHome() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-test-'));
@@ -54,6 +55,17 @@ test('EventBus.publish persists to the events table and delivers to exact/prefix
   } finally {
     cleanup(dir);
   }
+});
+
+test('listEventsAfterId replays only events after an SSE cursor in causal order', () => {
+  const dir = tempHome();
+  try {
+    const db = getDb(); const bus = new EventBus(db);
+    const first = bus.publish({ type: 'test.first' });
+    const second = bus.publish({ type: 'test.second' });
+    const third = bus.publish({ type: 'test.third' });
+    assert.deepEqual(listEventsAfterId(db, first.id).map((e) => e.id), [second.id, third.id]);
+  } finally { cleanup(dir); }
 });
 
 test('EventBus.subscribe returns an unsubscribe function that stops delivery', () => {

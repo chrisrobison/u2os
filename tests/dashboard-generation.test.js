@@ -64,6 +64,13 @@ test('generateDashboard({context: "morning"}) returns a schema that passes valid
   }
 });
 
+test('dashboard validation rejects unknown fields, unsafe keys, excessive nesting, and oversized component sets', () => {
+  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [], html: '<script>' }), /Unrecognized/);
+  const deep = {}; let cursor = deep; for (let i = 0; i < 10; i++) cursor = cursor.next = {};
+  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [{ type: 'alert', data: deep }] }), /deeply/);
+  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: Array.from({ length: 51 }, () => ({ type: 'alert', data: {} })) }), /at most/);
+});
+
 test('generateDashboard({context: "before-meeting"}) for a real seeded person (Sarah) reflects her real data and validates', () => {
   const dir = tempHome();
   try {

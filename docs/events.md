@@ -55,7 +55,7 @@ CREATE INDEX idx_events_timestamp ON events(timestamp);
 CREATE INDEX idx_events_correlation ON events(correlation_id);
 ```
 
-The log is append-only. Nothing ever updates or deletes a row here (export/GDPR-style deletion is a separate, explicit, audited operation — not implemented in Phase 1).
+Normal application operation is append-only: no route or agent workflow updates or deletes event rows. The explicit maintenance CLI can prune events older than an operator-selected retention period after a dry run; it records `system.event_retention_applied` before deletion. See `docs/deployment.md`.
 
 ## Event taxonomy
 
@@ -65,13 +65,13 @@ Emitted by mock tools/integrations:
 |---|---|---|
 | `calendar.event_added` | a calendar event is created | `mock-calendar` |
 | `calendar.event_changed` | a calendar event is rescheduled/edited | `mock-calendar` |
-| `calendar.event_approaching` | trigger engine detects an event starting soon (Phase 1: not yet scheduled, table stakes for Phase 2 morning briefing) | `trigger-engine` |
+| `calendar.event_approaching` | trigger engine detects an event starting soon, deduplicated per trigger/event | `trigger-engine` |
 | `email.received` | seed/demo inbound mail lands | `mock-email` |
 | `email.sent` | `email.send` tool executes | `mock-email` |
 | `contact.birthday_approaching` | derived from contacts + date (seed-time only in Phase 1) | `mock-contacts` |
 | `task.created` | `tasks.create` executes | `mock-tasks` |
 | `task.completed` | `tasks.complete` executes | `mock-tasks` |
-| `task.overdue` | not yet scheduled (Phase 2) | `trigger-engine` |
+| `task.overdue` | trigger engine detects an overdue open task, deduplicated per trigger/task | `trigger-engine` |
 | `notification.sent` | `notifications.send` executes | `mock-notifications` |
 
 Emitted by the agent/policy/tool pipeline (internal, domain-independent):
@@ -83,7 +83,7 @@ Emitted by the agent/policy/tool pipeline (internal, domain-independent):
 | `agent.action.rejected` | user rejected a pending action |
 | `agent.action.completed` | a tool executed successfully (autonomous or after approval) |
 | `agent.action.failed` | a tool execution threw / returned an error |
-| `agent.memory_candidate.proposed` | a validated plan (server/agent/plan-validator.js) included `memoryCandidates` -- records what the model proposed remembering. This is NOT a memory write: no fact/entity is created by this event. Promoting a candidate into an established fact, with its own source/confidence/provenance, is a separate explicit step (planned; not yet implemented) -- see docs/architecture.md and PLAN.md's memory-provenance work. |
+| `agent.memory_candidate.proposed` | a validated plan included `memoryCandidates`. A durable pending candidate is created, but no fact/entity is written until the owner accepts it through `/api/memory/candidates/:id/accept`. Rejection preserves the candidate and audit state without promoting it. |
 | `agent.context_restricted` | the data-processing privacy policy (server/policy/data-processing-policy.js) withheld one or more facts from the context sent to a specific model provider for this request -- data(classification) x destination, separate from tool authorization. `data` includes `destination`, `providerId`, and the withheld fact ids/classifications/rules so the omission is auditable, never silent. |
 | `user.feedback` | user accepted/rejected/edited a suggestion post-hoc (Phase 7 hook, schema reserved now) |
 
@@ -95,7 +95,7 @@ Derived/memory events (published by the memory projector after it updates entiti
 | `memory.relationship_recorded` | a new relationship edge was written |
 | `commitment.made` | the agent recognized a stated commitment ("I'll send the proposal") and created/linked a `Commitment` entity |
 
-Not implemented until later phases (reserved names, do not repurpose): `calendar.event_approaching` (partially — see trigger engine note above), `document.created`, `document.changed`, `project.changed`, `purchase.completed`, `subscription.renewing`, `package.shipped`, `location.changed`, `message.received`.
+Not implemented until later phases (reserved names, do not repurpose): `document.created`, `document.changed`, `project.changed`, `purchase.completed`, `subscription.renewing`, `package.shipped`, `location.changed`, `message.received`.
 
 ## Subscribing
 
@@ -108,3 +108,5 @@ eventBus.subscribe('*', handler); // activity feed, SSE hub
 ## Replay
 
 `GET /api/events?type=&since=&correlationId=&limit=` reads directly from the `events` table — the API never has a separate "history" store to keep in sync; it's the same log.
+
+The SSE stream includes each event's durable id. Reconnecting clients send `Last-Event-ID`; the server replays later persisted events before resuming live delivery. Comment heartbeats keep otherwise-idle connections alive.

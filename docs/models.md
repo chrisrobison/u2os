@@ -7,7 +7,7 @@ U2OS defaults to the deterministic `MockModelProvider`. Two real adapters are im
 
 In both cases the model is planning infrastructure only: returned JSON is validated by the shared `validatePlan()` against the registered tool names and argument schemas (server/agent/plan-validator.js) before anything reaches the policy engine, and every consequential proposal still passes through that same policy engine regardless of which provider produced it.
 
-## Configuring a single provider (current HTTP API)
+## Configuring providers (current HTTP API)
 
 `POST /api/model`:
 
@@ -29,11 +29,13 @@ or, for Anthropic:
 
 The endpoint and model name are stored in `U2OS_HOME/config/config.json`; a supplied API key is encrypted in the existing credential vault under `model-<provider>` and is never returned by `GET /api/model`. Restart U2OS after changing providers. Set `{ "provider": "mock" }` to return to the offline deterministic planner.
 
+The same endpoint also accepts the multi-provider shape shown below. Provider API keys may be supplied inside their provider entries; they are removed from `config.json` and encrypted in the vault. Changes currently require a restart.
+
 ## ModelRouter and roles
 
 `server/agent/model-router.js` resolves a provider for a role (`planner`, `classifier`, `summarizer`, `extractor`, `response`, `embeddings`, ...) from a small, deterministic config -- role name looks up a configured provider name, nothing more elaborate. `Agent` accepts either a single `modelProvider` (what every existing test and the single-provider HTTP config above still produce) or a `modelRouter`; `server/index.js` always builds a router via `createModelRouter()`, which normalizes the legacy single-provider config into one provider used for every role, so existing installations need no config change.
 
-A multi-provider, per-role config is supported at the config-file level (there is no HTTP route to write one yet -- see Known limitations below):
+A multi-provider, per-role config is supported through `POST /api/model` and at the config-file level:
 
 ```json
 {
@@ -62,7 +64,7 @@ Retrieval combines semantic similarity with recency, confidence, exact-word over
 
 ## Known limitations
 
-- No HTTP route yet writes a multi-provider/role config; only the single-provider shape is configurable from the UI.
+- The browser UI still exposes only the single-provider form; multi-provider configuration currently uses the HTTP API or config file.
 - `ContextAssembler` (docs/architecture.md) applies semantic ranking only to facts within an already-selected person, not to which people/commitments get selected in the first place.
 - No streaming.
 - Provider failure (including after a fallback attempt) is explicit and never silently executes a stale plan or bypasses policy.

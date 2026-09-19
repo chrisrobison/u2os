@@ -57,7 +57,7 @@ export class VoiceprintService {
   async loadStatus() {
     try {
       const data = await getVoiceEnrollment();
-      this._voiceprint = Array.isArray(data.vector) && data.vector.length ? data.vector : null;
+      this._voiceprint = null;
       return { enrolled: !!data.enrolled, enrolledAt: data.enrolledAt || null };
     } catch (err) {
       this._voiceprint = null;
@@ -133,15 +133,19 @@ export class VoiceprintService {
    * never claims an identity with nothing to compare against.
    */
   identifySpeaker(frames) {
-    if (!this._voiceprint || !frames || !frames.length) {
+    if (!frames || !frames.length) {
       return { cluster: 0, identity: 'unknown', confidence: 0 };
     }
     const vector = normalize(averageBandVector(frames));
+    if (!this._voiceprint) {
+      return { cluster: 0, identity: 'unknown', confidence: 0, observationVector: vector };
+    }
     const confidence = Math.max(0, Math.min(1, cosineSimilarity(vector, this._voiceprint)));
     return {
       cluster: 0,
       identity: confidence >= OWNER_SIMILARITY_FLOOR ? 'owner' : 'unknown',
       confidence,
+      observationVector: vector,
     };
   }
 }

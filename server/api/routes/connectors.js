@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { sendJson } from '../router.js';
 import { getHealth, resolveConnectedRealProvider } from '../../integrations/provider-registry.js';
 import { setActiveProvider, validProviderIdsFor } from '../../integrations/connectors-config.js';
-import { triggerSync } from '../../integrations/sync-scheduler.js';
+import { triggerSync, reconcile as reconcileSyncScheduler } from '../../integrations/sync-scheduler.js';
 import { manifestsByDomain } from '../../integrations/skill-manifests.js';
 import { readEncryptedFile, writeEncryptedFile } from '../../security/vault.js';
 import {
@@ -109,6 +109,7 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
         code,
       });
       storeTokens(service, tokens);
+      reconcileSyncScheduler({ db, eventBus });
       res.writeHead(302, { Location: `/#/connectors?connected=${encodeURIComponent(service)}` });
       res.end();
     } catch (err) {
@@ -125,6 +126,7 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
       return sendJson(res, 400, { error: `service must be one of ${GOOGLE_SERVICES.join(', ')}` });
     }
     clearTokens(service);
+    reconcileSyncScheduler({ db, eventBus });
     sendJson(res, 200, { disconnected: service });
   });
 
@@ -147,6 +149,7 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
     const { providerId } = req.body || {};
     try {
       setActiveProvider(domain, providerId);
+      reconcileSyncScheduler({ db, eventBus });
       sendJson(res, 200, { domain, active: providerId });
     } catch (err) {
       sendJson(res, 400, { error: err.message, validProviders: validProviderIdsFor(domain) });

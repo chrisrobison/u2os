@@ -68,9 +68,12 @@ test('POST /api/agent/voice-message: a high-confidence speaker leaves an autonom
     handle = await startServer({ port: 0 });
     const port = handle.server.address().port;
 
+    await postJson(port, '/api/voice/enrollment', { vector: [1, 0, 0, 0] });
+
     const { status, body } = await postJson(port, '/api/agent/voice-message', {
       text: 'Remind me to call the plumber.',
       speaker: { cluster: 0, identity: 'owner', confidence: 0.98 },
+      voiceObservation: { vector: [1, 0, 0, 0] },
     });
 
     assert.equal(status, 200);
@@ -79,6 +82,21 @@ test('POST /api/agent/voice-message: a high-confidence speaker leaves an autonom
   } finally {
     await cleanup(dir, handle);
   }
+});
+
+test('POST /api/agent/voice-message ignores spoofed client confidence without a matching server-verified observation', async () => {
+  const dir = tempHome(); let handle;
+  try {
+    handle = await startServer({ port: 0 });
+    const port = handle.server.address().port;
+    await postJson(port, '/api/voice/enrollment', { vector: [1, 0, 0, 0] });
+    const { body } = await postJson(port, '/api/agent/voice-message', {
+      text: 'Remind me to call the plumber.',
+      speaker: { identity: 'owner', confidence: 1 },
+      voiceObservation: { vector: [0, 1, 0, 0] },
+    });
+    assert.equal(body.actions[0].status, 'pending');
+  } finally { await cleanup(dir, handle); }
 });
 
 test('POST /api/agent/voice-message: a reschedule (already confirm-gated by the seed policy) still requires approval with a low-confidence speaker', async () => {

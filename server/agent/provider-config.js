@@ -20,6 +20,17 @@ export function saveModelConfig(model, apiKey, dataDir = getDataDir()) {
   if (apiKey && model?.provider) writeEncryptedFile(`model-${model.provider}`, { apiKey }, dataDir);
   return model;
 }
+
+export function saveMultiProviderConfig(model, secrets = {}, dataDir = getDataDir()) {
+  const file = path.join(dataDir, 'config', 'config.json'); let config = {};
+  try { config = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
+  config.model = model;
+  fs.writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
+  for (const [name, apiKey] of Object.entries(secrets)) {
+    if (apiKey) writeEncryptedFile(`model-provider-${model.providers[name].apiKeyRef || name}`, { apiKey }, dataDir);
+  }
+  return model;
+}
 export function createModelProvider(dataDir = getDataDir()) {
   const config = loadModelConfig(dataDir);
   return instantiateSingleProvider(config, dataDir);

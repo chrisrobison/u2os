@@ -48,13 +48,13 @@ Phase 4 stub: `speaker: { cluster: 0, identity: "unknown", confidence: 0 }`, `au
 
 The server is the only place authorization actually gets decided — a compromised or simply buggy browser tab reporting `authorized: true` must not be trusted blindly, because a real attacker model here is "someone else's browser tab talking to my server," not just "the owner's own honest client." So:
 
-`POST /api/agent/voice-message` body: `{ text, speaker: { cluster, identity, confidence } }` →
+`POST /api/agent/voice-message` body: `{ text, voiceObservation: { vector } }` →
 
 1. Looks up the confidence thresholds from `~/.u2os/config/config.json` (new `voiceThresholds` block, defaults per PROMPT.md §7: `conversation: 0.70, standard: 0.85, private: 0.95`).
-2. Runs `agent.handleMessage({ text, actorId: speaker.identity, voice: { confidence: speaker.confidence } })`. Every proposed action the agent produces already goes through `policy-engine.evaluate()` (unchanged, Phase 1's invariant) — Phase 4/5 add exactly one more gate on top, not a replacement: **any consequential action whose policy resolution would otherwise be `autonomous` (no approval needed) is forced to `confirm` if the requesting speaker's `confidence` is below the `standard` threshold**, and refused outright (treated the same as a policy `never`/blocked) if the request touches a domain marked "private" in config and confidence is below the `private` threshold. Financial/legal/destructive actions additionally always require the existing non-voice confirmation mechanism (the web approval UI) regardless of voice confidence, per PROMPT.md §7's explicit "financial / legal / destructive actions require another confirmation mechanism" — voice can never be sufficient authorization for those, only a contributing signal.
+2. Compares the submitted observation vector with the enrolled vector on the server. Client-submitted `speaker.identity`, `speaker.confidence`, or `authorized` values are ignored for authorization. The verified confidence is then passed to `agent.handleMessage`. Any consequential action otherwise autonomous is forced to `confirm` below the standard threshold and private domains are blocked below the private threshold.
 3. This means voice authorization is **additive** to the existing policy engine, implemented as an extra parameter the agent's `evaluateAndMaybeExecute` already threads through `context` (the same mechanism `_buildEvalContext` uses for calendar category) — not a parallel bypassable path.
 
-## Voice status states (PROMPT.md §11, wired into `<u2-agent-status>`, currently a Phase-1 placeholder)
+## Voice status states (PROMPT.md §11, wired into `<u2-agent-status>`)
 
 `idle | listening | owner speaking | other speaker | thinking | acting | speaking | waiting for approval` — driven directly by the pipeline's real state transitions (VAD speech-start/end, recognition start/end, TTS start/end/barge-in, and the existing request-lifecycle states already used for the text chat panel). The UI must always show *who the system believes is speaking* per PROMPT.md §11's explicit example (`● Chris — 96%` / `○ Unknown speaker`) — this is a direct, honest rendering of the speaker metadata above, including in the Phase-4-stub state (it will show "○ Unknown speaker — 0%" until Phase 5 enrollment exists, which is the correct and honest thing for it to show).
 

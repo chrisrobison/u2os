@@ -97,6 +97,18 @@ export function getMemoryEntity(id) {
   return request(`/api/memory/entities/${encodeURIComponent(id)}`);
 }
 
+export function getMemoryCandidates(status = 'pending') {
+  return request(`/api/memory/candidates${qs({ status })}`);
+}
+
+export function acceptMemoryCandidate(id, payload) {
+  return request(`/api/memory/candidates/${encodeURIComponent(id)}/accept`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(payload) });
+}
+
+export function rejectMemoryCandidate(id) {
+  return request(`/api/memory/candidates/${encodeURIComponent(id)}/reject`, { method: 'POST', headers: JSON_HEADERS, body: '{}' });
+}
+
 export function sendAgentMessage(text) {
   return request('/api/agent/message', {
     method: 'POST',
@@ -113,7 +125,12 @@ export function sendVoiceMessage(text, speaker) {
   return request('/api/agent/voice-message', {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ text, speaker }),
+    body: JSON.stringify({
+      text,
+      // identity/confidence are display hints only. Authorization is based
+      // on this observation vector, compared with enrollment by the server.
+      voiceObservation: { vector: speaker?.observationVector || null },
+    }),
   });
 }
 

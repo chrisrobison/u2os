@@ -12,6 +12,7 @@
     "seed": "node server/seed/seed.js",
     "backup": "node server/backup/snapshot.js backup",
     "restore": "node server/backup/snapshot.js restore",
+    "maintain": "node server/events/maintenance-cli.js",
     "setup-owner": "node server/security/setup-owner-cli.js"
   },
   "engines": {

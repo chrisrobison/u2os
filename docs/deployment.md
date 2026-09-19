@@ -32,3 +32,5 @@ A new non-loopback instance refuses startup until an owner exists. Initialize a 
 Systemd and launchd templates under `deploy/` retain loopback. Change the bind only after setup and intentionally. mDNS is disabled on loopback and best-effort on LAN binds. Use a firewall and carefully configured TLS reverse proxy for intentional remote access.
 
 `npm run backup` creates a full snapshot; `npm run restore -- /path/to/archive.tar.gz` restores it. Authenticated `GET /api/export` produces portable JSON without connector secrets. U2OS has no built-in TLS termination, supported public-internet recipe, Windows service, distributed limiter, or production rollback system.
+
+`npm run maintain` runs SQLite and event-log integrity checks. `npm run maintain -- --retention-days 365` previews event pruning; add `--apply` only after taking a backup. Applied retention writes a `system.event_retention_applied` audit event before removing older rows. Retention is intentionally manual rather than an automatic background deletion policy.

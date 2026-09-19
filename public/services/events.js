@@ -18,6 +18,7 @@ export class EventsService {
     this._closed = false;
     this._controller = null;
     this._retryDelay = 1000;
+    this._lastEventId = null;
     this._run();
   }
 
@@ -28,6 +29,7 @@ export class EventsService {
         const res = await fetch(this.url, {
           signal: this._controller.signal,
           headers: { Accept: 'text/event-stream' },
+          ...(this._lastEventId ? { headers: { Accept: 'text/event-stream', 'Last-Event-ID': this._lastEventId } } : {}),
         });
         if (!res.ok || !res.body) {
           throw new Error(`SSE connect failed: ${res.status} ${res.statusText}`);
@@ -63,13 +65,16 @@ export class EventsService {
 
   _dispatchFrame(frame) {
     let data = '';
+    let id = null;
     for (const line of frame.split('\n')) {
       if (line.startsWith(':')) continue; // comment, e.g. ":connected"
       if (line.startsWith('data:')) data += line.slice(5).trim();
+      if (line.startsWith('id:')) id = line.slice(3).trim();
     }
     if (!data) return;
     try {
       const parsed = JSON.parse(data);
+      if (id) this._lastEventId = id;
       window.dispatchEvent(new CustomEvent('u2-event', { detail: parsed }));
     } catch (err) {
       console.error('[u2 events] failed to parse SSE frame', err, frame);

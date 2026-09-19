@@ -9,6 +9,7 @@ import { ActionExecutor } from './action-executor.js';
 import { ApprovalManager } from './approval-manager.js';
 import { EvaluatorRegistry } from './proactive/evaluator-registry.js';
 import { registerBuiltinEvaluators } from './proactive/builtin-evaluators.js';
+import { proposeMemoryCandidate } from '../memory/candidate-store.js';
 
 /**
  * Agent: the orchestrator. It does not itself plan, evaluate policy,
@@ -114,11 +115,13 @@ export class Agent {
     // explicit step; a plan can never silently become "established truth".
     if (Array.isArray(plan.memoryCandidates)) {
       for (const [index, candidate] of plan.memoryCandidates.entries()) {
+        const stored = proposeMemoryCandidate({ content: candidate.content, confidence: candidate.confidence, correlationId, proposedBy: actorId });
         this.eventBus.publish({
           type: 'agent.memory_candidate.proposed',
           source: 'agent',
           actor,
-          data: { content: candidate.content, confidence: candidate.confidence || null, index },
+          subject: { type: 'memory_candidate', id: stored.id },
+          data: { candidateId: stored.id, content: candidate.content, confidence: candidate.confidence || null, index },
           metadata: { correlationId, provenance: 'agent:plan' },
         });
       }

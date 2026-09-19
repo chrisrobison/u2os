@@ -8,8 +8,10 @@ import { getVoiceEnrollment, saveVoiceEnrollment, clearVoiceEnrollment } from '.
 // honesty note. This route only stores/returns it.
 export function registerVoiceRoutes(router) {
   router.get('/api/voice/enrollment', (_req, res) => {
-    const { enrolled, enrolledAt, vector } = getVoiceEnrollment();
-    sendJson(res, 200, { enrolled, enrolledAt, vector });
+    const { enrolled, enrolledAt } = getVoiceEnrollment();
+    // The enrolled vector is a verifier, not client-readable profile data.
+    // Returning it would let any authenticated browser replay it verbatim.
+    sendJson(res, 200, { enrolled, enrolledAt });
   });
 
   router.post('/api/voice/enrollment', (req, res) => {

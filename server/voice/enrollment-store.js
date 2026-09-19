@@ -54,3 +54,25 @@ export function clearVoiceEnrollment(dataDir = getDataDir()) {
   writeConfig(config, dataDir);
   return { enrolled: false, enrolledAt: null, vector: null };
 }
+
+export function verifyVoiceObservation(vector, dataDir = getDataDir()) {
+  const enrollment = getVoiceEnrollment(dataDir);
+  if (!enrollment.enrolled || !validVector(vector) || vector.length !== enrollment.vector.length) {
+    return { identity: 'unknown', confidence: 0, enrolled: enrollment.enrolled };
+  }
+  const confidence = Math.max(0, Math.min(1, cosineSimilarity(vector, enrollment.vector)));
+  return { identity: confidence >= 0.75 ? 'owner' : 'unknown', confidence, enrolled: true };
+}
+
+function validVector(vector) {
+  return Array.isArray(vector) && vector.length > 0 && vector.length <= 128
+    && vector.every((n) => typeof n === 'number' && Number.isFinite(n));
+}
+
+function cosineSimilarity(a, b) {
+  let dot = 0; let normA = 0; let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i]; normA += a[i] * a[i]; normB += b[i] * b[i];
+  }
+  return normA && normB ? dot / Math.sqrt(normA * normB) : 0;
+}

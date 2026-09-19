@@ -43,6 +43,14 @@ export function listEvents(db, { type, since, correlationId, limit = 100 } = {})
   return rows.map(rowToEvent);
 }
 
+export function listEventsAfterId(db, id, limit = 500) {
+  const cursor = db.prepare('SELECT rowid AS sequence FROM events WHERE id = ?').get(id);
+  if (!cursor) return [];
+  return db.prepare('SELECT * FROM events WHERE rowid > ? ORDER BY rowid ASC LIMIT ?')
+    .all(cursor.sequence, Math.max(1, Math.min(Number(limit) || 500, 2000)))
+    .map(rowToEvent);
+}
+
 function rowToEvent(row) {
   return {
     id: row.id,

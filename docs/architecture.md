@@ -98,7 +98,7 @@ This keeps the event log doing what it's actually good for here -- history, corr
 `tests/intelligent-vertical-slice.test.js` exercises the full loop this document describes end to end, against the REAL `OpenAICompatibleProvider` class pointed at a deterministic fake HTTP endpoint (no paid API calls, per the project's testing rules) that reads the actual `retrieved_context` it receives and builds its response from that data:
 
 - **"What's going on today...take care of anything routine that doesn't need me"**: ContextAssembler surfaces the seeded recruiter follow-up email; the plan proposes an autonomous routine notification (executes immediately, no approval) alongside a consequential reply to the recruiter (requires approval regardless of what the model intended, since `email.send` has no context-derived category); a `memoryCandidates` entry is proposed and audited, never auto-promoted to a fact; approving the pending reply causes the real send and a fully correlated event chain (`agent.message.received` -> `agent.action.proposed` -> `agent.action.approved` -> `email.sent`).
-- **Persistent memory across turns**: one turn ("Remind me that Dana prefers afternoon meetings and I promised to send her the budget summary") creates a task and proposes a memory candidate; the candidate's confirmation into an established fact is simulated the way a future confirmation endpoint would (a plain `recordFact()` call -- Milestone 4's confirmation API/UI doesn't exist yet); a SECOND, completely new `Agent` instance (fresh `ContextAssembler`/`Planner`/`PolicyEngine`/`ToolRegistry`, sharing only the SQLite file) then retrieves that exact fact with its provenance intact and uses it to schedule a meeting at the preferred time of day -- proving persistence lives in the database, not in any in-process Agent state.
+- **Persistent memory across turns**: plans create durable pending memory candidates rather than silently creating facts. The owner can list and explicitly accept or reject them through the memory-candidate API; acceptance promotes a fact with candidate/correlation provenance. A new `Agent` instance sharing only SQLite retrieves confirmed facts, proving persistence lives in the database rather than process state.
 
 ## Explainability
 
@@ -108,13 +108,13 @@ This keeps the event log doing what it's actually good for here -- history, corr
 
 ## Known gaps
 
-- `ModelRouter` resolves a provider per role (planner/classifier/summarizer/extractor/response/embeddings) with one deterministic fallback retry, and a second, non-identical Anthropic adapter exists alongside the OpenAI-compatible one (docs/models.md). `ContextAssembler` assembles bounded, ranked, provenance-tagged personal context (people/facts/commitments/recent events) by name-matching and recency heuristics -- semantic retrieval, an HTTP route for multi-provider/role config, and an embeddings-capable provider remain Milestone 2 work.
+- `ModelRouter` resolves a provider per role and supports OpenAI-compatible, Anthropic, and embedding adapters. The HTTP model endpoint accepts both legacy single-provider and validated multi-provider/role configuration. Semantic ranking is implemented but remains opt-in and only ranks facts within already-selected people.
 - Authentication is single-owner/passphrase only; there are no passkeys, roles, or supported internet exposure.
 - Rate limits are memory-backed, not distributed or durable.
 - SQLite has one synchronous in-process connection; durable leases and an external-action queue remain Milestone 5.
 - Voice similarity is simplified and is not identity. Some dashboard types remain placeholders.
-- SSE recovery, browser end-to-end coverage, and full accessibility verification remain Milestone 3.
+- SSE cursor recovery and heartbeats are implemented. Broad browser end-to-end coverage and full accessibility verification remain gaps.
 - CalDAV/IMAP and skill network-permission enforcement are not implemented.
-- `node:sqlite` remains experimental. Retention and production rollback tooling are not implemented.
+- `node:sqlite` remains experimental. Manual audited retention and backup/restore exist; automated retention and a production rollback system do not.
 
 See [PLAN.md](../PLAN.md) for current priorities and [PROMPT.md](../PROMPT.md) for the historical specification.

@@ -1,4 +1,5 @@
 import { sendJson } from '../router.js';
+import { verifyVoiceObservation } from '../../voice/enrollment-store.js';
 
 // Agent conversation entry point. Approve/reject live in routes/actions.js
 // (kept in one place rather than duplicated here) since they operate on
@@ -38,10 +39,13 @@ export function registerAgentRoutes(router, { agent }) {
     if (!text || typeof text !== 'string') {
       return sendJson(res, 400, { error: 'text is required' });
     }
-    const speaker = req.body?.speaker;
+    const observation = req.body?.voiceObservation;
     const actorId = req.owner.id;
-    const confidence = typeof speaker?.confidence === 'number' && Number.isFinite(speaker.confidence) ? speaker.confidence : 0;
-    const voice = { confidence };
+    // Never trust a browser-supplied identity/confidence. The browser sends
+    // only its observed DSP vector; comparison with the enrolled vector is
+    // performed here, inside the authenticated server boundary.
+    const verified = verifyVoiceObservation(observation?.vector);
+    const voice = { confidence: verified.confidence };
     const result = await agent.handleMessage({ text, actorId, voice });
     sendJson(res, 200, result);
   });

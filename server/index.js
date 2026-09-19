@@ -12,7 +12,7 @@ import { Router } from './api/router.js';
 import { serveStatic } from './api/static.js';
 import { runSeed } from './seed/seed.js';
 import { ensureDefaultConnectorsConfig } from './integrations/connectors-config.js';
-import { startAll as startSyncScheduler } from './integrations/sync-scheduler.js';
+import { startAll as startSyncScheduler, stopAll as stopSyncScheduler } from './integrations/sync-scheduler.js';
 import * as triggerEngine from './triggers/trigger-engine.js';
 import { startMdns } from './discovery/mdns.js';
 import { log } from './logging/logger.js';
@@ -128,7 +128,7 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   registerTaskRoutes(router, { agent });
   registerEmailRoutes(router);
   registerContactsRoutes(router);
-  registerMemoryRoutes(router);
+  registerMemoryRoutes(router, { eventBus });
   registerDashboardRoutes(router, { agent });
   registerConnectorRoutes(router, { db, eventBus });
   registerExportRoutes(router);
@@ -170,7 +170,11 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   // is closed (tests included) so no test run is left holding an open
   // multicast socket.
   const mdnsHandle = !isLoopback(resolvedBind) ? startMdns({ port: boundPort }) : null;
-  server.on('close', () => mdnsHandle?.stop());
+  server.on('close', () => {
+    mdnsHandle?.stop();
+    stopSyncScheduler();
+    triggerEngine.stopAll().catch(() => {});
+  });
 
   log.info('server', 'U2OS server listening', { bind: resolvedBind, port: boundPort, dataDir, dbPath });
 

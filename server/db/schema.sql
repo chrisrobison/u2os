@@ -225,6 +225,21 @@ CREATE TABLE IF NOT EXISTS recommendations (
 );
 CREATE INDEX IF NOT EXISTS idx_recommendations_status ON recommendations(status);
 
+CREATE TABLE IF NOT EXISTS memory_candidates (
+  id TEXT PRIMARY KEY,
+  content TEXT NOT NULL,
+  confidence TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  correlation_id TEXT,
+  proposed_by TEXT,
+  resolved_by TEXT,
+  resolved_at TEXT,
+  promoted_fact_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_memory_candidates_status ON memory_candidates(status, created_at);
+
 CREATE TABLE IF NOT EXISTS conversation_messages (
   id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL,

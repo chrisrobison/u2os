@@ -12,8 +12,8 @@ import * as triggerEngine from '../server/triggers/trigger-engine.js';
 // /api/voice/enrollment route it backs -- the server-side half of Phase
 // 5's voice enrollment (docs/voice.md). The client-side feature
 // extraction (public/services/voiceprint.js) needs a real mic to exercise
-// and can't be tested here; this only covers "does the vector round-trip
-// through the server correctly," which needs no audio at all.
+// and can't be tested here; this covers persistence while ensuring the
+// verifier vector is never disclosed back to a browser.
 
 function tempHome() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-voice-enrollment-test-'));
@@ -32,7 +32,7 @@ async function cleanup(dir, handle) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
-test('GET /api/voice/enrollment starts out "not enrolled" with no vector', async () => {
+test('GET /api/voice/enrollment starts out not enrolled and does not expose a verifier vector', async () => {
   const dir = tempHome();
   let handle;
   try {
@@ -43,13 +43,13 @@ test('GET /api/voice/enrollment starts out "not enrolled" with no vector', async
     assert.equal(res.status, 200);
     assert.equal(body.enrolled, false);
     assert.equal(body.enrolledAt, null);
-    assert.equal(body.vector, null);
+    assert.equal(body.vector, undefined);
   } finally {
     await cleanup(dir, handle);
   }
 });
 
-test('POST /api/voice/enrollment persists the vector, and GET returns it back (survives a fresh GET, not just an in-memory echo)', async () => {
+test('POST /api/voice/enrollment persists the verifier but GET never returns it', async () => {
   const dir = tempHome();
   let handle;
   try {
@@ -70,7 +70,7 @@ test('POST /api/voice/enrollment persists the vector, and GET returns it back (s
     const getRes = await fetch(`http://127.0.0.1:${port}/api/voice/enrollment`);
     const getBody = await getRes.json();
     assert.equal(getBody.enrolled, true);
-    assert.deepEqual(getBody.vector, vector);
+    assert.equal(getBody.vector, undefined);
     assert.equal(getBody.enrolledAt, postBody.enrolledAt);
 
     // Persisted into config.json itself, not just held in memory.
@@ -122,7 +122,7 @@ test('DELETE /api/voice/enrollment clears a previously-saved enrollment', async 
     const getRes = await fetch(`http://127.0.0.1:${port}/api/voice/enrollment`);
     const getBody = await getRes.json();
     assert.equal(getBody.enrolled, false);
-    assert.equal(getBody.vector, null);
+    assert.equal(getBody.vector, undefined);
   } finally {
     await cleanup(dir, handle);
   }
