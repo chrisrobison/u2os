@@ -27,6 +27,26 @@ The deterministic `MockModelProvider` remains the default. An optional OpenAI-co
 
 The event bus persists events before delivering them to memory projections and SSE. Memory uses entities, facts, and relationships with confidence and provenance. Connectors sit behind provider interfaces and implemented real adapters use the encrypted vault. Triggers and synchronization run in the server, not the browser. The browser uses same-origin REST/SSE and trusted Web Components.
 
+## Agent decomposition
+
+`server/agent/agent.js` is an orchestrator, not a monolith: it composes focused services rather than implementing planning, policy, execution, and approval state inline.
+
+```text
+Agent
+├── ContextAssembler   bounded context for a planning request (server/agent/context-assembler.js)
+├── Planner            objective + context -> structured candidate plan (server/agent/planner.js)
+├── ActionEvaluator     tool resolution + authoritative policy context + decision (server/agent/action-evaluator.js)
+│   └── PolicyEngine    (server/policy/policy-engine.js, unchanged)
+├── ActionExecutor      executes an already-authorized tool, records outcome (server/agent/action-executor.js)
+├── ApprovalManager      pending-approval lifecycle: create/get/approve/reject, re-evaluates
+│                        policy immediately before an approved action executes (server/agent/approval-manager.js)
+└── EvaluatorRegistry    proactive per-event-type decision logic, keyed by event pattern
+    └── built-in evaluators for email.received / calendar.event_approaching /
+        task.overdue / commitment.made (server/agent/proactive/)
+```
+
+`evaluateAndMaybeExecute()` remains the one gate every consequential action passes through, regardless of whether it originated from a chat message, a trigger, or a proactive evaluator's `context.proposeAction(...)`. `ContextAssembler` in this form is a Phase 1 seam (it currently assembles the same minimal `{toolRegistry, eventBus, correlationId, actor}` Agent always built inline); bounded, ranked, provenance-tagged personal-context assembly is planned work, not yet implemented -- see PLAN.md. `EvaluatorRegistry` lets new proactive behavior (including future skills) register `{eventPattern, evaluate(event, context)}` without editing Agent; it can add new decisions, never a new way to bypass `ActionEvaluator`/`PolicyEngine`.
+
 ## Approval vertical slice
 
 “Move my 2 PM meeting with Sarah to tomorrow afternoon” produces a `calendar.reschedule` proposal. The server derives the stored event category, policy returns `confirm`, and a pending audit row is shown. Approval identity comes only from the session. Policy is re-evaluated before execution and correlated outcome events enter the log.

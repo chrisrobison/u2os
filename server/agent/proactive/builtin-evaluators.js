@@ -1,0 +1,207 @@
+// Built-in proactive evaluators, registered by default on every Agent
+// (see agent.js). Moved out of Agent's central switch statement per
+// PLAN.md's Agent-refactor phase -- behavior is unchanged from before the
+// move; only the wiring (EvaluatorRegistry instead of a switch) changed.
+//
+// Each evaluate(event, context) receives:
+//   context.correlationId, context.actor  -- request identity
+//   context.eventBus                      -- for any direct event.publish
+//   context.ownerEntityId                 -- the single local owner, or null
+//   context.proposeAction(proposal)       -- routes through Agent's
+//     policy-gated, audited evaluateAndMaybeExecute() pipeline. This is the
+//     ONLY way an evaluator may cause a tool to run.
+//   context.generateDashboard(args)       -- Agent.generateDashboard(),
+//     reused rather than reimplemented.
+import { getCachedCalendarEvent } from '../../integrations/calendar-store.js';
+import { findEntities } from '../../memory/entity-store.js';
+import * as tasksProvider from '../../integrations/mock-tasks-provider.js';
+import { scoreForSuggestion } from '../../feedback/prioritizer.js';
+import { createRecommendation } from '../recommendation-store.js';
+
+// email.received -> notify: recruiter/talent sender heuristic.
+//
+// Phase 7 / docs/feedback.md's named borderline case: once the heuristic
+// matches, this is no longer a strict binary (notify or not) -- it's a
+// three-way choice among notify/recommend/ignore, nudged by
+// server/feedback/prioritizer.js's scoreForSuggestion() based on how the
+// user has responded to past recruiter notifications. This ONLY changes
+// which of notify/recommend/ignore is chosen; it never changes whether
+// notifications.send itself is policy-gated -- proposeAction() below still
+// runs it through the same policy engine as every other proposed action.
+export async function evaluateEmailReceived(event, { correlationId, actor, eventBus, proposeAction }) {
+  const from = String(event.data?.from || '').toLowerCase();
+  const subject = String(event.data?.subject || '').toLowerCase();
+  const looksLikeRecruiter = /recruiter|talent/.test(from) || /recruiter|talent/.test(subject);
+
+  if (!looksLikeRecruiter) {
+    return { decision: 'ignore', eventType: event.type, reason: 'Sender/subject does not match the recruiter/talent heuristic.' };
+  }
+
+  const feedbackAdjustment = scoreForSuggestion({ tool: 'notifications.send', domain: 'email', requestedBy: 'agent:evaluateEvent' });
+  const reasoningSummary = `Sender/subject matched the recruiter/talent heuristic. Feedback adjustment: ${feedbackAdjustment.adjustment} (${feedbackAdjustment.reason})`;
+  const notificationArgs = {
+    title: 'Recruiter email',
+    body: `New email from ${event.data?.from || 'unknown sender'}: ${event.data?.subject || '(no subject)'}`,
+    priority: 'high',
+  };
+
+  // Repeated negative feedback on this domain suppresses the notification
+  // entirely -- "quietly deprioritized toward ignore", per docs/feedback.md.
+  if (feedbackAdjustment.adjustment <= -0.15) {
+    return {
+      decision: 'ignore',
+      eventType: event.type,
+      reason: `${reasoningSummary}. Suppressed: repeated negative feedback on this domain.`,
+      feedbackAdjustment,
+    };
+  }
+
+  // Mildly negative feedback downgrades notify -> a lower-urgency,
+  // dismissible recommendation instead of an immediate notification.
+  if (feedbackAdjustment.adjustment < 0) {
+    const recommendation = createRecommendation({
+      decision: 'recommend',
+      eventType: event.type,
+      tool: 'notifications.send',
+      arguments: notificationArgs,
+      reasoningSummary: `${reasoningSummary}. Downgraded from notify to a lower-urgency recommendation.`,
+      correlationId,
+    });
+    eventBus.publish({
+      type: 'agent.action.completed',
+      source: 'agent',
+      actor,
+      subject: { type: 'recommendation', id: recommendation.id },
+      data: { decision: 'recommend', eventType: event.type, recommendationId: recommendation.id, feedbackAdjustment },
+      metadata: { correlationId, provenance: 'agent:evaluateEvent' },
+    });
+    return { decision: 'recommend', eventType: event.type, recommendation, feedbackAdjustment };
+  }
+
+  const outcome = await proposeAction({
+    tool: 'notifications.send',
+    arguments: notificationArgs,
+    requestedBy: 'agent:evaluateEvent',
+    requestText: `email.received from ${event.data?.from}`,
+    reasoningSummary,
+  });
+  return { decision: 'notify', eventType: event.type, outcome, feedbackAdjustment };
+}
+
+// calendar.event_approaching -> prepare: generate a before-meeting
+// dashboard (reusing the existing dashboard-planner, never reimplemented)
+// and attach it to a dismissible recommendation.
+export async function evaluateCalendarApproaching(event, { correlationId, actor, eventBus, generateDashboard }) {
+  const eventId = event.data?.eventId || event.subject?.id;
+  const calendarEvent = eventId ? getCachedCalendarEvent(eventId) : null;
+
+  let dashboard = null;
+  let personId = null;
+  let reasoningSummary = `Meeting ${eventId} is approaching (${event.data?.minutesUntil ?? '?'} minute(s) out).`;
+
+  if (calendarEvent) {
+    const firstAttendee = (calendarEvent.attendees || [])[0];
+    const attendeeName = typeof firstAttendee === 'string' ? firstAttendee : firstAttendee?.name;
+    if (attendeeName) {
+      const [person] = findEntities({ type: 'Person', query: attendeeName });
+      if (person) personId = person.id;
+    }
+  }
+
+  if (personId) {
+    try {
+      dashboard = generateDashboard({ context: 'before-meeting', params: { personId } });
+      reasoningSummary += ' Generated a before-meeting dashboard.';
+    } catch (err) {
+      reasoningSummary += ` Could not generate a before-meeting dashboard: ${err.message}.`;
+    }
+  } else {
+    reasoningSummary += ' No matching Person entity found for the meeting attendee; recommendation has no dashboard attached.';
+  }
+
+  const recommendation = createRecommendation({
+    decision: 'prepare',
+    eventType: event.type,
+    eventId,
+    reasoningSummary,
+    dashboard,
+    correlationId,
+  });
+
+  // No tool was called (dashboard generation isn't a tool), so this is the
+  // bookkeeping event for this decision -- still visible in the activity
+  // feed like everything else.
+  eventBus.publish({
+    type: 'agent.action.completed',
+    source: 'agent',
+    actor,
+    subject: { type: 'recommendation', id: recommendation.id },
+    data: { decision: 'prepare', eventType: event.type, recommendationId: recommendation.id },
+    metadata: { correlationId, provenance: 'agent:evaluateEvent' },
+  });
+
+  return { decision: 'prepare', eventType: event.type, recommendation };
+}
+
+// task.overdue -> notify.
+export async function evaluateTaskOverdue(event, { proposeAction }) {
+  const title = event.data?.title || 'a task';
+  const outcome = await proposeAction({
+    tool: 'notifications.send',
+    arguments: {
+      title: 'Overdue task',
+      body: `"${title}" was due ${event.data?.dueAt || 'earlier'} and is still open.`,
+      priority: 'normal',
+    },
+    requestedBy: 'agent:evaluateEvent',
+    requestText: `task.overdue: ${title}`,
+    reasoningSummary: `Task "${title}" is overdue.`,
+  });
+  return { decision: 'notify', eventType: event.type, outcome };
+}
+
+// commitment.made -> act: auto-create the linked task (ties into
+// memory/projector.js's detectAndRecordCommitment). Skips if a task
+// already exists for this commitment (the seed trigger's own "IF no task
+// exists" condition, enforced here since event_rule's `when` clause can't
+// express a cross-table existence check).
+export async function evaluateCommitmentMade(event, { proposeAction }) {
+  const commitmentId = event.subject?.id;
+  const description = event.data?.description;
+
+  if (!description) {
+    return { decision: 'ignore', eventType: event.type, reason: 'commitment.made event carried no description.' };
+  }
+
+  if (commitmentId) {
+    const existingTasks = tasksProvider.listTasks({}).filter((t) => t.related_entity_id === commitmentId);
+    if (existingTasks.length) {
+      return {
+        decision: 'ignore',
+        eventType: event.type,
+        reason: `A task already exists for this commitment (${existingTasks[0].id}).`,
+      };
+    }
+  }
+
+  // This is a PROPOSAL through the same policy-gated pipeline as everything
+  // else -- the policy engine still decides whether tasks.create actually
+  // executes autonomously or needs approval.
+  const outcome = await proposeAction({
+    tool: 'tasks.create',
+    arguments: { title: description, relatedEntityId: commitmentId },
+    requestedBy: 'agent:evaluateEvent',
+    requestText: `commitment.made: ${description}`,
+    reasoningSummary: `Auto-creating a task for the commitment "${description}".`,
+  });
+  return { decision: 'act', eventType: event.type, outcome };
+}
+
+/** Registers the four Phase 6 built-in evaluators on the given registry. */
+export function registerBuiltinEvaluators(registry) {
+  registry.register({ eventPattern: 'email.received', evaluate: evaluateEmailReceived, name: 'builtin:email.received' });
+  registry.register({ eventPattern: 'calendar.event_approaching', evaluate: evaluateCalendarApproaching, name: 'builtin:calendar.event_approaching' });
+  registry.register({ eventPattern: 'task.overdue', evaluate: evaluateTaskOverdue, name: 'builtin:task.overdue' });
+  registry.register({ eventPattern: 'commitment.made', evaluate: evaluateCommitmentMade, name: 'builtin:commitment.made' });
+  return registry;
+}
