@@ -54,6 +54,6 @@ Each non-mock provider's API key is read from the vault under `model-provider-<a
 
 - No HTTP route yet writes a multi-provider/role config; only the single-provider shape is configurable from the UI.
 - No embeddings-capable provider is implemented yet (the `embeddings` role has nothing real to resolve to besides a locally-configured OpenAI-compatible endpoint that happens to serve one).
-- Bounded personal-context assembly for the Planner beyond tool listings is not implemented yet -- see docs/architecture.md's Agent decomposition section and PLAN.md.
+- `ContextAssembler` (docs/architecture.md) ranks personal context by name/word matching and recency, not semantic similarity -- semantic retrieval is later work.
 - No streaming.
 - Provider failure (including after a fallback attempt) is explicit and never silently executes a stale plan or bypasses policy.

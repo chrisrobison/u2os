@@ -35,7 +35,7 @@ export class Agent {
     this.eventBus = eventBus;
     this.ownerEntityId = ownerEntityId;
 
-    this.contextAssembler = new ContextAssembler({ toolRegistry, eventBus });
+    this.contextAssembler = new ContextAssembler({ toolRegistry, eventBus, ownerEntityId });
     this.planner = new Planner({ modelProvider, modelRouter, role: 'planner' });
     this.actionEvaluator = new ActionEvaluator({ toolRegistry, policyEngine });
     this.actionExecutor = new ActionExecutor({ eventBus });
@@ -62,7 +62,7 @@ export class Agent {
   async handleMessage({ text, actorId = 'user', voice } = {}) {
     const correlationId = newId('corr');
     const actor = { type: 'user', id: actorId };
-    const planContext = this.contextAssembler.assemble({ correlationId, actor });
+    const planContext = this.contextAssembler.assemble({ correlationId, actor, objective: text });
 
     this.eventBus.publish({
       type: 'agent.message.received',

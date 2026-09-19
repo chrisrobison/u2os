@@ -45,7 +45,19 @@ Agent
         task.overdue / commitment.made (server/agent/proactive/)
 ```
 
-`evaluateAndMaybeExecute()` remains the one gate every consequential action passes through, regardless of whether it originated from a chat message, a trigger, or a proactive evaluator's `context.proposeAction(...)`. `ContextAssembler` in this form is a Phase 1 seam (it currently assembles the same minimal `{toolRegistry, eventBus, correlationId, actor}` Agent always built inline); bounded, ranked, provenance-tagged personal-context assembly is planned work, not yet implemented -- see PLAN.md. `EvaluatorRegistry` lets new proactive behavior (including future skills) register `{eventPattern, evaluate(event, context)}` without editing Agent; it can add new decisions, never a new way to bypass `ActionEvaluator`/`PolicyEngine`.
+`evaluateAndMaybeExecute()` remains the one gate every consequential action passes through, regardless of whether it originated from a chat message, a trigger, or a proactive evaluator's `context.proposeAction(...)`. `EvaluatorRegistry` lets new proactive behavior (including future skills) register `{eventPattern, evaluate(event, context)}` without editing Agent; it can add new decisions, never a new way to bypass `ActionEvaluator`/`PolicyEngine`.
+
+### ContextAssembler (bounded personal context)
+
+`server/agent/context-assembler.js` assembles the context a real provider receives for a planning request -- it does NOT dump the database into the prompt. For the current user message ("objective"), it ranks:
+
+- **people**: every `Person` entity, ranked by whether the objective mentions their name (by word, e.g. "Sarah" matches "Sarah Chen") ahead of recency of their last recorded activity; each carries its top facts by confidence/recency, capped per person.
+- **commitments**: the owner's still-`open` `Commitment` entities (via the `promised` relationship), ranked by relevance to the objective's words ahead of recency.
+- **recentEvents**: a short, explicit allowlist of "context-worthy" event types (calendar/email/task/commitment/birthday) -- internal bookkeeping events (`agent.action.*`, audit chatter) never leak into model context.
+
+Every included item keeps its own id (`factId`/`entityId`/`relationshipId`/`eventId`) in `provenanceRefs`, so a later explainability view can answer "what did the model actually see." A configurable character budget is enforced by dropping whole low-priority items (never truncating serialized JSON mid-string) until the assembled context fits -- `context.truncated` records whether anything was dropped.
+
+This is heuristic (name/word matching + recency + open/closed status), not semantic search -- true semantic retrieval over facts/entities is later work (PLAN.md's embeddings/semantic-memory phase) and is expected to slot in as an additional ranking signal without changing this shape. `Planner`/the real `ModelProvider`s receive this as `retrieved_context` in the prompt payload (`server/agent/prompt-payload.js`), explicitly framed as **untrusted data retrieved from the user's own memory**, separate from the trusted `user_objective` field -- see Known gaps below and docs/models.md for the containment this sets up for prompt injection.
 
 ## Approval vertical slice
 
@@ -53,7 +65,7 @@ Agent
 
 ## Known gaps
 
-- `ModelRouter` resolves a provider per role (planner/classifier/summarizer/extractor/response/embeddings) with one deterministic fallback retry, and a second, non-identical Anthropic adapter exists alongside the OpenAI-compatible one (docs/models.md). Bounded personal-context retrieval for the Planner, an HTTP route for multi-provider/role config, and an embeddings-capable provider remain Milestone 2 work.
+- `ModelRouter` resolves a provider per role (planner/classifier/summarizer/extractor/response/embeddings) with one deterministic fallback retry, and a second, non-identical Anthropic adapter exists alongside the OpenAI-compatible one (docs/models.md). `ContextAssembler` assembles bounded, ranked, provenance-tagged personal context (people/facts/commitments/recent events) by name-matching and recency heuristics -- semantic retrieval, an HTTP route for multi-provider/role config, and an embeddings-capable provider remain Milestone 2 work.
 - Authentication is single-owner/passphrase only; there are no passkeys, roles, or supported internet exposure.
 - Rate limits are memory-backed, not distributed or durable.
 - SQLite has one synchronous in-process connection; durable leases and an external-action queue remain Milestone 5.

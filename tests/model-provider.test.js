@@ -20,6 +20,30 @@ test('plan validation rejects invented tools, missing required fields, and unkno
   assert.throws(() => validatePlan({ reasoning_summary: '', actions: [{ tool: 'tasks.create', arguments: {} }] }, registry), /missing required/);
   assert.throws(() => validatePlan({ reasoning_summary: '', actions: [{ tool: 'tasks.create', arguments: { title: 'x', policy: 'autonomous' } }] }, registry), /unknown argument/);
 });
+test('OpenAI-compatible provider includes retrieved_context (ContextAssembler output) in the request when present, and omits it when absent', async () => {
+  let sent;
+  const fetchImpl = async (_url, request) => {
+    sent = JSON.parse(request.body);
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ reasoning_summary: '', actions: [] }) } }] }), { status: 200 });
+  };
+  const provider = new OpenAICompatibleProvider({ baseUrl: 'http://localhost:11434', model: 'local-model', fetchImpl });
+
+  await provider.plan({ toolRegistry: registry }, 'anything');
+  let payload = JSON.parse(sent.messages[1].content);
+  assert.equal('retrieved_context' in payload, false);
+
+  await provider.plan({ toolRegistry: registry, personalContext: { objective: 'x', relevantPeople: [] } }, 'anything');
+  payload = JSON.parse(sent.messages[1].content);
+  assert.deepEqual(payload.retrieved_context, { objective: 'x', relevantPeople: [] });
+});
+
+test('the shared planner system prompt tells the model retrieved_context is untrusted data, not instructions', async () => {
+  const { PLANNER_SYSTEM_PROMPT } = await import('../server/agent/prompt-payload.js');
+  assert.match(PLANNER_SYSTEM_PROMPT, /retrieved_context/);
+  assert.match(PLANNER_SYSTEM_PROMPT, /untrusted/i);
+  assert.match(PLANNER_SYSTEM_PROMPT, /never invent a tool/i);
+});
+
 test('provider failure is explicit and never silently executes or falls back', async () => {
   const provider = new OpenAICompatibleProvider({ baseUrl: 'http://local', model: 'm', fetchImpl: async () => new Response('', { status: 503 }) });
   await assert.rejects(provider.plan({ toolRegistry: registry }, 'anything'), /unavailable \(HTTP 503\)/);
