@@ -23,7 +23,7 @@ owner, connector, or trigger
                  result + outcome event
 ```
 
-The `MockModelProvider` is the only planner and records `mock-model-provider` in audit rows. It cannot call tools directly. Every consequential action passes through policy; feedback, login state, and voice confidence cannot loosen it. Object-keyed policies resolve only from authoritative server-derived context. Missing context confirms rather than guessing.
+The deterministic `MockModelProvider` remains the default. An optional OpenAI-compatible chat-completions provider can target local or hosted endpoints; its API key is stored in the encrypted vault. Every returned plan is locally schema-validated against the registered tools before policy evaluation. Neither provider can call tools directly. Feedback, login state, and voice confidence cannot loosen policy. Object-keyed policies resolve only from authoritative server-derived context.
 
 The event bus persists events before delivering them to memory projections and SSE. Memory uses entities, facts, and relationships with confidence and provenance. Connectors sit behind provider interfaces and implemented real adapters use the encrypted vault. Triggers and synchronization run in the server, not the browser. The browser uses same-origin REST/SSE and trusted Web Components.
 
@@ -33,7 +33,7 @@ The event bus persists events before delivering them to memory projections and S
 
 ## Known gaps
 
-- The planner is deterministic and narrow; there is no real model provider.
+- Model routing currently selects one startup-configured provider; role-based routing, retries, context retrieval, and a separately implemented adapter remain Milestone 2 work.
 - Authentication is single-owner/passphrase only; there are no passkeys, roles, or supported internet exposure.
 - Rate limits are memory-backed, not distributed or durable.
 - SQLite has one synchronous in-process connection; durable leases and an external-action queue remain Milestone 5.

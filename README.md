@@ -56,6 +56,7 @@ Key documentation:
 - [Automation](docs/automation.md)
 - [Feedback](docs/feedback.md)
 - [Deployment](docs/deployment.md)
+- [Model providers](docs/models.md)
 
 ## Requirements
 
@@ -131,7 +132,7 @@ The Compose configuration stores U2OS data in a named volume and exposes the ser
 
 Mock calendar, email, contacts, search, and notification providers work without external accounts. Real adapters are available for Google Calendar, Gmail, Google Contacts, Brave Search, and generic webhooks. CalDAV, IMAP, Deepgram, and ElevenLabs currently have manifests only and are not implemented providers.
 
-The planner is still `MockModelProvider`, a deterministic intent matcher for demonstration workflows. There is no general-purpose LLM integration or model router yet. Voice similarity uses a lightweight browser-side DSP fingerprint rather than a trained speaker-verification model, and it must not be treated as strong authentication.
+The default planner is still `MockModelProvider`, a deterministic intent matcher for demonstration workflows. An opt-in OpenAI-compatible provider can target a local or hosted endpoint, but role-based routing and broader context assembly remain unfinished Milestone 2 work. Voice similarity uses a lightweight browser-side DSP fingerprint and must not be treated as authentication.
 
 ## Security warning
 

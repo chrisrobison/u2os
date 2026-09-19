@@ -5,7 +5,7 @@ import { SseHub } from './events/sse-hub.js';
 import { initProjector } from './memory/projector.js';
 import { PolicyEngine } from './policy/policy-engine.js';
 import { createToolRegistry } from './tools/register-all.js';
-import { MockModelProvider } from './agent/mock-model-provider.js';
+import { createModelProvider } from './agent/provider-config.js';
 import { Agent } from './agent/agent.js';
 import { Router } from './api/router.js';
 import { serveStatic } from './api/static.js';
@@ -37,6 +37,7 @@ import { registerTriggerRoutes } from './api/routes/triggers.js';
 import { registerRecommendationRoutes } from './api/routes/recommendations.js';
 import { registerFeedbackRoutes } from './api/routes/feedback.js';
 import { registerAuthRoutes } from './api/routes/auth.js';
+import { registerModelRoutes } from './api/routes/model.js';
 
 export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsoluteSeconds } = {}) {
 
@@ -62,7 +63,7 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
 
   const policyEngine = new PolicyEngine();
   const toolRegistry = createToolRegistry();
-  const modelProvider = new MockModelProvider();
+  const modelProvider = createModelProvider(dataDir);
 
   const ownerEntityId = runSeed({ eventBus });
 
@@ -88,6 +89,7 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   const router = new Router({ auth, publicOrigin });
   const startTime = Date.now();
   registerAuthRoutes(router, { auth });
+  registerModelRoutes(router);
   registerHealthRoutes(router, { dataDir, dbPath, startTime });
   registerAgentRoutes(router, { agent });
   registerActionRoutes(router, { agent, eventBus });
