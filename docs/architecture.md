@@ -82,6 +82,13 @@ Structured entities/facts/relationships remain the authoritative store (PLAN.md 
 
 “Move my 2 PM meeting with Sarah to tomorrow afternoon” produces a `calendar.reschedule` proposal. The server derives the stored event category, policy returns `confirm`, and a pending audit row is shown. Approval identity comes only from the session. Policy is re-evaluated before execution and correlated outcome events enter the log.
 
+## Intelligent vertical slice
+
+`tests/intelligent-vertical-slice.test.js` exercises the full loop this document describes end to end, against the REAL `OpenAICompatibleProvider` class pointed at a deterministic fake HTTP endpoint (no paid API calls, per the project's testing rules) that reads the actual `retrieved_context` it receives and builds its response from that data:
+
+- **"What's going on today...take care of anything routine that doesn't need me"**: ContextAssembler surfaces the seeded recruiter follow-up email; the plan proposes an autonomous routine notification (executes immediately, no approval) alongside a consequential reply to the recruiter (requires approval regardless of what the model intended, since `email.send` has no context-derived category); a `memoryCandidates` entry is proposed and audited, never auto-promoted to a fact; approving the pending reply causes the real send and a fully correlated event chain (`agent.message.received` -> `agent.action.proposed` -> `agent.action.approved` -> `email.sent`).
+- **Persistent memory across turns**: one turn ("Remind me that Dana prefers afternoon meetings and I promised to send her the budget summary") creates a task and proposes a memory candidate; the candidate's confirmation into an established fact is simulated the way a future confirmation endpoint would (a plain `recordFact()` call -- Milestone 4's confirmation API/UI doesn't exist yet); a SECOND, completely new `Agent` instance (fresh `ContextAssembler`/`Planner`/`PolicyEngine`/`ToolRegistry`, sharing only the SQLite file) then retrieves that exact fact with its provenance intact and uses it to schedule a meeting at the preferred time of day -- proving persistence lives in the database, not in any in-process Agent state.
+
 ## Known gaps
 
 - `ModelRouter` resolves a provider per role (planner/classifier/summarizer/extractor/response/embeddings) with one deterministic fallback retry, and a second, non-identical Anthropic adapter exists alongside the OpenAI-compatible one (docs/models.md). `ContextAssembler` assembles bounded, ranked, provenance-tagged personal context (people/facts/commitments/recent events) by name-matching and recency heuristics -- semantic retrieval, an HTTP route for multi-provider/role config, and an embeddings-capable provider remain Milestone 2 work.
