@@ -27,15 +27,16 @@ import { registerBuiltinEvaluators } from './proactive/builtin-evaluators.js';
  * action must pass through, regardless of which service proposed it.
  */
 export class Agent {
-  constructor({ modelProvider, policyEngine, toolRegistry, eventBus, ownerEntityId = null, evaluatorRegistry } = {}) {
+  constructor({ modelProvider, modelRouter, policyEngine, toolRegistry, eventBus, ownerEntityId = null, evaluatorRegistry } = {}) {
     this.modelProvider = modelProvider;
+    this.modelRouter = modelRouter;
     this.policyEngine = policyEngine;
     this.toolRegistry = toolRegistry;
     this.eventBus = eventBus;
     this.ownerEntityId = ownerEntityId;
 
     this.contextAssembler = new ContextAssembler({ toolRegistry, eventBus });
-    this.planner = new Planner({ modelProvider });
+    this.planner = new Planner({ modelProvider, modelRouter, role: 'planner' });
     this.actionEvaluator = new ActionEvaluator({ toolRegistry, policyEngine });
     this.actionExecutor = new ActionExecutor({ eventBus });
     this.approvalManager = new ApprovalManager({ eventBus, actionEvaluator: this.actionEvaluator, actionExecutor: this.actionExecutor });
@@ -128,7 +129,7 @@ export class Agent {
       arguments: args,
       requestedBy,
       requestText,
-      model: this.modelProvider.id || this.modelProvider.name || 'unknown-model-provider',
+      model: this._describeModel(),
       reasoningSummary,
       evaluation,
       correlationId,
@@ -182,6 +183,27 @@ export class Agent {
       generateDashboard: (args) => this.generateDashboard(args),
     };
     return evaluator.evaluate(event, evalContext);
+  }
+
+  // Identifies which provider is recorded in the agent_actions audit trail
+  // for a given proposal. After a handleMessage() call, Planner.lastProviderId
+  // reflects the provider that actually produced that specific plan
+  // (including a fallback if one was used). Actions proposed outside a
+  // plan() call (e.g. evaluateEvent()'s builtin evaluators, or a direct
+  // evaluateAndMaybeExecute() call from an HTTP route) fall back to
+  // whichever provider the planner role currently resolves to -- a
+  // representative "currently configured model" identifier, not a claim
+  // that the model itself decided this specific action.
+  _describeModel() {
+    if (this.planner.lastProviderId) return this.planner.lastProviderId;
+    if (this.modelRouter) {
+      try {
+        return this.modelRouter.resolve('planner').id;
+      } catch {
+        // fall through to unknown -- misconfiguration must never crash audit logging.
+      }
+    }
+    return this.modelProvider?.id || this.modelProvider?.name || 'unknown-model-provider';
   }
 
   async approveAction(id, approvedBy) {

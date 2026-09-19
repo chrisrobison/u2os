@@ -5,7 +5,7 @@ import { SseHub } from './events/sse-hub.js';
 import { initProjector } from './memory/projector.js';
 import { PolicyEngine } from './policy/policy-engine.js';
 import { createToolRegistry } from './tools/register-all.js';
-import { createModelProvider } from './agent/provider-config.js';
+import { createModelRouter } from './agent/provider-config.js';
 import { Agent } from './agent/agent.js';
 import { Router } from './api/router.js';
 import { serveStatic } from './api/static.js';
@@ -63,7 +63,12 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
 
   const policyEngine = new PolicyEngine();
   const toolRegistry = createToolRegistry();
-  const modelProvider = createModelProvider(dataDir);
+  // ModelRouter subsumes the old single-provider construction: a plain
+  // config.json {provider,baseUrl,model} (still what POST /api/model
+  // writes) is normalized into one provider used for every role, so this
+  // is a no-op change for every existing installation. See
+  // server/agent/model-router.js and docs/models.md.
+  const modelRouter = createModelRouter(dataDir);
 
   const ownerEntityId = runSeed({ eventBus });
 
@@ -75,7 +80,7 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   ensureDefaultConnectorsConfig(dataDir);
   startSyncScheduler({ db, eventBus, dataDir });
 
-  const agent = new Agent({ modelProvider, policyEngine, toolRegistry, eventBus, ownerEntityId });
+  const agent = new Agent({ modelRouter, policyEngine, toolRegistry, eventBus, ownerEntityId });
 
   // Phase 6 / PROMPT.md §9: trigger engine. Event-driven half subscribes to
   // the event bus immediately; polled half ticks every `tickMs` (default

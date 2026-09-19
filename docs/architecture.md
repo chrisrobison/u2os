@@ -53,7 +53,7 @@ Agent
 
 ## Known gaps
 
-- Model routing currently selects one startup-configured provider; role-based routing, retries, context retrieval, and a separately implemented adapter remain Milestone 2 work.
+- `ModelRouter` resolves a provider per role (planner/classifier/summarizer/extractor/response/embeddings) with one deterministic fallback retry, and a second, non-identical Anthropic adapter exists alongside the OpenAI-compatible one (docs/models.md). Bounded personal-context retrieval for the Planner, an HTTP route for multi-provider/role config, and an embeddings-capable provider remain Milestone 2 work.
 - Authentication is single-owner/passphrase only; there are no passkeys, roles, or supported internet exposure.
 - Rate limits are memory-backed, not distributed or durable.
 - SQLite has one synchronous in-process connection; durable leases and an external-action queue remain Milestone 5.

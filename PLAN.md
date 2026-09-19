@@ -47,11 +47,11 @@ Replace the narrow demo intent matcher without making a vendor API part of the a
 ### Work
 
 - [x] Implement an OpenAI-compatible provider that can target hosted APIs, Ollama, llama.cpp servers, and other compatible local endpoints.
-- Add at least one separately implemented provider adapter to verify the abstraction is real rather than nominal.
+- [x] Add at least one separately implemented provider adapter to verify the abstraction is real rather than nominal. (`AnthropicProvider` -- different auth header, request/response envelope, and no guaranteed JSON-only mode.)
 - [x] Store provider credentials in the existing encrypted vault.
 - [x] Validate every model-produced plan against strict schemas before policy evaluation.
-- Add configurable model roles for classification, planning, summarization, extraction, and embeddings.
-- Add policy-aware routing, timeout, retry, fallback, and offline behavior.
+- [x] Add configurable model roles for classification, planning, summarization, extraction, and embeddings. (`ModelRouter`; no HTTP route to configure multi-provider roles yet -- config-file only.)
+- [x] Add policy-aware routing, timeout, retry, fallback, and offline behavior. (One deterministic fallback-provider retry on planner failure; "policy-aware" routing by data classification is Milestone 6/Phase 6 work, not yet implemented.)
 - Define bounded context assembly from memory and events, with provenance on retrieved facts.
 - Add prompt-injection regression cases from email, web search, documents, and calendar text.
 - [x] Retain `MockModelProvider` as the deterministic test fixture and offline demo default.
