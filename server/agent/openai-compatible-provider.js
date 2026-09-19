@@ -1,5 +1,5 @@
 import { ModelProvider } from './model-provider.js';
-import { validatePlan } from './plan-validator.js';
+import { validatePlanWithRepair } from './plan-validator.js';
 
 export class OpenAICompatibleProvider extends ModelProvider {
   constructor({ baseUrl, model, apiKey = null, timeoutMs = 30000, fetchImpl = fetch }) {
@@ -27,7 +27,7 @@ export class OpenAICompatibleProvider extends ModelProvider {
       const payload = await response.json(); const content = payload?.choices?.[0]?.message?.content;
       if (typeof content !== 'string') throw new Error('Model provider returned no plan content');
       let parsed; try { parsed = JSON.parse(content); } catch { throw new Error('Model provider returned invalid JSON'); }
-      return validatePlan(parsed, context.toolRegistry);
+      return validatePlanWithRepair(parsed, context.toolRegistry);
     } catch (err) {
       if (err.name === 'AbortError') throw new Error('Model provider timed out');
       throw err;

@@ -81,6 +81,7 @@ Emitted by the agent/policy/tool pipeline (internal, domain-independent):
 | `agent.action.rejected` | user rejected a pending action |
 | `agent.action.completed` | a tool executed successfully (autonomous or after approval) |
 | `agent.action.failed` | a tool execution threw / returned an error |
+| `agent.memory_candidate.proposed` | a validated plan (server/agent/plan-validator.js) included `memoryCandidates` -- records what the model proposed remembering. This is NOT a memory write: no fact/entity is created by this event. Promoting a candidate into an established fact, with its own source/confidence/provenance, is a separate explicit step (planned; not yet implemented) -- see docs/architecture.md and PLAN.md's memory-provenance work. |
 | `user.feedback` | user accepted/rejected/edited a suggestion post-hoc (Phase 7 hook, schema reserved now) |
 
 Derived/memory events (published by the memory projector after it updates entities/facts from a primary event — kept distinct from the primary event so consumers can tell "something happened externally" apart from "we changed what we believe"):

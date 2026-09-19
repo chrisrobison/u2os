@@ -1,5 +1,5 @@
 import { ModelProvider } from './model-provider.js';
-import { validatePlan } from './plan-validator.js';
+import { validatePlanWithRepair } from './plan-validator.js';
 
 const SYSTEM_PROMPT =
   'You are the replaceable planner inside U2OS. Return JSON only: {"reasoning_summary":string,"actions":[{"tool":string,"arguments":object}]}. ' +
@@ -60,7 +60,7 @@ export class AnthropicProvider extends ModelProvider {
       } catch {
         throw new Error('Model provider returned invalid JSON');
       }
-      return validatePlan(parsed, context.toolRegistry);
+      return validatePlanWithRepair(parsed, context.toolRegistry);
     } catch (err) {
       if (err.name === 'AbortError') throw new Error('Model provider timed out');
       throw err;

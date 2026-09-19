@@ -100,11 +100,30 @@ export class Agent {
       }
     }
 
+    // A model may propose candidate facts worth remembering (plan-validator.js's
+    // validated `memoryCandidates`). This ONLY records what was proposed, for
+    // later review -- it is NOT a memory write. Promoting a candidate into an
+    // established fact (with its own provenance/confidence) is a separate,
+    // explicit step; a plan can never silently become "established truth".
+    if (Array.isArray(plan.memoryCandidates)) {
+      for (const [index, candidate] of plan.memoryCandidates.entries()) {
+        this.eventBus.publish({
+          type: 'agent.memory_candidate.proposed',
+          source: 'agent',
+          actor,
+          data: { content: candidate.content, confidence: candidate.confidence || null, index },
+          metadata: { correlationId, provenance: 'agent:plan' },
+        });
+      }
+    }
+
     return {
       correlationId,
       reasoning_summary: plan.reasoning_summary,
       actions: results,
       pendingActionIds,
+      ...(plan.response !== undefined ? { response: plan.response } : {}),
+      ...(plan.memoryCandidates !== undefined ? { memoryCandidates: plan.memoryCandidates } : {}),
     };
   }
 

@@ -20,6 +20,7 @@ import { initProjector } from '../server/memory/projector.js';
 import { PolicyEngine } from '../server/policy/policy-engine.js';
 import { createToolRegistry } from '../server/tools/register-all.js';
 import { MockModelProvider } from '../server/agent/mock-model-provider.js';
+import { ModelProvider } from '../server/agent/model-provider.js';
 import { Agent } from '../server/agent/agent.js';
 import { runSeed } from '../server/seed/seed.js';
 
@@ -136,6 +137,52 @@ test('rejectAction throws for an unknown action id, and for a non-pending action
     });
     await agent.rejectAction(proposed.id, 'user');
     await assert.rejects(agent.rejectAction(proposed.id, 'user'), /not pending/);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+class MemoryCandidateProvider extends ModelProvider {
+  id = 'fake:memory-candidate-provider';
+  async plan() {
+    return {
+      reasoning_summary: 'Noted.',
+      actions: [],
+      memoryCandidates: [{ content: 'Sarah prefers morning meetings', confidence: 'medium' }],
+    };
+  }
+}
+
+test('a plan\'s memoryCandidates are recorded as agent.memory_candidate.proposed events, NEVER written directly as facts', async () => {
+  const dir = tempHome();
+  try {
+    const db = getDb();
+    const eventBus = new EventBus(db);
+    initProjector(eventBus);
+    const ownerEntityId = runSeed({ eventBus });
+    const toolRegistry = createToolRegistry();
+    const agent = new Agent({
+      modelProvider: new MemoryCandidateProvider(),
+      policyEngine: new PolicyEngine({ policies: confirmTasksPolicy() }),
+      toolRegistry,
+      eventBus,
+      ownerEntityId,
+    });
+
+    const result = await agent.handleMessage({ text: 'Remember that Sarah prefers morning meetings.', actorId: 'user' });
+    assert.deepEqual(result.memoryCandidates, [{ content: 'Sarah prefers morning meetings', confidence: 'medium' }]);
+
+    const proposedEvents = db.prepare("SELECT * FROM events WHERE type = 'agent.memory_candidate.proposed'").all();
+    assert.equal(proposedEvents.length, 1);
+    const data = JSON.parse(proposedEvents[0].data);
+    assert.equal(data.content, 'Sarah prefers morning meetings');
+    assert.equal(data.confidence, 'medium');
+
+    // Proposing a memory candidate must NEVER, by itself, create an
+    // established fact -- promotion is a separate, explicit step nothing
+    // here performs.
+    const facts = db.prepare("SELECT COUNT(*) AS n FROM facts WHERE value LIKE '%morning meetings%'").get();
+    assert.equal(facts.n, 0);
   } finally {
     cleanup(dir);
   }
