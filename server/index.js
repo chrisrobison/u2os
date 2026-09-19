@@ -69,6 +69,26 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   // is a no-op change for every existing installation. See
   // server/agent/model-router.js and docs/models.md.
   const modelRouter = createModelRouter(dataDir);
+  // Semantic memory retrieval (PLAN.md Phase 5) is opt-in: most
+  // installations have no `embeddings` role configured (no HTTP route
+  // writes one yet -- see docs/models.md), so ContextAssembler falls back
+  // to its confidence/recency-only ranking. Deliberately does NOT rely on
+  // ModelRouter's legacy single-provider "every role uses this one
+  // provider" fallback here -- that fallback is correct for the planner/
+  // classifier/summarizer/etc. roles (all the same ModelProvider
+  // interface), but the single legacy-configured provider is virtually
+  // always a planning model, not an embedding model, so resolving it for
+  // 'embeddings' would hand ContextAssembler something whose .embed() does
+  // not exist. Only resolve when an `embeddings` role was EXPLICITLY
+  // configured (the multi-provider config shape).
+  let embeddingProvider = null;
+  if (modelRouter.listRoles().includes('embeddings')) {
+    try {
+      embeddingProvider = modelRouter.resolve('embeddings');
+    } catch {
+      // misconfigured -- semantic ranking simply stays off, never crashes startup.
+    }
+  }
 
   const ownerEntityId = runSeed({ eventBus });
 
@@ -80,7 +100,7 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   ensureDefaultConnectorsConfig(dataDir);
   startSyncScheduler({ db, eventBus, dataDir });
 
-  const agent = new Agent({ modelRouter, policyEngine, toolRegistry, eventBus, ownerEntityId });
+  const agent = new Agent({ modelRouter, policyEngine, toolRegistry, eventBus, ownerEntityId, embeddingProvider });
 
   // Phase 6 / PROMPT.md §9: trigger engine. Event-driven half subscribes to
   // the event bus immediately; polled half ticks every `tickMs` (default

@@ -11,6 +11,7 @@ import { createEntity } from '../server/memory/entity-store.js';
 import { recordFact } from '../server/memory/fact-store.js';
 import { recordRelationship } from '../server/memory/relationship-store.js';
 import { ContextAssembler } from '../server/agent/context-assembler.js';
+import { MockEmbeddingProvider } from '../server/agent/embeddings/mock-embedding-provider.js';
 
 function tempHome() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-context-assembler-'));
@@ -31,7 +32,7 @@ function setup() {
   return { db, eventBus, ownerEntityId };
 }
 
-test('a person named in the objective ranks ahead of one who is not, and carries a "why included" reason', () => {
+test('a person named in the objective ranks ahead of one who is not, and carries a "why included" reason', async () => {
   const dir = tempHome();
   try {
     setup();
@@ -41,7 +42,7 @@ test('a person named in the objective ranks ahead of one who is not, and carries
     recordFact({ entityId: bob.id, key: 'note', value: 'unrelated', source: 'user', confidence: 0.9 });
 
     const assembler = new ContextAssembler({ toolRegistry: null, eventBus: null });
-    const context = assembler.assemblePersonalContext('Set up my follow-up with Sarah.');
+    const context = await assembler.assemblePersonalContext('Set up my follow-up with Sarah.');
 
     const names = context.relevantPeople.map((p) => p.name);
     assert.ok(names.includes('Sarah Chen'));
@@ -53,7 +54,7 @@ test('a person named in the objective ranks ahead of one who is not, and carries
   }
 });
 
-test('every included fact carries provenance (factId/source/confidence/inferred), and provenanceRefs references it', () => {
+test('every included fact carries provenance (factId/source/confidence/inferred), and provenanceRefs references it', async () => {
   const dir = tempHome();
   try {
     setup();
@@ -61,7 +62,7 @@ test('every included fact carries provenance (factId/source/confidence/inferred)
     const fact = recordFact({ entityId: sarah.id, key: 'preference', value: 'morning meetings', source: 'user:message', confidence: 0.8, inferred: true });
 
     const assembler = new ContextAssembler({ toolRegistry: null, eventBus: null });
-    const context = assembler.assemblePersonalContext('Tell me about Sarah');
+    const context = await assembler.assemblePersonalContext('Tell me about Sarah');
 
     const entry = context.relevantPeople.find((p) => p.name === 'Sarah');
     assert.ok(entry);
@@ -77,7 +78,7 @@ test('every included fact carries provenance (factId/source/confidence/inferred)
   }
 });
 
-test('only OPEN commitments made by the owner are included, ranked by relevance to the objective', () => {
+test('only OPEN commitments made by the owner are included, ranked by relevance to the objective', async () => {
   const dir = tempHome();
   try {
     const { ownerEntityId } = setup();
@@ -87,7 +88,7 @@ test('only OPEN commitments made by the owner are included, ranked by relevance 
     recordRelationship({ fromEntityId: ownerEntityId, relation: 'promised', toEntityId: closedCommitment.id, source: 'test', inferred: true, confidence: 0.8 });
 
     const assembler = new ContextAssembler({ toolRegistry: null, eventBus: null, ownerEntityId });
-    const context = assembler.assemblePersonalContext('Set up my follow-up with Sarah about the draft.');
+    const context = await assembler.assemblePersonalContext('Set up my follow-up with Sarah about the draft.');
 
     const descriptions = context.commitments.map((c) => c.description);
     assert.ok(descriptions.includes('send Sarah the draft'));
@@ -97,19 +98,19 @@ test('only OPEN commitments made by the owner are included, ranked by relevance 
   }
 });
 
-test('with no ownerEntityId, commitments is an empty array rather than throwing', () => {
+test('with no ownerEntityId, commitments is an empty array rather than throwing', async () => {
   const dir = tempHome();
   try {
     setup();
     const assembler = new ContextAssembler({ toolRegistry: null, eventBus: null, ownerEntityId: null });
-    const context = assembler.assemblePersonalContext('anything');
+    const context = await assembler.assemblePersonalContext('anything');
     assert.deepEqual(context.commitments, []);
   } finally {
     cleanup(dir);
   }
 });
 
-test('recentEvents only include the documented context-worthy event types, each with a short bounded summary', () => {
+test('recentEvents only include the documented context-worthy event types, each with a short bounded summary', async () => {
   const dir = tempHome();
   try {
     const { eventBus } = setup();
@@ -117,7 +118,7 @@ test('recentEvents only include the documented context-worthy event types, each 
     eventBus.publish({ type: 'agent.action.proposed', source: 'test', data: { tool: 'internal.noise' } });
 
     const assembler = new ContextAssembler({ toolRegistry: null, eventBus });
-    const context = assembler.assemblePersonalContext('anything');
+    const context = await assembler.assemblePersonalContext('anything');
 
     assert.ok(context.recentEvents.some((e) => e.type === 'email.received' && e.summary.includes('Draft')));
     assert.ok(!context.recentEvents.some((e) => e.type === 'agent.action.proposed'), 'internal agent bookkeeping events must not leak into model context');
@@ -126,7 +127,7 @@ test('recentEvents only include the documented context-worthy event types, each 
   }
 });
 
-test('the assembled context stays within the configured character budget by dropping whole items, never truncating serialized JSON mid-string', () => {
+test('the assembled context stays within the configured character budget by dropping whole items, never truncating serialized JSON mid-string', async () => {
   const dir = tempHome();
   try {
     setup();
@@ -138,7 +139,7 @@ test('the assembled context stays within the configured character budget by drop
     }
 
     const assembler = new ContextAssembler({ toolRegistry: null, eventBus: null, maxChars: 2000, maxPeople: 20, maxFactsPerPerson: 8 });
-    const context = assembler.assemblePersonalContext('anything');
+    const context = await assembler.assemblePersonalContext('anything');
 
     assert.ok(JSON.stringify(context).length <= 2000 + 200, 'budget should be respected within a small slack for the truncated/metadata fields themselves');
     assert.equal(context.truncated, true);
@@ -153,13 +154,48 @@ test('the assembled context stays within the configured character budget by drop
   }
 });
 
-test('assemble() returns the toolRegistry/eventBus/correlationId/actor plumbing alongside personalContext, unchanged shape for providers', () => {
+test('with no embeddingProvider configured, facts carry no relevance breakdown (Phase 4 behavior, unchanged)', async () => {
+  const dir = tempHome();
+  try {
+    setup();
+    const sarah = createEntity({ type: 'Person', name: 'Sarah' });
+    recordFact({ entityId: sarah.id, key: 'note', value: 'prefers mornings', source: 'user', confidence: 0.9 });
+
+    const assembler = new ContextAssembler({ toolRegistry: null, eventBus: null });
+    const context = await assembler.assemblePersonalContext('Sarah');
+    const entry = context.relevantPeople.find((p) => p.name === 'Sarah');
+    assert.equal(entry.facts[0].relevance, undefined);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('with an embeddingProvider configured, facts are ranked with a semantic component and carry a relevance breakdown', async () => {
+  const dir = tempHome();
+  try {
+    setup();
+    const sarah = createEntity({ type: 'Person', name: 'Sarah' });
+    recordFact({ entityId: sarah.id, key: 'unrelated', value: 'the quarterly budget spreadsheet needs review', source: 'user', confidence: 0.95 });
+    recordFact({ entityId: sarah.id, key: 'preference', value: 'prefers morning meetings over afternoon ones', source: 'user', confidence: 0.5 });
+
+    const assembler = new ContextAssembler({ toolRegistry: null, eventBus: null, embeddingProvider: new MockEmbeddingProvider() });
+    const context = await assembler.assemblePersonalContext('set up a morning meeting with Sarah');
+    const entry = context.relevantPeople.find((p) => p.name === 'Sarah');
+
+    assert.ok(entry.facts[0].relevance, 'facts should carry a relevance score breakdown when semantic ranking is active');
+    assert.equal(entry.facts[0].key, 'preference', 'the semantically/lexically closer fact should rank first despite lower confidence');
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('assemble() returns the toolRegistry/eventBus/correlationId/actor plumbing alongside personalContext, unchanged shape for providers', async () => {
   const dir = tempHome();
   try {
     setup();
     const fakeRegistry = { list: () => [] };
     const assembler = new ContextAssembler({ toolRegistry: fakeRegistry, eventBus: null });
-    const planContext = assembler.assemble({ correlationId: 'c1', actor: { type: 'user', id: 'u1' }, objective: 'hi' });
+    const planContext = await assembler.assemble({ correlationId: 'c1', actor: { type: 'user', id: 'u1' }, objective: 'hi' });
     assert.equal(planContext.toolRegistry, fakeRegistry);
     assert.equal(planContext.correlationId, 'c1');
     assert.deepEqual(planContext.actor, { type: 'user', id: 'u1' });

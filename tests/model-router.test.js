@@ -117,6 +117,27 @@ test('Planner without a fallback propagates the primary provider\'s failure expl
   await assert.rejects(planner.plan({ toolRegistry: registry }, 'do something'), /primary down/);
 });
 
+test('DOCUMENTED FOOTGUN: a legacy single-provider config\'s "every role uses this provider" fallback also applies to an unconfigured "embeddings" role -- callers resolving embeddings must check listRoles() first (see server/index.js)', () => {
+  const router = new ModelRouter({ provider: 'mock' });
+  // This is the exact behavior server/index.js works around: it does NOT
+  // throw for an unconfigured 'embeddings' role on a legacy config -- it
+  // silently resolves to the single planning provider, which has no
+  // .embed(). listRoles() is how a caller detects "embeddings was never
+  // actually configured" instead of getting a wrong-interface object.
+  assert.equal(router.resolve('embeddings'), router.resolve('planner'));
+  assert.equal(router.listRoles().includes('embeddings'), false);
+});
+
+test('an explicit multi-provider config with its own "embeddings" role does NOT fall back to the planner provider', () => {
+  const router = new ModelRouter({
+    providers: { planner: { type: 'mock' }, embed: { type: 'mock-embedding' } },
+    roles: { planner: 'planner', embeddings: 'embed' },
+  });
+  assert.equal(router.listRoles().includes('embeddings'), true);
+  const embeddingProvider = router.resolve('embeddings');
+  assert.equal(embeddingProvider.id, 'mock-embedding-provider');
+});
+
 test('Planner with a plain modelProvider (no router) behaves exactly as before -- no router involved', async () => {
   const provider = fakeProvider('plain');
   const planner = new Planner({ modelProvider: provider });

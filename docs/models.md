@@ -50,10 +50,19 @@ A multi-provider, per-role config is supported at the config-file level (there i
 
 Each non-mock provider's API key is read from the vault under `model-provider-<apiKeyRef || providerName>`. If the role's primary provider throws while planning, `Planner` retries exactly once against the configured `fallback` provider (if any and if distinct from the primary) and records which provider actually produced the plan for the audit trail -- it never silently retries in a loop or auto-selects a "better" model.
 
+## Embeddings and semantic memory retrieval
+
+`server/agent/embeddings/` provides an `EmbeddingProvider` abstraction (`embed`/`embedBatch`), separate from `ModelProvider` since it's a different capability. Two implementations exist: `MockEmbeddingProvider` (deterministic word-hash sketch, offline default -- clearly not real semantic understanding) and `OpenAICompatibleEmbeddingProvider` (`POST <baseUrl>/v1/embeddings`, the same family of endpoint Ollama/llama.cpp/LM Studio/hosted OpenAI-compatible servers expose).
+
+Configure it as an explicit `embeddings` role in the multi-provider config shape above, e.g. `"roles": { "planner": "local-planner", "embeddings": "embed" }` with a provider entry `"embed": { "type": "embedding-openai-compatible", "baseUrl": "...", "model": "nomic-embed-text" }`.
+
+**DOCUMENTED FOOTGUN:** a legacy single-provider config's "every role uses this one provider" fallback also technically resolves an unconfigured `embeddings` role -- to the planning provider, which has no `.embed()`. `server/index.js` guards against this explicitly (`modelRouter.listRoles().includes('embeddings')` before resolving) rather than relying on ModelRouter to special-case a role name it otherwise stays agnostic about. Anything else that resolves the `embeddings` role directly must do the same check.
+
+Retrieval combines semantic similarity with recency, confidence, exact-word overlap, and an inferred-fact penalty (`server/memory/semantic-retrieval.js`'s `rankFactsHybrid`) -- never pure vector similarity alone, per PLAN.md. Vectors are stored as plain JSON in a local `embeddings` SQLite table (one row per `(subjectType, subjectId, model)`); cosine similarity is computed application-side, which is sufficient at personal scale (dozens to low thousands of facts) without a vector database.
+
 ## Known limitations
 
 - No HTTP route yet writes a multi-provider/role config; only the single-provider shape is configurable from the UI.
-- No embeddings-capable provider is implemented yet (the `embeddings` role has nothing real to resolve to besides a locally-configured OpenAI-compatible endpoint that happens to serve one).
-- `ContextAssembler` (docs/architecture.md) ranks personal context by name/word matching and recency, not semantic similarity -- semantic retrieval is later work.
+- `ContextAssembler` (docs/architecture.md) applies semantic ranking only to facts within an already-selected person, not to which people/commitments get selected in the first place.
 - No streaming.
 - Provider failure (including after a fallback attempt) is explicit and never silently executes a stale plan or bypasses policy.

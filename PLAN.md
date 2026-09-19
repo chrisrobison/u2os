@@ -52,9 +52,10 @@ Replace the narrow demo intent matcher without making a vendor API part of the a
 - [x] Validate every model-produced plan against strict schemas before policy evaluation.
 - [x] Add configurable model roles for classification, planning, summarization, extraction, and embeddings. (`ModelRouter`; no HTTP route to configure multi-provider roles yet -- config-file only.)
 - [x] Add policy-aware routing, timeout, retry, fallback, and offline behavior. (One deterministic fallback-provider retry on planner failure; "policy-aware" routing by data classification is Milestone 6/Phase 6 work, not yet implemented.)
-- [x] Define bounded context assembly from memory and events, with provenance on retrieved facts. (`ContextAssembler` -- heuristic name/recency ranking, character budget, provenance refs; semantic ranking is later work.)
+- [x] Define bounded context assembly from memory and events, with provenance on retrieved facts. (`ContextAssembler` -- heuristic name/recency ranking, character budget, provenance refs, with optional semantic fact re-ranking -- see semantic memory retrieval below.)
 - Add prompt-injection regression cases from email, web search, documents, and calendar text. (Framing landed -- `retrieved_context` vs `user_objective` in the shared planner system prompt -- but no adversarial-content regression tests yet.)
 - [x] Retain `MockModelProvider` as the deterministic test fixture and offline demo default.
+- [x] Add semantic memory retrieval as an index/access mechanism over existing structured memory (never a vector-database replacement). `EmbeddingProvider` abstraction (mock + OpenAI-compatible), vectors stored as plain JSON in a local `embeddings` table, application-side cosine similarity, hybrid ranking (`rankFactsHybrid`: semantic + recency + confidence + exact-word overlap + inferred penalty) with a `_relevance` breakdown on every result. Opt-in via an explicit `embeddings` role; off by default.
 
 ### Acceptance criteria
 

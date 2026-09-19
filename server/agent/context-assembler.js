@@ -3,6 +3,7 @@ import { findEntities, getEntity } from '../memory/entity-store.js';
 import { getFacts } from '../memory/fact-store.js';
 import { getRelationships } from '../memory/relationship-store.js';
 import { listEvents } from '../events/log.js';
+import { rankFactsHybrid } from '../memory/semantic-retrieval.js';
 
 const DEFAULTS = {
   maxChars: 6000,
@@ -52,23 +53,29 @@ const CONTEXT_WORTHY_EVENT_TYPES = [
  * low-ranked context instead of truncating arbitrary serialized JSON."
  */
 export class ContextAssembler {
-  constructor({ toolRegistry, eventBus, ownerEntityId = null, ...options } = {}) {
+  constructor({ toolRegistry, eventBus, ownerEntityId = null, embeddingProvider = null, ...options } = {}) {
     this.toolRegistry = toolRegistry;
     this.eventBus = eventBus;
     this.ownerEntityId = ownerEntityId;
+    // Optional (PLAN.md Phase 5): when configured, fact ranking within each
+    // person blends semantic similarity in with confidence/recency/exact-word
+    // overlap (server/memory/semantic-retrieval.js). Entirely absent by
+    // default -- ranking then falls back to the Phase 4 confidence+recency
+    // heuristic, unchanged.
+    this.embeddingProvider = embeddingProvider;
     this.options = { ...DEFAULTS, ...options };
   }
 
   /**
-   * @returns {{toolRegistry: object, eventBus: object, correlationId: string, actor: object, personalContext: object}}
+   * @returns {Promise<{toolRegistry: object, eventBus: object, correlationId: string, actor: object, personalContext: object}>}
    */
-  assemble({ correlationId, actor, objective = '' } = {}) {
+  async assemble({ correlationId, actor, objective = '' } = {}) {
     return {
       toolRegistry: this.toolRegistry,
       eventBus: this.eventBus,
       correlationId,
       actor,
-      personalContext: this.assemblePersonalContext(objective),
+      personalContext: await this.assemblePersonalContext(objective),
     };
   }
 
@@ -77,14 +84,16 @@ export class ContextAssembler {
    * toolRegistry/eventBus plumbing -- exposed separately so it can be
    * inspected/tested (and later reused by other model roles, e.g. a
    * classifier or summarizer, that don't need the planning plumbing).
+   * Async because semantic fact ranking may call an embedding provider;
+   * with none configured this still resolves promptly (no network calls).
    */
-  assemblePersonalContext(objective = '') {
+  async assemblePersonalContext(objective = '') {
     const objectiveLower = String(objective || '').toLowerCase();
 
     const context = {
       objective: String(objective || ''),
       currentTime: new Date().toISOString(),
-      relevantPeople: this._rankPeople(objectiveLower),
+      relevantPeople: await this._rankPeople(objectiveLower, objective),
       commitments: this._rankCommitments(objectiveLower),
       recentEvents: this._recentEvents(),
       truncated: false,
@@ -99,7 +108,7 @@ export class ContextAssembler {
 
   // --- people + facts + relationships -------------------------------------
 
-  _rankPeople(objectiveLower) {
+  async _rankPeople(objectiveLower, objectiveRaw) {
     const people = findEntities({ type: 'Person' });
     const ranked = people
       .map((person) => {
@@ -119,25 +128,54 @@ export class ContextAssembler {
       })
       .slice(0, this.options.maxPeople);
 
-    return ranked.map(({ person, nameMentioned, facts, relationships }) => ({
-      id: person.id,
-      name: person.name,
-      matchedOn: nameMentioned ? 'objective mentions this name' : 'recently active',
-      facts: facts
-        .slice()
-        .sort((a, b) => b.confidence - a.confidence || b.created_at.localeCompare(a.created_at))
-        .slice(0, this.options.maxFactsPerPerson)
-        .map((f) => ({
-          factId: f.id,
-          key: f.key,
-          value: f.value,
-          confidence: f.confidence,
-          inferred: f.inferred,
-          source: f.source,
-          observedAt: f.observed_at,
-          lastConfirmedAt: f.last_confirmed_at,
-        })),
-      relationshipCount: relationships.length,
+    const results = [];
+    for (const { person, nameMentioned, facts, relationships } of ranked) {
+      results.push({
+        id: person.id,
+        name: person.name,
+        matchedOn: nameMentioned ? 'objective mentions this name' : 'recently active',
+        facts: await this._rankFacts(facts, objectiveRaw),
+        relationshipCount: relationships.length,
+      });
+    }
+    return results;
+  }
+
+  // Confidence+recency by default; blends in semantic similarity (and an
+  // exact-word-overlap signal, and an inferred-fact penalty) when an
+  // embeddingProvider is configured -- see server/memory/semantic-retrieval.js.
+  async _rankFacts(facts, objectiveRaw) {
+    const normalized = facts.map((f) => ({
+      id: f.id,
+      key: f.key,
+      value: f.value,
+      confidence: f.confidence,
+      inferred: f.inferred,
+      source: f.source,
+      observedAt: f.observed_at,
+      lastConfirmedAt: f.last_confirmed_at,
+    }));
+
+    let ranked;
+    let relevanceById = null;
+    if (this.embeddingProvider) {
+      const hybrid = await rankFactsHybrid({ facts: normalized, query: objectiveRaw, embeddingProvider: this.embeddingProvider });
+      ranked = hybrid;
+      relevanceById = new Map(hybrid.map((f) => [f.id, f._relevance]));
+    } else {
+      ranked = normalized.slice().sort((a, b) => b.confidence - a.confidence || (b.observedAt || '').localeCompare(a.observedAt || ''));
+    }
+
+    return ranked.slice(0, this.options.maxFactsPerPerson).map((f) => ({
+      factId: f.id,
+      key: f.key,
+      value: f.value,
+      confidence: f.confidence,
+      inferred: f.inferred,
+      source: f.source,
+      observedAt: f.observedAt,
+      lastConfirmedAt: f.lastConfirmedAt,
+      ...(relevanceById ? { relevance: relevanceById.get(f.id) } : {}),
     }));
   }
 

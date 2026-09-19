@@ -46,6 +46,24 @@ CREATE TABLE IF NOT EXISTS facts (
 );
 CREATE INDEX IF NOT EXISTS idx_facts_entity ON facts(entity_id);
 
+-- Semantic memory retrieval (PLAN.md Phase 5): a small local embedding
+-- index/access mechanism OVER the structured entities/facts/relationships
+-- above, never a replacement for them. One row per (subject, model) --
+-- re-embedding with a different model does not overwrite an older model's
+-- vector. `vector` is stored as a JSON array (plain SQLite, no vector
+-- extension) since cosine similarity is computed application-side over a
+-- personal-scale dataset -- see server/memory/embedding-store.js.
+CREATE TABLE IF NOT EXISTS embeddings (
+  id TEXT PRIMARY KEY,
+  subject_type TEXT NOT NULL,
+  subject_id TEXT NOT NULL,
+  model TEXT NOT NULL,
+  vector TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE(subject_type, subject_id, model)
+);
+CREATE INDEX IF NOT EXISTS idx_embeddings_subject ON embeddings(subject_type, subject_id);
+
 CREATE TABLE IF NOT EXISTS relationships (
   id TEXT PRIMARY KEY,
   from_entity_id TEXT NOT NULL REFERENCES entities(id),

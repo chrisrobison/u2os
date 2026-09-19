@@ -1,6 +1,8 @@
 import { MockModelProvider } from './mock-model-provider.js';
 import { OpenAICompatibleProvider } from './openai-compatible-provider.js';
 import { AnthropicProvider } from './anthropic-provider.js';
+import { MockEmbeddingProvider } from './embeddings/mock-embedding-provider.js';
+import { OpenAICompatibleEmbeddingProvider } from './embeddings/openai-compatible-embedding-provider.js';
 
 /**
  * ModelRouter: resolves a provider/model for a role (planner, classifier,
@@ -75,10 +77,18 @@ function defaultCreateProvider(providerConfig) {
   return factory(providerConfig);
 }
 
+// Planning (ModelProvider: plan/respond/...) and embedding (EmbeddingProvider:
+// embed/embedBatch) providers share one type->factory map -- ModelRouter
+// itself is capability-agnostic; it just instantiates whatever `type` a
+// role's provider config declares. A role's caller (Planner vs.
+// ContextAssembler's semantic ranking) is what determines which interface
+// it actually needs, by which role name it resolves.
 const PROVIDER_FACTORIES = {
   mock: () => new MockModelProvider(),
   'openai-compatible': (cfg) => new OpenAICompatibleProvider(cfg),
   anthropic: (cfg) => new AnthropicProvider(cfg),
+  'mock-embedding': () => new MockEmbeddingProvider(),
+  'embedding-openai-compatible': (cfg) => new OpenAICompatibleEmbeddingProvider(cfg),
 };
 
 function normalizeConfig(config) {

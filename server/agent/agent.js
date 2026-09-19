@@ -27,7 +27,7 @@ import { registerBuiltinEvaluators } from './proactive/builtin-evaluators.js';
  * action must pass through, regardless of which service proposed it.
  */
 export class Agent {
-  constructor({ modelProvider, modelRouter, policyEngine, toolRegistry, eventBus, ownerEntityId = null, evaluatorRegistry } = {}) {
+  constructor({ modelProvider, modelRouter, policyEngine, toolRegistry, eventBus, ownerEntityId = null, evaluatorRegistry, embeddingProvider = null } = {}) {
     this.modelProvider = modelProvider;
     this.modelRouter = modelRouter;
     this.policyEngine = policyEngine;
@@ -35,7 +35,7 @@ export class Agent {
     this.eventBus = eventBus;
     this.ownerEntityId = ownerEntityId;
 
-    this.contextAssembler = new ContextAssembler({ toolRegistry, eventBus, ownerEntityId });
+    this.contextAssembler = new ContextAssembler({ toolRegistry, eventBus, ownerEntityId, embeddingProvider });
     this.planner = new Planner({ modelProvider, modelRouter, role: 'planner' });
     this.actionEvaluator = new ActionEvaluator({ toolRegistry, policyEngine });
     this.actionExecutor = new ActionExecutor({ eventBus });
@@ -62,7 +62,7 @@ export class Agent {
   async handleMessage({ text, actorId = 'user', voice } = {}) {
     const correlationId = newId('corr');
     const actor = { type: 'user', id: actorId };
-    const planContext = this.contextAssembler.assemble({ correlationId, actor, objective: text });
+    const planContext = await this.contextAssembler.assemble({ correlationId, actor, objective: text });
 
     this.eventBus.publish({
       type: 'agent.message.received',
