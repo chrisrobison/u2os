@@ -71,6 +71,14 @@ export function getDb() {
   // restricted OR less restricted than it would have been if classified at
   // write time.
   ensureColumn(db, 'facts', 'classification', "TEXT NOT NULL DEFAULT 'personal'");
+  // Explainability (PLAN.md Phase 9): which retrieved memory items
+  // (facts/entities/relationships/events, by id) actually informed a given
+  // proposed action's plan -- i.e. ContextAssembler's provenanceRefs, AFTER
+  // the data-processing privacy filter, for the specific request that
+  // produced this row. Nullable: not every agent_actions row comes from a
+  // model plan (e.g. a direct evaluateAndMaybeExecute() call from a
+  // non-chat route, or a proactive evaluator, may have none).
+  ensureColumn(db, 'agent_actions', 'context_provenance', 'TEXT');
 
   const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
   db.exec(schema);

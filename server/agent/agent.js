@@ -73,6 +73,12 @@ export class Agent {
     });
 
     const plan = await this.planner.plan(planContext, text);
+    // Explainability (PLAN.md Phase 9): the retrieved-memory-item ids that
+    // actually reached the provider which produced THIS plan (after
+    // data-processing filtering) -- attached to every action's audit row
+    // below so a later "why did U2OS do this" view can point at exactly
+    // what informed it, not just the model's own prose.
+    const contextProvenance = this.planner.lastProvenanceRefs || [];
     const proposedActions = plan.actions || [];
     const results = [];
     const pendingActionIds = [];
@@ -87,6 +93,7 @@ export class Agent {
         correlationId,
         actor,
         voice,
+        contextProvenance,
       });
       results.push(outcome);
       if (outcome.status === 'pending') pendingActionIds.push(outcome.id);
@@ -133,7 +140,7 @@ export class Agent {
    * of calling a tool directly -- "policy gates everything consequential"
    * applies regardless of which HTTP route triggered it.
    */
-  async evaluateAndMaybeExecute({ tool: toolName, arguments: args, requestedBy, requestText, reasoningSummary, correlationId, actor, voice }) {
+  async evaluateAndMaybeExecute({ tool: toolName, arguments: args, requestedBy, requestText, reasoningSummary, correlationId, actor, voice, contextProvenance }) {
     const tool = this.actionEvaluator.resolve(toolName);
     const rawEvaluation = this.actionEvaluator.evaluate({ tool, arguments: args });
     // Additive-only voice gate (server/voice/authorize.js): a no-op unless
@@ -153,6 +160,7 @@ export class Agent {
       evaluation,
       correlationId,
       actor,
+      contextProvenance,
     });
 
     if (evaluation.blocked) {

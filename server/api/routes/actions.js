@@ -1,6 +1,7 @@
 import { sendJson } from '../router.js';
 import { getAgentAction, listPendingActions } from '../../policy/policy-engine.js';
 import { recordFeedback } from '../../feedback/feedback-store.js';
+import { explainAction } from '../../agent/explain.js';
 
 export function registerActionRoutes(router, { agent, eventBus } = {}) {
   router.get('/api/actions/pending', async (_req, res) => {
@@ -11,6 +12,16 @@ export function registerActionRoutes(router, { agent, eventBus } = {}) {
     const action = getAgentAction(req.params.id);
     if (!action) return sendJson(res, 404, { error: 'Not Found' });
     sendJson(res, 200, action);
+  });
+
+  // PLAN.md Phase 9 (explainability): the actual data a future "Why did
+  // U2OS do this?" view would read -- reasoning summary, model, policy
+  // rule, retrieved-context provenance, and the full correlated event
+  // chain. Concise references only, never raw model chain-of-thought.
+  router.get('/api/actions/:id/explain', async (req, res) => {
+    const explanation = explainAction(req.params.id);
+    if (!explanation) return sendJson(res, 404, { error: 'Not Found' });
+    sendJson(res, 200, explanation);
   });
 
   router.post('/api/actions/:id/approve', async (req, res) => {

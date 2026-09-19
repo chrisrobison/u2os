@@ -91,7 +91,12 @@ who approved it         approved_by, approved_at
 who rejected it         rejected_by, rejected_at
 what tool executed it    tool, arguments
 the result               result, status
+what memory informed it  context_provenance (retrieved fact/entity/event ids, after data-processing filtering -- see Explainability below)
 ```
+
+## Explainability
+
+`server/agent/explain.js`'s `explainAction(id)` (also `GET /api/actions/:id/explain`) assembles the actual data a future "Why did U2OS do this?" view would read: the reasoning summary, model, policy domain/rule, autonomy level, approval/rejection identity, result, `contextProvenance` (which retrieved facts/entities/events actually reached the model for this plan), and the full correlated event chain in causal order. This is deliberately concise references and stored summaries, never raw model chain-of-thought -- see docs/architecture.md.
 
 ## Data-processing privacy policy (separate from the above)
 

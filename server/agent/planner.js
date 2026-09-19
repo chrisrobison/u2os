@@ -38,6 +38,13 @@ export class Planner {
     // Set after each plan() call: what (if anything) was withheld from the
     // provider that actually handled it, for explainability/audit.
     this.lastOmittedContext = [];
+    // Set after each plan() call: the retrieved-memory-item ids
+    // (facts/entities/relationships/events) that were actually included in
+    // the context sent to the provider for THIS plan, after data-processing
+    // filtering -- see docs/architecture.md's explainability section. Empty
+    // when the context carried no personalContext (e.g. a bare unit-test
+    // plan() call with no ContextAssembler involved).
+    this.lastProvenanceRefs = [];
   }
 
   /**
@@ -71,6 +78,7 @@ export class Planner {
       this.dataProcessingPolicy
     );
     this.lastOmittedContext = omitted;
+    this.lastProvenanceRefs = filteredPersonalContext?.provenanceRefs || [];
 
     if (omitted.length && context.eventBus) {
       context.eventBus.publish({

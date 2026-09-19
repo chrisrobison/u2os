@@ -149,6 +149,11 @@ CREATE TABLE IF NOT EXISTS agent_actions (
   rejected_at TEXT,
   result TEXT,
   correlation_id TEXT,
+  -- Explainability (PLAN.md Phase 9): retrieved memory item ids
+  -- (facts/entities/relationships/events) that actually informed this
+  -- proposed action's plan, after the data-processing privacy filter --
+  -- see server/agent/explain.js.
+  context_provenance TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
