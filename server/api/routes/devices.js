@@ -8,7 +8,16 @@ import { newId } from '../../db/ids.js';
 import { explainResolution } from '../../devices/capability-resolver.js';
 import { invokeCapability } from '../../devices/capabilities.js';
 
-export function registerDeviceRoutes(router, { deviceRegistry, capabilityRegistry, eventBus }) {
+export function registerDeviceRoutes(router, { deviceRegistry, capabilityRegistry, eventBus, deviceConnectToken }) {
+  // Phase 4: lets an already-authenticated browser session obtain the
+  // /ws/devices transport token itself, rather than needing filesystem
+  // access to server/devices/realtime/device-token.js's persisted file.
+  // Requires a session like any other private route -- an unauthenticated
+  // caller can never learn this token through the API.
+  router.get('/api/devices/connect-token', async (_req, res) => {
+    sendJson(res, 200, { token: deviceConnectToken });
+  });
+
   router.get('/api/devices', async (req, res) => {
     const { type, owner, location, status, trust, capability } = req.query;
     sendJson(res, 200, { devices: deviceRegistry.listDevices({ type, owner, location, status, trust, capability }) });

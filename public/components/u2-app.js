@@ -1,6 +1,8 @@
 import { escapeHtml, humanizeKey } from './util.js';
 import * as api from '../services/api.js';
 import { EventsService } from '../services/events.js';
+import { DeviceClientService } from '../services/device-client.js';
+import './u2-device-panel.js';
 import './u2-nav.js';
 import './u2-agent.js';
 import './u2-dashboard.js';
@@ -74,6 +76,7 @@ export class U2App extends HTMLElement {
         <main class="shell__main"><div class="workspace" id="workspace"></div></main>
         <aside class="shell__agent"><u2-agent></u2-agent></aside>
         <div class="shell__scrim"></div>
+        <u2-device-panel></u2-device-panel>
       </div>
     `;
 
@@ -88,6 +91,14 @@ export class U2App extends HTMLElement {
 
     // One SSE connection for the life of the app, independent of routing.
     this._events = new EventsService();
+
+    // Phase 4 (docs/devices.md): this tab registers itself as a device
+    // over the realtime bus so the agent can present/notify/prompt it
+    // through the same capability model as any other endpoint. One
+    // connection for the life of the app, same lifetime as the SSE feed
+    // above.
+    this._deviceClient = new DeviceClientService();
+    this.querySelector('u2-device-panel').client = this._deviceClient;
 
     window.addEventListener('hashchange', () => {
       this._closeDrawers();

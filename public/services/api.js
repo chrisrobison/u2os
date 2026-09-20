@@ -221,6 +221,13 @@ export function setActiveProvider(domain, providerId) {
   });
 }
 
+// Phase 4 (docs/devices.md): the /ws/devices realtime device bus' transport
+// token. Session-gated like everything else here -- an unauthenticated
+// caller can never learn it through the API.
+export function getDeviceConnectToken() {
+  return request('/api/devices/connect-token');
+}
+
 export function triggerSync(domain) {
   return request(`/api/connectors/${encodeURIComponent(domain)}/sync`, {
     method: 'POST',

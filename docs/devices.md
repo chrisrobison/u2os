@@ -1,11 +1,11 @@
 # U2OS device and capability subsystem
 
-**Status: Phases 1–3 of a phased rollout — see "Phases" at the bottom.**
+**Status: Phases 1–4 of a phased rollout — see "Phases" at the bottom.**
 Implemented: devices, capabilities, the device registry, the adapter
 interface, a mock adapter, a deterministic capability resolver + invocation,
-and a realtime WebSocket device bus. The semantic `present()`/`listen()`
-agent API, the browser/UI device, pairing, and streams are later phases and
-are not implemented yet.
+a realtime WebSocket device bus, and the browser itself as a registered
+device. The semantic `present()`/`listen()` agent API, pairing, and streams
+are later phases and are not implemented yet.
 
 ## Why this exists
 
@@ -313,6 +313,44 @@ more. A device that connects successfully still starts at `trust:
 discovered device. Phase 7's per-device cryptographic pairing is the
 intended replacement; this token is the explicit seam it plugs into.
 
+## Browser/UI device (Phase 4)
+
+Every connected U2OS browser tab registers itself as a `type: 'browser'`
+device over the realtime bus above -- there is no single privileged concept
+called "the UI"; a browser tab is exactly one more device, discoverable and
+addressable through the same resolver as a physical camera or display.
+
+- **`public/services/device-client.js`**'s `DeviceClientService` connects
+  to `/ws/devices` (token fetched from the session-gated `GET
+  /api/devices/connect-token`), sends `hello` with a device id persisted in
+  `localStorage` (stable across reloads -- "the same device reconnecting",
+  not a new one every page load), and advertises exactly the capabilities
+  the page can honor with **no browser permission prompt**:
+  `ui.render`, `ui.notify`, `ui.prompt`, `audio.play`. Capabilities needing
+  a permission (`camera.capture`, `audio.capture`, `geolocation.read`) are
+  deliberately not advertised yet -- adding one is a later, explicit
+  opt-in, never a silent capability-list change (PROMPT.md's "do not
+  request every browser permission at startup").
+- **`public/components/u2-device-panel.js`** renders what arrives:
+  `ui.notify` -> an auto-dismissing toast, `ui.render` -> a persistent,
+  dismissible card, `ui.prompt` -> an interactive card whose answer is sent
+  back as that command's actual result. Only fixed, known fields are ever
+  rendered (never raw HTML) -- the same "generated UI, not generated code"
+  rule the rest of the trusted component set follows.
+- **`public/components/u2-app.js`** owns one `DeviceClientService` for the
+  life of the app, the same lifetime as its one SSE connection.
+
+### Known single-owner simplification
+
+A browser device reports `owner: 'owner'` -- a fixed sentinel standing in
+for "the one authenticated owner of this instance", since there is not yet
+a formal mapping from an authenticated session to a `device.owner` string
+(see Phase 2's Known gaps; the same gap this inherits). A freshly-connected
+browser starts `trust: 'untrusted'` like any other device -- it is eligible
+for `public`-tier content immediately, but `personal`/`private`/`sensitive`
+content requires an explicit trust promotion (`DeviceRegistry.setTrust()`)
+until Phase 7 adds a real pairing flow.
+
 ## API
 
 ```text
@@ -323,6 +361,7 @@ GET  /api/capabilities/:capability/providers
 GET  /api/capabilities/:capability/resolve      ?audience=&privacy=&location=  (explanation output; never invokes)
 POST /api/capabilities/:capability/invoke        { args, audience?, privacy?, location?, sourceDevice? }
 WS   /ws/devices?token=<connect-token>           realtime device connections (see above)
+GET  /api/devices/connect-token                  session-gated; lets an authenticated browser obtain the WS token itself
 ```
 
 All require an authenticated session; `POST` additionally requires CSRF,
@@ -350,6 +389,12 @@ authenticated owner — see Known gaps.
   by request id only, not by device -- a device that disconnects mid-command
   leaves that specific call to resolve via its own timeout rather than
   failing immediately.
+- No browser/DOM test coverage for `device-client.js`/`u2-device-panel.js`
+  (this repo has no browser test runner yet -- PLAN.md Milestone 3's
+  Playwright coverage is separate, future work); Phase 4 is instead proven
+  end to end by `tests/browser-device-end-to-end.test.js` using a raw `ws`
+  client that sends the exact hello shape the real browser client sends,
+  plus manual verification in a real browser.
 - No stream abstraction (`stream://device/name`) yet — `getStream()` is
   defined on the adapter interface but unimplemented beyond the mock's
   metadata-only reference.
@@ -371,7 +416,9 @@ discipline as PLAN.md's milestones:
    heartbeats (application + protocol-level), online/offline presence,
    event publication/subscription over the shared EventBus, device
    commands (`invoke()` over the live connection), reconnect handling.
-4. Browser/UI device (a connected U2OS browser session registers itself).
+4. **Browser/UI device** (done) — a connected U2OS browser tab registers
+   itself over the realtime bus and advertises `ui.render`/`ui.notify`/
+   `ui.prompt`/`audio.play`, rendered by `<u2-device-panel>`.
 5. Semantic presentation (`present()`) with privacy-aware routing.
 6. Device management UI.
 7. Pairing/trust lifecycle, enforced revocation.

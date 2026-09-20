@@ -892,3 +892,66 @@ u2-app {
 @media (min-width: 901px) {
   .shell__scrim { display: none; }
 }
+
+/* ---------- device panel (Phase 4: this tab as a U2OS device) ---------- */
+/* Fixed overlay, independent of routing/workspace -- what an agent's
+   ui.notify/ui.render/ui.prompt commands (docs/devices.md) render into. */
+
+u2-device-panel {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 40;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: var(--space-3);
+  width: min(92vw, 340px);
+  pointer-events: none;
+}
+
+u2-device-panel .u2-card {
+  pointer-events: auto;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+
+.u2-device-panel__toasts,
+.u2-device-panel__presentations,
+.u2-device-panel__prompts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.u2-device-presentation {
+  position: relative;
+}
+
+.u2-device-presentation__dismiss {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+}
+
+.u2-device-presentation pre {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+.u2-device-prompt input[type='text'] {
+  width: 100%;
+  padding: var(--space-2);
+  margin-top: var(--space-2);
+  background: var(--bg-page);
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+}
+
+.u2-device-prompt__actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
