@@ -330,3 +330,247 @@ test('END TO END: the SAME sensitive fact reaches a LOCAL provider unfiltered', 
   assert.equal(receivedPersonalContext.relevantPeople[0].facts.length, 1);
   assert.equal(planner.lastOmittedContext.length, 0);
 });
+
+test('END TO END: a sensitive commitment never reaches a remote provider, but does reach a local one', async () => {
+  const policy = new DataProcessingPolicy({ policies: testPolicies() });
+  const registry = createToolRegistry();
+
+  const commitments = [
+    { id: 'c1', description: 'discuss confidential merger terms', classification: 'sensitive', createdAt: '2024-01-01', confidence: 1, inferred: false },
+    { id: 'c2', description: 'send meeting notes', classification: 'public', createdAt: '2024-01-01', confidence: 1, inferred: false },
+  ];
+  const personalContext = { objective: 'x', relevantPeople: [], commitments, recentEvents: [], provenanceRefs: [], truncated: false };
+
+  let receivedRemote = null;
+  const remoteEvents = [];
+  const remoteProvider = {
+    id: 'fake-remote',
+    destination: 'configured_remote_model',
+    plan: async (context) => {
+      receivedRemote = context.personalContext;
+      return { reasoning_summary: 'ok', actions: [] };
+    },
+  };
+  const remotePlanner = new Planner({ modelProvider: remoteProvider, dataProcessingPolicy: policy });
+  await remotePlanner.plan({
+    toolRegistry: registry,
+    eventBus: { publish: (e) => remoteEvents.push(e) },
+    correlationId: 'corr_commitment_remote',
+    actor: { type: 'user', id: 'user' },
+    personalContext,
+  }, 'anything');
+
+  assert.equal(receivedRemote.commitments.length, 1);
+  assert.equal(receivedRemote.commitments[0].id, 'c2');
+  assert.ok(!receivedRemote.commitments.some((c) => c.classification === 'sensitive'), 'the sensitive commitment must NEVER reach the remote provider');
+  assert.deepEqual(remotePlanner.lastOmittedContext.map((o) => o.id), ['c1']);
+  assert.ok(remoteEvents.some((e) => e.type === 'agent.context_restricted'), 'withholding a commitment must be auditable, never silent');
+
+  let receivedLocal = null;
+  const localProvider = {
+    id: 'fake-local',
+    destination: 'local_model',
+    plan: async (context) => {
+      receivedLocal = context.personalContext;
+      return { reasoning_summary: 'ok', actions: [] };
+    },
+  };
+  const localPlanner = new Planner({ modelProvider: localProvider, dataProcessingPolicy: policy });
+  await localPlanner.plan({
+    toolRegistry: registry,
+    eventBus: { publish: () => {} },
+    correlationId: 'corr_commitment_local',
+    actor: { type: 'user', id: 'user' },
+    personalContext,
+  }, 'anything');
+
+  assert.equal(receivedLocal.commitments.length, 2, 'the same sensitive commitment reaches a local provider unfiltered');
+  assert.equal(localPlanner.lastOmittedContext.length, 0);
+});
+
+test('END TO END: a sensitive calendar-derived event summary never reaches a remote provider, but does reach a local one', async () => {
+  const policy = new DataProcessingPolicy({ policies: testPolicies() });
+  const registry = createToolRegistry();
+
+  const recentEvents = [
+    { eventId: 'e1', type: 'calendar.event_added', timestamp: '2024-01-01', summary: 'Therapy session with Dr. Chen', classification: 'sensitive' },
+    { eventId: 'e2', type: 'calendar.event_added', timestamp: '2024-01-01', summary: 'Team standup', classification: 'public' },
+  ];
+  const personalContext = { objective: 'x', relevantPeople: [], commitments: [], recentEvents, provenanceRefs: [], truncated: false };
+
+  let receivedRemote = null;
+  const remoteEvents = [];
+  const remoteProvider = {
+    id: 'fake-remote',
+    destination: 'configured_remote_model',
+    plan: async (context) => {
+      receivedRemote = context.personalContext;
+      return { reasoning_summary: 'ok', actions: [] };
+    },
+  };
+  const remotePlanner = new Planner({ modelProvider: remoteProvider, dataProcessingPolicy: policy });
+  await remotePlanner.plan({
+    toolRegistry: registry,
+    eventBus: { publish: (e) => remoteEvents.push(e) },
+    correlationId: 'corr_calendar_remote',
+    actor: { type: 'user', id: 'user' },
+    personalContext,
+  }, 'anything');
+
+  assert.equal(receivedRemote.recentEvents.length, 1);
+  assert.equal(receivedRemote.recentEvents[0].eventId, 'e2');
+  assert.ok(!receivedRemote.recentEvents.some((e) => e.classification === 'sensitive'), 'the sensitive calendar event must NEVER reach the remote provider');
+  assert.deepEqual(remotePlanner.lastOmittedContext.map((o) => o.id), ['e1']);
+  assert.ok(remoteEvents.some((e) => e.type === 'agent.context_restricted'), 'withholding a calendar-derived event must be auditable, never silent');
+
+  let receivedLocal = null;
+  const localProvider = {
+    id: 'fake-local',
+    destination: 'local_model',
+    plan: async (context) => {
+      receivedLocal = context.personalContext;
+      return { reasoning_summary: 'ok', actions: [] };
+    },
+  };
+  const localPlanner = new Planner({ modelProvider: localProvider, dataProcessingPolicy: policy });
+  await localPlanner.plan({
+    toolRegistry: registry,
+    eventBus: { publish: () => {} },
+    correlationId: 'corr_calendar_local',
+    actor: { type: 'user', id: 'user' },
+    personalContext,
+  }, 'anything');
+
+  assert.equal(receivedLocal.recentEvents.length, 2, 'the same sensitive calendar event reaches a local provider unfiltered');
+  assert.equal(localPlanner.lastOmittedContext.length, 0);
+});
+
+test('END TO END: a sensitive email-derived event summary never reaches a remote provider, but does reach a local one', async () => {
+  const policy = new DataProcessingPolicy({ policies: testPolicies() });
+  const registry = createToolRegistry();
+
+  const recentEvents = [
+    { eventId: 'e1', type: 'email.received', timestamp: '2024-01-01', summary: 'Re: your recent lab results (from dr.chen@clinic.example)', classification: 'sensitive' },
+    { eventId: 'e2', type: 'email.received', timestamp: '2024-01-01', summary: 'Weekly newsletter (from news@example.com)', classification: 'public' },
+  ];
+  const personalContext = { objective: 'x', relevantPeople: [], commitments: [], recentEvents, provenanceRefs: [], truncated: false };
+
+  let receivedRemote = null;
+  const remoteEvents = [];
+  const remoteProvider = {
+    id: 'fake-remote',
+    destination: 'configured_remote_model',
+    plan: async (context) => {
+      receivedRemote = context.personalContext;
+      return { reasoning_summary: 'ok', actions: [] };
+    },
+  };
+  const remotePlanner = new Planner({ modelProvider: remoteProvider, dataProcessingPolicy: policy });
+  await remotePlanner.plan({
+    toolRegistry: registry,
+    eventBus: { publish: (e) => remoteEvents.push(e) },
+    correlationId: 'corr_email_remote',
+    actor: { type: 'user', id: 'user' },
+    personalContext,
+  }, 'anything');
+
+  assert.equal(receivedRemote.recentEvents.length, 1);
+  assert.equal(receivedRemote.recentEvents[0].eventId, 'e2');
+  assert.ok(!receivedRemote.recentEvents.some((e) => e.classification === 'sensitive'), 'the sensitive email-derived event must NEVER reach the remote provider');
+  assert.deepEqual(remotePlanner.lastOmittedContext.map((o) => o.id), ['e1']);
+  assert.ok(remoteEvents.some((e) => e.type === 'agent.context_restricted'), 'withholding an email-derived event must be auditable, never silent');
+
+  let receivedLocal = null;
+  const localProvider = {
+    id: 'fake-local',
+    destination: 'local_model',
+    plan: async (context) => {
+      receivedLocal = context.personalContext;
+      return { reasoning_summary: 'ok', actions: [] };
+    },
+  };
+  const localPlanner = new Planner({ modelProvider: localProvider, dataProcessingPolicy: policy });
+  await localPlanner.plan({
+    toolRegistry: registry,
+    eventBus: { publish: () => {} },
+    correlationId: 'corr_email_local',
+    actor: { type: 'user', id: 'user' },
+    personalContext,
+  }, 'anything');
+
+  assert.equal(receivedLocal.recentEvents.length, 2, 'the same sensitive email-derived event reaches a local provider unfiltered');
+  assert.equal(localPlanner.lastOmittedContext.length, 0);
+});
+
+test('END TO END: a private commitment ("confirm" decision) is also omitted from a remote provider, proving the confirm-as-omit fail-safe holds through the full Planner path', async () => {
+  const policy = new DataProcessingPolicy({ policies: testPolicies() });
+  const registry = createToolRegistry();
+
+  const commitments = [
+    { id: 'c1', description: 'a private commitment about a pending job offer', classification: 'private', createdAt: '2024-01-01', confidence: 1, inferred: false },
+  ];
+  const personalContext = { objective: 'x', relevantPeople: [], commitments, recentEvents: [], provenanceRefs: [], truncated: false };
+
+  let receivedRemote = null;
+  const remoteEvents = [];
+  const remoteProvider = {
+    id: 'fake-remote',
+    destination: 'configured_remote_model',
+    plan: async (context) => {
+      receivedRemote = context.personalContext;
+      return { reasoning_summary: 'ok', actions: [] };
+    },
+  };
+  const remotePlanner = new Planner({ modelProvider: remoteProvider, dataProcessingPolicy: policy });
+  await remotePlanner.plan({
+    toolRegistry: registry,
+    eventBus: { publish: (e) => remoteEvents.push(e) },
+    correlationId: 'corr_private_commitment_remote',
+    actor: { type: 'user', id: 'user' },
+    personalContext,
+  }, 'anything');
+
+  assert.equal(receivedRemote.commitments.length, 0, 'a "confirm" decision must still be treated as omit, not silently allowed through');
+  assert.deepEqual(remotePlanner.lastOmittedContext.map((o) => o.id), ['c1']);
+  assert.equal(remotePlanner.lastOmittedContext[0].decision, 'confirm');
+  assert.ok(remoteEvents.some((e) => e.type === 'agent.context_restricted'), 'withholding a private commitment must be auditable, never silent');
+});
+
+test('END TO END: public commitments and events are NOT unnecessarily withheld from a remote provider, alongside sensitive ones of each that ARE correctly dropped in the same plan call', async () => {
+  const policy = new DataProcessingPolicy({ policies: testPolicies() });
+  const registry = createToolRegistry();
+
+  const commitments = [
+    { id: 'c1', description: 'discuss confidential merger terms', classification: 'sensitive', createdAt: '2024-01-01', confidence: 1, inferred: false },
+    { id: 'c2', description: 'send meeting notes', classification: 'public', createdAt: '2024-01-01', confidence: 1, inferred: false },
+  ];
+  const recentEvents = [
+    { eventId: 'e1', type: 'calendar.event_added', timestamp: '2024-01-01', summary: 'Therapy session with Dr. Chen', classification: 'sensitive' },
+    { eventId: 'e2', type: 'calendar.event_added', timestamp: '2024-01-01', summary: 'Team standup', classification: 'public' },
+  ];
+  const personalContext = { objective: 'x', relevantPeople: [], commitments, recentEvents, provenanceRefs: [], truncated: false };
+
+  let receivedRemote = null;
+  const remoteEvents = [];
+  const remoteProvider = {
+    id: 'fake-remote',
+    destination: 'configured_remote_model',
+    plan: async (context) => {
+      receivedRemote = context.personalContext;
+      return { reasoning_summary: 'ok', actions: [] };
+    },
+  };
+  const remotePlanner = new Planner({ modelProvider: remoteProvider, dataProcessingPolicy: policy });
+  await remotePlanner.plan({
+    toolRegistry: registry,
+    eventBus: { publish: (e) => remoteEvents.push(e) },
+    correlationId: 'corr_mixed_remote',
+    actor: { type: 'user', id: 'user' },
+    personalContext,
+  }, 'anything');
+
+  assert.deepEqual(receivedRemote.commitments.map((c) => c.id), ['c2'], 'the public commitment reaches the remote provider unfiltered');
+  assert.deepEqual(receivedRemote.recentEvents.map((e) => e.eventId), ['e2'], 'the public event reaches the remote provider unfiltered');
+  assert.deepEqual(remotePlanner.lastOmittedContext.map((o) => o.id).sort(), ['c1', 'e1']);
+  assert.ok(remoteEvents.some((e) => e.type === 'agent.context_restricted'));
+});
