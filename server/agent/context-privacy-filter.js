@@ -8,12 +8,19 @@ import { DataProcessingPolicy } from '../policy/data-processing-policy.js';
  * SEE, not what it's allowed to DO. See docs/policies.md and PLAN.md's
  * data-trust phase.
  *
- * Only facts currently carry an explicit classification (public/personal/
- * private/sensitive); people/commitments/events are not yet independently
- * classified, so this only filters the `facts` arrays within
- * `relevantPeople`, per-fact. That's the actual free-text content most
- * likely to carry something sensitive; extending classification to
- * commitments/events is future work (see docs/architecture.md).
+ * Every item type ContextAssembler produces now carries its own explicit
+ * classification (public/personal/private/sensitive), so this filters at
+ * TWO independent levels:
+ *
+ *   - Whole-item level: each person in `relevantPeople`, each entry in
+ *     `commitments`, and each entry in `recentEvents` is evaluated on its
+ *     OWN classification. If the policy doesn't `allow` it for
+ *     `destination`, the entire item is dropped.
+ *   - Per-fact level (people only): a person who IS allowed through can
+ *     still carry individually-sensitive facts, so `person.facts` is
+ *     filtered independently, exactly as before. A dropped person's facts
+ *     are never separately evaluated -- there's no point auditing the
+ *     contents of an item that's already gone.
  *
  * A `confirm` decision is currently treated the same as `never` (omit) --
  * ContextAssembler assembly happens synchronously within a single planning
@@ -23,30 +30,48 @@ import { DataProcessingPolicy } from '../policy/data-processing-policy.js';
  * choice: this NEVER silently sends restricted data, even though it also
  * doesn't yet implement the "ask for explicit approval" alternative.
  *
- * Returns { context, omitted }: `omitted` lists every withheld fact's id,
- * classification, and the policy rule that withheld it, for an audit event
- * and future explainability UI.
+ * Returns { context, omitted }: `omitted` lists every withheld item's type
+ * (person/fact/commitment/event), id, classification, destination, decision,
+ * and the policy rule that withheld it, for an audit event and future
+ * explainability UI.
  */
 export function filterPersonalContextForDestination(personalContext, destination, dataProcessingPolicy = new DataProcessingPolicy()) {
   if (!personalContext) return { context: personalContext, omitted: [] };
 
   const omitted = [];
 
-  const relevantPeople = (personalContext.relevantPeople || []).map((person) => {
+  const evaluate = (type, id, classification) => {
+    const evaluation = dataProcessingPolicy.evaluate({ classification, destination });
+    if (evaluation.decision === 'allow') return true;
+    omitted.push({ type, id, classification, destination, decision: evaluation.decision, rule: evaluation.rule });
+    return false;
+  };
+
+  const relevantPeople = (personalContext.relevantPeople || []).filter((person) => {
+    const classification = person.classification || 'personal';
+    return evaluate('person', person.id, classification);
+  }).map((person) => {
     const facts = person.facts.filter((fact) => {
-      const classification = fact.classification || 'personal';
-      const evaluation = dataProcessingPolicy.evaluate({ classification, destination });
-      if (evaluation.decision === 'allow') return true;
-      omitted.push({ type: 'fact', id: fact.factId, classification, decision: evaluation.decision, rule: evaluation.rule });
-      return false;
+      const factClassification = fact.classification || 'personal';
+      return evaluate('fact', fact.factId, factClassification);
     });
     return { ...person, facts };
+  });
+
+  const commitments = (personalContext.commitments || []).filter((commitment) => {
+    const classification = commitment.classification || 'personal';
+    return evaluate('commitment', commitment.id, classification);
+  });
+
+  const recentEvents = (personalContext.recentEvents || []).filter((event) => {
+    const classification = event.classification || 'personal';
+    return evaluate('event', event.eventId, classification);
   });
 
   if (!omitted.length) return { context: personalContext, omitted };
 
   return {
-    context: { ...personalContext, relevantPeople, dataProcessingRestricted: true },
+    context: { ...personalContext, relevantPeople, commitments, recentEvents, dataProcessingRestricted: true },
     omitted,
   };
 }
