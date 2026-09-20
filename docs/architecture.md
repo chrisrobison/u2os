@@ -120,13 +120,17 @@ heartbeats, presence, event publication/subscription, and device commands,
 the browser itself as a registered `ui.render`/`ui.notify`/`ui.prompt`
 device (`<u2-device-panel>`), semantic presentation
 (`presentation.present`/`presentation.notify`) registered as real Tools
-routed through the existing PolicyEngine/approval/audit pipeline, and a
-device management UI (`#/devices`: list/detail/rename/relocate/reassign
-owner/pair-trust-revoke/remove/test-capability). The raw `POST
+routed through the existing PolicyEngine/approval/audit pipeline, a device
+management UI (`#/devices`: list/detail/rename/relocate/reassign
+owner/pair-trust-revoke/remove/test-capability), and the trust lifecycle
+foundation (`device.pairing_requested` on a genuinely new connection;
+revocation forcibly disconnects a live realtime connection and is enforced
+on every resolve/invoke/event-publish path at once; a documented, not yet
+implemented, crypto-identity seam via `device.metadata`). The raw `POST
 /api/capabilities/:capability/invoke` and `POST /api/devices/:id/test`
 routes are deliberately session-authenticated-only, not policy-gated --
 owner debug/direct-control surfaces, not agent-reachable. Not yet
-implemented: `listen()`, real pairing, and streams. See docs/devices.md.
+implemented: `listen()` and streams. See docs/devices.md.
 
 ## Known gaps
 

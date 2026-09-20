@@ -68,4 +68,14 @@ export class DeviceAdapter {
   async getStream(_device, _streamName) {
     throw new Error(`${this.constructor.name}.getStream not implemented`);
   }
+
+  /** Best-effort: force-disconnect this device's live connection, if the
+   * adapter has one (server/devices/adapters/websocket-device-adapter.js
+   * does). Called by DeviceRegistry.setTrust() immediately after a
+   * device's trust transitions to 'revoked' (docs/devices.md's trust
+   * lifecycle -- Phase 7), so a revoked device cannot remain live on the
+   * wire. Adapters with no persistent-connection concept (mock,
+   * discovery-only, a one-shot HTTP integration) can leave this as the
+   * default no-op -- there is nothing to disconnect. */
+  async disconnect(_deviceId) {}
 }

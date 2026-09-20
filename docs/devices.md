@@ -1,13 +1,14 @@
 # U2OS device and capability subsystem
 
-**Status: Phases 1–6 of a phased rollout — see "Phases" at the bottom.**
+**Status: Phases 1–7 of a phased rollout — see "Phases" at the bottom.**
 Implemented: devices, capabilities, the device registry, the adapter
 interface, a mock adapter, a deterministic capability resolver + invocation,
 a realtime WebSocket device bus, the browser itself as a registered device,
 semantic presentation (`presentation.present`/`presentation.notify`) wired
-into the real policy/approval pipeline, and a device management UI.
-`listen()`, real pairing, and streams are later phases and are not
-implemented yet.
+into the real policy/approval pipeline, a device management UI, and the
+trust lifecycle foundation (enforced revocation, pairing-request events,
+the documented crypto-identity seam). `listen()` and streams are later
+phases and are not implemented yet.
 
 ## Why this exists
 
@@ -424,6 +425,70 @@ raw `POST /api/capabilities/:capability/invoke` route, this does **not**
 go through `PolicyEngine` -- it is explicitly an owner-only debug/test
 primitive, never something an agent's planning loop should reach.
 
+## Trust lifecycle foundation (Phase 7)
+
+The lifecycle diagram from the original spec --
+`discovered -> pairing request -> user approval -> trusted -> revoked` --
+was already mostly real by Phase 1 (`untrusted` is what "discovered" means
+here; `DeviceRegistry.setTrust()` is "user approval"). This phase closes
+the two pieces that weren't: a **pairing request** signal, and revocation
+that's actually **enforced everywhere**, not just recorded.
+
+- **Pairing request**: `WebSocketDeviceAdapter` emits `device.pairing_requested`
+  the moment a genuinely new device id sends its first `hello` -- captured
+  by checking `deviceRegistry.getDevice(id)` for `null` *before*
+  `upsertDevice()` runs. A reconnecting *known* device never re-requests
+  pairing. `MockDeviceAdapter`'s fixtures don't emit this either -- they're
+  pre-trusted local dev fixtures, not remote devices actually being paired.
+- **Enforced revocation**: setting a device's trust to `revoked`
+  (`DeviceRegistry.setTrust()`) now does three things atomically-in-effect:
+  1. Writes `trust = 'revoked'` (already true since Phase 1) -- this row is
+     what every resolver/invoke check actually reads, and is authoritative
+     the instant this returns.
+  2. Force-disconnects any live realtime connection: `setTrust()` calls the
+     owning adapter's new `disconnect(deviceId)` hook
+     (`DeviceAdapter.disconnect()` -- default no-op; `WebSocketDeviceAdapter`
+     overrides it to `ws.terminate()` the live connection, if any). This is
+     fire-and-forget -- the trust row above is already the actual
+     enforcement point, this is wire-level cleanup.
+  3. `WebSocketDeviceAdapter._handleEvent()` separately re-checks the
+     device's trust on every single `event` message, refusing anything from
+     an already-revoked device even in the race window before its
+     connection is actually torn down.
+
+  Combined with the resolver (excludes `revoked` unconditionally) and
+  `invokeCapability()`/`invokeDeviceCapability()`'s own re-checks (Phases
+  2/6), a revoked device is refused on every path at once: it cannot be
+  resolved, cannot be invoked (via either the resolver or the direct/test
+  path), cannot publish another event, and loses its live connection.
+
+### Cryptographic device identity (the documented seam)
+
+A full PKI is explicitly not required by this phase unless it fits
+naturally -- it doesn't yet, so here is the seam a future phase plugs into
+without changing anything else:
+
+- **Where a public key would live**: `device.metadata` (a free-form JSON
+  column since Phase 1) -- e.g. `metadata.publicKey`. No schema change
+  needed; `tests/device-trust-lifecycle.test.js` demonstrates storing this
+  today.
+- **How verification would work**: a future adapter's `hello` handling
+  would require the device to sign a server-issued nonce/challenge with
+  its private key, verified with `node:crypto`'s `verify()` against the
+  stored public key, BEFORE that hello is accepted at all.
+- **What changes when it lands**: nothing about `DeviceRegistry`,
+  the resolver, or the invocation paths -- only what's allowed to CALL
+  `setTrust()` beyond the owner. A verified signature could justify
+  auto-promoting `untrusted -> paired` (never straight to `trusted`,
+  and never bypassing `setTrust()` itself) -- still one deterministic
+  function, still fully auditable, still never influenced by anything
+  the device merely *claims* about itself in a `hello` payload's plain
+  fields (`name`/`type`/`owner`/etc, which remain exactly as
+  self-reported and untrusted as they are today).
+- The realtime bus's connect token (`server/devices/realtime/device-token.js`)
+  is the transport-level gate this identity layer is *layered on top of*,
+  not a replacement for it -- see that file's header comment.
+
 ## API
 
 ```text
@@ -471,10 +536,11 @@ authenticated owner — see Known gaps.
   `server/api/routes/devices.js`. It only affects device *selection*; it
   is never treated as proof of identity or used to unlock anything the
   resolver's trust/privacy rules wouldn't already allow.
-- No browser/UI client registration yet (Phase 4 builds on the realtime bus
-  above) and no pairing/approval flow (Phase 7) -- a device connecting over
-  `/ws/devices` is `untrusted` until something explicitly promotes it via
-  `DeviceRegistry.setTrust()`.
+- No **cryptographic** pairing yet -- trust is entirely owner-driven via
+  `DeviceRegistry.setTrust()` (directly, or through the Phase 6 management
+  UI's Pair/Trust/Revoke control); there is no device-presented credential
+  that could ever auto-promote trust. See "Cryptographic device identity"
+  below for the documented seam this is expected to plug into.
 - `WebSocketDeviceAdapter.invoke()`'s pending-command bookkeeping is keyed
   by request id only, not by device -- a device that disconnects mid-command
   leaves that specific call to resolve via its own timeout rather than
@@ -516,7 +582,11 @@ discipline as PLAN.md's milestones:
    capabilities/status/trust/owner/location/recent activity), rename/
    relocate/reassign owner, pair/trust/revoke, remove, test a capability
    directly against one device.
-7. Pairing/trust lifecycle, enforced revocation.
+7. **Pairing/trust lifecycle, enforced revocation** (done) --
+   `device.pairing_requested` on a genuinely new realtime connection;
+   revocation forcibly disconnects a live connection and is checked on
+   every event/invoke path, not just recorded; documented (not yet
+   implemented) crypto-identity seam via `device.metadata`.
 8. Stream registry/reference abstraction.
 9. One existing service (e.g. Gmail) exposed through the same capability
    model, proving devices and services share one resolver.

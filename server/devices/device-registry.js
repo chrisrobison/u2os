@@ -230,14 +230,25 @@ export class DeviceRegistry {
     return this.getDevice(id);
   }
 
-  /** Sets a device's trust level. This is deliberately the ONLY way trust
-   * changes -- adapters can never set it via upsertDevice() re-discovery
-   * (see the comment there). A full pairing/approval flow (PLAN.md-style
-   * phased work) will call this from an owner-authorized route; for now it
-   * is plumbing other code (including tests) can call directly. Revoking a
-   * device must be effective immediately for any future resolver/invoke
-   * path -- this function only records the state transition; enforcement
-   * lives wherever invocation is added. */
+  /** Sets a device's trust level -- the whole trust lifecycle
+   * (docs/devices.md Phase 7: untrusted -> paired/trusted -> revoked) is
+   * this one primitive. This is deliberately the ONLY way trust changes --
+   * adapters can never set it via upsertDevice() re-discovery (see the
+   * comment there); it is exclusively owner-driven (today: directly, or
+   * via the Phase 6 management UI's Pair/Trust/Revoke control -- a real
+   * pairing *flow*, device-initiated request + credential exchange, is
+   * the one piece of this phase intentionally not built; see this file's
+   * header... actually see docs/devices.md's "Cryptographic device
+   * identity" section for the exact seam it will plug into).
+   *
+   * Revocation takes effect immediately and on every enforcement path:
+   * the resolver (server/devices/capability-resolver.js) always excludes
+   * `revoked`, `invokeCapability()`/`invokeDeviceCapability()` re-check at
+   * the moment of execution, and -- new this phase -- a revoked device's
+   * live realtime connection (if any) is force-disconnected right here,
+   * and WebSocketDeviceAdapter separately refuses to publish any further
+   * `event` message from a device whose trust is `revoked`, closing the
+   * race where a message was already in flight when revocation happened. */
   setTrust(id, trust) {
     if (!VALID_TRUST.has(trust)) throw new Error(`Invalid trust level: ${trust}`);
     const existing = this.getDevice(id);
@@ -250,6 +261,18 @@ export class DeviceRegistry {
       subject: { type: 'device', id },
       data: { deviceId: id, trust },
     });
+    if (trust === 'revoked') {
+      const adapter = this._adapters.get(existing.adapter);
+      // Fire-and-forget: the trust row is already committed above, which
+      // is what every enforcement check actually reads -- this is
+      // best-effort wire-level cleanup, not something callers need to
+      // await for the revocation itself to be effective.
+      if (adapter) {
+        Promise.resolve(adapter.disconnect(id)).catch((err) => {
+          log.warn('device-registry', `adapter "${existing.adapter}" failed to disconnect revoked device "${id}"`, { error: err?.message || String(err) });
+        });
+      }
+    }
     return this.getDevice(id);
   }
 

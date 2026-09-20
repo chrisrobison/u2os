@@ -108,6 +108,24 @@ export class WebSocketDeviceAdapter extends DeviceAdapter {
     });
   }
 
+  /** Phase 7 (docs/devices.md): force-disconnects `deviceId`'s live
+   * connection, if it has one right now. Called by
+   * DeviceRegistry.setTrust() immediately after a revocation. `terminate()`
+   * (not the graceful `close()`) triggers the normal `_onClose()` cleanup
+   * path (subscriptions torn down, status set offline) without waiting on
+   * a close handshake a possibly-compromised/unresponsive client might
+   * never complete. */
+  async disconnect(deviceId) {
+    const ws = this._connections.get(deviceId);
+    if (ws) {
+      try {
+        ws.terminate();
+      } catch {
+        // best-effort
+      }
+    }
+  }
+
   /** Called by server/index.js's http 'upgrade' handler for requests to
    * /ws/devices. Rejects (closes the raw socket, never completing the WS
    * handshake) unless the connect token matches -- see
@@ -212,11 +230,22 @@ export class WebSocketDeviceAdapter extends DeviceAdapter {
       }
     }
 
+    const isNewDevice = !this._registry.getDevice(device.id);
+
     let record;
     try {
       record = this._registry.upsertDevice(this.id, { ...device, status: 'online' });
     } catch (err) {
       return this._sendError(ws, err.message);
+    }
+
+    if (isNewDevice) {
+      this._emit({
+        type: 'device.pairing_requested',
+        source: `device:${record.id}`,
+        subject: { type: 'device', id: record.id },
+        data: { deviceId: record.id, name: record.name, deviceType: record.type },
+      });
     }
 
     ws.deviceId = record.id;
@@ -226,6 +255,16 @@ export class WebSocketDeviceAdapter extends DeviceAdapter {
 
   _handleEvent(ws, msg) {
     if (!ws.deviceId) return this._sendError(ws, 'must hello before sending events');
+    // Phase 7: a device revoked after hello (or racing hello -- e.g. this
+    // exact device id was just revoked on a prior connection and this is
+    // a stale in-flight message) must never get another event onto the
+    // shared bus. setTrust('revoked') also force-disconnects the live
+    // connection (see DeviceRegistry.setTrust()), but that happens
+    // asynchronously -- this check closes the race regardless of timing.
+    const registered = this._registry.getDevice(ws.deviceId);
+    if (!registered || registered.trust === 'revoked') {
+      return this._sendError(ws, 'device is revoked; events are not accepted');
+    }
     const event = msg.event;
     if (!event || typeof event.type !== 'string' || !event.type) {
       return this._sendError(ws, 'event requires event.type');
