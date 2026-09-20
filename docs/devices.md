@@ -1,15 +1,17 @@
 # U2OS device and capability subsystem
 
-**Status: Phases 1–8 of a phased rollout — see "Phases" at the bottom.**
+**Status: Phases 1–9 complete — the full phased rollout below is done.**
 Implemented: devices, capabilities, the device registry, the adapter
 interface, a mock adapter, a deterministic capability resolver + invocation,
 a realtime WebSocket device bus, the browser itself as a registered device,
 semantic presentation (`presentation.present`/`presentation.notify`) wired
 into the real policy/approval pipeline, a device management UI, the trust
 lifecycle foundation (enforced revocation, pairing-request events, the
-documented crypto-identity seam), and a metadata/reference stream registry.
-The semantic `listen()` API and service-provider unification (Phase 9) are
-the only pieces left.
+documented crypto-identity seam), a metadata/reference stream registry, and
+a service-provider unification proof of concept (an existing connector
+exposed through the same capability model as a physical device). See
+"Known gaps" below for what remains deliberately out of scope, and
+"Phases" for the full history.
 
 ## Why this exists
 
@@ -525,6 +527,37 @@ Demonstrated end to end against `MockDeviceAdapter`'s kitchen camera
 (`video.stream` capability -> a `stream://mock.camera.kitchen/main`
 reference with `protocol: 'mock'`) -- see `tests/stream-registry.test.js`.
 
+## Service-provider unification (Phase 9)
+
+Section 14's diagram -- one Capability Registry, two kinds of Provider
+underneath it (Devices and Services) -- is now real, demonstrated with
+**one** existing integration rather than a rewrite of
+`server/integrations/provider-registry.js`: notifications.
+
+`server/devices/adapters/notification-service-adapter.js` is a thin
+`DeviceAdapter` that registers a single `type: 'service'` device
+(`service.notifications`) advertising `notification.send` (already in the
+Phase 1 capability catalog, previously provided by nothing) and delegates
+`invoke()` straight to `getProvider('notifications')` -- the exact function
+`server/tools/notification-tools.js` already calls. Whichever provider
+`connectors.yaml` has active (mock, or the real webhook provider) is what
+actually runs; this adapter has no opinion of its own.
+
+The point this proves, concretely (`tests/service-provider-unification.test.js`):
+`explainResolution()`/`resolveCapability()`/`invokeCapability()` treat
+`service.notifications` with **zero special-casing** -- identical
+explanation shape, identical scoring, identical trust enforcement (revoking
+the service is exactly as effective as revoking a physical device), as a
+`mock.sensor.temperature.office` reading temperature. One resolver, one
+enforcement path, two very different kinds of provider underneath.
+
+This is a proof of concept, not a migration: every other existing
+connector (Gmail, Google Calendar, Brave Search, ...) is untouched and
+still reachable only through its existing Tool
+(`server/tools/*-tools.js`) -- extending the pattern to another connector
+means writing one more thin adapter like this one, not rearchitecting
+anything.
+
 ## API
 
 ```text
@@ -631,5 +664,13 @@ discipline as PLAN.md's milestones:
 8. **Stream registry/reference abstraction** (done) -- `stream://device/name`
    ids, discover/open/close, metadata + adapter-provided references only,
    never a media transport; trust-gated like every other device access.
-9. One existing service (e.g. Gmail) exposed through the same capability
-   model, proving devices and services share one resolver.
+9. **Service-provider unification** (done) -- the notifications connector
+   (mock or real webhook) exposed as a `type: 'service'` device providing
+   `notification.send`, with zero special-casing anywhere in the resolver,
+   proving devices and services share one resolver, one enforcement path.
+
+All nine phases are now implemented. The semantic `listen()` API (input's
+counterpart to `present()`), extending unification to more connectors, and
+real cryptographic pairing remain natural next steps but are outside this
+rollout's scope -- see "Known gaps" above for the complete list of what's
+deliberately deferred and why.

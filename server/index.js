@@ -19,6 +19,7 @@ import { DeviceRegistry } from './devices/device-registry.js';
 import { createCapabilityRegistry } from './devices/register-capabilities.js';
 import { MockDeviceAdapter } from './devices/adapters/mock-device-adapter.js';
 import { WebSocketDeviceAdapter } from './devices/adapters/websocket-device-adapter.js';
+import { NotificationServiceAdapter } from './devices/adapters/notification-service-adapter.js';
 import { getOrCreateDeviceConnectToken } from './devices/realtime/device-token.js';
 import { StreamRegistry } from './devices/stream-registry.js';
 import { log } from './logging/logger.js';
@@ -87,6 +88,12 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   const capabilityRegistry = createCapabilityRegistry();
   const deviceRegistry = new DeviceRegistry({ db, eventBus, capabilityRegistry });
   await deviceRegistry.registerAdapter(new MockDeviceAdapter());
+  // Service-provider unification proof of concept (Phase 9): wraps the
+  // EXISTING notifications connector (server/integrations/provider-registry.js)
+  // as a device-model provider of the notification.send capability -- see
+  // server/devices/adapters/notification-service-adapter.js's header for
+  // why this one integration, and why it's a thin wrapper, not a rewrite.
+  await deviceRegistry.registerAdapter(new NotificationServiceAdapter());
   // Realtime device bus (Phase 3): any process speaking the small JSON
   // protocol in websocket-device-adapter.js can register itself as a
   // device over a persistent connection at ws(s)://<host>/ws/devices --
