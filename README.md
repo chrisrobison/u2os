@@ -11,7 +11,7 @@ It is not a chatbot or desktop wrapper. Events, structured memory, policies, too
 U2OS is currently a working pre-alpha prototype. The repository implements the seven development phases in [PROMPT.md](PROMPT.md), plus the deployment milestone and the nine-phase device/capability subsystem (see [docs/devices.md](docs/devices.md)), as tested vertical slices:
 
 - Persistent SQLite event log with normalized events, correlation, provenance, subscriptions, filtered history, and SSE delivery
-- Structured entities, facts, relationships, commitments, and memory provenance, including a per-fact data-processing privacy classification
+- Structured entities, facts, relationships, commitments, and memory provenance, including a data-processing privacy classification across every context type (facts, people, commitments, and event-derived summaries), not just facts
 - An Agent orchestrator decomposed into focused services (ContextAssembler, Planner, ActionEvaluator, ActionExecutor, ApprovalManager, EvaluatorRegistry) rather than one growing class
 - Real OpenAI-compatible and Anthropic model providers alongside the deterministic `MockModelProvider`, selected per-role by a `ModelRouter` with one deterministic fallback retry
 - A strict, validated plan schema (bounded action count/argument depth, `dependsOn`, `memoryCandidates`) with one bounded, non-fabricating repair pass before a malformed plan is rejected outright
@@ -103,7 +103,7 @@ npm run dev
 npm test
 ```
 
-The current suite contains 296 Node tests covering the event bus, memory, policy enforcement, tools, the complete approval vertical slice, dashboard generation, connectors and OAuth security, encrypted credentials, deployment utilities, triggers, proactive decisions, feedback, voice authorization, the Agent-refactor regression suite, model providers and routing, the strict plan schema, real bounded context assembly, semantic memory retrieval, the data-processing privacy policy, prompt-injection containment, the intelligent end-to-end vertical slice, explainability, and the device/capability subsystem (registry, resolver, the realtime WebSocket device bus, the browser-as-device flow, policy-gated presentation tools, device management, the trust lifecycle, streams, and service-provider unification — see [docs/devices.md](docs/devices.md)).
+The current suite contains 315 Node tests covering the event bus, memory, policy enforcement, tools, the complete approval vertical slice, dashboard generation, connectors and OAuth security, encrypted credentials, deployment utilities, triggers, proactive decisions, feedback, voice authorization, the Agent-refactor regression suite, model providers and routing, the strict plan schema, real bounded context assembly, semantic memory retrieval, the data-processing privacy policy, prompt-injection containment, the intelligent end-to-end vertical slice, explainability, and the device/capability subsystem (registry, resolver, the realtime WebSocket device bus, the browser-as-device flow, policy-gated presentation tools, device management, the trust lifecycle, streams, and service-provider unification — see [docs/devices.md](docs/devices.md)).
 
 ## Data operations
 
