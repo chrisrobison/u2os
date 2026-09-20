@@ -8,7 +8,42 @@ import { newId } from '../../db/ids.js';
 import { explainResolution } from '../../devices/capability-resolver.js';
 import { invokeCapability, invokeDeviceCapability } from '../../devices/capabilities.js';
 
-export function registerDeviceRoutes(router, { deviceRegistry, capabilityRegistry, eventBus, deviceConnectToken }) {
+export function registerDeviceRoutes(router, { deviceRegistry, capabilityRegistry, eventBus, deviceConnectToken, streamRegistry }) {
+  // Phase 8 (docs/devices.md): metadata/reference-only stream discovery
+  // and open/close -- never a media transport. GET is pure discovery
+  // (what streams does this device claim to have); POST .../open actually
+  // resolves a reference via the device's adapter (subject to the same
+  // trust gate as everything else); the caller connects to that reference
+  // directly -- U2OS never proxies the media itself.
+  router.get('/api/devices/:id/streams', async (req, res) => {
+    try {
+      sendJson(res, 200, { streams: streamRegistry.discover(req.params.id) });
+    } catch (err) {
+      sendJson(res, 404, { error: err.message });
+    }
+  });
+
+  router.post('/api/devices/:id/streams/:name/open', async (req, res) => {
+    try {
+      const opened = await streamRegistry.open(req.params.id, req.params.name);
+      sendJson(res, 200, opened);
+    } catch (err) {
+      sendJson(res, 400, { error: err.message });
+    }
+  });
+
+  router.post('/api/streams/close', async (req, res) => {
+    const { streamId } = req.body || {};
+    if (!streamId) return sendJson(res, 400, { error: 'streamId is required' });
+    const closed = streamRegistry.close(streamId);
+    sendJson(res, 200, { closed });
+  });
+
+  router.get('/api/streams', async (_req, res) => {
+    sendJson(res, 200, { streams: streamRegistry.listOpen() });
+  });
+
+
   // Phase 4: lets an already-authenticated browser session obtain the
   // /ws/devices transport token itself, rather than needing filesystem
   // access to server/devices/realtime/device-token.js's persisted file.

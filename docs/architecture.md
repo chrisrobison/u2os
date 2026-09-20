@@ -126,11 +126,13 @@ owner/pair-trust-revoke/remove/test-capability), and the trust lifecycle
 foundation (`device.pairing_requested` on a genuinely new connection;
 revocation forcibly disconnects a live realtime connection and is enforced
 on every resolve/invoke/event-publish path at once; a documented, not yet
-implemented, crypto-identity seam via `device.metadata`). The raw `POST
-/api/capabilities/:capability/invoke` and `POST /api/devices/:id/test`
-routes are deliberately session-authenticated-only, not policy-gated --
-owner debug/direct-control surfaces, not agent-reachable. Not yet
-implemented: `listen()` and streams. See docs/devices.md.
+implemented, crypto-identity seam via `device.metadata`), and a
+metadata/reference stream registry (`stream://device/name`; never a media
+transport). The raw `POST /api/capabilities/:capability/invoke`, `POST
+/api/devices/:id/test`, and stream open/close routes are deliberately
+session-authenticated-only, not policy-gated -- owner debug/direct-control
+surfaces, not agent-reachable. Not yet implemented: the semantic
+`listen()` API and service-provider unification. See docs/devices.md.
 
 ## Known gaps
 

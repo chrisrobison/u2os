@@ -1,14 +1,15 @@
 # U2OS device and capability subsystem
 
-**Status: Phases 1–7 of a phased rollout — see "Phases" at the bottom.**
+**Status: Phases 1–8 of a phased rollout — see "Phases" at the bottom.**
 Implemented: devices, capabilities, the device registry, the adapter
 interface, a mock adapter, a deterministic capability resolver + invocation,
 a realtime WebSocket device bus, the browser itself as a registered device,
 semantic presentation (`presentation.present`/`presentation.notify`) wired
-into the real policy/approval pipeline, a device management UI, and the
-trust lifecycle foundation (enforced revocation, pairing-request events,
-the documented crypto-identity seam). `listen()` and streams are later
-phases and are not implemented yet.
+into the real policy/approval pipeline, a device management UI, the trust
+lifecycle foundation (enforced revocation, pairing-request events, the
+documented crypto-identity seam), and a metadata/reference stream registry.
+The semantic `listen()` API and service-provider unification (Phase 9) are
+the only pieces left.
 
 ## Why this exists
 
@@ -489,6 +490,41 @@ without changing anything else:
   is the transport-level gate this identity layer is *layered on top of*,
   not a replacement for it -- see that file's header comment.
 
+## Stream abstraction (Phase 8)
+
+`server/devices/stream-registry.js`'s `StreamRegistry` is deliberately
+**metadata and references only** -- "do not attempt to build a media
+server" is a hard constraint, not a simplification to revisit later. U2OS
+never proxies, relays, or transcodes a single media byte; it only tells a
+caller which device has which named stream and hands back whatever
+reference (a `{url, protocol}` shape, protocol-dependent -- WebRTC, RTSP,
+HTTP, WebSocket, a local device handle, whatever that specific adapter
+actually offers) that device's own adapter provides via the existing
+`DeviceAdapter.getStream()` hook (Phase 1). The caller connects to that
+reference directly.
+
+- **Stream ids** follow `stream://<deviceId>/<streamName>`.
+- **`discover(deviceId)`** is pure metadata, never opens anything: a
+  device's own `metadata.streams` (an adapter-populated array of names) is
+  authoritative when present; otherwise a device advertising the
+  `video.stream` capability is assumed to have exactly one stream named
+  `"main"`. No streaming capability -> an empty list, not an error.
+- **`open(deviceId, streamName)`** resolves the device's adapter and calls
+  its `getStream()`, records the reference as active, and publishes
+  `stream.available`. Subject to the exact same trust gate as every other
+  device access -- a revoked device can never have a stream opened against
+  it (Phase 7's invariant applies here too, not just to capability
+  invocation).
+- **`close(streamId)`** is bookkeeping only -- there is no underlying
+  transport connection for U2OS itself to tear down; whatever actually
+  connected to the reference is responsible for closing that connection on
+  its own. Publishes `stream.closed`; closing an already-closed/never-opened
+  id is a no-op (`false`), not an error.
+
+Demonstrated end to end against `MockDeviceAdapter`'s kitchen camera
+(`video.stream` capability -> a `stream://mock.camera.kitchen/main`
+reference with `protocol: 'mock'`) -- see `tests/stream-registry.test.js`.
+
 ## API
 
 ```text
@@ -498,6 +534,10 @@ POST /api/devices/:id/trust                     { trust: 'untrusted'|'paired'|'t
 POST /api/devices/:id/test                      { capability, args? }  -- direct, resolver-bypassing (owner-only)
 DELETE /api/devices/:id
 GET  /api/devices/:id
+GET  /api/devices/:id/streams                   pure discovery, never opens anything
+POST /api/devices/:id/streams/:name/open         resolves + records a reference
+POST /api/streams/close                          { streamId }
+GET  /api/streams                                every currently-open reference
 GET  /api/capabilities
 GET  /api/capabilities/:capability/providers
 GET  /api/capabilities/:capability/resolve      ?audience=&privacy=&location=  (explanation output; never invokes)
@@ -551,9 +591,10 @@ authenticated owner — see Known gaps.
   end to end by `tests/browser-device-end-to-end.test.js` using a raw `ws`
   client that sends the exact hello shape the real browser client sends,
   plus manual verification in a real browser.
-- No stream abstraction (`stream://device/name`) yet — `getStream()` is
-  defined on the adapter interface but unimplemented beyond the mock's
-  metadata-only reference.
+- `StreamRegistry.open()`/`.close()` are not policy-gated either, same
+  known-gap class as the raw capability invoke route above -- opening a
+  video stream reference is currently an owner-authenticated action, not
+  an `agent_actions`-audited one.
 - Services (Gmail, calendar, etc.) are not yet exposed as capability
   providers — `server/integrations/provider-registry.js`'s per-domain
   connector model is untouched by this phase.
@@ -587,6 +628,8 @@ discipline as PLAN.md's milestones:
    revocation forcibly disconnects a live connection and is checked on
    every event/invoke path, not just recorded; documented (not yet
    implemented) crypto-identity seam via `device.metadata`.
-8. Stream registry/reference abstraction.
+8. **Stream registry/reference abstraction** (done) -- `stream://device/name`
+   ids, discover/open/close, metadata + adapter-provided references only,
+   never a media transport; trust-gated like every other device access.
 9. One existing service (e.g. Gmail) exposed through the same capability
    model, proving devices and services share one resolver.

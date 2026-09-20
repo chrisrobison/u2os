@@ -20,6 +20,7 @@ import { createCapabilityRegistry } from './devices/register-capabilities.js';
 import { MockDeviceAdapter } from './devices/adapters/mock-device-adapter.js';
 import { WebSocketDeviceAdapter } from './devices/adapters/websocket-device-adapter.js';
 import { getOrCreateDeviceConnectToken } from './devices/realtime/device-token.js';
+import { StreamRegistry } from './devices/stream-registry.js';
 import { log } from './logging/logger.js';
 import { generateOrLoadMasterKey } from './security/vault.js';
 import { AuthService } from './security/auth.js';
@@ -96,6 +97,10 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   const deviceConnectToken = getOrCreateDeviceConnectToken(dataDir);
   const wsDeviceAdapter = new WebSocketDeviceAdapter({ connectToken: deviceConnectToken });
   await deviceRegistry.registerAdapter(wsDeviceAdapter);
+  // Stream abstraction (Phase 8): metadata/reference registry only -- see
+  // server/devices/stream-registry.js's header for why this never proxies
+  // media itself.
+  const streamRegistry = new StreamRegistry({ deviceRegistry, eventBus });
 
   const toolRegistry = createToolRegistry({ deviceRegistry, capabilityRegistry });
   // ModelRouter subsumes the old single-provider construction: a plain
@@ -166,7 +171,7 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   registerTriggerRoutes(router);
   registerRecommendationRoutes(router);
   registerFeedbackRoutes(router, { eventBus });
-  registerDeviceRoutes(router, { deviceRegistry, capabilityRegistry, eventBus, deviceConnectToken });
+  registerDeviceRoutes(router, { deviceRegistry, capabilityRegistry, eventBus, deviceConnectToken, streamRegistry });
 
   // Minimal HTTP access log (method, path, status, duration_ms) wrapped
   // around the existing router/static dispatch. This only observes the
@@ -228,7 +233,7 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
 
   log.info('server', 'U2OS server listening', { bind: resolvedBind, port: boundPort, dataDir, dbPath });
 
-  return { server, port: boundPort, bind: resolvedBind, dataDir, dbPath, agent, eventBus, toolRegistry, policyEngine, auth, mdns: mdnsHandle, deviceRegistry, capabilityRegistry };
+  return { server, port: boundPort, bind: resolvedBind, dataDir, dbPath, agent, eventBus, toolRegistry, policyEngine, auth, mdns: mdnsHandle, deviceRegistry, capabilityRegistry, streamRegistry };
 }
 
 function readConfig(dataDir) { try { return JSON.parse(fs.readFileSync(path.join(dataDir, 'config', 'config.json'), 'utf8')); } catch { return {}; } }
