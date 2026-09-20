@@ -153,7 +153,7 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   registerTriggerRoutes(router);
   registerRecommendationRoutes(router);
   registerFeedbackRoutes(router, { eventBus });
-  registerDeviceRoutes(router, { deviceRegistry, capabilityRegistry });
+  registerDeviceRoutes(router, { deviceRegistry, capabilityRegistry, eventBus });
 
   // Minimal HTTP access log (method, path, status, duration_ms) wrapped
   // around the existing router/static dispatch. This only observes the

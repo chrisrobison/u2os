@@ -112,11 +112,12 @@ A device/capability model generalizes tools and connectors to physical and
 remote endpoints (cameras, microphones, displays, satellites, and the
 browser/UI clients themselves): devices expose capabilities, agents express
 intent, U2OS resolves the request to an appropriate device — never the
-reverse. Phase 1 (device/capability model, registry, adapter interface, a
-mock adapter, read-only inspection API) is implemented; capability
-invocation through a trust/privacy-aware resolver and everything built on
-top of it (semantic `present()`, realtime device connections, pairing,
-streams) are later, not-yet-implemented phases. See docs/devices.md.
+reverse. Implemented: the device/capability model, registry, adapter
+interface, a mock adapter, and a deterministic (never LLM-driven)
+capability resolver with trust/privacy/ownership-aware device selection and
+invocation. Not yet implemented: policy-engine/agent_actions integration
+for capability invocation, the semantic `present()`/`listen()` agent API,
+realtime device connections, pairing, and streams. See docs/devices.md.
 
 ## Known gaps
 

@@ -161,7 +161,7 @@ test('listDevices supports filtering by type/owner/location/status/trust', async
     await deviceRegistry.registerAdapter(new MockDeviceAdapter());
 
     assert.equal(deviceRegistry.listDevices({ type: 'camera' }).length, 1);
-    assert.equal(deviceRegistry.listDevices({ owner: 'chris' }).length, 1);
+    assert.equal(deviceRegistry.listDevices({ owner: 'chris' }).length, 2);
     assert.equal(deviceRegistry.listDevices({ location: 'office' }).length, 2);
     assert.equal(deviceRegistry.listDevices({ trust: 'trusted' }).length, deviceRegistry.listDevices().length);
     assert.equal(deviceRegistry.listDevices({ status: 'offline' }).length, 0);

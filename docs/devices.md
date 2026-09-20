@@ -1,11 +1,11 @@
 # U2OS device and capability subsystem
 
-**Status: Phase 1 of a phased rollout — see "Phases" at the bottom.** This
-covers the core model only: devices, capabilities, the device registry, the
-adapter interface, and a mock adapter. Capability *invocation* through a
-trust/privacy-aware resolver, the semantic `present()`/`listen()` agent API,
-realtime device connections, pairing, and streams are later phases and are
-not implemented yet.
+**Status: Phases 1–2 of a phased rollout — see "Phases" at the bottom.**
+Implemented: devices, capabilities, the device registry, the adapter
+interface, a mock adapter, and a deterministic capability resolver +
+invocation. The semantic `present()`/`listen()` agent API, realtime device
+connections, pairing, and streams are later phases and are not implemented
+yet.
 
 ## Why this exists
 
@@ -36,7 +36,10 @@ Device Registry  ───publishes───▶  existing EventBus (server/event
 Capability Registry
         │
         ▼
-(Capability Resolver / Policy — later phase)
+Capability Resolver (deterministic; trust/privacy/ownership; never an LLM)
+        │
+        ▼
+(Policy/authorization integration, semantic present()/listen() — later phase)
         │
         ▼
 Agents
@@ -198,30 +201,83 @@ registered at startup, so the registry is never empty even with zero real
 adapters configured, and the subsystem is fully testable offline
 (`tests/device-registry.test.js`).
 
-## API
+## Capability resolver (Phase 2)
 
-Read-only for this phase — inspecting the registry grants no new authority,
-since anything here was already knowable to server-side code:
+`server/devices/capability-resolver.js` answers, deterministically, "which
+device should handle this?" — the one place PROMPT.md's "security-sensitive
+routing is deterministic and enforced outside the LLM" invariant is
+implemented for devices. No model is ever consulted.
 
-```text
-GET /api/devices                              filter: type/owner/location/status/trust/capability
-GET /api/devices/:id
-GET /api/capabilities
-GET /api/capabilities/:capability/providers
+```js
+explainResolution(capabilityId, { audience, privacy, location }, { deviceRegistry, capabilityRegistry })
+// -> { capability, request, candidates: [{ device, eligible, score, reasons }], chosen }
+
+resolveCapability(capabilityId, request, deps)  // -> the chosen device record, or null
 ```
 
-All require an authenticated session, like every other private route
-(server/api/router.js).
+Rules, in order, per candidate (every candidate that advertises the
+capability is evaluated and explained, eligible or not):
+
+1. `trust: 'revoked'` → always ineligible, for anything, unconditionally.
+2. `status !== 'online'` → ineligible ("device is offline").
+3. Trust caps the maximum privacy tier a device may ever receive:
+   `untrusted → public`, `paired → personal`, `trusted → sensitive`.
+   Requesting above a device's cap makes it ineligible.
+4. Ownership: a device owned by a specific *other* person (not the
+   `household`/shared owner, not ownerless) is never eligible for content
+   addressed to a different audience. At `private`/`sensitive` tiers this
+   tightens further — the device's owner must exactly match the
+   audience; a `household`-owned display is never eligible no matter how
+   trusted it is (mirrors the PLAN-level "kitchen TV rejected for private
+   data" example exactly).
+5. `location` is a scoring boost only, never disqualifying.
+
+Candidates are sorted eligible-first, then by descending score, so
+`chosen` is simply `candidates[0]` when it's eligible.
+
+### Capability invocation
+
+`server/devices/capabilities.js`'s `invokeCapability(capabilityId, args,
+request, { deviceRegistry, capabilityRegistry, eventBus })` resolves via the
+function above, builds the documented execution context (`actor`,
+`session`, `sourceDevice`, `location`, `authenticationLevel`, `privacy`,
+`targetDevice`), delegates to the chosen device's adapter, and publishes
+exactly one of `capability.invoked` / `capability.failed`. A device revoked
+between resolution and execution is refused (defense in depth) even though
+the resolver already excludes revoked devices.
+
+This is **not yet** wired into `server/policy/policy-engine.js`'s
+tool-authorization pipeline or the `agent_actions` audit log — see Known
+gaps.
+
+## API
+
+```text
+GET  /api/devices                              filter: type/owner/location/status/trust/capability
+GET  /api/devices/:id
+GET  /api/capabilities
+GET  /api/capabilities/:capability/providers
+GET  /api/capabilities/:capability/resolve      ?audience=&privacy=&location=  (explanation output; never invokes)
+POST /api/capabilities/:capability/invoke        { args, audience?, privacy?, location?, sourceDevice? }
+```
+
+All require an authenticated session; `POST` additionally requires CSRF,
+like every other private write route (`server/api/router.js`). `audience`
+on the invoke route is client-supplied and not yet bound to the
+authenticated owner — see Known gaps.
 
 ## Known gaps (by design, this phase)
 
-- No capability **invocation** route or resolver yet — `DeviceAdapter.invoke()`
-  exists and is exercised directly in tests, but nothing routes an agent's
-  semantic request (`present()`, `captureImage()`) through trust/privacy-aware
-  device selection yet.
-- No execution context (`actor`/`session`/`sourceDevice`/`privacy`) is
-  threaded through anything yet — there is nothing to thread it through
-  until invocation exists.
+- Capability invocation is **not** gated by `PolicyEngine`/autonomy levels
+  or recorded in `agent_actions` — a capability's `defaultAuthorization` is
+  advisory metadata only right now. Wiring this in is expected alongside
+  the semantic agent-facing API (`present()`), not bolted on ahead of an
+  actual caller that needs it.
+- `audience` on `POST .../invoke` is client-supplied, not derived from the
+  authenticated session — see the SECURITY comment in
+  `server/api/routes/devices.js`. It only affects device *selection*; it
+  is never treated as proof of identity or used to unlock anything the
+  resolver's trust/privacy rules wouldn't already allow.
 - No realtime device connections (WebSocket), heartbeats, browser/UI client
   registration, or pairing/approval flow.
 - No stream abstraction (`stream://device/name`) yet — `getStream()` is
@@ -236,10 +292,11 @@ All require an authenticated session, like every other private route
 Following the same "implement incrementally, verify before continuing"
 discipline as PLAN.md's milestones:
 
-1. **Core model** (this phase) — device/capability model, registry, adapter
+1. **Core model** (done) — device/capability model, registry, adapter
    interface, mock adapter, read-only API, tests.
-2. Capability invocation + a deterministic, testable resolver + execution
-   context + trust/privacy filtering + resolver explanation output.
+2. **Capability invocation + resolver** (done) — deterministic, testable
+   resolver, execution context, trust/privacy filtering, resolver
+   explanation output, invoke route, tests.
 3. Realtime device bus (WebSocket connections, heartbeats, online/offline).
 4. Browser/UI device (a connected U2OS browser session registers itself).
 5. Semantic presentation (`present()`) with privacy-aware routing.

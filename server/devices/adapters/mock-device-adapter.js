@@ -31,6 +31,16 @@ const DEVICES = [
     capabilities: ['audio.listen'],
   },
   {
+    id: 'mock.phone.chris',
+    name: "Chris's Phone (mock)",
+    type: 'phone',
+    owner: 'chris',
+    location: null,
+    trust: 'trusted',
+    capabilities: ['ui.render', 'ui.notify', 'audio.play'],
+    metadata: { display: { text: true, cards: true, html: false, images: true, video: false }, input: { touch: true } },
+  },
+  {
     id: 'mock.display.livingroom',
     name: 'Living Room Display (mock)',
     type: 'display',
