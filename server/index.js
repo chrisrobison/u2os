@@ -73,7 +73,31 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   // reach which model/destination (server/policy/data-processing-policy.js,
   // docs/policies.md). Loaded from its own <U2OS_HOME>/policies/data-processing.yaml.
   const dataProcessingPolicy = new DataProcessingPolicy();
-  const toolRegistry = createToolRegistry();
+
+  // Device/capability subsystem, Phase 1 (docs/devices.md): a persisted
+  // device registry plus an in-memory capability catalog, the same
+  // registry/catalog split as `triggers` (persisted) vs `ToolRegistry`
+  // (in-memory, code-defined). MockDeviceAdapter is always registered --
+  // same "always available, zero configuration" posture as the mock
+  // connector providers -- so the registry is never empty even with no
+  // real hardware adapters configured. Constructed before toolRegistry
+  // below so the Phase 5 presentation.* tools can be given a real
+  // deviceRegistry/capabilityRegistry at registration time.
+  const capabilityRegistry = createCapabilityRegistry();
+  const deviceRegistry = new DeviceRegistry({ db, eventBus, capabilityRegistry });
+  await deviceRegistry.registerAdapter(new MockDeviceAdapter());
+  // Realtime device bus (Phase 3): any process speaking the small JSON
+  // protocol in websocket-device-adapter.js can register itself as a
+  // device over a persistent connection at ws(s)://<host>/ws/devices --
+  // wired to the SAME http.Server below via the 'upgrade' event, no new
+  // port. deviceConnectToken gates the transport only (see
+  // server/devices/realtime/device-token.js); it is not device identity
+  // or authorization.
+  const deviceConnectToken = getOrCreateDeviceConnectToken(dataDir);
+  const wsDeviceAdapter = new WebSocketDeviceAdapter({ connectToken: deviceConnectToken });
+  await deviceRegistry.registerAdapter(wsDeviceAdapter);
+
+  const toolRegistry = createToolRegistry({ deviceRegistry, capabilityRegistry });
   // ModelRouter subsumes the old single-provider construction: a plain
   // config.json {provider,baseUrl,model} (still what POST /api/model
   // writes) is normalized into one provider used for every role, so this
@@ -110,29 +134,6 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   // changes no other startup behavior.
   ensureDefaultConnectorsConfig(dataDir);
   startSyncScheduler({ db, eventBus, dataDir });
-
-  // Device/capability subsystem, Phase 1 (docs/devices.md): a persisted
-  // device registry plus an in-memory capability catalog, the same
-  // registry/catalog split as `triggers` (persisted) vs `ToolRegistry`
-  // (in-memory, code-defined). MockDeviceAdapter is always registered --
-  // same "always available, zero configuration" posture as the mock
-  // connector providers -- so the registry is never empty even with no
-  // real hardware adapters configured. Capability INVOCATION and the
-  // trust/privacy-aware resolver are not implemented yet; this phase is
-  // discovery + inspection only.
-  const capabilityRegistry = createCapabilityRegistry();
-  const deviceRegistry = new DeviceRegistry({ db, eventBus, capabilityRegistry });
-  await deviceRegistry.registerAdapter(new MockDeviceAdapter());
-  // Realtime device bus (Phase 3): any process speaking the small JSON
-  // protocol in websocket-device-adapter.js can register itself as a
-  // device over a persistent connection at ws(s)://<host>/ws/devices --
-  // wired to the SAME http.Server below via the 'upgrade' event, no new
-  // port. deviceConnectToken gates the transport only (see
-  // server/devices/realtime/device-token.js); it is not device identity
-  // or authorization.
-  const deviceConnectToken = getOrCreateDeviceConnectToken(dataDir);
-  const wsDeviceAdapter = new WebSocketDeviceAdapter({ connectToken: deviceConnectToken });
-  await deviceRegistry.registerAdapter(wsDeviceAdapter);
 
   const agent = new Agent({ modelRouter, policyEngine, toolRegistry, eventBus, ownerEntityId, embeddingProvider, dataProcessingPolicy });
 

@@ -1,11 +1,12 @@
 # U2OS device and capability subsystem
 
-**Status: Phases 1–4 of a phased rollout — see "Phases" at the bottom.**
+**Status: Phases 1–5 of a phased rollout — see "Phases" at the bottom.**
 Implemented: devices, capabilities, the device registry, the adapter
 interface, a mock adapter, a deterministic capability resolver + invocation,
-a realtime WebSocket device bus, and the browser itself as a registered
-device. The semantic `present()`/`listen()` agent API, pairing, and streams
-are later phases and are not implemented yet.
+a realtime WebSocket device bus, the browser itself as a registered device,
+and semantic presentation (`presentation.present`/`presentation.notify`)
+wired into the real policy/approval pipeline. `listen()`/pairing/streams
+and the device management UI are later phases and are not implemented yet.
 
 ## Why this exists
 
@@ -351,6 +352,40 @@ for `public`-tier content immediately, but `personal`/`private`/`sensitive`
 content requires an explicit trust promotion (`DeviceRegistry.setTrust()`)
 until Phase 7 adds a real pairing flow.
 
+## Semantic presentation (Phase 5)
+
+`server/tools/presentation-tools.js` registers `presentation.present` and
+`presentation.notify` as ordinary Tools (`server/tools/register-all.js`) --
+which is what actually closes the "capability invocation isn't
+policy-gated yet" gap earlier phases left open. Because they're real
+Tools, a call goes through the exact same pipeline every other tool
+already uses: `PolicyEngine.evaluate()` -> an `agent_actions` audit row ->
+(per `policies.yaml`, `presentation` is unconfigured by default, so this
+fails safe to `confirm`) an approval step -> `ActionExecutor.execute()` ->
+`invokeCapability()` -> the resolver -> the chosen device's adapter. No
+bespoke authorization code was needed in the device subsystem itself.
+
+```js
+// what an agent effectively calls, via the planner or a direct tool call:
+await evaluateAndMaybeExecute({
+  tool: 'presentation.present',
+  arguments: { audience: 'chris', privacy: 'private', content: { title: 'Today', body: '3 meetings' } },
+});
+// -> resolves to Chris's phone (owner match, trusted, online);
+//    the household living-room display is evaluated and rejected
+//    (docs/devices.md's resolver rules), never silently used instead.
+```
+
+`presentation.notify` is the lighter-weight sibling (`{audience, privacy?,
+title, body?}` -> `ui.notify`, a toast rather than a full card). Both
+tools are constructed with `{deviceRegistry, capabilityRegistry}` via
+`server/index.js` (constructor injection, not a module-singleton accessor
+like `getProvider()` -- see the file header comment for why); a caller
+that builds a `ToolRegistry` without a device subsystem configured (most
+existing tests) still gets a complete registry -- the two tools simply
+throw clearly if actually executed, the same fail-safe-at-use posture as
+an unconnected real connector.
+
 ## API
 
 ```text
@@ -371,11 +406,24 @@ authenticated owner — see Known gaps.
 
 ## Known gaps (by design, this phase)
 
-- Capability invocation is **not** gated by `PolicyEngine`/autonomy levels
-  or recorded in `agent_actions` — a capability's `defaultAuthorization` is
-  advisory metadata only right now. Wiring this in is expected alongside
-  the semantic agent-facing API (`present()`), not bolted on ahead of an
-  actual caller that needs it.
+- **`POST /api/capabilities/:capability/invoke` still bypasses
+  `PolicyEngine`/`agent_actions` entirely** -- it calls
+  `invokeCapability()` directly, not through a Tool. This is the one place
+  in the device subsystem that does not yet fully honor "the device bus
+  MUST NOT bypass authorization checks": it is gated by session
+  authentication + CSRF like every other private write route, but NOT by
+  autonomy level or an approval step, and produces no audit trail. Contrast
+  with `presentation.present`/`presentation.notify` (Phase 5, above), which
+  ARE fully policy-gated because they're real Tools reached through
+  `evaluateAndMaybeExecute()` -- exactly the pattern every other
+  consequential route in this codebase uses (e.g. `POST /api/tasks` ->
+  `tasks.create`). Closing this for every capability, not just the two
+  wrapped as tools, needs either a Tool per capability or teaching
+  `invokeCapability()` itself to consult `PolicyEngine` generically using
+  each capability's own `defaultAuthorization` -- deliberately deferred
+  rather than rushed into this phase; treat the raw invoke route as a
+  trusted-owner-only debug/direct-control surface until this is closed,
+  not as something meant to be reachable by an agent's own planning loop.
 - `audience` on `POST .../invoke` is client-supplied, not derived from the
   authenticated session — see the SECURITY comment in
   `server/api/routes/devices.js`. It only affects device *selection*; it
@@ -419,7 +467,9 @@ discipline as PLAN.md's milestones:
 4. **Browser/UI device** (done) — a connected U2OS browser tab registers
    itself over the realtime bus and advertises `ui.render`/`ui.notify`/
    `ui.prompt`/`audio.play`, rendered by `<u2-device-panel>`.
-5. Semantic presentation (`present()`) with privacy-aware routing.
+5. **Semantic presentation** (done) — `presentation.present`/
+   `presentation.notify` registered as real Tools, routed through the
+   existing PolicyEngine/approval/audit pipeline and the Phase 2 resolver.
 6. Device management UI.
 7. Pairing/trust lifecycle, enforced revocation.
 8. Stream registry/reference abstraction.

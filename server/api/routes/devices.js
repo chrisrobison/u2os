@@ -60,6 +60,15 @@ export function registerDeviceRoutes(router, { deviceRegistry, capabilityRegistr
   // delegates to that device's adapter. See server/devices/capabilities.js
   // for what is (and, per docs/devices.md, is NOT yet) enforced here.
   //
+  // SECURITY (known gap, tracked in docs/devices.md): unlike
+  // presentation.present/presentation.notify (server/tools/presentation-tools.js,
+  // reached through Agent.evaluateAndMaybeExecute()), this route calls
+  // invokeCapability() DIRECTLY -- it is gated by session auth + CSRF like
+  // any private write route, but NOT by PolicyEngine/autonomy level, and
+  // produces no agent_actions audit row. Treat this as a trusted-owner-only
+  // debug/direct-control surface, not something an agent's own planning
+  // loop should ever be given access to call.
+  //
   // SECURITY (known gap, tracked in docs/devices.md): `audience` is
   // client-supplied, not derived from the authenticated session -- this
   // system is currently single-owner, and device.owner values (e.g.

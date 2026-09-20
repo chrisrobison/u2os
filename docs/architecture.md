@@ -117,11 +117,14 @@ interface, a mock adapter, a deterministic (never LLM-driven) capability
 resolver with trust/privacy/ownership-aware device selection and
 invocation, a realtime WebSocket device bus (`/ws/devices`) with
 heartbeats, presence, event publication/subscription, and device commands,
-and the browser itself as a registered `ui.render`/`ui.notify`/`ui.prompt`
-device (`<u2-device-panel>`). Not yet implemented: policy-engine/
-agent_actions integration for capability invocation, the semantic
-`present()`/`listen()` agent API, pairing, and streams. See
-docs/devices.md.
+the browser itself as a registered `ui.render`/`ui.notify`/`ui.prompt`
+device (`<u2-device-panel>`), and semantic presentation
+(`presentation.present`/`presentation.notify`) registered as real Tools
+routed through the existing PolicyEngine/approval/audit pipeline. The raw
+`POST /api/capabilities/:capability/invoke` route still bypasses that
+pipeline (a documented, session-authenticated-only known gap). Not yet
+implemented: `listen()`, pairing, streams, and the device management UI.
+See docs/devices.md.
 
 ## Known gaps
 
