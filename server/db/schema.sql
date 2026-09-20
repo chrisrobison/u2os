@@ -176,6 +176,46 @@ CREATE TABLE IF NOT EXISTS agent_actions (
   updated_at TEXT NOT NULL
 );
 
+-- Durable execution state is intentionally separate from agent_actions:
+-- agent_actions remains the immutable-ish authorization/audit record, while
+-- this table owns operational delivery state, leases, and retry scheduling.
+CREATE TABLE IF NOT EXISTS action_queue (
+  id TEXT PRIMARY KEY,
+  action_id TEXT NOT NULL UNIQUE REFERENCES agent_actions(id),
+  correlation_id TEXT,
+  tool TEXT NOT NULL,
+  arguments TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'queued',
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at TEXT NOT NULL,
+  lease_owner TEXT,
+  lease_expires_at TEXT,
+  last_error TEXT,
+  error_class TEXT,
+  approval_reference TEXT,
+  policy_decision_reference TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_action_queue_runnable
+  ON action_queue(status, next_attempt_at, lease_expires_at);
+
+CREATE TABLE IF NOT EXISTS action_attempts (
+  id TEXT PRIMARY KEY,
+  queue_id TEXT NOT NULL REFERENCES action_queue(id),
+  attempt_number INTEGER NOT NULL,
+  lease_owner TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'executing',
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  error TEXT,
+  error_class TEXT,
+  UNIQUE(queue_id, attempt_number)
+);
+CREATE INDEX IF NOT EXISTS idx_action_attempts_queue
+  ON action_attempts(queue_id, attempt_number);
+
 CREATE TABLE IF NOT EXISTS owners (
   id TEXT PRIMARY KEY,
   passphrase_hash TEXT NOT NULL,
