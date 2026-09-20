@@ -174,8 +174,8 @@ export function rejectAction(id) {
   });
 }
 
-export function getEvents({ type, since, correlationId, limit } = {}) {
-  return request(`/api/events${qs({ type, since, correlationId, limit })}`);
+export function getEvents({ type, since, correlationId, subjectType, subjectId, limit } = {}) {
+  return request(`/api/events${qs({ type, since, correlationId, subjectType, subjectId, limit })}`);
 }
 
 export function getConnectors() {
@@ -226,6 +226,47 @@ export function setActiveProvider(domain, providerId) {
 // caller can never learn it through the API.
 export function getDeviceConnectToken() {
   return request('/api/devices/connect-token');
+}
+
+// Phase 6 (docs/devices.md): device management UI.
+export function getDevices(filters = {}) {
+  return request(`/api/devices${qs(filters)}`);
+}
+
+export function getDevice(id) {
+  return request(`/api/devices/${encodeURIComponent(id)}`);
+}
+
+export function updateDevice(id, { name, location, owner } = {}) {
+  return request(`/api/devices/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ name, location, owner }),
+  });
+}
+
+export function setDeviceTrust(id, trust) {
+  return request(`/api/devices/${encodeURIComponent(id)}/trust`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ trust }),
+  });
+}
+
+export function deleteDevice(id) {
+  return request(`/api/devices/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+export function testDeviceCapability(id, capability, args = {}) {
+  return request(`/api/devices/${encodeURIComponent(id)}/test`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ capability, args }),
+  });
+}
+
+export function getCapabilities() {
+  return request('/api/capabilities');
 }
 
 export function triggerSync(domain) {

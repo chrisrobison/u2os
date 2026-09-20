@@ -104,6 +104,55 @@ export async function invokeCapability(capabilityId, args = {}, request = {}, { 
   }
 }
 
+/**
+ * invokeDeviceCapability(deviceId, capabilityId, args, deps) -- Phase 6's
+ * "Test capability" management action (docs/devices.md). Deliberately
+ * bypasses the RESOLVER (it targets exactly the device the owner picked in
+ * the management UI, not whichever device the resolver would have chosen)
+ * -- but still refuses a revoked device or one that doesn't actually
+ * advertise the capability, and still publishes capability.invoked/failed.
+ *
+ * This is an admin/debug primitive, same posture as the raw
+ * POST /api/capabilities/:capability/invoke route (docs/devices.md's Known
+ * gaps): it does NOT go through PolicyEngine, and must never be reachable
+ * by an agent's own planning loop -- only by an authenticated owner
+ * explicitly testing one specific device from the management UI.
+ */
+export async function invokeDeviceCapability(deviceId, capabilityId, args = {}, { deviceRegistry, capabilityRegistry, eventBus } = {}) {
+  if (!capabilityRegistry.has(capabilityId)) {
+    throw new Error(`Unknown capability: ${capabilityId}`);
+  }
+  const device = deviceRegistry.getDevice(deviceId);
+  if (!device) throw new Error(`Unknown device: ${deviceId}`);
+  if (device.trust === 'revoked') throw new Error(`Device "${deviceId}" is revoked`);
+  if (!device.capabilities.includes(capabilityId)) {
+    throw new Error(`Device "${deviceId}" does not advertise capability "${capabilityId}"`);
+  }
+
+  const adapter = deviceRegistry.getAdapter(device.adapter);
+  if (!adapter) throw new Error(`Adapter "${device.adapter}" for device "${device.id}" is not registered`);
+
+  const context = buildExecutionContext({}, device);
+  try {
+    const result = await adapter.invoke(device, capabilityId, args, context);
+    publish(eventBus, {
+      type: 'capability.invoked',
+      source: `device:${device.id}`,
+      subject: { type: 'device', id: device.id },
+      data: { capability: capabilityId, deviceId: device.id, args, result, direct: true },
+    });
+    return { device: device.id, result };
+  } catch (err) {
+    publish(eventBus, {
+      type: 'capability.failed',
+      source: `device:${device.id}`,
+      subject: { type: 'device', id: device.id },
+      data: { capability: capabilityId, deviceId: device.id, reason: 'adapter_invoke_failed', error: err.message, direct: true },
+    });
+    throw err;
+  }
+}
+
 function publish(eventBus, partial) {
   if (!eventBus) return;
   eventBus.publish(partial);

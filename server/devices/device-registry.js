@@ -208,6 +208,28 @@ export class DeviceRegistry {
     return this.getDevice(id);
   }
 
+  /** Owner-driven metadata edit -- Phase 6's "Rename / Set location / Set
+   * owner" management actions (docs/devices.md). Deliberately narrow: only
+   * name/location/owner, never status/trust/capabilities/adapter, which
+   * all have their own dedicated, more carefully-reasoned-about mutators
+   * above. Passing `undefined` for a field leaves it unchanged; passing
+   * `null` clears it. */
+  updateDevice(id, { name, location, owner } = {}) {
+    const existing = this.getDevice(id);
+    if (!existing) throw new Error(`Unknown device: ${id}`);
+    const now = new Date().toISOString();
+    this.db
+      .prepare('UPDATE devices SET name = ?, location = ?, owner = ?, updated_at = ? WHERE id = ?')
+      .run(
+        name !== undefined ? name : existing.name,
+        location !== undefined ? location : existing.location,
+        owner !== undefined ? owner : existing.owner,
+        now,
+        id
+      );
+    return this.getDevice(id);
+  }
+
   /** Sets a device's trust level. This is deliberately the ONLY way trust
    * changes -- adapters can never set it via upsertDevice() re-discovery
    * (see the comment there). A full pairing/approval flow (PLAN.md-style

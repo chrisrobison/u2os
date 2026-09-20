@@ -9,7 +9,7 @@
  * after `since` -- that reads naturally as "what happened next" and lets a
  * client keep advancing `since` to the last id/timestamp it saw.
  */
-export function listEvents(db, { type, since, correlationId, limit = 100 } = {}) {
+export function listEvents(db, { type, since, correlationId, subjectType, subjectId, limit = 100 } = {}) {
   const clauses = [];
   const params = [];
 
@@ -26,6 +26,18 @@ export function listEvents(db, { type, since, correlationId, limit = 100 } = {})
   if (correlationId) {
     clauses.push('correlation_id = ?');
     params.push(correlationId);
+  }
+
+  // Added for the device management UI's "recent activity" view
+  // (docs/devices.md Phase 6) -- generically useful for any subject, not
+  // device-specific.
+  if (subjectType) {
+    clauses.push('subject_type = ?');
+    params.push(subjectType);
+  }
+  if (subjectId) {
+    clauses.push('subject_id = ?');
+    params.push(subjectId);
   }
 
   let order = 'timestamp DESC, id DESC';

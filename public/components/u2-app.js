@@ -12,6 +12,7 @@ import './u2-email-summary.js';
 import './u2-connectors.js';
 import './u2-timeline.js';
 import './u2-voice.js';
+import './u2-devices.js';
 
 // Dashboard contexts the #/dashboards picker offers, per PROMPT.md section
 // 10's examples + docs/dashboards.md's Phase 2 contexts. 'before-meeting'
@@ -185,6 +186,9 @@ export class U2App extends HTMLElement {
         break;
       case 'voice':
         this._renderVoice();
+        break;
+      case 'devices':
+        this._renderDevices();
         break;
       default:
         this._renderNotFound(hash);
@@ -404,6 +408,11 @@ export class U2App extends HTMLElement {
     // u2-voice (Phase 5 enrollment) is the same self-fetching pattern as
     // u2-connectors -- nothing for u2-app to await or wrap here either.
     this._setWorkspace('', document.createElement('u2-voice'));
+  }
+
+  _renderDevices() {
+    // u2-devices (docs/devices.md Phase 6) -- same self-fetching pattern.
+    this._setWorkspace('', document.createElement('u2-devices'));
   }
 
   async _renderMemory() {

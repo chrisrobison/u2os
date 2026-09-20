@@ -1,12 +1,13 @@
 # U2OS device and capability subsystem
 
-**Status: Phases 1–5 of a phased rollout — see "Phases" at the bottom.**
+**Status: Phases 1–6 of a phased rollout — see "Phases" at the bottom.**
 Implemented: devices, capabilities, the device registry, the adapter
 interface, a mock adapter, a deterministic capability resolver + invocation,
 a realtime WebSocket device bus, the browser itself as a registered device,
-and semantic presentation (`presentation.present`/`presentation.notify`)
-wired into the real policy/approval pipeline. `listen()`/pairing/streams
-and the device management UI are later phases and are not implemented yet.
+semantic presentation (`presentation.present`/`presentation.notify`) wired
+into the real policy/approval pipeline, and a device management UI.
+`listen()`, real pairing, and streams are later phases and are not
+implemented yet.
 
 ## Why this exists
 
@@ -386,10 +387,51 @@ existing tests) still gets a complete registry -- the two tools simply
 throw clearly if actually executed, the same fail-safe-at-use posture as
 an unconnected real connector.
 
+## Device management UI (Phase 6)
+
+`public/components/u2-devices.js` (`#/devices` in the nav) lists every
+known device -- status dot, name, type/location, trust badge -- and
+expands a row into its detail: owner/location/adapter/last-seen,
+capability chips (click one to test it directly against that device),
+recent activity (the last 20 events with this device as `subject`, via the
+new `subjectType`/`subjectId` filters on `GET /api/events`), and
+management controls:
+
+- **Rename / Set location / Set owner** -- a small form, `PATCH
+  /api/devices/:id`.
+- **Pair / Trust / Revoke** -- one trust-level `<select>`, `POST
+  /api/devices/:id/trust`. A real pairing *flow* (device-initiated request,
+  credential exchange) is Phase 7; this is the owner-driven "just set it"
+  primitive that flow will eventually call into.
+- **Test capability** -- clicking a capability chip calls `POST
+  /api/devices/:id/test`, which directly invokes THAT device (bypassing
+  the resolver on purpose -- see `invokeDeviceCapability()` below) and
+  shows the raw result inline.
+- **Remove device** -- `DELETE /api/devices/:id`, administrative/permanent.
+
+Same "self-fetching custom element" pattern as `u2-connectors.js`: the
+component owns its own data-fetching and state; `u2-app.js` just mounts it.
+
+### `invokeDeviceCapability()` (direct/admin invoke)
+
+`server/devices/capabilities.js`'s `invokeDeviceCapability(deviceId,
+capabilityId, args, deps)` is new alongside the Phase 2 resolver-driven
+`invokeCapability()`: it targets exactly the device the owner picked in the
+UI, skipping resolution entirely -- but still refuses a revoked device or
+one that doesn't actually advertise the capability, and still publishes
+`capability.invoked`/`capability.failed` (tagged `direct: true`). Like the
+raw `POST /api/capabilities/:capability/invoke` route, this does **not**
+go through `PolicyEngine` -- it is explicitly an owner-only debug/test
+primitive, never something an agent's planning loop should reach.
+
 ## API
 
 ```text
 GET  /api/devices                              filter: type/owner/location/status/trust/capability
+PATCH /api/devices/:id                          { name?, location?, owner? }
+POST /api/devices/:id/trust                     { trust: 'untrusted'|'paired'|'trusted'|'revoked' }
+POST /api/devices/:id/test                      { capability, args? }  -- direct, resolver-bypassing (owner-only)
+DELETE /api/devices/:id
 GET  /api/devices/:id
 GET  /api/capabilities
 GET  /api/capabilities/:capability/providers
@@ -470,7 +512,10 @@ discipline as PLAN.md's milestones:
 5. **Semantic presentation** (done) — `presentation.present`/
    `presentation.notify` registered as real Tools, routed through the
    existing PolicyEngine/approval/audit pipeline and the Phase 2 resolver.
-6. Device management UI.
+6. **Device management UI** (done) — `#/devices`: list, detail (metadata/
+   capabilities/status/trust/owner/location/recent activity), rename/
+   relocate/reassign owner, pair/trust/revoke, remove, test a capability
+   directly against one device.
 7. Pairing/trust lifecycle, enforced revocation.
 8. Stream registry/reference abstraction.
 9. One existing service (e.g. Gmail) exposed through the same capability

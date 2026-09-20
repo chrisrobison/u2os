@@ -6,7 +6,7 @@
 import { sendJson } from '../router.js';
 import { newId } from '../../db/ids.js';
 import { explainResolution } from '../../devices/capability-resolver.js';
-import { invokeCapability } from '../../devices/capabilities.js';
+import { invokeCapability, invokeDeviceCapability } from '../../devices/capabilities.js';
 
 export function registerDeviceRoutes(router, { deviceRegistry, capabilityRegistry, eventBus, deviceConnectToken }) {
   // Phase 4: lets an already-authenticated browser session obtain the
@@ -27,6 +27,56 @@ export function registerDeviceRoutes(router, { deviceRegistry, capabilityRegistr
     const device = deviceRegistry.getDevice(req.params.id);
     if (!device) return sendJson(res, 404, { error: 'Not Found' });
     sendJson(res, 200, device);
+  });
+
+  // Phase 6 management actions (docs/devices.md): Rename / Set location /
+  // Set owner. Deliberately narrow -- never touches status/trust/
+  // capabilities, each of which has its own dedicated route below.
+  router.patch('/api/devices/:id', async (req, res) => {
+    const { name, location, owner } = req.body || {};
+    try {
+      const updated = deviceRegistry.updateDevice(req.params.id, { name, location, owner });
+      sendJson(res, 200, updated);
+    } catch (err) {
+      sendJson(res, 404, { error: err.message });
+    }
+  });
+
+  // Pair / Trust / Revoke -- all are just a trust-level transition
+  // (untrusted|paired|trusted|revoked). A real pairing *flow* (device-
+  // initiated approval request, credential exchange) is Phase 7; this is
+  // the owner-driven "just set it" primitive that flow will eventually
+  // call into, same as it will still exist for manual override afterward.
+  router.post('/api/devices/:id/trust', async (req, res) => {
+    const { trust } = req.body || {};
+    try {
+      const updated = deviceRegistry.setTrust(req.params.id, trust);
+      sendJson(res, 200, updated);
+    } catch (err) {
+      sendJson(res, err.message.startsWith('Unknown device') ? 404 : 400, { error: err.message });
+    }
+  });
+
+  router.delete('/api/devices/:id', async (req, res) => {
+    if (!deviceRegistry.getDevice(req.params.id)) return sendJson(res, 404, { error: 'Not Found' });
+    deviceRegistry.removeDevice(req.params.id);
+    sendJson(res, 200, { deleted: true, id: req.params.id });
+  });
+
+  // "Test capability": directly invokes ONE specific device the owner
+  // picked in the management UI -- bypasses the resolver on purpose (see
+  // server/devices/capabilities.js's invokeDeviceCapability() header for
+  // why this, like the raw invoke route above, is an owner-only debug
+  // primitive, never something an agent's planning loop reaches).
+  router.post('/api/devices/:id/test', async (req, res) => {
+    const { capability, args } = req.body || {};
+    if (!capability) return sendJson(res, 400, { error: 'capability is required' });
+    try {
+      const outcome = await invokeDeviceCapability(req.params.id, capability, args || {}, { deviceRegistry, capabilityRegistry, eventBus });
+      sendJson(res, 200, outcome);
+    } catch (err) {
+      sendJson(res, 400, { error: err.message });
+    }
   });
 
   router.get('/api/capabilities', async (_req, res) => {
