@@ -1,9 +1,7 @@
 import { test, expect } from '@playwright/test';
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { STATE_FILE } from './state-file.js';
-import { startServer } from '../../server/index.js';
+import { withDedicatedServer, createOwner } from './helpers.js';
 
 // Issue #14: real-browser coverage of the auth lifecycle, driven through the
 // actual inline setup/login form (public/components/u2-app.js's
@@ -12,8 +10,10 @@ import { startServer } from '../../server/index.js';
 //
 // Every scenario below boots its OWN dedicated server (own scratch
 // U2OS_HOME, own ephemeral port) rather than reusing the single shared
-// server that tests/e2e/global-setup.js boots once for the whole run. Two
-// reasons, both load-bearing:
+// server that tests/e2e/global-setup.js boots once for the whole run, via
+// `withDedicatedServer` (extracted to ./helpers.js during issue #15 -- see
+// that file for the full rationale, still accurate here). Two reasons are
+// specific to this file:
 //
 // 1. State ownership: smoke.spec.js asserts the shared server's first-run
 //    screen (button text "Create owner", i.e. setupRequired === true) and
@@ -32,61 +32,6 @@ import { startServer } from '../../server/index.js';
 // 2. Session-expiry needs a non-default sessionIdleSeconds, which (per this
 //    task's constraints) must never be applied to the shared global
 //    harness.
-//
-// One more thing dedicated-server teardown here deliberately does NOT do,
-// unlike tests/auth.test.js's per-test-file pattern: call
-// closeAllForTests() from server/db/connection.js. That helper iterates
-// server/db/connection.js's module-level `dbCache` and closes *every*
-// cached DatabaseSync connection, unconditionally, then clears the whole
-// map. tests/auth.test.js can call it safely because `node --test` gives
-// each test file its own process, so its dbCache is never shared with
-// anything else. Playwright is different: global-setup.js's shared server
-// and every dedicated server booted below all run in-process, in the same
-// worker, sharing that one `dbCache`. Calling closeAllForTests() from here
-// would close the shared server's already-cached DB connection too (the
-// object AuthService/EventBus/etc. on the shared server hold a direct
-// reference to), breaking every later shared-server request in this run --
-// exactly the interference this suite must avoid. So teardown below closes
-// only the dedicated HTTP server and removes its scratch directory; the
-// now-orphaned SQLite connection for that one temp dir is a harmless leak
-// for the remaining lifetime of the test-runner process.
-async function withDedicatedServer(page, options, run) {
-  const savedHome = process.env.U2OS_HOME;
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-e2e-auth-'));
-  process.env.U2OS_HOME = dataDir;
-  const handle = await startServer({ port: 0, ...options });
-  try {
-    const baseURL = `http://127.0.0.1:${handle.port}`;
-    await run({ handle, baseURL });
-  } finally {
-    // The real app keeps an SSE connection (and a device-bus WebSocket)
-    // open for its whole lifetime once the shell is up (see u2-app.js's
-    // EventsService / DeviceClientService). A WebSocket that's already
-    // completed its upgrade is handed off by Node's http server entirely
-    // to the 'upgrade' listener -- it's no longer tracked as an ordinary
-    // HTTP connection, so even closeAllConnections() can leave it open,
-    // and http.Server#close()'s callback would then never fire, hanging
-    // the test for the full timeout. Navigating the page away first makes
-    // the browser end both connections cleanly on its own, exactly as it
-    // would on a real tab close/reload; closeAllConnections() below is
-    // just a belt-and-suspenders cleanup for any plain keep-alive sockets.
-    await page.goto('about:blank').catch(() => {});
-    handle.server.closeAllConnections();
-    await new Promise((resolve) => handle.server.close(resolve));
-    if (savedHome === undefined) delete process.env.U2OS_HOME;
-    else process.env.U2OS_HOME = savedHome;
-    fs.rmSync(dataDir, { recursive: true, force: true });
-  }
-}
-
-async function createOwner(baseURL, passphrase) {
-  const res = await fetch(`${baseURL}/api/auth/setup`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ passphrase }),
-  });
-  if (res.status !== 201) throw new Error(`owner setup failed: ${res.status}`);
-}
 
 const PASSPHRASE = 'correct horse battery staple';
 
