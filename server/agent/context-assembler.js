@@ -4,6 +4,9 @@ import { getFacts } from '../memory/fact-store.js';
 import { getRelationships } from '../memory/relationship-store.js';
 import { listEvents } from '../events/log.js';
 import { rankFactsHybrid } from '../memory/semantic-retrieval.js';
+import { getEmail } from '../integrations/mock-email-provider.js';
+import { getCachedCalendarEvent } from '../integrations/calendar-store.js';
+import { getTask } from '../integrations/mock-tasks-provider.js';
 
 const DEFAULTS = {
   maxChars: 6000,
@@ -136,6 +139,7 @@ export class ContextAssembler {
         matchedOn: nameMentioned ? 'objective mentions this name' : 'recently active',
         facts: await this._rankFacts(facts, objectiveRaw),
         relationshipCount: relationships.length,
+        classification: person.classification || 'personal',
       });
     }
     return results;
@@ -203,6 +207,11 @@ export class ContextAssembler {
           createdAt: commitment.created_at,
           confidence: rel.confidence,
           inferred: rel.inferred,
+          // Sourced from the `promised` relationship row itself (issue #3) --
+          // commitments are relationships, not a separate table, so the
+          // relationship's own classification column is the deterministic
+          // source, never the model.
+          classification: rel.classification || 'personal',
         };
       })
       .sort((a, b) => {
@@ -225,7 +234,13 @@ export class ContextAssembler {
     return events
       .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''))
       .slice(0, this.options.maxRecentEvents)
-      .map((event) => ({ eventId: event.id, type: event.type, timestamp: event.timestamp, summary: summarizeEvent(event) }));
+      .map((event) => ({
+        eventId: event.id,
+        type: event.type,
+        timestamp: event.timestamp,
+        summary: summarizeEvent(event),
+        classification: classificationForEvent(event),
+      }));
   }
 
   // --- budget -----------------------------------------------------------------
@@ -290,6 +305,46 @@ function sharesASignificantWord(a, b) {
 
 function latestTimestamp(timestamps) {
   return timestamps.filter(Boolean).sort().at(-1) || null;
+}
+
+// Event types whose summary describes an email/calendar/task row, and can
+// therefore inherit that row's classification (issue #3). Anything else
+// (commitment.made, contact.birthday_approaching, etc.) has no single
+// classified source row to point at, so it falls through to the same safe
+// 'personal' default used everywhere else in this codebase -- never
+// 'public', and never guessed from the event's free-text content.
+const EMAIL_EVENT_TYPES = new Set(['email.received', 'email.sent']);
+const CALENDAR_EVENT_TYPES = new Set(['calendar.event_added', 'calendar.event_changed', 'calendar.event_approaching']);
+const TASK_EVENT_TYPES = new Set(['task.created', 'task.completed', 'task.overdue']);
+
+/**
+ * Sourced strictly from stored data, never from the event's free-text
+ * summary or model output. Some publishers already embed the full
+ * underlying row on the event (data.after) -- when that's already in hand,
+ * this reads its classification directly rather than issuing a redundant DB
+ * lookup. Otherwise it falls back to a lookup by the event's subject id
+ * against the same store the row actually lives in.
+ */
+function classificationForEvent(event) {
+  const data = event.data || {};
+  const subjectId = event.subject?.id ?? null;
+
+  if (EMAIL_EVENT_TYPES.has(event.type)) {
+    if (data.after?.classification) return data.after.classification;
+    const email = subjectId ? getEmail(subjectId) : null;
+    return email?.classification || 'personal';
+  }
+  if (CALENDAR_EVENT_TYPES.has(event.type)) {
+    if (data.after?.classification) return data.after.classification;
+    const calendarEvent = subjectId ? getCachedCalendarEvent(subjectId) : null;
+    return calendarEvent?.classification || 'personal';
+  }
+  if (TASK_EVENT_TYPES.has(event.type)) {
+    if (data.after?.classification) return data.after.classification;
+    const task = subjectId ? getTask(subjectId) : null;
+    return task?.classification || 'personal';
+  }
+  return 'personal';
 }
 
 function summarizeEvent(event) {
