@@ -158,6 +158,10 @@ export function getAction(id) {
   return request(`/api/actions/${encodeURIComponent(id)}`);
 }
 
+export function getActionExplanation(id) {
+  return request(`/api/actions/${encodeURIComponent(id)}/explain`);
+}
+
 export function approveAction(id) {
   return request(`/api/actions/${encodeURIComponent(id)}/approve`, {
     method: 'POST',
