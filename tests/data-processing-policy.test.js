@@ -121,6 +121,143 @@ test('when nothing is omitted, the original context object is returned unchanged
   assert.equal(result.omitted.length, 0);
 });
 
+test('a sensitive person is dropped entirely from context bound for a remote model, but an allowed person is kept', () => {
+  const policy = new DataProcessingPolicy({ policies: testPolicies() });
+  const input = {
+    objective: 'x',
+    relevantPeople: [
+      { id: 'p1', name: 'Sensitive Sam', matchedOn: 'x', classification: 'sensitive', facts: [], relationshipCount: 0 },
+      { id: 'p2', name: 'Public Pat', matchedOn: 'x', classification: 'public', facts: [], relationshipCount: 0 },
+    ],
+    commitments: [],
+    recentEvents: [],
+    provenanceRefs: [],
+    truncated: false,
+  };
+
+  const result = filterPersonalContextForDestination(input, 'configured_remote_model', policy);
+  assert.equal(result.context.relevantPeople.length, 1);
+  assert.equal(result.context.relevantPeople[0].id, 'p2');
+  assert.equal(result.omitted.length, 1);
+  assert.deepEqual(result.omitted[0], {
+    type: 'person',
+    id: 'p1',
+    classification: 'sensitive',
+    destination: 'configured_remote_model',
+    decision: 'never',
+    rule: 'sensitive.remote_models:never',
+  });
+});
+
+test('an allowed person still has their own individually-sensitive facts filtered independently', () => {
+  const policy = new DataProcessingPolicy({ policies: testPolicies() });
+  const input = {
+    objective: 'x',
+    relevantPeople: [
+      {
+        id: 'p1',
+        name: 'Public Pat',
+        matchedOn: 'x',
+        classification: 'public',
+        facts: [{ factId: 'f1', key: 'medical', value: 'has a penicillin allergy', classification: 'sensitive', confidence: 1, inferred: false }],
+        relationshipCount: 0,
+      },
+    ],
+    commitments: [],
+    recentEvents: [],
+    provenanceRefs: [],
+    truncated: false,
+  };
+
+  const result = filterPersonalContextForDestination(input, 'configured_remote_model', policy);
+  assert.equal(result.context.relevantPeople.length, 1, 'the public person is kept');
+  assert.equal(result.context.relevantPeople[0].facts.length, 0, 'their sensitive fact is still filtered');
+  assert.equal(result.omitted.length, 1);
+  assert.equal(result.omitted[0].type, 'fact');
+});
+
+test('a sensitive commitment is omitted from context bound for a remote model, but an allowed commitment is kept', () => {
+  const policy = new DataProcessingPolicy({ policies: testPolicies() });
+  const input = {
+    objective: 'x',
+    relevantPeople: [],
+    commitments: [
+      { id: 'c1', description: 'discuss confidential merger terms', classification: 'sensitive', createdAt: '2024-01-01', confidence: 1, inferred: false },
+      { id: 'c2', description: 'send meeting notes', classification: 'public', createdAt: '2024-01-01', confidence: 1, inferred: false },
+    ],
+    recentEvents: [],
+    provenanceRefs: [],
+    truncated: false,
+  };
+
+  const result = filterPersonalContextForDestination(input, 'configured_remote_model', policy);
+  assert.equal(result.context.commitments.length, 1);
+  assert.equal(result.context.commitments[0].id, 'c2');
+  assert.equal(result.omitted.length, 1);
+  assert.equal(result.omitted[0].type, 'commitment');
+  assert.equal(result.omitted[0].id, 'c1');
+});
+
+test('a sensitive recent event is omitted from context bound for a remote model, but an allowed event is kept', () => {
+  const policy = new DataProcessingPolicy({ policies: testPolicies() });
+  const input = {
+    objective: 'x',
+    relevantPeople: [],
+    commitments: [],
+    recentEvents: [
+      { eventId: 'e1', type: 'email.received', timestamp: '2024-01-01', summary: 'confidential legal notice', classification: 'sensitive' },
+      { eventId: 'e2', type: 'calendar.created', timestamp: '2024-01-01', summary: 'team standup', classification: 'public' },
+    ],
+    provenanceRefs: [],
+    truncated: false,
+  };
+
+  const result = filterPersonalContextForDestination(input, 'configured_remote_model', policy);
+  assert.equal(result.context.recentEvents.length, 1);
+  assert.equal(result.context.recentEvents[0].eventId, 'e2');
+  assert.equal(result.omitted.length, 1);
+  assert.equal(result.omitted[0].type, 'event');
+  assert.equal(result.omitted[0].id, 'e1');
+});
+
+test('a "confirm" decision (private data headed to a remote model) is treated as omit for every item type, not just facts -- there is no interactive confirmation path yet, so silently allowing through would leak private data', () => {
+  const policy = new DataProcessingPolicy({ policies: testPolicies() });
+  const input = {
+    objective: 'x',
+    relevantPeople: [
+      { id: 'p1', name: 'Private Priya', matchedOn: 'x', classification: 'private', facts: [{ factId: 'f1', key: 'k', value: 'v', classification: 'private', confidence: 1, inferred: false }], relationshipCount: 0 },
+    ],
+    commitments: [
+      { id: 'c1', description: 'a private commitment', classification: 'private', createdAt: '2024-01-01', confidence: 1, inferred: false },
+    ],
+    recentEvents: [
+      { eventId: 'e1', type: 'email.received', timestamp: '2024-01-01', summary: 'a private email', classification: 'private' },
+    ],
+    provenanceRefs: [],
+    truncated: false,
+  };
+
+  const result = filterPersonalContextForDestination(input, 'configured_remote_model', policy);
+
+  // Everything private is omitted, not silently allowed through pending a
+  // confirmation that never actually happens.
+  assert.equal(result.context.relevantPeople.length, 0);
+  assert.equal(result.context.commitments.length, 0);
+  assert.equal(result.context.recentEvents.length, 0);
+  assert.equal(result.omitted.length, 3, 'person, commitment, and event should each be recorded as omitted (the person\'s nested fact is never separately evaluated once the person itself is dropped)');
+  for (const record of result.omitted) {
+    assert.equal(record.decision, 'confirm');
+  }
+  assert.deepEqual(result.omitted.map((o) => o.type).sort(), ['commitment', 'event', 'person']);
+
+  // The same private data reaches a local model untouched.
+  const local = filterPersonalContextForDestination(input, 'local_model', policy);
+  assert.equal(local.omitted.length, 0);
+  assert.equal(local.context.relevantPeople.length, 1);
+  assert.equal(local.context.commitments.length, 1);
+  assert.equal(local.context.recentEvents.length, 1);
+});
+
 // --- End-to-end through Planner: the actual enforcement point ----------
 
 test('END TO END: Planner withholds sensitive context from a remote provider and records what was withheld, but still lets planning proceed with the rest', async () => {
