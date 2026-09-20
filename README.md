@@ -52,10 +52,12 @@ The browser is a client of the persistent Node.js service. Closing the browser d
 
 Key documentation:
 
+- [Overview](docs/overview.md) — what U2OS is, why it exists, and how it's meant to be used (start here)
 - [Architecture](docs/architecture.md)
 - [Events](docs/events.md)
 - [Policies](docs/policies.md)
 - [Tools](docs/tools.md)
+- [Devices and capabilities](docs/devices.md)
 - [Dashboards](docs/dashboards.md)
 - [Connectors](docs/connectors.md)
 - [Voice](docs/voice.md)

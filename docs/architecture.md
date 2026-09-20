@@ -106,6 +106,18 @@ This keeps the event log doing what it's actually good for here -- history, corr
 
 `server/agent/explain.js`'s `explainAction(id)` (also `GET /api/actions/:id/explain`) assembles all of this plus the full correlated event chain, in causal order, into one queryable structure -- the actual data a future UI would read for a "Why did U2OS do this?" view. This is concise references and already-stored reasoning summaries only; U2OS does not store or surface raw model chain-of-thought.
 
+## Device and capability subsystem
+
+A device/capability model generalizes tools and connectors to physical and
+remote endpoints (cameras, microphones, displays, satellites, and the
+browser/UI clients themselves): devices expose capabilities, agents express
+intent, U2OS resolves the request to an appropriate device — never the
+reverse. Phase 1 (device/capability model, registry, adapter interface, a
+mock adapter, read-only inspection API) is implemented; capability
+invocation through a trust/privacy-aware resolver and everything built on
+top of it (semantic `present()`, realtime device connections, pairing,
+streams) are later, not-yet-implemented phases. See docs/devices.md.
+
 ## Known gaps
 
 - `ModelRouter` resolves a provider per role and supports OpenAI-compatible, Anthropic, and embedding adapters. The HTTP model endpoint accepts both legacy single-provider and validated multi-provider/role configuration. Semantic ranking is implemented but remains opt-in and only ranks facts within already-selected people.

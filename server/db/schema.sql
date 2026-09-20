@@ -265,3 +265,42 @@ CREATE TABLE IF NOT EXISTS feedback_events (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_feedback_subject ON feedback_events(subject_type, subject_id);
+
+-- Device/capability subsystem, Phase 1 (docs/devices.md): the persisted half
+-- of the device registry -- one row per device any registered DeviceAdapter
+-- has discovered, mirroring the `triggers` table's pattern (persisted,
+-- adapter-populated rows; the adapters themselves and the capability
+-- registry stay in-memory/code, same split as ToolRegistry vs `triggers`).
+-- `capabilities` is the JSON array of capability ids this device currently
+-- advertises (server/devices/capability-registry.js defines what a
+-- capability id actually means) -- never a source of truth for what a
+-- capability DOES, only which devices claim to support it.
+CREATE TABLE IF NOT EXISTS devices (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL,
+  owner TEXT,
+  location TEXT,
+  -- 'online' | 'offline'. Presence, not authorization.
+  status TEXT NOT NULL DEFAULT 'offline',
+  -- Trust lifecycle (PLAN.md-style phased -- pairing/revocation flow is
+  -- future work): 'untrusted' | 'paired' | 'trusted' | 'revoked'. A
+  -- resolver MUST treat 'revoked' as ineligible for every capability,
+  -- always -- see server/devices/device-registry.js.
+  trust TEXT NOT NULL DEFAULT 'untrusted',
+  capabilities TEXT NOT NULL DEFAULT '[]',
+  -- Adapter-specific extra data (e.g. a browser device's display/input
+  -- capability flags). Deliberately unconstrained -- see docs/devices.md's
+  -- adapter-authoring section.
+  metadata TEXT NOT NULL DEFAULT '{}',
+  -- Which registered DeviceAdapter (by its `.id`) owns this device -- how
+  -- DeviceRegistry routes an invoke()/getStream() call to the right
+  -- adapter instance. Not an end-user-facing field.
+  adapter TEXT NOT NULL,
+  last_seen_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_devices_type ON devices(type);
+CREATE INDEX IF NOT EXISTS idx_devices_owner ON devices(owner);
+CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status);

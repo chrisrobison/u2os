@@ -15,6 +15,9 @@ import { ensureDefaultConnectorsConfig } from './integrations/connectors-config.
 import { startAll as startSyncScheduler, stopAll as stopSyncScheduler } from './integrations/sync-scheduler.js';
 import * as triggerEngine from './triggers/trigger-engine.js';
 import { startMdns } from './discovery/mdns.js';
+import { DeviceRegistry } from './devices/device-registry.js';
+import { createCapabilityRegistry } from './devices/register-capabilities.js';
+import { MockDeviceAdapter } from './devices/adapters/mock-device-adapter.js';
 import { log } from './logging/logger.js';
 import { generateOrLoadMasterKey } from './security/vault.js';
 import { AuthService } from './security/auth.js';
@@ -39,6 +42,7 @@ import { registerRecommendationRoutes } from './api/routes/recommendations.js';
 import { registerFeedbackRoutes } from './api/routes/feedback.js';
 import { registerAuthRoutes } from './api/routes/auth.js';
 import { registerModelRoutes } from './api/routes/model.js';
+import { registerDeviceRoutes } from './api/routes/devices.js';
 
 export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsoluteSeconds } = {}) {
 
@@ -105,6 +109,19 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   ensureDefaultConnectorsConfig(dataDir);
   startSyncScheduler({ db, eventBus, dataDir });
 
+  // Device/capability subsystem, Phase 1 (docs/devices.md): a persisted
+  // device registry plus an in-memory capability catalog, the same
+  // registry/catalog split as `triggers` (persisted) vs `ToolRegistry`
+  // (in-memory, code-defined). MockDeviceAdapter is always registered --
+  // same "always available, zero configuration" posture as the mock
+  // connector providers -- so the registry is never empty even with no
+  // real hardware adapters configured. Capability INVOCATION and the
+  // trust/privacy-aware resolver are not implemented yet; this phase is
+  // discovery + inspection only.
+  const capabilityRegistry = createCapabilityRegistry();
+  const deviceRegistry = new DeviceRegistry({ db, eventBus, capabilityRegistry });
+  await deviceRegistry.registerAdapter(new MockDeviceAdapter());
+
   const agent = new Agent({ modelRouter, policyEngine, toolRegistry, eventBus, ownerEntityId, embeddingProvider, dataProcessingPolicy });
 
   // Phase 6 / PROMPT.md §9: trigger engine. Event-driven half subscribes to
@@ -136,6 +153,7 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   registerTriggerRoutes(router);
   registerRecommendationRoutes(router);
   registerFeedbackRoutes(router, { eventBus });
+  registerDeviceRoutes(router, { deviceRegistry, capabilityRegistry });
 
   // Minimal HTTP access log (method, path, status, duration_ms) wrapped
   // around the existing router/static dispatch. This only observes the
@@ -174,11 +192,12 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
     mdnsHandle?.stop();
     stopSyncScheduler();
     triggerEngine.stopAll().catch(() => {});
+    deviceRegistry.stopAll().catch(() => {});
   });
 
   log.info('server', 'U2OS server listening', { bind: resolvedBind, port: boundPort, dataDir, dbPath });
 
-  return { server, port: boundPort, bind: resolvedBind, dataDir, dbPath, agent, eventBus, toolRegistry, policyEngine, auth, mdns: mdnsHandle };
+  return { server, port: boundPort, bind: resolvedBind, dataDir, dbPath, agent, eventBus, toolRegistry, policyEngine, auth, mdns: mdnsHandle, deviceRegistry, capabilityRegistry };
 }
 
 function readConfig(dataDir) { try { return JSON.parse(fs.readFileSync(path.join(dataDir, 'config', 'config.json'), 'utf8')); } catch { return {}; } }
