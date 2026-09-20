@@ -196,6 +196,37 @@ Package the secure alpha for ordinary self-hosting without creating a cloud depe
 - The same core application runs on Docker amd64/ARM64, Linux, macOS, and Windows targets.
 - Core capabilities require no U2OS account, subscription, or hosted service.
 
+## Milestone 9 — Device and capability subsystem (complete)
+
+Generalizes tools and connectors to physical and remote endpoints — cameras, microphones, displays, satellites, and the browser/UI clients themselves — under one rule: devices expose capabilities, agents express intent, U2OS resolves the request to an appropriate device deterministically, never the reverse. Implemented as nine incremental phases, each committed and verified separately (tests plus, for the two UI-facing phases, real browser verification); full detail, API surface, event vocabulary, and known gaps live in [docs/devices.md](docs/devices.md) rather than duplicated here.
+
+### Work
+
+- [x] Core model: device/capability schema, a persisted `DeviceRegistry`, an in-memory `CapabilityRegistry`, a `DeviceAdapter` interface, a mock adapter, read-only inspection API.
+- [x] A deterministic (never LLM-driven) capability resolver: trust-capped privacy tiers, ownership rules, per-candidate eligibility/score/reasons explanation output, capability invocation.
+- [x] A realtime WebSocket device bus (`/ws/devices`, same `http.Server`, no new port) with heartbeats, presence, event publication/subscription over the existing `EventBus`, and device commands.
+- [x] The browser itself as a registered device (`ui.render`/`ui.notify`/`ui.prompt`/`audio.play`, no permission prompts beyond what's needed), rendered by `<u2-device-panel>`.
+- [x] Semantic presentation (`presentation.present`/`presentation.notify`) registered as real Tools, routed through the existing `PolicyEngine`/approval/`agent_actions` audit pipeline — the same pattern every other consequential route in this codebase already uses.
+- [x] A device management UI (`#/devices`): list, detail, rename/relocate/reassign owner, pair/trust/revoke, remove, test-capability.
+- [x] An enforced trust lifecycle: `device.pairing_requested` on a genuinely new connection; revocation forcibly disconnects a live realtime connection and is checked on every resolve/invoke/event-publish path at once, not merely recorded; a documented (not yet implemented) cryptographic-identity seam via `device.metadata`.
+- [x] A metadata/reference stream registry (`stream://device/name`) — discover/open/close, never a media transport.
+- [x] A service-provider unification proof of concept: the existing notifications connector exposed as a `type: 'service'` device, resolved/invoked with zero special-casing next to a physical device.
+
+### Acceptance criteria
+
+- An agent can request `presentation.present({audience, privacy, content})` without ever naming a device; the resolver alone decides, and a shared/other-owner device is provably rejected for private content while an owned, trusted device is provably chosen.
+- A revoked device cannot be resolved, invoked (via the resolver or a direct/test path), have a stream opened against it, or publish another event — enforced on every path at once, not just recorded as a trust value.
+- A connected browser tab and a connected mock/WebSocket device are indistinguishable to the resolver; a connected service (notifications) and a connected physical device are equally indistinguishable.
+- 93 new tests (203 → 296) covering registration, resolution, the realtime bus, the browser flow, policy-gated presentation, management actions, the trust lifecycle, streams, and service unification; verified against a real running server and, for the two UI phases, real browser automation.
+
+### Known gaps (see docs/devices.md for the full list)
+
+- The raw direct-invoke (`POST /api/capabilities/:capability/invoke`), test-capability, and stream open/close routes are session-authenticated but not `PolicyEngine`-gated — owner-only debug/direct-control surfaces, not agent-reachable.
+- No real cryptographic device pairing yet (the seam is documented; `device.metadata` can already carry a public key with no schema change).
+- Only notifications has been unified into the capability model so far; the other connectors are untouched.
+- No `listen()` (input's semantic counterpart to `present()`) yet.
+- The realtime device bus's protocol is a natural transport for PROMPT.md §24's "Voice Satellite" concept (Milestone 6) but the two have not yet been connected — Milestone 6 still describes its own protocol as a separate future step.
+
 ## Continuous work across all milestones
 
 - Keep unit, integration, security, migration, and browser tests green.

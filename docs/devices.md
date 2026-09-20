@@ -45,11 +45,16 @@ Capability Registry
 Capability Resolver (deterministic; trust/privacy/ownership; never an LLM)
         │
         ▼
-(Policy/authorization integration, semantic present()/listen() — later phase)
+presentation.present / presentation.notify (Tools) ─▶ PolicyEngine ─▶ agent_actions audit
         │
         ▼
 Agents
 ```
+
+(Every OTHER capability invocation path -- the raw `POST /api/capabilities/:capability/invoke`
+route, device management's "test capability", `StreamRegistry.open()` -- is session-authenticated
+but deliberately NOT policy-gated; see "Known gaps" below. `presentation.*` is the one path that
+is, because it's a real Tool reached through the same pipeline every other consequential route uses.)
 
 ## Device model
 
@@ -75,10 +80,12 @@ lastSeen, createdAt, updatedAt
 Trust is owner-controlled state: `DeviceRegistry.setTrust()` is the only way
 it changes. Re-discovery of an already-known device (`upsertDevice()`) never
 touches `trust` — an adapter re-announcing a device can never re-trust
-itself. A full pairing/approval flow is future work (see Phases below); for
-now `setTrust()`/`revoked` exist as plumbing other code and a future route
-can call, and `MockDeviceAdapter`'s virtual devices are pre-trusted since
-they're local test fixtures, not real hardware.
+itself. `setTrust()`/pairing-request events (Phase 7 below) are the real,
+owner-driven pairing lifecycle; only the *cryptographic* half (a device
+proving its identity rather than the owner manually flipping a switch) is
+still a documented-but-unimplemented seam. `MockDeviceAdapter`'s virtual
+devices are pre-trusted since they're local test fixtures, not real
+hardware.
 
 ## Capability model
 
@@ -132,8 +139,8 @@ stopAll()                         stop() every adapter; devices rows are left as
 `findProvidersFor(capabilityId)` returns every device currently claiming
 that capability — the raw "who claims to support this" lookup. It does
 **not** filter by trust/online/privacy/ownership; that eligibility-and-
-ranking logic is the capability resolver, added with invocation in a later
-phase (see docs/devices.md's Phases section).
+ranking logic is the capability resolver ("Capability resolver", Phase 2
+below).
 
 ## Events
 
@@ -252,17 +259,22 @@ exactly one of `capability.invoked` / `capability.failed`. A device revoked
 between resolution and execution is refused (defense in depth) even though
 the resolver already excludes revoked devices.
 
-This is **not yet** wired into `server/policy/policy-engine.js`'s
-tool-authorization pipeline or the `agent_actions` audit log — see Known
-gaps.
+`invokeCapability()` itself is **not** wired into `server/policy/policy-engine.js`'s
+tool-authorization pipeline or the `agent_actions` audit log, and stays that
+way permanently as a raw function — policy-gating happens one layer up, by
+wrapping a specific capability in a real Tool ("Semantic presentation",
+Phase 5 below, does exactly this for `ui.render`/`ui.notify`). Calling
+`invokeCapability()` directly, as the raw `POST
+/api/capabilities/:capability/invoke` route still does, bypasses that —
+see Known gaps.
 
 ## Realtime device bus (Phase 3)
 
 `server/devices/adapters/websocket-device-adapter.js`'s `WebSocketDeviceAdapter`
 lets any process that can speak WebSocket + a small JSON protocol register
 itself as a device over a persistent connection -- the transport a future
-satellite, Raspberry Pi node, or (Phase 4) the browser client itself will
-use. It attaches to the **same** `http.Server` U2OS already runs (no new
+satellite or Raspberry Pi node could use, and the one the browser client
+itself already does (Phase 4, below). It attaches to the **same** `http.Server` U2OS already runs (no new
 port) via the `'upgrade'` event, routed at `/ws/devices`
 (`server/index.js`).
 
@@ -316,8 +328,10 @@ deliberately **not** device identity or authorization -- it answers "is
 this caller even allowed to speak the device protocol at all", nothing
 more. A device that connects successfully still starts at `trust:
 'untrusted'` in the registry, same as any other adapter's freshly
-discovered device. Phase 7's per-device cryptographic pairing is the
-intended replacement; this token is the explicit seam it plugs into.
+discovered device. A future per-device cryptographic pairing scheme (the
+seam is documented in "Cryptographic device identity", Phase 7 below) is
+the intended long-term replacement for trust promotion; this token only
+ever gates transport, never trust.
 
 ## Browser/UI device (Phase 4)
 
@@ -351,11 +365,14 @@ addressable through the same resolver as a physical camera or display.
 A browser device reports `owner: 'owner'` -- a fixed sentinel standing in
 for "the one authenticated owner of this instance", since there is not yet
 a formal mapping from an authenticated session to a `device.owner` string
-(see Phase 2's Known gaps; the same gap this inherits). A freshly-connected
-browser starts `trust: 'untrusted'` like any other device -- it is eligible
-for `public`-tier content immediately, but `personal`/`private`/`sensitive`
-content requires an explicit trust promotion (`DeviceRegistry.setTrust()`)
-until Phase 7 adds a real pairing flow.
+(see "Known gaps" below; the same gap Phase 2's `audience` parameter has).
+A freshly-connected browser starts `trust: 'untrusted'` like any other
+device -- it is eligible for `public`-tier content immediately, but
+`personal`/`private`/`sensitive` content requires an explicit trust
+promotion (`DeviceRegistry.setTrust()`, directly or via the Phase 6
+management UI's Trust control) -- real cryptographic auto-promotion
+remains the documented, unimplemented seam ("Cryptographic device
+identity", Phase 7 below).
 
 ## Semantic presentation (Phase 5)
 
@@ -584,7 +601,7 @@ like every other private write route (`server/api/router.js`). `audience`
 on the invoke route is client-supplied and not yet bound to the
 authenticated owner — see Known gaps.
 
-## Known gaps (by design, this phase)
+## Known gaps (by design)
 
 - **`POST /api/capabilities/:capability/invoke` still bypasses
   `PolicyEngine`/`agent_actions` entirely** -- it calls
@@ -628,9 +645,11 @@ authenticated owner — see Known gaps.
   known-gap class as the raw capability invoke route above -- opening a
   video stream reference is currently an owner-authenticated action, not
   an `agent_actions`-audited one.
-- Services (Gmail, calendar, etc.) are not yet exposed as capability
-  providers — `server/integrations/provider-registry.js`'s per-domain
-  connector model is untouched by this phase.
+- Beyond notifications (the Phase 9 proof of concept -- "Service-provider
+  unification" above), other services (Gmail, Google Calendar, Brave
+  Search, ...) are not yet exposed as capability providers —
+  `server/integrations/provider-registry.js`'s per-domain connector model
+  is otherwise untouched.
 
 ## Phases
 

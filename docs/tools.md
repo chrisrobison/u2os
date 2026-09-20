@@ -4,6 +4,8 @@ Every tool declares whether it is `read`, `draft`, or `consequential` — the po
 
 Most tools (`email.*`, `calendar.*`, `contacts.search`, `web.search`) are **provider-agnostic**: `execute()` calls `getProvider(domain)` and runs against whichever provider is currently configured -- CURRENTLY IMPLEMENTED mock providers for every domain, plus real Google Calendar/Gmail/Google Contacts/Brave Search adapters (see docs/connectors.md for exactly which are real vs MOCK-only, and how to configure a real one). `tasks.*` and `notifications.send` are MOCK/STUB only for now -- no real task-manager or push-notification integration exists yet.
 
+`presentation.present`/`presentation.notify` (docs/devices.md) are a different shape from every other tool here: instead of calling a connector provider, they call `invokeCapability()` (server/devices/capabilities.js), which resolves an eligible *device* deterministically (trust/privacy/ownership-aware, never LLM-driven) and delegates to that device's adapter. They also take their dependencies via constructor injection (`deviceRegistry`/`capabilityRegistry`) rather than a module-level provider accessor -- see server/tools/presentation-tools.js's header comment for why.
+
 ## `Tool` interface (`server/tools/tool.js`)
 
 ```js
@@ -35,12 +37,16 @@ class Tool {
 | `tasks.complete` | tasks | consequential | `{ id }` | MOCK/STUB only -- updates local status → `task.completed` |
 | `web.search` | web | read | `{ query }` | active provider (mock canned results, or real Brave Search) |
 | `notifications.send` | notifications | consequential | `{ title, body, priority? }` | MOCK/STUB only -- inserts a local row → `notification.sent` (this is how the agent "prominently notifies" the owner; no real push/desktop-notification integration exists) |
+| `presentation.present` | presentation | consequential | `{ audience, privacy?, content }` | resolves a device via `ui.render` and invokes it → `capability.invoked`/`capability.failed` (docs/devices.md) |
+| `presentation.notify` | presentation | consequential | `{ audience, privacy?, title, body? }` | resolves a device via `ui.notify` and invokes it → `capability.invoked`/`capability.failed` (docs/devices.md) |
 
-See docs/connectors.md for which domains have a real (non-mock) provider implemented today, and how to configure one.
+See docs/connectors.md for which domains have a real (non-mock) provider implemented today, and how to configure one. See docs/devices.md for the device/capability model `presentation.*` sits on top of.
 
 ## Classification → policy mapping
 
 The policy engine looks up `policies.yaml[domain][operationKey]` where `operationKey` is derived from the tool name's second segment (`reschedule`, `send`, `create`, ...) with `read` and `draft` categories defaulting to `always allowed, no approval` unless a policy explicitly overrides them. This is independent of the data-processing privacy policy (docs/policies.md's "Data-processing privacy policy" section), which separately governs what CONTEXT a model provider gets to see, regardless of which tool (if any) is ultimately called.
+
+`presentation` has no entry in the shipped default `policies.yaml`, so `presentation.present`/`presentation.notify` fail safe to `confirm` (autonomy level 3) exactly like any other unconfigured domain -- add a `presentation:` section (e.g. `notify: autonomous`) to change that, the same way you would for any other domain.
 
 ## Provenance
 

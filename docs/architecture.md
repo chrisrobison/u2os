@@ -149,5 +149,6 @@ docs/devices.md.
 - SSE cursor recovery and heartbeats are implemented. Broad browser end-to-end coverage and full accessibility verification remain gaps.
 - CalDAV/IMAP and skill network-permission enforcement are not implemented.
 - `node:sqlite` remains experimental. Manual audited retention and backup/restore exist; automated retention and a production rollback system do not.
+- Device/capability subsystem gaps (real cryptographic pairing, policy-gating the remaining owner-only debug routes, `listen()`, unifying more connectors) are listed in full in docs/devices.md's own "Known gaps" section rather than duplicated here.
 
 See [PLAN.md](../PLAN.md) for current priorities and [PROMPT.md](../PROMPT.md) for the historical specification.

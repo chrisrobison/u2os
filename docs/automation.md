@@ -56,6 +56,8 @@ create_task   -> policy-gated tasks.create
 evaluate      -> hand the triggering event to the proactive agent's evaluateEvent() (below) for a full ignore/remember/notify/.../act decision instead of a fixed action
 ```
 
+`notify` here is specifically `notifications.send` (docs/tools.md), not the device-aware `presentation.notify` (docs/devices.md) -- the two are not yet connected. Routing a trigger's `notify` action through the resolver (so it could land on a specific trusted device instead of always the notifications connector) is a natural extension, not yet built.
+
 Every trigger firing publishes its own `agent.action.completed`/`.failed`-shaped bookkeeping the same way tool executions do, so triggers show up in the activity feed like everything else — no silent background magic (PROMPT.md §14's explicit "never feel like it is mysteriously doing things behind the user's back" applies just as much to scheduled automation as to chat-driven actions).
 
 ## Proactive agent: `agent.evaluateEvent(event, context)`

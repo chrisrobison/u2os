@@ -159,6 +159,10 @@ REST v3, via native `fetch` (no `googleapis` SDK dependency):
 - `POST /api/connectors/notify-webhook/credentials { webhookUrl, format }` where `format` is `'json'` (default: POST `{title, body, priority}` as JSON) or `'ntfy'` (POST `body` as the raw text payload with `Title` and `Priority` headers, per ntfy.sh's convention — this also happens to work for most simple "POST a message" webhook receivers).
 - `notifications.send` tool, when this provider is active, does the real `fetch(webhookUrl, {...})` and still also inserts the `notification.sent` event exactly as the mock does (the event log doesn't care which provider delivered it).
 
+## Relationship to the device/capability subsystem
+
+The connector/provider system above and the device/capability model (docs/devices.md) are deliberately separate systems that can compose: `server/devices/adapters/notification-service-adapter.js` is a thin `DeviceAdapter` that wraps `getProvider('notifications')` (this doc's own `provider-registry.js`) and exposes it as a `type: 'service'` device providing the `notification.send` capability -- proof that a physical device and an existing connector are discoverable/invokable through the exact same resolver, with zero changes to anything documented above. This is a proof of concept covering one connector, not a migration; every other connector here is untouched and still reachable only through its existing Tool.
+
 ## Task system
 
 PROMPT.md's Phase 3 list names "task system" alongside the real integrations. Tasks in U2OS are already a native, real (non-mocked) entity — `tasks.*` tools read/write the `tasks` table directly; there is no external task provider to swap in yet. Nothing changes here this phase; a future connector (e.g. a Todoist/Reminders skill) would slot into the exact same provider-registry pattern (`domain: 'tasks'`) when there's a concrete external system to target.

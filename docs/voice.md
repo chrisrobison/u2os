@@ -60,7 +60,7 @@ The server is the only place authorization actually gets decided — a compromis
 
 ## Explicitly out of scope for Phase 4/5
 
-- Wake-word detection (PROMPT.md's Voice Satellite concept, §24 — needs always-on local audio processing a browser tab can't do; a future native companion process per §22).
+- Wake-word detection (PROMPT.md's Voice Satellite concept, §24 — needs always-on local audio processing a browser tab can't do; a future native companion process per §22). The device/capability subsystem's realtime bus (docs/devices.md: `WebSocketDeviceAdapter`, `/ws/devices`, a small JSON hello/event/command protocol) is a plausible transport for a future satellite to actually connect over, but the two have not been wired together — PLAN.md's Milestone 6 still describes its own protocol as a separate, not-yet-started step.
 - Multi-speaker clustering beyond "the one person talking into this browser tab" (real diarization needs a model this phase doesn't ship).
 - Cloud STT/TTS (Deepgram, ElevenLabs) — ship as `skills/deepgram/manifest.json` and `skills/elevenlabs/manifest.json` **stubs** only (same pattern as Phase 3's CalDAV/IMAP stubs), selectable in config but falling back to the browser-native providers if not actually wired up, which they aren't yet.
 - Voice enrollment routes are owner-session and CSRF gated. The simplified voiceprint remains a confidence signal, not identity or a substitute for login and policy approval.

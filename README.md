@@ -8,7 +8,7 @@ It is not a chatbot or desktop wrapper. Events, structured memory, policies, too
 
 ## Project status
 
-U2OS is currently a working pre-alpha prototype. The repository implements the seven development phases in [PROMPT.md](PROMPT.md), plus the deployment milestone, as tested vertical slices:
+U2OS is currently a working pre-alpha prototype. The repository implements the seven development phases in [PROMPT.md](PROMPT.md), plus the deployment milestone and the nine-phase device/capability subsystem (see [docs/devices.md](docs/devices.md)), as tested vertical slices:
 
 - Persistent SQLite event log with normalized events, correlation, provenance, subscriptions, filtered history, and SSE delivery
 - Structured entities, facts, relationships, commitments, and memory provenance, including a per-fact data-processing privacy classification
@@ -21,6 +21,7 @@ U2OS is currently a working pre-alpha prototype. The repository implements the s
 - Tool registry and a policy engine outside the model execution path
 - Audited consequential actions with explicit approval or hard policy blocks, plus an explainability query (`explainAction()` / `GET /api/actions/:id/explain`) tying a decision to its model, policy rule, retrieved-context provenance, and full event chain
 - Native Web Component interface with morning, meeting, and project dashboards
+- A device/capability subsystem (see [docs/devices.md](docs/devices.md)): a persisted device registry, an in-memory capability catalog, a deterministic (never LLM-driven) trust/privacy-aware resolver, a realtime WebSocket device bus (`/ws/devices`), the browser itself as a registered device, semantic presentation (`presentation.present`/`presentation.notify`) routed through the same policy/approval/audit pipeline as every other tool, a device management UI (`#/devices`), an enforced trust lifecycle (pairing-request events, revocation that disconnects live connections and is checked on every path), a metadata-only stream registry, and a service-provider unification proof of concept
 - Google Calendar, Gmail, Google Contacts, Brave Search, and webhook connector adapters, with mock fallbacks
 - Encrypted local credential storage and Google OAuth support
 - Browser microphone, VAD, STT/TTS, barge-in, voice enrollment, and confidence-aware authorization
@@ -28,7 +29,7 @@ U2OS is currently a working pre-alpha prototype. The repository implements the s
 - Outcome feedback that adjusts prioritization without weakening authorization policies
 - Docker, systemd, launchd, mDNS, health checks, structured logs, backup/restore, and portable JSON export
 
-This is not production-ready. A single-owner passphrase, expiring sessions, CSRF protection, request limits, and loopback-default networking now protect the HTTP boundary. Do not expose the server directly to the public internet. `MockModelProvider` remains the default until a real provider is configured (see [docs/models.md](docs/models.md)). Major limitations include simplified speaker verification, several placeholder dashboard components, in-process-only rate limits, no HTTP route yet for multi-provider/role model configuration, memory-candidate confirmation still being a manual step rather than a dedicated API/UI, and limited browser-level test coverage.
+This is not production-ready. A single-owner passphrase, expiring sessions, CSRF protection, request limits, and loopback-default networking now protect the HTTP boundary. Do not expose the server directly to the public internet. `MockModelProvider` remains the default until a real provider is configured (see [docs/models.md](docs/models.md)). Major limitations include simplified speaker verification, several placeholder dashboard components, in-process-only rate limits, no HTTP route yet for multi-provider/role model configuration, memory-candidate confirmation still being a manual step rather than a dedicated API/UI, limited browser-level test coverage, and — in the device/capability subsystem — the raw direct-invoke/test/stream-open routes are session-authenticated but not policy-gated, real cryptographic device pairing is a documented seam rather than an implementation, and only one existing connector (notifications) has been unified into the capability model so far (see [docs/devices.md](docs/devices.md)'s "Known gaps").
 
 ## Architecture
 
@@ -102,7 +103,7 @@ npm run dev
 npm test
 ```
 
-The current suite contains 197 Node tests covering the event bus, memory, policy enforcement, tools, the complete approval vertical slice, dashboard generation, connectors and OAuth security, encrypted credentials, deployment utilities, triggers, proactive decisions, feedback, voice authorization, the Agent-refactor regression suite, model providers and routing, the strict plan schema, real bounded context assembly, semantic memory retrieval, the data-processing privacy policy, prompt-injection containment, the intelligent end-to-end vertical slice, and explainability.
+The current suite contains 296 Node tests covering the event bus, memory, policy enforcement, tools, the complete approval vertical slice, dashboard generation, connectors and OAuth security, encrypted credentials, deployment utilities, triggers, proactive decisions, feedback, voice authorization, the Agent-refactor regression suite, model providers and routing, the strict plan schema, real bounded context assembly, semantic memory retrieval, the data-processing privacy policy, prompt-injection containment, the intelligent end-to-end vertical slice, explainability, and the device/capability subsystem (registry, resolver, the realtime WebSocket device bus, the browser-as-device flow, policy-gated presentation tools, device management, the trust lifecycle, streams, and service-provider unification — see [docs/devices.md](docs/devices.md)).
 
 ## Data operations
 
@@ -138,7 +139,7 @@ The Compose configuration stores U2OS data in a named volume and exposes the ser
 
 ## Connectors and honest mock boundaries
 
-Mock calendar, email, contacts, search, and notification providers work without external accounts. Real adapters are available for Google Calendar, Gmail, Google Contacts, Brave Search, and generic webhooks. CalDAV, IMAP, Deepgram, and ElevenLabs currently have manifests only and are not implemented providers.
+Mock calendar, email, contacts, search, and notification providers work without external accounts. Real adapters are available for Google Calendar, Gmail, Google Contacts, Brave Search, and generic webhooks. CalDAV, IMAP, Deepgram, and ElevenLabs currently have manifests only and are not implemented providers. The notifications connector is also reachable through the device/capability model (`server/devices/adapters/notification-service-adapter.js`) as a proof of concept that a physical device and an external service resolve/invoke through the exact same code path — see [docs/devices.md](docs/devices.md)'s "Service-provider unification".
 
 The default planner is still `MockModelProvider`, a deterministic intent matcher for demonstration workflows and the offline/test fixture. Opt-in OpenAI-compatible and Anthropic providers can target a local or hosted endpoint, routed per-role by `ModelRouter` and given bounded, ranked, provenance-tagged personal context by `ContextAssembler` (docs/models.md, docs/architecture.md). No HTTP route yet configures multi-provider/role setups -- only a single provider via `POST /api/model`. Voice similarity uses a lightweight browser-side DSP fingerprint and must not be treated as authentication.
 
@@ -151,7 +152,7 @@ Security properties already present include policy enforcement outside the plann
 ## Repository layout
 
 ```text
-server/       persistent service, APIs, agent, events, memory, policy, tools
+server/       persistent service, APIs, agent, events, memory, policy, tools, devices
 public/       browser client built with native ES modules and Web Components
 skills/       connector manifests and declared permissions
 tests/        Node test suites
@@ -159,6 +160,8 @@ docs/         subsystem contracts, decisions, setup, and known limitations
 deploy/       systemd and launchd templates
 data/         repository placeholder only; runtime data lives in U2OS_HOME
 ```
+
+`server/devices/` is the device/capability subsystem: the registry, the capability catalog, the resolver, adapters (mock, realtime WebSocket, the notification service wrapper), and the stream registry. Its client-side half is `public/services/device-client.js` and `public/components/u2-device-panel.js`/`u2-devices.js`. See [docs/devices.md](docs/devices.md).
 
 ## Roadmap
 

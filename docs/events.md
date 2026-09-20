@@ -95,6 +95,21 @@ Derived/memory events (published by the memory projector after it updates entiti
 | `memory.relationship_recorded` | a new relationship edge was written |
 | `commitment.made` | the agent recognized a stated commitment ("I'll send the proposal") and created/linked a `Commitment` entity |
 
+Device/capability/stream events (docs/devices.md's device/capability subsystem -- `source` is `device-adapter:<adapterId>` for registry-driven transitions, `device:<id>` for device-initiated ones like a heartbeat-derived status change or a trust transition):
+
+| Type | Emitted when | source |
+|---|---|---|
+| `device.discovered` | a device row is inserted for the first time | `device-adapter:<adapterId>` |
+| `device.connected` | a device's status transitions to `online` (first discovery, or coming back online) | `device-adapter:<adapterId>` or `device:<id>` |
+| `device.disconnected` | a device's status transitions to `offline` | `device-adapter:<adapterId>` or `device:<id>` |
+| `device.pairing_requested` | a genuinely new device sends its first `hello` over the realtime bus (`/ws/devices`) -- never fires again for a reconnect, and never fires for `MockDeviceAdapter`'s pre-trusted fixtures | `device:<id>` |
+| `device.trust_changed` | `DeviceRegistry.setTrust()` sets any trust value other than `revoked` | `device:<id>` |
+| `device.revoked` | `DeviceRegistry.setTrust()` sets `revoked` -- also force-disconnects any live realtime connection | `device:<id>` |
+| `capability.invoked` | `invokeCapability()`/`invokeDeviceCapability()` successfully executed a capability on a resolved/named device | `device:<id>` |
+| `capability.failed` | resolution found no eligible device, or the device's adapter itself threw | `capability-resolver` or `device:<id>` |
+| `stream.available` | `StreamRegistry.open()` recorded a stream reference as active | `device:<id>` |
+| `stream.closed` | `StreamRegistry.close()` removed an active stream reference | `device:<id>` |
+
 Not implemented until later phases (reserved names, do not repurpose): `document.created`, `document.changed`, `project.changed`, `purchase.completed`, `subscription.renewing`, `package.shipped`, `location.changed`, `message.received`.
 
 ## Subscribing
@@ -107,6 +122,6 @@ eventBus.subscribe('*', handler); // activity feed, SSE hub
 
 ## Replay
 
-`GET /api/events?type=&since=&correlationId=&limit=` reads directly from the `events` table — the API never has a separate "history" store to keep in sync; it's the same log.
+`GET /api/events?type=&since=&correlationId=&subjectType=&subjectId=&limit=` reads directly from the `events` table — the API never has a separate "history" store to keep in sync; it's the same log. `subjectType`/`subjectId` (added for the device management UI's "recent activity" panel, docs/devices.md) are generically useful for any subject, not device-specific — e.g. `?subjectType=device&subjectId=mock.camera.kitchen`.
 
 The SSE stream includes each event's durable id. Reconnecting clients send `Last-Event-ID`; the server replays later persisted events before resuming live delivery. Comment heartbeats keep otherwise-idle connections alive.

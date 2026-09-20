@@ -19,6 +19,8 @@ U2OS is a persistent, single-owner pre-alpha service. Authentication exists, but
 
 Sessions store only token hashes server-side. Cookies are `HttpOnly`, `SameSite=Strict`, `Path=/`, and become `Secure` for HTTPS or explicit/trusted-proxy configuration. Sensitive rate limits are in-process per IP/account, reset on restart, and are not distributed.
 
+The realtime device bus (docs/devices.md) upgrades WebSocket connections at `/ws/devices` on the **same** port/process above -- no additional port to open or firewall. It requires a per-installation connect token, generated on first use at `<U2OS_HOME>/credentials/device-connect-token.key` (mode `0600`, same pattern as `master.key`); an authenticated browser session can also fetch it via `GET /api/devices/connect-token`. This token gates transport only, not device trust -- see `server/devices/realtime/device-token.js`.
+
 ## First run and recovery
 
 Start on loopback and create the owner passphrase in the UI. There is no reset backdoor. If forgotten, restore a backup tied to a known passphrase or wipe `U2OS_HOME` and start over. Backups contain the owner hash, private data, encrypted credentials, and master key; protect them like the live identity store.
