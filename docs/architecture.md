@@ -104,7 +104,9 @@ This keeps the event log doing what it's actually good for here -- history, corr
 
 `agent_actions` (docs/policies.md's audit log) already records who/what/why for every evaluated action: requester, request text, model, tool, arguments, policy domain/rule, autonomy level, approval/rejection identity, and result. PLAN.md's Phase 9 adds the one genuinely missing piece: `context_provenance` -- the retrieved fact/entity/event ids (`ContextAssembler`'s `provenanceRefs`, AFTER the data-processing privacy filter) that actually reached the provider which produced a given plan. `Planner.lastProvenanceRefs` carries this from a `plan()` call to `Agent.handleMessage`, which attaches it to every action proposed from that same plan -- a direct (non-chat) `evaluateAndMaybeExecute()` call, with no `ContextAssembler` involved, simply has none.
 
-`server/agent/explain.js`'s `explainAction(id)` (also `GET /api/actions/:id/explain`) assembles all of this plus the full correlated event chain, in causal order, into one queryable structure -- the actual data a future UI would read for a "Why did U2OS do this?" view. This is concise references and already-stored reasoning summaries only; U2OS does not store or surface raw model chain-of-thought.
+`server/agent/explain.js`'s `explainAction(id)` (also `GET /api/actions/:id/explain`) assembles all of this plus the full correlated event chain, in causal order, into one queryable structure. The browser now renders that structure through `<u2-why>` on approval cards and action-related activity entries. `server/agent/explain-recommendation.js` provides the equivalent stored-summary/source-event trail for proactive recommendations and recommendation-derived dashboards.
+
+`<u2-why>` creates trusted DOM nodes and assigns all explanation values through `textContent`; it never accepts arbitrary HTML. These views contain concise references and already-stored reasoning summaries only. U2OS does not store or surface raw model chain-of-thought.
 
 ## Device and capability subsystem
 

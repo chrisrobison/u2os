@@ -96,7 +96,9 @@ what memory informed it  context_provenance (retrieved fact/entity/event ids, af
 
 ## Explainability
 
-`server/agent/explain.js`'s `explainAction(id)` (also `GET /api/actions/:id/explain`) assembles the actual data a future "Why did U2OS do this?" view would read: the reasoning summary, model, policy domain/rule, autonomy level, approval/rejection identity, result, `contextProvenance` (which retrieved facts/entities/events actually reached the model for this plan), and the full correlated event chain in causal order. This is deliberately concise references and stored summaries, never raw model chain-of-thought -- see docs/architecture.md.
+`server/agent/explain.js`'s `explainAction(id)` (also `GET /api/actions/:id/explain`) assembles the reasoning summary, model, policy domain/rule, autonomy level, approval/rejection identity, result, `contextProvenance` (which retrieved facts/entities/events actually reached the model for this plan), and the full correlated event chain in causal order. The browser's reusable `<u2-why>` component exposes this from pending/resolved approval cards and action-related activity entries.
+
+Recommendations use the parallel `explainRecommendation(id)` / `GET /api/recommendations/:id/explain` path. It exposes the deterministic evaluator summary, source-event reference, relevant prepared-dashboard title, and correlated event trail. Both paths render concise stored summaries and references as inert text; neither stores, reconstructs, or displays raw model chain-of-thought.
 
 ## Data-processing privacy policy (separate from the above)
 
