@@ -64,37 +64,116 @@ export function listQueuedActions({ status } = {}) {
   return rows.map(rowToQueuedAction);
 }
 
+/** Atomically claims one due or expired item. Concurrent ticks cannot both win. */
+export function leaseNextAction({ leaseOwner, leaseMs = 30_000, now = new Date() }) {
+  if (!leaseOwner) throw new TypeError('leaseOwner is required');
+  if (!Number.isFinite(leaseMs) || leaseMs <= 0) throw new TypeError('leaseMs must be positive');
+  const nowDate = toDate(now);
+  const nowIso = nowDate.toISOString();
+  const expiresAt = new Date(nowDate.getTime() + leaseMs).toISOString();
+  const db = getDb();
+  const row = db.prepare(`
+    UPDATE action_queue
+    SET status = 'leased', lease_owner = ?, lease_expires_at = ?, updated_at = ?
+    WHERE id = (
+      SELECT id FROM action_queue
+      WHERE (
+        status IN ('queued', 'retry_wait') AND next_attempt_at <= ?
+      ) OR (
+        status IN ('leased', 'executing') AND lease_expires_at <= ?
+      )
+      ORDER BY next_attempt_at, created_at
+      LIMIT 1
+    )
+    AND (
+      (status IN ('queued', 'retry_wait') AND next_attempt_at <= ?)
+      OR (status IN ('leased', 'executing') AND lease_expires_at <= ?)
+    )
+    RETURNING *
+  `).get(leaseOwner, expiresAt, nowIso, nowIso, nowIso, nowIso, nowIso);
+  if (!row) return null;
+
+  // If a process died after recording an attempt, close that historical
+  // attempt before the new owner starts another one.
+  db.prepare(`
+    UPDATE action_attempts
+    SET status = 'failed', finished_at = ?, error = 'lease expired', error_class = 'retryable'
+    WHERE queue_id = ? AND status = 'executing'
+  `).run(nowIso, row.id);
+  return rowToQueuedAction(row);
+}
+
 export function beginActionAttempt({ queueId, leaseOwner, now = new Date().toISOString() }) {
   if (!queueId || !leaseOwner) throw new TypeError('queueId and leaseOwner are required');
   return withTransaction(getDb(), () => {
     const db = getDb();
     const queue = db.prepare('SELECT * FROM action_queue WHERE id = ?').get(queueId);
     if (!queue) throw new Error(`No such queued action: ${queueId}`);
+    const nowIso = toDate(now).toISOString();
+    if (queue.status !== 'leased' || queue.lease_owner !== leaseOwner || queue.lease_expires_at <= nowIso) {
+      throw new Error(`Queued action ${queueId} is not leased to ${leaseOwner}`);
+    }
     const attemptNumber = queue.attempt_count + 1;
     const id = newId('attempt');
     db.prepare(`
       INSERT INTO action_attempts
         (id, queue_id, attempt_number, lease_owner, status, started_at)
       VALUES (?, ?, ?, ?, 'executing', ?)
-    `).run(id, queueId, attemptNumber, leaseOwner, now);
+    `).run(id, queueId, attemptNumber, leaseOwner, nowIso);
     db.prepare(`
       UPDATE action_queue
       SET status = 'executing', attempt_count = ?, updated_at = ?
       WHERE id = ?
-    `).run(attemptNumber, now, queueId);
+    `).run(attemptNumber, nowIso, queueId);
     return getActionAttempt(id);
   });
 }
 
-export function finishActionAttempt(id, { status, error = null, errorClass = null, now = new Date().toISOString() }) {
-  if (!['completed', 'failed'].includes(status)) throw new TypeError('attempt status must be completed or failed');
-  const db = getDb();
-  db.prepare(`
-    UPDATE action_attempts
-    SET status = ?, finished_at = ?, error = ?, error_class = ?
-    WHERE id = ? AND status = 'executing'
-  `).run(status, now, error, errorClass, id);
-  return getActionAttempt(id);
+export function completeActionAttempt(id, { leaseOwner, now = new Date() }) {
+  return settleAttempt(id, { leaseOwner, queueStatus: 'completed', attemptStatus: 'completed', now });
+}
+
+export function failActionAttempt(id, {
+  leaseOwner,
+  error,
+  errorClass,
+  maxAttempts = 5,
+  baseDelayMs = 1_000,
+  maxDelayMs = 60_000,
+  now = new Date(),
+}) {
+  if (!ACTION_ERROR_CLASSES.includes(errorClass)) throw new TypeError(`Unknown action error class: ${errorClass}`);
+  if (!Number.isInteger(maxAttempts) || maxAttempts < 1) throw new TypeError('maxAttempts must be a positive integer');
+  const attempt = getActionAttempt(id);
+  if (!attempt) throw new Error(`No such action attempt: ${id}`);
+  const retryable = errorClass === 'retryable' && attempt.attempt_number < maxAttempts;
+  const exhausted = errorClass === 'retryable' && !retryable;
+  const queueStatus = retryable ? 'retry_wait' : exhausted ? 'dead_letter' : 'failed';
+  const nowDate = toDate(now);
+  const nextAttemptAt = retryable
+    ? new Date(nowDate.getTime() + retryDelayMs(attempt.attempt_number, { baseDelayMs, maxDelayMs })).toISOString()
+    : nowDate.toISOString();
+  return settleAttempt(id, {
+    leaseOwner,
+    queueStatus,
+    attemptStatus: 'failed',
+    error: boundedError(error),
+    errorClass,
+    nextAttemptAt,
+    now: nowDate,
+  });
+}
+
+export const ACTION_ERROR_CLASSES = Object.freeze([
+  'retryable', 'non_retryable', 'authentication_required', 'owner_attention_required',
+]);
+
+export function retryDelayMs(attemptNumber, { baseDelayMs = 1_000, maxDelayMs = 60_000 } = {}) {
+  if (!Number.isInteger(attemptNumber) || attemptNumber < 1) throw new TypeError('attemptNumber must be a positive integer');
+  if (!Number.isFinite(baseDelayMs) || baseDelayMs <= 0 || !Number.isFinite(maxDelayMs) || maxDelayMs <= 0) {
+    throw new TypeError('retry delays must be positive');
+  }
+  return Math.min(maxDelayMs, baseDelayMs * (2 ** (attemptNumber - 1)));
 }
 
 export function getActionAttempt(id) {
@@ -110,4 +189,45 @@ export function listActionAttempts(queueId) {
 function rowToQueuedAction(row) {
   if (!row) return null;
   return { ...row, arguments: JSON.parse(row.arguments || '{}') };
+}
+
+function settleAttempt(id, {
+  leaseOwner, queueStatus, attemptStatus, error = null, errorClass = null,
+  nextAttemptAt = null, now = new Date(),
+}) {
+  if (!leaseOwner) throw new TypeError('leaseOwner is required');
+  return withTransaction(getDb(), () => {
+    const db = getDb();
+    const attempt = db.prepare('SELECT * FROM action_attempts WHERE id = ?').get(id);
+    if (!attempt) throw new Error(`No such action attempt: ${id}`);
+    if (attempt.status !== 'executing' || attempt.lease_owner !== leaseOwner) {
+      throw new Error(`Action attempt ${id} is not executing for ${leaseOwner}`);
+    }
+    const nowIso = toDate(now).toISOString();
+    const update = db.prepare(`
+      UPDATE action_queue
+      SET status = ?, next_attempt_at = COALESCE(?, next_attempt_at),
+          lease_owner = NULL, lease_expires_at = NULL,
+          last_error = ?, error_class = ?, updated_at = ?
+      WHERE id = ? AND status = 'executing' AND lease_owner = ?
+    `).run(queueStatus, nextAttemptAt, error, errorClass, nowIso, attempt.queue_id, leaseOwner);
+    if (update.changes !== 1) throw new Error(`Lease for action attempt ${id} is no longer owned by ${leaseOwner}`);
+    db.prepare(`
+      UPDATE action_attempts
+      SET status = ?, finished_at = ?, error = ?, error_class = ?
+      WHERE id = ? AND status = 'executing'
+    `).run(attemptStatus, nowIso, error, errorClass, id);
+    return getQueuedAction(attempt.queue_id);
+  });
+}
+
+function boundedError(error) {
+  const value = error instanceof Error ? error.message : String(error ?? 'Unknown error');
+  return value.slice(0, 1_000);
+}
+
+function toDate(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) throw new TypeError('Invalid queue timestamp');
+  return date;
 }
