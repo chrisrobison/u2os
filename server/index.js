@@ -18,6 +18,8 @@ import { startMdns } from './discovery/mdns.js';
 import { DeviceRegistry } from './devices/device-registry.js';
 import { createCapabilityRegistry } from './devices/register-capabilities.js';
 import { MockDeviceAdapter } from './devices/adapters/mock-device-adapter.js';
+import { WebSocketDeviceAdapter } from './devices/adapters/websocket-device-adapter.js';
+import { getOrCreateDeviceConnectToken } from './devices/realtime/device-token.js';
 import { log } from './logging/logger.js';
 import { generateOrLoadMasterKey } from './security/vault.js';
 import { AuthService } from './security/auth.js';
@@ -121,6 +123,16 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   const capabilityRegistry = createCapabilityRegistry();
   const deviceRegistry = new DeviceRegistry({ db, eventBus, capabilityRegistry });
   await deviceRegistry.registerAdapter(new MockDeviceAdapter());
+  // Realtime device bus (Phase 3): any process speaking the small JSON
+  // protocol in websocket-device-adapter.js can register itself as a
+  // device over a persistent connection at ws(s)://<host>/ws/devices --
+  // wired to the SAME http.Server below via the 'upgrade' event, no new
+  // port. deviceConnectToken gates the transport only (see
+  // server/devices/realtime/device-token.js); it is not device identity
+  // or authorization.
+  const deviceConnectToken = getOrCreateDeviceConnectToken(dataDir);
+  const wsDeviceAdapter = new WebSocketDeviceAdapter({ connectToken: deviceConnectToken });
+  await deviceRegistry.registerAdapter(wsDeviceAdapter);
 
   const agent = new Agent({ modelRouter, policyEngine, toolRegistry, eventBus, ownerEntityId, embeddingProvider, dataProcessingPolicy });
 
@@ -175,6 +187,24 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
       await router.handle(req, res);
     } else {
       serveStatic(req, res);
+    }
+  });
+
+  // Realtime device bus upgrade routing: only /ws/devices is ever handed
+  // to the WebSocket adapter; anything else requesting an upgrade is
+  // refused outright rather than left hanging.
+  server.on('upgrade', (req, socket, head) => {
+    let pathname;
+    try {
+      pathname = new URL(req.url, 'http://localhost').pathname;
+    } catch {
+      socket.destroy();
+      return;
+    }
+    if (pathname === '/ws/devices') {
+      wsDeviceAdapter.handleUpgrade(req, socket, head);
+    } else {
+      socket.destroy();
     }
   });
 

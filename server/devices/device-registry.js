@@ -41,8 +41,11 @@ export class DeviceRegistry {
     this._adapters.set(adapter.id, adapter);
 
     const emit = (partial) => this._emit({ ...partial, source: partial?.source || `device-adapter:${adapter.id}` });
+    // eventBus is exposed to adapters (Phase 3) so a realtime adapter can
+    // forward bus events to connected clients that subscribe -- read-only
+    // subscription, still only ever publishing back through `emit` above.
     try {
-      await adapter.start({ emit, registry: this });
+      await adapter.start({ emit, registry: this, eventBus: this.eventBus });
     } catch (err) {
       this._adapters.delete(adapter.id);
       throw new Error(`Adapter "${adapter.id}" failed to start: ${err.message}`);
@@ -226,6 +229,16 @@ export class DeviceRegistry {
       data: { deviceId: id, trust },
     });
     return this.getDevice(id);
+  }
+
+  /** Updates last_seen_at only, with no status change and no event
+   * published -- the lightweight "still there" update a heartbeat/pong
+   * (Phase 3) makes far more often than an actual online/offline
+   * transition. A no-op (not an error) for an unknown device, since a
+   * heartbeat racing a disconnect/removal is expected, not exceptional. */
+  touch(id) {
+    const now = new Date().toISOString();
+    this.db.prepare('UPDATE devices SET last_seen_at = ?, updated_at = ? WHERE id = ?').run(now, now, id);
   }
 
   /** Permanently forgets a device (administrative removal, distinct from

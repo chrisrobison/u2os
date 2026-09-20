@@ -1,11 +1,11 @@
 # U2OS device and capability subsystem
 
-**Status: Phases 1–2 of a phased rollout — see "Phases" at the bottom.**
+**Status: Phases 1–3 of a phased rollout — see "Phases" at the bottom.**
 Implemented: devices, capabilities, the device registry, the adapter
-interface, a mock adapter, and a deterministic capability resolver +
-invocation. The semantic `present()`/`listen()` agent API, realtime device
-connections, pairing, and streams are later phases and are not implemented
-yet.
+interface, a mock adapter, a deterministic capability resolver + invocation,
+and a realtime WebSocket device bus. The semantic `present()`/`listen()`
+agent API, the browser/UI device, pairing, and streams are later phases and
+are not implemented yet.
 
 ## Why this exists
 
@@ -250,6 +250,69 @@ This is **not yet** wired into `server/policy/policy-engine.js`'s
 tool-authorization pipeline or the `agent_actions` audit log — see Known
 gaps.
 
+## Realtime device bus (Phase 3)
+
+`server/devices/adapters/websocket-device-adapter.js`'s `WebSocketDeviceAdapter`
+lets any process that can speak WebSocket + a small JSON protocol register
+itself as a device over a persistent connection -- the transport a future
+satellite, Raspberry Pi node, or (Phase 4) the browser client itself will
+use. It attaches to the **same** `http.Server` U2OS already runs (no new
+port) via the `'upgrade'` event, routed at `/ws/devices`
+(`server/index.js`).
+
+```text
+device -> server   {type:'hello', device:{id,name,type,owner?,location?,capabilities,metadata?}}
+device -> server   {type:'event', event:{type, data?, subject?}}
+device -> server   {type:'heartbeat'}
+device -> server   {type:'subscribe', pattern}
+device -> server   {type:'command_result'|'command_error', requestId, result|error}
+
+server -> device   {type:'hello_ack', deviceId}
+server -> device   {type:'command', requestId, capability, args}
+server -> device   {type:'event', event}
+server -> device   {type:'error', message}
+```
+
+- **Connections**: `hello` upserts the device (`online`); an abrupt drop or
+  clean close marks it `offline`. Reconnecting with the same device id
+  brings it back online and replaces the stale connection outright, and
+  never touches `trust` (same rule as any other adapter's re-discovery).
+- **Heartbeats**: two independent mechanisms, deliberately not one --
+  application-level `heartbeat` messages update `last_seen_at`
+  (`DeviceRegistry.touch()`) without status/event churn on every beat;
+  protocol-level WebSocket ping/pong (server-initiated, `heartbeatIntervalMs`)
+  detects a connection that's gone silent without ever closing, and
+  terminates it (which then flows through the normal disconnect path).
+- **Event publication**: a device's `event` message is published on the
+  **same shared EventBus** everything else in U2OS uses, with
+  `source: "device:<id>"`.
+- **Event subscription**: a device can `subscribe` to an EventBus pattern
+  (e.g. `"calendar.*"`) and receive matching events pushed to it as
+  `{type:'event', ...}`; all subscriptions for a connection are torn down
+  on disconnect (no leaked subscribers across reconnects).
+- **Device commands**: `WebSocketDeviceAdapter.invoke(device, capability,
+  args)` sends a `command` message and returns a promise resolved/rejected
+  by the device's `command_result`/`command_error` reply, or rejected on
+  timeout (`commandTimeoutMs`) or "not connected". This is the realtime
+  transport's implementation of the same `DeviceAdapter.invoke()` contract
+  every other adapter implements -- `invokeCapability()` (Phase 2) doesn't
+  need to know or care which adapter a device came from.
+- **Streams stay separate**: there is no bulk/media payload path in this
+  protocol, by design -- see Known gaps and the Phases list.
+
+### Transport-level authentication
+
+`server/devices/realtime/device-token.js` generates and persists (0600,
+under `<U2OS_HOME>/credentials/`) a single per-installation connect token,
+required as `?token=` on the `/ws/devices` upgrade request or the
+connection is refused before the WebSocket handshake completes. This is
+deliberately **not** device identity or authorization -- it answers "is
+this caller even allowed to speak the device protocol at all", nothing
+more. A device that connects successfully still starts at `trust:
+'untrusted'` in the registry, same as any other adapter's freshly
+discovered device. Phase 7's per-device cryptographic pairing is the
+intended replacement; this token is the explicit seam it plugs into.
+
 ## API
 
 ```text
@@ -259,6 +322,7 @@ GET  /api/capabilities
 GET  /api/capabilities/:capability/providers
 GET  /api/capabilities/:capability/resolve      ?audience=&privacy=&location=  (explanation output; never invokes)
 POST /api/capabilities/:capability/invoke        { args, audience?, privacy?, location?, sourceDevice? }
+WS   /ws/devices?token=<connect-token>           realtime device connections (see above)
 ```
 
 All require an authenticated session; `POST` additionally requires CSRF,
@@ -278,8 +342,14 @@ authenticated owner — see Known gaps.
   `server/api/routes/devices.js`. It only affects device *selection*; it
   is never treated as proof of identity or used to unlock anything the
   resolver's trust/privacy rules wouldn't already allow.
-- No realtime device connections (WebSocket), heartbeats, browser/UI client
-  registration, or pairing/approval flow.
+- No browser/UI client registration yet (Phase 4 builds on the realtime bus
+  above) and no pairing/approval flow (Phase 7) -- a device connecting over
+  `/ws/devices` is `untrusted` until something explicitly promotes it via
+  `DeviceRegistry.setTrust()`.
+- `WebSocketDeviceAdapter.invoke()`'s pending-command bookkeeping is keyed
+  by request id only, not by device -- a device that disconnects mid-command
+  leaves that specific call to resolve via its own timeout rather than
+  failing immediately.
 - No stream abstraction (`stream://device/name`) yet — `getStream()` is
   defined on the adapter interface but unimplemented beyond the mock's
   metadata-only reference.
@@ -297,7 +367,10 @@ discipline as PLAN.md's milestones:
 2. **Capability invocation + resolver** (done) — deterministic, testable
    resolver, execution context, trust/privacy filtering, resolver
    explanation output, invoke route, tests.
-3. Realtime device bus (WebSocket connections, heartbeats, online/offline).
+3. **Realtime device bus** (done) — WebSocket connections at `/ws/devices`,
+   heartbeats (application + protocol-level), online/offline presence,
+   event publication/subscription over the shared EventBus, device
+   commands (`invoke()` over the live connection), reconnect handling.
 4. Browser/UI device (a connected U2OS browser session registers itself).
 5. Semantic presentation (`present()`) with privacy-aware routing.
 6. Device management UI.

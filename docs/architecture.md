@@ -113,11 +113,13 @@ remote endpoints (cameras, microphones, displays, satellites, and the
 browser/UI clients themselves): devices expose capabilities, agents express
 intent, U2OS resolves the request to an appropriate device — never the
 reverse. Implemented: the device/capability model, registry, adapter
-interface, a mock adapter, and a deterministic (never LLM-driven)
-capability resolver with trust/privacy/ownership-aware device selection and
-invocation. Not yet implemented: policy-engine/agent_actions integration
-for capability invocation, the semantic `present()`/`listen()` agent API,
-realtime device connections, pairing, and streams. See docs/devices.md.
+interface, a mock adapter, a deterministic (never LLM-driven) capability
+resolver with trust/privacy/ownership-aware device selection and
+invocation, and a realtime WebSocket device bus (`/ws/devices`) with
+heartbeats, presence, event publication/subscription, and device commands.
+Not yet implemented: policy-engine/agent_actions integration for capability
+invocation, the browser/UI device, the semantic `present()`/`listen()`
+agent API, pairing, and streams. See docs/devices.md.
 
 ## Known gaps
 
