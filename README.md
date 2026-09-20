@@ -105,6 +105,12 @@ npm test
 
 The current suite contains 315 Node tests covering the event bus, memory, policy enforcement, tools, the complete approval vertical slice, dashboard generation, connectors and OAuth security, encrypted credentials, deployment utilities, triggers, proactive decisions, feedback, voice authorization, the Agent-refactor regression suite, model providers and routing, the strict plan schema, real bounded context assembly, semantic memory retrieval, the data-processing privacy policy, prompt-injection containment, the intelligent end-to-end vertical slice, explainability, and the device/capability subsystem (registry, resolver, the realtime WebSocket device bus, the browser-as-device flow, policy-gated presentation tools, device management, the trust lifecycle, streams, and service-provider unification — see [docs/devices.md](docs/devices.md)).
 
+A small Playwright harness also covers real-browser smoke coverage (boots the actual server in-process, no frontend build step):
+
+```sh
+npm run test:e2e
+```
+
 ## Data operations
 
 Seed an empty data directory:
