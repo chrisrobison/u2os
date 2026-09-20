@@ -12,6 +12,16 @@ import { recordFact } from '../server/memory/fact-store.js';
 import { recordRelationship } from '../server/memory/relationship-store.js';
 import { ContextAssembler } from '../server/agent/context-assembler.js';
 import { MockEmbeddingProvider } from '../server/agent/embeddings/mock-embedding-provider.js';
+import { receiveEmail } from '../server/integrations/mock-email-provider.js';
+import { createEvent as createCalendarEvent } from '../server/integrations/mock-calendar-provider.js';
+import { createTask } from '../server/integrations/mock-tasks-provider.js';
+
+// Test-only helper: sets a row's classification directly via SQL, since none
+// of the store creation functions expose a `classification` argument (this
+// issue is purely additive/read-side -- see server/agent/context-assembler.js).
+function setClassification(db, table, id, classification) {
+  db.prepare(`UPDATE ${table} SET classification = ? WHERE id = ?`).run(classification, id);
+}
 
 function tempHome() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-context-assembler-'));
@@ -184,6 +194,161 @@ test('with an embeddingProvider configured, facts are ranked with a semantic com
 
     assert.ok(entry.facts[0].relevance, 'facts should carry a relevance score breakdown when semantic ranking is active');
     assert.equal(entry.facts[0].key, 'preference', 'the semantically/lexically closer fact should rank first despite lower confidence');
+  } finally {
+    cleanup(dir);
+  }
+});
+
+// --- classification (issue #3: additive-only, no filtering behavior) ------
+
+test('a person entry carries classification sourced from entities.classification, not silently defaulted', async () => {
+  const dir = tempHome();
+  try {
+    const { db } = setup();
+    const sarah = createEntity({ type: 'Person', name: 'Sarah Chen' });
+    setClassification(db, 'entities', sarah.id, 'sensitive');
+
+    const assembler = new ContextAssembler({ toolRegistry: null, eventBus: null });
+    const context = await assembler.assemblePersonalContext('Tell me about Sarah');
+
+    const entry = context.relevantPeople.find((p) => p.id === sarah.id);
+    assert.ok(entry);
+    assert.equal(entry.classification, 'sensitive');
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('a person entry defaults to "personal" classification when the entity row carries the default', async () => {
+  const dir = tempHome();
+  try {
+    setup();
+    const bob = createEntity({ type: 'Person', name: 'Bob Nguyen' });
+
+    const assembler = new ContextAssembler({ toolRegistry: null, eventBus: null });
+    const context = await assembler.assemblePersonalContext('Tell me about Bob');
+
+    const entry = context.relevantPeople.find((p) => p.id === bob.id);
+    assert.ok(entry);
+    assert.equal(entry.classification, 'personal');
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('a commitment entry carries classification sourced from the relationships row, not silently defaulted', async () => {
+  const dir = tempHome();
+  try {
+    const { db, ownerEntityId } = setup();
+    const commitment = createEntity({ type: 'Commitment', name: 'Send the draft', attributes: { description: 'send Sarah the draft', status: 'open' } });
+    const rel = recordRelationship({ fromEntityId: ownerEntityId, relation: 'promised', toEntityId: commitment.id, source: 'test', inferred: true, confidence: 0.8 });
+    setClassification(db, 'relationships', rel.id, 'private');
+
+    const assembler = new ContextAssembler({ toolRegistry: null, eventBus: null, ownerEntityId });
+    const context = await assembler.assemblePersonalContext('Set up my follow-up about the draft.');
+
+    const entry = context.commitments.find((c) => c.id === commitment.id);
+    assert.ok(entry);
+    assert.equal(entry.classification, 'private');
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('an event summarizing an email carries classification sourced from emails.classification via the event subject, not silently defaulted', async () => {
+  const dir = tempHome();
+  try {
+    const { db, eventBus } = setup();
+    const email = receiveEmail({ from: 'sarah@example.com', subject: 'Draft', body: 'body' });
+    setClassification(db, 'emails', email.id, 'sensitive');
+    // No `data.after` embedded -- forces the fallback lookup-by-subject-id
+    // path, proving classification isn't just echoed back from data already
+    // in the event, but actually read from the stored row.
+    eventBus.publish({ type: 'email.received', source: 'test', subject: { type: 'email', id: email.id }, data: { from: email.from_addr, subject: email.subject } });
+
+    const assembler = new ContextAssembler({ toolRegistry: null, eventBus });
+    const context = await assembler.assemblePersonalContext('anything');
+
+    const entry = context.recentEvents.find((e) => e.type === 'email.received');
+    assert.ok(entry);
+    assert.equal(entry.classification, 'sensitive');
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('an event summarizing a calendar item carries classification sourced from calendar_events.classification via the event subject, not silently defaulted', async () => {
+  const dir = tempHome();
+  try {
+    const { db, eventBus } = setup();
+    const event = createCalendarEvent({ title: 'Sync with Sarah', startAt: new Date().toISOString(), endAt: new Date().toISOString() });
+    setClassification(db, 'calendar_events', event.id, 'private');
+    // No `data.after` embedded -- forces the fallback lookup-by-subject-id path.
+    eventBus.publish({ type: 'calendar.event_approaching', source: 'test', subject: { type: 'calendar_event', id: event.id }, data: { minutesUntil: 10 } });
+
+    const assembler = new ContextAssembler({ toolRegistry: null, eventBus });
+    const context = await assembler.assemblePersonalContext('anything');
+
+    const entry = context.recentEvents.find((e) => e.type === 'calendar.event_approaching');
+    assert.ok(entry);
+    assert.equal(entry.classification, 'private');
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('an event summarizing a task carries classification sourced from tasks.classification via the event subject, not silently defaulted', async () => {
+  const dir = tempHome();
+  try {
+    const { db, eventBus } = setup();
+    const task = createTask({ title: 'Review contract' });
+    setClassification(db, 'tasks', task.id, 'sensitive');
+    // No `data.after` embedded -- forces the fallback lookup-by-subject-id path.
+    eventBus.publish({ type: 'task.overdue', source: 'test', subject: { type: 'task', id: task.id }, data: { taskId: task.id, title: task.title } });
+
+    const assembler = new ContextAssembler({ toolRegistry: null, eventBus });
+    const context = await assembler.assemblePersonalContext('anything');
+
+    const entry = context.recentEvents.find((e) => e.type === 'task.overdue');
+    assert.ok(entry);
+    assert.equal(entry.classification, 'sensitive');
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('an event carrying the full underlying row already (data.after) uses that row\'s classification directly, without a redundant lookup', async () => {
+  const dir = tempHome();
+  try {
+    const { db, eventBus } = setup();
+    const task = createTask({ title: 'Ship the release' });
+    setClassification(db, 'tasks', task.id, 'private');
+    const freshTask = { ...task, classification: 'private' };
+    eventBus.publish({ type: 'task.created', source: 'test', subject: { type: 'task', id: task.id }, data: { after: freshTask } });
+
+    const assembler = new ContextAssembler({ toolRegistry: null, eventBus });
+    const context = await assembler.assemblePersonalContext('anything');
+
+    const entry = context.recentEvents.find((e) => e.type === 'task.created');
+    assert.ok(entry);
+    assert.equal(entry.classification, 'private');
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('an event with no classified source row (e.g. commitment.made) defaults conservatively to "personal", never "public"', async () => {
+  const dir = tempHome();
+  try {
+    const { eventBus } = setup();
+    eventBus.publish({ type: 'commitment.made', source: 'test', subject: { type: 'entity', id: 'ent_whatever' }, data: { description: 'do the thing' } });
+
+    const assembler = new ContextAssembler({ toolRegistry: null, eventBus });
+    const context = await assembler.assemblePersonalContext('anything');
+
+    const entry = context.recentEvents.find((e) => e.type === 'commitment.made');
+    assert.ok(entry);
+    assert.equal(entry.classification, 'personal');
   } finally {
     cleanup(dir);
   }
