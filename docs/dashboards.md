@@ -35,12 +35,15 @@ The LLM never emits HTML/JS. It emits a JSON **dashboard schema**. The frontend 
 | `approval` | `<u2-approval>` | `actions.pending` |
 | `activity` | `<u2-timeline>` | `events.recent` |
 | `alert` | `<u2-alert>` | inline `data` (no source needed) |
+| `recommendation` | `<u2-recommendation>` | `recommendations.open` |
 
 (`<u2-person>`, `<u2-project>`, `<u2-photo-grid>`, `<u2-document>`, `<u2-map>`, `<u2-chart>`, `<u2-conversation>`, `<u2-agent-status>` are reserved component names for Phase 2+ dashboards — e.g. "before a meeting" and "project work" briefings — and are not required to render anything in Phase 1 beyond a placeholder.)
 
 ## Current scope
 
 `GET /api/dashboard/morning` remains the compatibility route. `POST /api/dashboard/generate` accepts `morning`, `before-meeting`, or `project` plus context parameters and composes the schema from live data.
+
+The morning dashboard also includes up to five open recommendations. Its outer schema carries only a recommendation ID. The trusted `<u2-recommendation>` component fetches the persisted record, offers Keep/Dismiss controls, renders an attached prepared dashboard only when that dashboard passed the same server-side validator, and exposes a `<u2-why>` source trail.
 
 ## Server-side validation
 
