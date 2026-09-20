@@ -27,7 +27,10 @@ CREATE TABLE IF NOT EXISTS entities (
   attributes TEXT NOT NULL DEFAULT '{}',
   status TEXT DEFAULT 'active',
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  -- Data-processing privacy policy (issue #2), same axis/default as
+  -- facts.classification below: public | personal | private | sensitive.
+  classification TEXT NOT NULL DEFAULT 'personal'
 );
 CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(type);
 
@@ -79,7 +82,10 @@ CREATE TABLE IF NOT EXISTS relationships (
   confidence REAL NOT NULL DEFAULT 1.0,
   inferred INTEGER NOT NULL DEFAULT 0,
   observed_at TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  -- Data-processing privacy policy (issue #2), same axis/default as
+  -- facts.classification above.
+  classification TEXT NOT NULL DEFAULT 'personal'
 );
 CREATE INDEX IF NOT EXISTS idx_rel_from ON relationships(from_entity_id);
 CREATE INDEX IF NOT EXISTS idx_rel_to ON relationships(to_entity_id);
@@ -91,11 +97,17 @@ CREATE TABLE IF NOT EXISTS calendar_events (
   end_at TEXT NOT NULL,
   location TEXT,
   attendees TEXT NOT NULL DEFAULT '[]',
+  -- Policy-engine sub-category (business/interviews/personal) used for
+  -- calendar.reschedule autonomy decisions. Distinct from, and NOT to be
+  -- conflated with, the `classification` column below.
   category TEXT NOT NULL DEFAULT 'personal',
   status TEXT NOT NULL DEFAULT 'confirmed',
   source TEXT NOT NULL DEFAULT 'mock-calendar',
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  -- Data-processing privacy policy (issue #2), same axis/default as
+  -- facts.classification above -- a separate axis from `category` above.
+  classification TEXT NOT NULL DEFAULT 'personal'
 );
 
 CREATE TABLE IF NOT EXISTS emails (
@@ -115,7 +127,10 @@ CREATE TABLE IF NOT EXISTS emails (
   -- that predate Phase 7 or were never drafted through this path (e.g.
   -- seeded/received mail). Pre-existing installs get this column added by
   -- server/db/connection.js's additive migration, run before this file.
-  correlation_id TEXT
+  correlation_id TEXT,
+  -- Data-processing privacy policy (issue #2), same axis/default as
+  -- facts.classification above.
+  classification TEXT NOT NULL DEFAULT 'personal'
 );
 CREATE INDEX IF NOT EXISTS idx_emails_correlation ON emails(correlation_id);
 
@@ -127,7 +142,10 @@ CREATE TABLE IF NOT EXISTS tasks (
   related_entity_id TEXT REFERENCES entities(id),
   source TEXT NOT NULL DEFAULT 'user',
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  -- Data-processing privacy policy (issue #2), same axis/default as
+  -- facts.classification above.
+  classification TEXT NOT NULL DEFAULT 'personal'
 );
 
 CREATE TABLE IF NOT EXISTS agent_actions (

@@ -71,6 +71,22 @@ export function getDb() {
   // restricted OR less restricted than it would have been if classified at
   // write time.
   ensureColumn(db, 'facts', 'classification', "TEXT NOT NULL DEFAULT 'personal'");
+  // Data-processing privacy policy, extended to the rest of the memory/
+  // context surface (issue #2, part of #1): `facts` was the only table
+  // carrying a classification column; entities, relationships,
+  // calendar_events, emails, and tasks had none, leaving nothing
+  // deterministic for a privacy filter to key off of for those types. Same
+  // column, same safe default, same rationale as facts.classification
+  // above. NOTE: calendar_events already has an unrelated `category` column
+  // (business/interviews/personal) consumed by the policy engine for
+  // calendar.reschedule autonomy decisions -- that is a different axis from
+  // this data-processing classification and must never be conflated with
+  // it, so `classification` is added here as a distinct additional column.
+  ensureColumn(db, 'entities', 'classification', "TEXT NOT NULL DEFAULT 'personal'");
+  ensureColumn(db, 'relationships', 'classification', "TEXT NOT NULL DEFAULT 'personal'");
+  ensureColumn(db, 'calendar_events', 'classification', "TEXT NOT NULL DEFAULT 'personal'");
+  ensureColumn(db, 'emails', 'classification', "TEXT NOT NULL DEFAULT 'personal'");
+  ensureColumn(db, 'tasks', 'classification', "TEXT NOT NULL DEFAULT 'personal'");
   // Explainability (PLAN.md Phase 9): which retrieved memory items
   // (facts/entities/relationships/events, by id) actually informed a given
   // proposed action's plan -- i.e. ContextAssembler's provenanceRefs, AFTER
