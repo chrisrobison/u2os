@@ -1,5 +1,6 @@
 import { escapeHtml, formatTime, emptyState } from './util.js';
 import { getEvents } from '../services/api.js';
+import './u2-why.js';
 
 const EVENT_LABELS = {
   'calendar.event_added': 'Added a calendar event',
@@ -28,6 +29,10 @@ function humanizeEvent(evt) {
   const label = EVENT_LABELS[evt.type] || evt.type.replace(/[._]+/g, ' ');
   const title = evt.data?.after?.title || evt.data?.title;
   return title ? `${label}: "${title}"` : label;
+}
+
+function actionIdForEvent(evt) {
+  return evt.subject?.type === 'agent_action' && evt.subject.id ? evt.subject.id : null;
 }
 
 // property `events` -> render exactly what's given, no live merge (used
@@ -113,10 +118,12 @@ export class U2Timeline extends HTMLElement {
     this.innerHTML = events
       .map((evt, i) => {
         const when = formatTime(evt.timestamp || evt.createdAt);
+        const actionId = actionIdForEvent(evt);
         return `
           <div class="u2-timeline__item ${highlightFirst && i === 0 ? 'is-new' : ''}">
             <span class="u2-timeline__time">${escapeHtml(when)}</span>
             <span class="u2-timeline__label">${escapeHtml(humanizeEvent(evt))}</span>
+            ${actionId ? `<u2-why action-id="${escapeHtml(actionId)}"></u2-why>` : ''}
           </div>
         `;
       })

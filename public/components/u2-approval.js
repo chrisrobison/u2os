@@ -1,5 +1,6 @@
 import { escapeHtml, formatDateTime, humanizeKey } from './util.js';
 import { approveAction, rejectAction } from '../services/api.js';
+import './u2-why.js';
 
 // Humanized verb for the approval headline. Falls back to a readable
 // "domain verb" for anything not in this table (e.g. "web search").
@@ -106,6 +107,7 @@ export class U2Approval extends HTMLElement {
       ${renderArgs(a.tool, a.arguments)}
       ${a.reason ? `<div class="u2-approval__reason">${escapeHtml(a.reason)}</div>` : ''}
       ${policyLine ? `<div class="u2-approval__policy">${policyLine}</div>` : ''}
+      ${a.id ? `<u2-why action-id="${escapeHtml(a.id)}"></u2-why>` : ''}
       <div class="u2-approval__actions">
         ${
           resolved

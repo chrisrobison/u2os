@@ -125,6 +125,10 @@ test.describe.serial('agent chat + inline approval flow (#16)', () => {
     await expect(card.locator('[data-action="approve"]')).toHaveText('Approve');
     await expect(card.locator('[data-action="reject"]')).toBeVisible();
     await expect(card.locator('[data-action="reject"]')).toHaveText('Cancel');
+    await expect(card.locator('u2-why summary')).toHaveText('Why?');
+    await card.locator('u2-why summary').click();
+    await expect(card.locator('u2-why')).toContainText('Proposing to move it');
+    await expect(card.locator('u2-why')).toContainText('calendar.reschedule.default:confirm');
     // No resolved-status span while pending.
     await expect(card.locator('.u2-approval__status')).toHaveCount(0);
 
@@ -207,6 +211,7 @@ test.describe.serial('agent chat + inline approval flow (#16)', () => {
     await expect(card.locator('.u2-approval__status')).toHaveText('Approved and done');
     await expect(card.locator('[data-action="approve"]')).toHaveCount(0);
     await expect(card.locator('[data-action="reject"]')).toHaveCount(0);
+    await expect(card.locator('u2-why summary')).toHaveText('Why?');
 
     // u2-action-resolved bubbled up to <u2-agent>, which appended the
     // DONE_LABELS['calendar.reschedule'] system bubble.
@@ -238,6 +243,15 @@ test.describe.serial('agent chat + inline approval flow (#16)', () => {
     await expect(card.locator('.u2-approval__status')).toHaveText('Approved and done');
     await expect(card.locator('[data-action="approve"]')).toHaveCount(0);
     await expect(card.locator('[data-action="reject"]')).toHaveCount(0);
+    await card.locator('u2-why summary').click();
+    await expect(card.locator('u2-why')).toContainText('Creating a task so you don\'t forget');
+
+    // The same action is explainable from its completed activity event.
+    await page.locator('u2-nav a[data-route="#/activity"]').click();
+    const completedEvent = page.locator('.u2-timeline__item', { hasText: 'Finished an action' }).first();
+    await expect(completedEvent.locator('u2-why summary')).toHaveText('Why?');
+    await completedEvent.locator('u2-why summary').click();
+    await expect(completedEvent.locator('u2-why')).toContainText('Creating a task so you don\'t forget');
 
     // Note: unlike the approve-button path (test 3), an already-resolved
     // card rendered straight from the server response never calls
@@ -274,6 +288,8 @@ test('rejecting a pending action cancels it without executing, confirmed against
     await expect(card.locator('.u2-approval__status')).toHaveText('Cancelled');
     await expect(card.locator('[data-action="approve"]')).toHaveCount(0);
     await expect(card.locator('[data-action="reject"]')).toHaveCount(0);
+    await card.locator('u2-why summary').click();
+    await expect(card.locator('u2-why')).toContainText('Proposing to move it');
 
     await expect(page.locator('.chat-bubble.is-system').last()).toHaveText('Cancelled.');
 

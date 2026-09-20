@@ -413,6 +413,7 @@ u2-app {
 
 u2-why { display: block; }
 .u2-why { margin-top: var(--space-3); }
+.u2-timeline__item > u2-why { grid-column: 2; margin-top: 0; }
 .u2-why > summary {
   color: var(--accent-active);
   cursor: pointer;
@@ -470,7 +471,8 @@ u2-why { display: block; }
 .u2-timeline { display: flex; flex-direction: column; gap: 0; }
 
 .u2-timeline__item {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: var(--space-3);
   padding: var(--space-2) 0;
   border-bottom: var(--border-width) solid var(--border-color);
