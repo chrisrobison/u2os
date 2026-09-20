@@ -16,6 +16,7 @@ import { getFacts } from '../memory/fact-store.js';
 import { getRelationships } from '../memory/relationship-store.js';
 import { listPendingActions } from '../policy/policy-engine.js';
 import { validateDashboard } from '../api/dashboard-schema.js';
+import { listRecommendations } from './recommendation-store.js';
 
 const SUPPORTED_CONTEXTS = new Set(['morning', 'before-meeting', 'project']);
 
@@ -68,6 +69,10 @@ function buildMorningDashboard() {
   const todaysEvents = calendarProvider.listEvents({}).filter((e) => new Date(e.start_at).toDateString() === today);
   const priorityTasks = tasksProvider.listTasks({ status: 'open' }).slice(0, 5);
   const pendingActions = listPendingActions();
+  const recommendations = listRecommendations({ status: 'open' }).slice(0, 5).filter((recommendation) => {
+    if (!recommendation.dashboard) return true;
+    try { return validateDashboard(recommendation.dashboard); } catch { return false; }
+  });
 
   return {
     title: 'Morning Briefing',
@@ -76,6 +81,11 @@ function buildMorningDashboard() {
       { type: 'schedule', source: 'calendar.today', data: { events: todaysEvents } },
       { type: 'task-list', source: 'tasks.priority', data: { tasks: priorityTasks } },
       { type: 'approval', source: 'actions.pending', data: { actions: pendingActions } },
+      ...recommendations.map((recommendation) => ({
+        type: 'recommendation',
+        source: 'recommendations.open',
+        data: { recommendationId: recommendation.id },
+      })),
     ],
   };
 }

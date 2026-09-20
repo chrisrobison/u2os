@@ -35,6 +35,10 @@ function actionIdForEvent(evt) {
   return evt.subject?.type === 'agent_action' && evt.subject.id ? evt.subject.id : null;
 }
 
+function recommendationIdForEvent(evt) {
+  return evt.subject?.type === 'recommendation' && evt.subject.id ? evt.subject.id : null;
+}
+
 // property `events` -> render exactly what's given, no live merge (used
 // when a parent already owns a fixed list). If left unset, this component
 // fetches GET /api/events?limit=<limit> itself on connect and stays live via
@@ -119,11 +123,13 @@ export class U2Timeline extends HTMLElement {
       .map((evt, i) => {
         const when = formatTime(evt.timestamp || evt.createdAt);
         const actionId = actionIdForEvent(evt);
+        const recommendationId = recommendationIdForEvent(evt);
         return `
           <div class="u2-timeline__item ${highlightFirst && i === 0 ? 'is-new' : ''}">
             <span class="u2-timeline__time">${escapeHtml(when)}</span>
             <span class="u2-timeline__label">${escapeHtml(humanizeEvent(evt))}</span>
             ${actionId ? `<u2-why action-id="${escapeHtml(actionId)}"></u2-why>` : ''}
+            ${recommendationId ? `<u2-why recommendation-id="${escapeHtml(recommendationId)}"></u2-why>` : ''}
           </div>
         `;
       })

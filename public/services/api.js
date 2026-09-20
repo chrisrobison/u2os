@@ -162,6 +162,22 @@ export function getActionExplanation(id) {
   return request(`/api/actions/${encodeURIComponent(id)}/explain`);
 }
 
+export function getRecommendationExplanation(id) {
+  return request(`/api/recommendations/${encodeURIComponent(id)}/explain`);
+}
+
+export function getRecommendation(id) {
+  return request(`/api/recommendations/${encodeURIComponent(id)}`);
+}
+
+export function updateRecommendation(id, status) {
+  return request(`/api/recommendations/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ status }),
+  });
+}
+
 export function approveAction(id) {
   return request(`/api/actions/${encodeURIComponent(id)}/approve`, {
     method: 'POST',

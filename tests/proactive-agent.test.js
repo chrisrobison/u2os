@@ -14,6 +14,7 @@ import { runSeed } from '../server/seed/seed.js';
 import { createEntity } from '../server/memory/entity-store.js';
 import * as tasksProvider from '../server/integrations/mock-tasks-provider.js';
 import { listRecommendations } from '../server/agent/recommendation-store.js';
+import { explainRecommendation } from '../server/agent/explain-recommendation.js';
 
 function tempHome() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-proactive-test-'));
@@ -121,6 +122,18 @@ test('calendar.event_approaching -> decision "prepare", generates a before-meeti
     assert.equal(result.recommendation.decision, 'prepare');
     assert.ok(result.recommendation.dashboard, 'the recommendation must carry a generated before-meeting dashboard');
     assert.match(result.recommendation.dashboard.title, /Sarah/);
+
+    const explanation = explainRecommendation(result.recommendation.id);
+    assert.equal(explanation.decision, 'prepare');
+    assert.equal(explanation.sourceEvent.type, 'calendar.event_approaching');
+    assert.equal(explanation.sourceEvent.id, syncWithSarah.id);
+    assert.match(explanation.reasoningSummary, /approaching/);
+    assert.match(explanation.dashboardTitle, /Sarah/);
+    assert.ok(explanation.relatedEvents.some((event) => event.type === 'agent.action.completed'));
+
+    const morning = agent.generateDashboard({ context: 'morning' });
+    const recommendationCard = morning.components.find((component) => component.type === 'recommendation');
+    assert.equal(recommendationCard.data.recommendationId, result.recommendation.id);
 
     // GET /api/recommendations' backing store must surface it, dismissible.
     const open = listRecommendations({ status: 'open' });
