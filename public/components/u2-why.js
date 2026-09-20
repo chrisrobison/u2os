@@ -1,4 +1,4 @@
-import { getActionExplanation } from '../services/api.js';
+import { getActionExplanation, getRecommendationExplanation } from '../services/api.js';
 
 function humanize(value) {
   return String(value || '').replace(/[._-]+/g, ' ').replace(/^./, (c) => c.toUpperCase());
@@ -36,7 +36,7 @@ function appendListSection(root, title, items) {
 }
 
 export class U2Why extends HTMLElement {
-  static get observedAttributes() { return ['action-id']; }
+  static get observedAttributes() { return ['action-id', 'recommendation-id']; }
 
   set actionId(value) {
     if (value) this.setAttribute('action-id', value);
@@ -44,6 +44,13 @@ export class U2Why extends HTMLElement {
   }
 
   get actionId() { return this.getAttribute('action-id'); }
+
+  set recommendationId(value) {
+    if (value) this.setAttribute('recommendation-id', value);
+    else this.removeAttribute('recommendation-id');
+  }
+
+  get recommendationId() { return this.getAttribute('recommendation-id'); }
 
   attributeChangedCallback() {
     this._explanation = null;
@@ -54,7 +61,7 @@ export class U2Why extends HTMLElement {
 
   _render() {
     this.textContent = '';
-    if (!this.actionId) return;
+    if (!this.actionId && !this.recommendationId) return;
 
     const details = document.createElement('details');
     details.className = 'u2-why';
@@ -77,7 +84,9 @@ export class U2Why extends HTMLElement {
     panel.textContent = 'Loading explanation…';
     panel.setAttribute('role', 'status');
     try {
-      const explanation = await getActionExplanation(this.actionId);
+      const explanation = this.actionId
+        ? await getActionExplanation(this.actionId)
+        : await getRecommendationExplanation(this.recommendationId);
       this._explanation = explanation;
       this._renderExplanation(panel, explanation);
     } catch (err) {
@@ -96,12 +105,16 @@ export class U2Why extends HTMLElement {
     const provenance = (explanation.contextProvenance || []).map((ref) =>
       `${humanize(ref.type)} ${ref.id}`
     );
+    if (explanation.sourceEvent) {
+      provenance.push(`${humanize(explanation.sourceEvent.type)}${explanation.sourceEvent.id ? ` ${explanation.sourceEvent.id}` : ''}`);
+    }
     appendListSection(panel, 'What it noticed', provenance);
     appendSection(panel, 'Decision', explanation.reasoningSummary);
 
     const policy = [explanation.policyDomain, explanation.policyRule].filter(Boolean).join(' · ');
     appendSection(panel, 'Policy', policy);
     appendSection(panel, 'Model', explanation.model);
+    appendSection(panel, 'Relevant dashboard', explanation.dashboardTitle);
 
     const trail = (explanation.relatedEvents || []).map((event) => {
       const when = event.timestamp ? ` · ${new Date(event.timestamp).toLocaleString()}` : '';

@@ -1,5 +1,6 @@
 import { sendJson } from '../router.js';
 import { listRecommendations, getRecommendation, updateRecommendationStatus } from '../../agent/recommendation-store.js';
+import { explainRecommendation } from '../../agent/explain-recommendation.js';
 
 const VALID_STATUSES = ['open', 'accepted', 'dismissed'];
 
@@ -15,6 +16,12 @@ export function registerRecommendationRoutes(router) {
     const recommendation = getRecommendation(req.params.id);
     if (!recommendation) return sendJson(res, 404, { error: 'Not Found' });
     sendJson(res, 200, recommendation);
+  });
+
+  router.get('/api/recommendations/:id/explain', async (req, res) => {
+    const explanation = explainRecommendation(req.params.id);
+    if (!explanation) return sendJson(res, 404, { error: 'Not Found' });
+    sendJson(res, 200, explanation);
   });
 
   // Dismiss/accept a recommendation card.

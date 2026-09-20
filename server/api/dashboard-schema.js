@@ -11,6 +11,7 @@ const ALLOWED_COMPONENT_TYPES = new Set([
   'approval',
   'activity',
   'alert',
+  'recommendation',
   // Reserved for Phase 2+ (allowed, but render only as a placeholder today)
   'person',
   'project',
@@ -31,6 +32,7 @@ const ALLOWED_SOURCES = new Set([
   'email.unread',
   'actions.pending',
   'events.recent',
+  'recommendations.open',
 ]);
 const TOP_LEVEL_FIELDS = new Set(['title', 'layout', 'components']);
 const COMPONENT_FIELDS = new Set(['type', 'source', 'data']);

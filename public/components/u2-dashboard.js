@@ -14,6 +14,7 @@ import './u2-map.js';
 import './u2-chart.js';
 import './u2-conversation.js';
 import './u2-agent-status.js';
+import './u2-recommendation.js';
 
 // Card titles per docs/dashboards.md component type -- the trusted set the
 // LLM composes from; unknown types still render (as a placeholder) rather
@@ -33,6 +34,7 @@ const CARD_TITLES = {
   chart: 'Chart',
   conversation: 'Conversation',
   'agent-status': 'Agent status',
+  recommendation: 'Recommendation',
 };
 
 function humanizeType(type) {
@@ -137,6 +139,13 @@ export class U2Dashboard extends HTMLElement {
         el.variant = data.variant || 'info';
         el.message = data.message || '';
         return el; // banner-style, not wrapped in a titled card
+      }
+      case 'recommendation': {
+        card.title = CARD_TITLES.recommendation;
+        const el = document.createElement('u2-recommendation');
+        el.recommendationId = data.recommendationId || null;
+        card.appendChild(el);
+        break;
       }
       default: {
         const tag = `u2-${type}`;
