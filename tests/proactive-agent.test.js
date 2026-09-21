@@ -11,7 +11,7 @@ import { createToolRegistry } from '../server/tools/register-all.js';
 import { MockModelProvider } from '../server/agent/mock-model-provider.js';
 import { Agent } from '../server/agent/agent.js';
 import { runSeed } from '../server/seed/seed.js';
-import { createEntity } from '../server/memory/entity-store.js';
+import { createEntity, deleteEntity, getEntityDeletionPreview } from '../server/memory/entity-store.js';
 import * as tasksProvider from '../server/integrations/mock-tasks-provider.js';
 import * as calendarProvider from '../server/integrations/mock-calendar-provider.js';
 import { listRecommendations } from '../server/agent/recommendation-store.js';
@@ -187,6 +187,31 @@ test('subscription.renewing notifies for a bounded upcoming renewal and ignores 
     assert.equal(invalid.decision, 'ignore');
     assert.equal(cancelled.decision, 'ignore');
     assert.equal(expired.decision, 'ignore');
+    assert.equal(db.prepare("SELECT count(*) AS count FROM events WHERE type = 'notification.sent'").get().count, 1);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('contact.birthday_approaching resolves the active person locally and ignores invalid or deleted people', async () => {
+  const dir = tempHome();
+  try {
+    const { db, agent } = buildAgent();
+    const person = createEntity({ type: 'Person', name: 'Avery Example' });
+    const valid = await agent.evaluateEvent({ type: 'contact.birthday_approaching', subject: { type: 'entity', id: person.id }, data: { entityId: person.id, daysUntil: 3, name: 'Untrusted Name' } });
+    assert.equal(valid.decision, 'notify');
+    const sent = db.prepare("SELECT data FROM events WHERE type = 'notification.sent'").get();
+    assert.match(JSON.parse(sent.data).body, /Avery Example/);
+    assert.doesNotMatch(JSON.parse(sent.data).body, /Untrusted Name/);
+
+    const coerced = await agent.evaluateEvent({ type: 'contact.birthday_approaching', subject: { type: 'entity', id: person.id }, data: { daysUntil: null } });
+    const preview = getEntityDeletionPreview(person.id);
+    deleteEntity(person.id, preview.token);
+    const deleted = await agent.evaluateEvent({ type: 'contact.birthday_approaching', subject: { type: 'entity', id: person.id }, data: { daysUntil: 2 } });
+    const invalid = await agent.evaluateEvent({ type: 'contact.birthday_approaching', subject: { type: 'entity', id: 'missing' }, data: { daysUntil: -1 } });
+    assert.equal(coerced.decision, 'ignore');
+    assert.equal(deleted.decision, 'ignore');
+    assert.equal(invalid.decision, 'ignore');
     assert.equal(db.prepare("SELECT count(*) AS count FROM events WHERE type = 'notification.sent'").get().count, 1);
   } finally {
     cleanup(dir);
