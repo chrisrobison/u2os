@@ -19,6 +19,7 @@ U2OS is currently a working pre-alpha prototype. The repository implements the s
 - A data-processing privacy policy, separate from tool authorization, governing what data may reach a local vs. remote model provider
 - Prompt-injection containment tests proving retrieved content cannot register tools, authorize actions, or alter policy/routing configuration
 - Tool registry and a policy engine outside the model execution path
+- Durable SQLite action delivery with atomic leases, restart recovery, bounded retries, explicit provider idempotency contracts, execution-time policy/approval/freshness checks, and a sanitized owner Operations view
 - Audited consequential actions with explicit approval or hard policy blocks, plus owner-facing **Why?** views on approval cards and activity history. The views use `GET /api/actions/:id/explain` and `GET /api/recommendations/:id/explain` to show stored reasoning summaries, policy/model identity, retrieved-context references, source events, and correlated event trails—never hidden model chain-of-thought.
 - Native Web Component interface with morning, meeting, and project dashboards
 - A device/capability subsystem (see [docs/devices.md](docs/devices.md)): a persisted device registry, an in-memory capability catalog, a deterministic (never LLM-driven) trust/privacy-aware resolver, a realtime WebSocket device bus (`/ws/devices`), the browser itself as a registered device, semantic presentation (`presentation.present`/`presentation.notify`) routed through the same policy/approval/audit pipeline as every other tool, a device management UI (`#/devices`), an enforced trust lifecycle (pairing-request events, revocation that disconnects live connections and is checked on every path), a metadata-only stream registry, and a service-provider unification proof of concept
@@ -29,7 +30,7 @@ U2OS is currently a working pre-alpha prototype. The repository implements the s
 - Outcome feedback that adjusts prioritization without weakening authorization policies
 - Docker, systemd, launchd, mDNS, health checks, structured logs, backup/restore, and portable JSON export
 
-This is not production-ready. A single-owner passphrase, expiring sessions, CSRF protection, request limits, and loopback-default networking now protect the HTTP boundary. Do not expose the server directly to the public internet. `MockModelProvider` remains the default until a real provider is configured (see [docs/models.md](docs/models.md)). Major limitations include simplified speaker verification, several placeholder dashboard components, in-process-only rate limits, no HTTP route yet for multi-provider/role model configuration, memory-candidate confirmation still being a manual step rather than a dedicated API/UI, limited browser-level test coverage, and — in the device/capability subsystem — the raw direct-invoke/test/stream-open routes are session-authenticated but not policy-gated, real cryptographic device pairing is a documented seam rather than an implementation, and only one existing connector (notifications) has been unified into the capability model so far (see [docs/devices.md](docs/devices.md)'s "Known gaps").
+This is not production-ready. A single-owner passphrase, expiring sessions, CSRF protection, request limits, and loopback-default networking now protect the HTTP boundary. Do not expose the server directly to the public internet. `MockModelProvider` remains the default until a real provider is configured (see [docs/models.md](docs/models.md)). Major limitations include simplified speaker verification, several placeholder dashboard components, in-process-only rate limits, no HTTP route yet for multi-provider/role model configuration, and — in the device/capability subsystem — the raw direct-invoke/test/stream-open routes are session-authenticated but not policy-gated, real cryptographic device pairing is a documented seam rather than an implementation, and only one existing connector (notifications) has been unified into the capability model so far (see [docs/devices.md](docs/devices.md)'s "Known gaps"). Real Gmail/Google Calendar calls do not currently claim provider-level idempotency; if their outcome is uncertain after a crash or timeout, U2OS deliberately stops for owner review rather than risking a duplicate send or meeting.
 
 ## Architecture
 
@@ -44,7 +45,11 @@ planner proposes structured actions
         ↓
 policy engine authorizes, blocks, or requests approval
         ↓
-registered tool executes through the selected provider
+authorized action persists in the leased SQLite queue
+        ↓
+policy, approval, and freshness are re-checked
+        ↓
+registered tool executes with a stable idempotency key
         ↓
 result and outcome are written back to the event log
 ```
@@ -103,7 +108,7 @@ npm run dev
 npm test
 ```
 
-The current suite contains 335 Node tests covering the event bus, memory, policy enforcement, tools, durable action leasing/recovery/idempotency and sanitized operational status, the complete approval vertical slice, dashboard generation, connectors and OAuth security, encrypted credentials, deployment utilities, triggers, proactive decisions, feedback, voice authorization, the Agent-refactor regression suite, model providers and routing, the strict plan schema, real bounded context assembly, semantic memory retrieval, the data-processing privacy policy, prompt-injection containment, the intelligent end-to-end vertical slice, explainability, and the device/capability subsystem (registry, resolver, the realtime WebSocket device bus, the browser-as-device flow, policy-gated presentation tools, device management, the trust lifecycle, streams, and service-provider unification — see [docs/devices.md](docs/devices.md)). The Playwright suite contains 53 real-browser tests covering authentication, navigation, chat, approval/rejection, memory candidates, SSE recovery, multi-tab synchronization, responsive/accessibility behavior, owner-facing explainability, and durable action operations.
+The current suite contains 336 Node tests covering the event bus, memory, policy enforcement, tools, durable action leasing/recovery/idempotency and sanitized operational status, the complete approval vertical slice, dashboard generation, connectors and OAuth security, encrypted credentials, deployment utilities, triggers, proactive decisions, feedback, voice authorization, the Agent-refactor regression suite, model providers and routing, the strict plan schema, real bounded context assembly, semantic memory retrieval, the data-processing privacy policy, prompt-injection containment, the intelligent end-to-end vertical slice, explainability, and the device/capability subsystem (registry, resolver, the realtime WebSocket device bus, the browser-as-device flow, policy-gated presentation tools, device management, the trust lifecycle, streams, and service-provider unification — see [docs/devices.md](docs/devices.md)). The Playwright suite contains 53 real-browser tests covering authentication, navigation, chat, approval/rejection, memory candidates, SSE recovery, multi-tab synchronization, responsive/accessibility behavior, owner-facing explainability, and durable action operations.
 
 A small Playwright harness also covers real-browser smoke coverage (boots the actual server in-process, no frontend build step):
 

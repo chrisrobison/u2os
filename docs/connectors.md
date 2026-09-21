@@ -96,6 +96,10 @@ Real providers additionally implement `async syncChanges({ db, eventBus, correla
 
 The scheduler reconciles its per-domain timers immediately after OAuth completion, disconnect, or an active-provider change. Connecting a provider at runtime therefore does not require a server restart before recurring sync begins.
 
+### External action idempotency
+
+The durable action worker supplies a stable U2OS idempotency key to every tool call. A connector may advertise tool-level idempotency only when it forwards that key to a provider mechanism that guarantees duplicate-side-effect protection. The current Gmail and Google Calendar adapters do **not** advertise that guarantee. If a crash or timeout leaves one of their external outcomes unknown, U2OS surfaces the action for owner attention and does not automatically replay it. This is an intentional trust-first limitation.
+
 **ID convention** so tool-level operations (e.g. "reschedule event X") work identically regardless of provider: real rows use a provider-prefixed id, e.g. `gcal_<googleEventId>`, `gmail_<messageId>`. This also makes accidental id collisions between providers structurally impossible.
 
 ## `server/integrations/provider-registry.js`

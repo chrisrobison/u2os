@@ -105,30 +105,46 @@ test('rejected or revoked approval cannot execute queued work', () => withHome(a
 
 test('expired uncertain execution is not replayed without provider idempotency', () => withHome(async () => {
   let calls = 0;
-  const { worker } = setup({ execute: async () => { calls += 1; } });
+  setup({ execute: async () => { calls += 1; } });
   const action = queueAudit();
   const queue = getQueuedActionByActionId(action.id);
   leaseActionByActionId(action.id, { leaseOwner: 'dead-worker', leaseMs: 60_000 });
   beginActionAttempt({ queueId: queue.id, leaseOwner: 'dead-worker' });
   getDb().prepare("UPDATE action_queue SET lease_expires_at = '2020-01-01T00:00:00.000Z' WHERE id = ?").run(queue.id);
+  closeAllForTests();
 
-  const outcome = await worker.processAction(action.id);
+  const { worker: restartedWorker } = setup({ execute: async () => { calls += 1; } });
+  const outcome = await restartedWorker.processAction(action.id);
   assert.equal(outcome.errorClass, 'owner_attention_required');
   assert.equal(calls, 0, 'an uncertain non-idempotent side effect must not be repeated');
 }));
 
 test('an idempotent provider may safely recover an expired execution with the same key', () => withHome(async () => {
   const keys = [];
-  const { worker } = setup({ supportsIdempotency: true, execute: async (_args, context) => { keys.push(context.idempotencyKey); return { ok: true }; } });
+  setup({ supportsIdempotency: true, execute: async (_args, context) => { keys.push(context.idempotencyKey); return { ok: true }; } });
   const action = queueAudit();
   const queue = getQueuedActionByActionId(action.id);
   leaseActionByActionId(action.id, { leaseOwner: 'dead-worker', leaseMs: 60_000 });
   beginActionAttempt({ queueId: queue.id, leaseOwner: 'dead-worker' });
   getDb().prepare("UPDATE action_queue SET lease_expires_at = '2020-01-01T00:00:00.000Z' WHERE id = ?").run(queue.id);
+  closeAllForTests();
 
-  const outcome = await worker.processAction(action.id);
+  const { worker: restartedWorker } = setup({ supportsIdempotency: true, execute: async (_args, context) => { keys.push(context.idempotencyKey); return { ok: true }; } });
+  const outcome = await restartedWorker.processAction(action.id);
   assert.equal(outcome.status, 'executed');
   assert.deepEqual(keys, [`delivery.send:corr_delivery:${action.id}`]);
+}));
+
+test('queued work survives a database close and is executed by a new process worker', () => withHome(async () => {
+  setup();
+  const action = queueAudit();
+  closeAllForTests();
+  let calls = 0;
+  const { worker } = setup({ execute: async () => { calls += 1; return { ok: true }; } });
+  const outcome = await worker.processNext();
+  assert.equal(outcome.status, 'executed');
+  assert.equal(outcome.id, action.id);
+  assert.equal(calls, 1);
 }));
 
 test('retryable idempotent failures resume when due and duplicate calls do not double execute', () => withHome(async () => {
