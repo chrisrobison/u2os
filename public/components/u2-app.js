@@ -19,11 +19,11 @@ import './u2-diagnostics.js';
 
 // Dashboard contexts the #/dashboards picker offers, per PROMPT.md section
 // 10's examples + docs/dashboards.md's Phase 2 contexts. 'before-meeting'
-// and 'project' each need the user to pick which person/project via a
-// <select> populated from /api/memory/entities.
+// and 'project' each need a trusted picker. Meeting preparation starts from
+// a calendar event so its topic and every attendee travel together.
 const DASHBOARD_CONTEXTS = [
   { id: 'morning', label: 'Morning' },
-  { id: 'before-meeting', label: 'Before a meeting', entityType: 'Person', paramKey: 'personId' },
+  { id: 'before-meeting', label: 'Before a meeting', eventPicker: true, paramKey: 'eventId' },
   { id: 'project', label: 'Project', entityType: 'Project', paramKey: 'projectId' },
 ];
 
@@ -392,7 +392,7 @@ export class U2App extends HTMLElement {
         btn.classList.toggle('is-active', btn.dataset.context === contextDef.id);
       });
 
-      if (!contextDef.entityType) {
+      if (!contextDef.paramKey) {
         select.hidden = true;
         select.innerHTML = '';
         await generateFor(contextDef, null);
@@ -402,6 +402,21 @@ export class U2App extends HTMLElement {
       select.hidden = false;
       setBody(this._loading('Loading...'));
       try {
+        if (contextDef.eventPicker) {
+          const { events } = await api.getCalendarEvents('upcoming');
+          select.innerHTML = events.map((event) => {
+            const attendees = (event.attendees || []).map((attendee) => typeof attendee === 'string' ? attendee : attendee?.name).filter(Boolean);
+            const label = attendees.length ? `${event.title} — ${attendees.join(', ')}` : event.title;
+            return `<option value="${escapeHtml(event.id)}">${escapeHtml(label)}</option>`;
+          }).join('');
+          if (!events.length) {
+            setBody(this._error(new Error('No upcoming calendar events found.')));
+            return;
+          }
+          await generateFor(contextDef, select.value);
+          return;
+        }
+
         const { entities } = await api.getMemoryEntities({ type: contextDef.entityType });
         select.innerHTML = entities
           .map((entity) => `<option value="${escapeHtml(entity.id)}">${escapeHtml(entity.name)}</option>`)

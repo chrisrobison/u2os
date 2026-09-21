@@ -54,7 +54,7 @@ Dashboard instances subscribe to the shared authenticated SSE event stream while
 
 ## Current scope
 
-`GET /api/dashboard/morning` remains the compatibility route. `POST /api/dashboard/generate` accepts `morning`, `before-meeting`, or `project` plus context parameters and composes the schema from live data.
+`GET /api/dashboard/morning` remains the compatibility route. `POST /api/dashboard/generate` accepts `morning`, `before-meeting`, or `project` plus context parameters and composes the schema from live data. Meeting preparation normally receives an `eventId`: the selected calendar title is presented explicitly as the topic, and all named attendees that match active Person records receive their own bounded context cards. Unknown attendees remain visible in an honest warning and are never silently written to memory. Legacy `personId` callers remain supported, and `personIds` can prepare a bounded combined view when no calendar-event selection is available.
 
 Every named `source` is registered exactly once in `server/agent/dashboard-source-resolver.js`. Resolution reads bounded local synchronized stores, and schema validation imports the same registry-derived allowlist so validation and executable resolution cannot drift. Context planners may filter those bounded results for a selected person or project, then embed the resulting inert data in the validated schema.
 

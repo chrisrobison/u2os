@@ -14,7 +14,7 @@
 //     reused rather than reimplemented.
 import { getCachedCalendarEvent } from '../../integrations/calendar-store.js';
 import { getDb } from '../../db/connection.js';
-import { findEntities, getEntity } from '../../memory/entity-store.js';
+import { getEntity } from '../../memory/entity-store.js';
 import * as tasksProvider from '../../integrations/mock-tasks-provider.js';
 import { scoreForSuggestion } from '../../feedback/prioritizer.js';
 import { createRecommendation } from '../recommendation-store.js';
@@ -97,27 +97,17 @@ export async function evaluateCalendarApproaching(event, { correlationId, actor,
   const calendarEvent = eventId ? getCachedCalendarEvent(eventId) : null;
 
   let dashboard = null;
-  let personId = null;
   let reasoningSummary = `Meeting ${eventId} is approaching (${event.data?.minutesUntil ?? '?'} minute(s) out).`;
 
   if (calendarEvent) {
-    const firstAttendee = (calendarEvent.attendees || [])[0];
-    const attendeeName = typeof firstAttendee === 'string' ? firstAttendee : firstAttendee?.name;
-    if (attendeeName) {
-      const [person] = findEntities({ type: 'Person', query: attendeeName });
-      if (person) personId = person.id;
-    }
-  }
-
-  if (personId) {
     try {
-      dashboard = generateDashboard({ context: 'before-meeting', params: { personId } });
-      reasoningSummary += ' Generated a before-meeting dashboard.';
+      dashboard = generateDashboard({ context: 'before-meeting', params: { eventId } });
+      reasoningSummary += ' Generated a topic- and attendee-aware before-meeting dashboard.';
     } catch (err) {
       reasoningSummary += ` Could not generate a before-meeting dashboard: ${err.message}.`;
     }
   } else {
-    reasoningSummary += ' No matching Person entity found for the meeting attendee; recommendation has no dashboard attached.';
+    reasoningSummary += ' No matching cached calendar event was found; recommendation has no dashboard attached.';
   }
 
   const recommendation = createRecommendation({

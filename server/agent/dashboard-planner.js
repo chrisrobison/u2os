@@ -8,7 +8,7 @@
 // Named component sources are resolved server-side from bounded local stores
 // through dashboard-source-resolver.js. Browser clients only render the
 // validated data embedded in the schema.
-import { getEntity } from '../memory/entity-store.js';
+import { findEntities, getEntity } from '../memory/entity-store.js';
 import { getFacts } from '../memory/fact-store.js';
 import { getRelationships } from '../memory/relationship-store.js';
 import { validateDashboard } from '../api/dashboard-schema.js';
@@ -92,59 +92,98 @@ function buildMorningDashboard() {
   };
 }
 
-function buildBeforeMeetingDashboard({ personId } = {}) {
-  if (!personId) {
-    throw new InvalidDashboardContextError('before-meeting dashboard requires params.personId');
-  }
-  const person = getEntity(personId);
-  if (!person || person.type !== 'Person') {
-    throw new DashboardNotFoundError(`No such person: ${personId}`);
+function buildBeforeMeetingDashboard({ eventId, personId, personIds } = {}) {
+  const calendarEvents = resolveDashboardSource('calendar.upcoming');
+  let selectedEvent = null;
+  let people = [];
+
+  if (eventId) {
+    selectedEvent = calendarEvents.find((event) => event.id === eventId);
+    if (!selectedEvent) throw new DashboardNotFoundError(`No such calendar event: ${eventId}`);
+    people = resolveAttendeePeople(selectedEvent.attendees).slice(0, 10);
+  } else {
+    const requestedIds = [...new Set([...(Array.isArray(personIds) ? personIds : []), ...(personId ? [personId] : [])])].slice(0, 10);
+    if (!requestedIds.length) {
+      throw new InvalidDashboardContextError('before-meeting dashboard requires params.eventId, params.personId, or params.personIds');
+    }
+    people = requestedIds.map((id) => {
+      const person = getEntity(id);
+      if (!person || person.type !== 'Person') throw new DashboardNotFoundError(`No such person: ${id}`);
+      return person;
+    });
+    const matchingEvents = calendarEvents.filter((event) => people.some((person) => eventHasAttendeeNamed(event, person.name)));
+    selectedEvent = pickRelevantEvents(matchingEvents, 1)[0] || null;
   }
 
-  const eventsWithPerson = resolveDashboardSource('calendar.upcoming', {
-    filter: (event) => eventHasAttendeeNamed(event, person.name),
+  const peopleNames = people.map((person) => person.name);
+  // Leave room for the trusted "Before: " title prefix under the schema's
+  // 200-character title bound, even if imported calendar data is oversized.
+  const topic = String(selectedEvent?.title || `Meeting with ${peopleNames.join(', ')}`).slice(0, 190);
+  const relevantEvents = selectedEvent ? [selectedEvent] : [];
+  const peopleIdsSet = new Set(people.map((person) => person.id));
+  const openTasks = resolveDashboardSource('tasks.all', {
+    filter: (task) => peopleIdsSet.has(task.related_entity_id),
   });
-  const relevantEvents = pickRelevantEvents(eventsWithPerson, 3);
-
-  const openTasks = resolveDashboardSource('tasks.all', { filter: (task) => task.related_entity_id === person.id });
-
-  const facts = getFacts(person.id);
-  const relationships = getRelationships(person.id);
-
   const components = [];
 
-  if (relevantEvents.length) {
+  components.push(withProvenance({
+    type: 'alert',
+    data: { variant: 'info', message: `Meeting topic (from calendar): ${topic}` },
+  }, 'Identifies the meeting topic from the selected calendar event title.', selectedEvent
+    ? [{ type: 'calendar_event', id: selectedEvent.id, label: topic }]
+    : people.map((person) => ({ type: 'entity', id: person.id, label: person.name }))));
+
+  if (selectedEvent) {
     components.push(withProvenance({ type: 'schedule', source: 'calendar.upcoming', data: { events: relevantEvents } },
-      `Shows meetings whose attendee list includes ${person.name}.`, sourceReferences('calendar.upcoming', 'calendar_event', relevantEvents)));
+      'Shows the selected calendar event, including its time, location, and attendees.', sourceReferences('calendar.upcoming', 'calendar_event', relevantEvents)));
   } else {
     components.push(withProvenance({
       type: 'alert',
-      data: { variant: 'info', message: `No upcoming meetings scheduled with ${person.name}.` },
-    }, `No matching calendar event was found for ${person.name}.`, [{ type: 'entity', id: person.id, label: person.name }]));
+      data: { variant: 'warning', message: `No upcoming meeting found with ${peopleNames.join(', ')}.` },
+    }, 'No matching calendar event was found for the selected people.', people.map((person) => ({ type: 'entity', id: person.id, label: person.name }))));
+  }
+
+  if (eventId) {
+    const attendeeNames = (selectedEvent.attendees || []).map((attendee) => typeof attendee === 'string' ? attendee : attendee?.name).filter(Boolean).slice(0, 25);
+    const unmatched = attendeeNames.filter((name) => !people.some((person) => person.name?.localeCompare(name, undefined, { sensitivity: 'base' }) === 0));
+    if (unmatched.length || !attendeeNames.length) {
+      components.push(withProvenance({
+        type: 'alert',
+        data: { variant: 'warning', message: attendeeNames.length
+          ? `No stored Person records matched: ${unmatched.join(', ')}.`
+          : 'This calendar event has no named attendees to match with stored people.' },
+      }, 'Attendees are shown honestly when no active Person record can be resolved.', [{ type: 'calendar_event', id: selectedEvent.id, label: topic }]));
+    }
   }
 
   components.push(withProvenance({ type: 'task-list', source: 'tasks.all', data: { tasks: openTasks } },
-    `Shows open tasks linked to ${person.name}.`, sourceReferences('tasks.all', 'task', openTasks, [{ type: 'entity', id: person.id, label: person.name }])));
+    `Shows open tasks linked to the matched meeting attendees${peopleNames.length ? `: ${peopleNames.join(', ')}` : ''}.`,
+    sourceReferences('tasks.all', 'task', openTasks, people.map((person) => ({ type: 'entity', id: person.id, label: person.name })))));
 
-  components.push(withProvenance({
-    type: 'person',
-    data: {
-      id: person.id,
-      name: person.name,
-      relationship: summarizeRelationships(relationships, person),
-      facts: facts.slice(0, 5).map((fact) => ({ key: fact.key, value: fact.value, source: fact.source, classification: fact.classification, inferred: Boolean(fact.inferred) })),
-      recentActivity: relevantEvents.slice(0, 3).map((event) => ({ label: event.title, at: event.start_at, source: 'calendar' })),
-      commitments: relationships.filter((rel) => rel.relation === 'promised').slice(0, 5).map((rel) => ({ description: describeRelationship(rel, person), source: rel.source })),
-      upcomingInteractions: relevantEvents.map((event) => ({ title: event.title, at: event.start_at })),
-    },
-  }, `Summarizes stored context relevant to ${person.name}.`, [
-    { type: 'entity', id: person.id, label: person.name },
-    ...facts.slice(0, 5).map((fact) => ({ type: 'fact', id: fact.id, label: fact.key })),
-    ...relationships.slice(0, 4).map((relationship) => ({ type: 'relationship', id: relationship.id, label: relationship.relation })),
-  ]));
+  for (const person of people) {
+    const facts = getFacts(person.id);
+    const relationships = getRelationships(person.id);
+    components.push(withProvenance({
+      type: 'person',
+      data: {
+        id: person.id,
+        name: person.name,
+        relationship: summarizeRelationships(relationships, person),
+        facts: facts.slice(0, 5).map((fact) => ({ key: fact.key, value: fact.value, source: fact.source, classification: fact.classification, inferred: Boolean(fact.inferred) })),
+        recentActivity: relevantEvents.map((event) => ({ label: event.title, at: event.start_at, source: 'calendar' })),
+        commitments: relationships.filter((rel) => rel.relation === 'promised').slice(0, 5).map((rel) => ({ description: describeRelationship(rel, person), source: rel.source })),
+        upcomingInteractions: relevantEvents.map((event) => ({ title: event.title, at: event.start_at })),
+      },
+    }, `Summarizes stored context relevant to ${person.name} for ${topic}.`, [
+      { type: 'entity', id: person.id, label: person.name },
+      ...(selectedEvent ? [{ type: 'calendar_event', id: selectedEvent.id, label: topic }] : []),
+      ...facts.slice(0, 5).map((fact) => ({ type: 'fact', id: fact.id, label: fact.key })),
+      ...relationships.slice(0, 3).map((relationship) => ({ type: 'relationship', id: relationship.id, label: relationship.relation })),
+    ]));
+  }
 
   return {
-    title: `Before your meeting with ${person.name}`,
+    title: `Before: ${topic}`,
     layout: 'dashboard',
     components,
   };
@@ -252,6 +291,18 @@ function eventHasAttendeeNamed(event, name) {
     const attendeeName = (a?.name || '').toLowerCase();
     return attendeeName && (attendeeName.includes(needle) || needle.includes(attendeeName));
   });
+}
+
+function resolveAttendeePeople(attendees = []) {
+  const matches = new Map();
+  for (const attendee of attendees.slice(0, 25)) {
+    const name = typeof attendee === 'string' ? attendee : attendee?.name;
+    if (!name) continue;
+    const candidates = findEntities({ type: 'Person', query: name });
+    const exact = candidates.find((person) => person.name?.localeCompare(name, undefined, { sensitivity: 'base' }) === 0);
+    if (exact) matches.set(exact.id, exact);
+  }
+  return [...matches.values()];
 }
 
 function eventMentionsTitle(event, name) {

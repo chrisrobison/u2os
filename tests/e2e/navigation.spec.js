@@ -113,9 +113,12 @@ test.describe.serial('navigation shell (#15)', () => {
 
         await page.locator('.folder-toggle button', { hasText: 'Before a meeting' }).click();
         const selector = page.locator('select.connector-select');
-        await selector.selectOption({ label: 'Sarah' });
-        await expect(page.locator('u2-person')).toContainText('Sarah');
-        await expect(page.locator('u2-person')).toContainText('Prefers morning meetings');
+        await selector.selectOption({ label: 'U2OS project standup — Marcus Lee, Sarah' });
+        await expect(page.locator('.workspace__title', { hasText: 'Before: U2OS project standup' })).toBeVisible();
+        await expect(page.locator('u2-alert')).toContainText('Meeting topic (from calendar): U2OS project standup');
+        await expect(page.locator('u2-person')).toHaveCount(2);
+        await expect(page.locator('u2-person', { hasText: 'Marcus Lee' })).toBeVisible();
+        await expect(page.locator('u2-person', { hasText: 'Sarah' })).toContainText('Prefers morning meetings');
 
         await page.locator('.folder-toggle button', { hasText: 'Project' }).click();
         await expect(page.locator('u2-project')).toContainText('U2OS');

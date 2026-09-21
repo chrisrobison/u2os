@@ -247,4 +247,4 @@ U2OS reaches usable alpha when Milestones 1–3 are complete: a single owner can
 
 Milestones 4–8 deepen the product toward the broader personal digital-agent vision; they are not reasons to postpone the security boundary required for alpha use.
 
-**Status: usable alpha reached.** Milestones 1–3 are complete, with 379 Node tests and 65 Playwright scenarios running across Chromium, Firefox, and WebKit.
+**Status: usable alpha reached.** Milestones 1–3 are complete, with 381 Node tests and 65 Playwright scenarios running across Chromium, Firefox, and WebKit.

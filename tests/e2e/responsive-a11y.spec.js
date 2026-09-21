@@ -25,7 +25,7 @@ import { proposeMemoryCandidate } from '../../server/memory/candidate-store.js';
 //   than fabricated focus-trap coverage for a modal that doesn't exist.
 // * Reduced motion: base.css defines exactly one global rule for this
 //   (`@media (prefers-reduced-motion: reduce) { *, *::before, *::after {
-//   animation-duration: 0.001ms !important; transition-duration: 0.001ms
+//   animation-duration: 0s !important; transition-duration: 0s
 //   !important; } }`, line ~23) plus one concrete transitioning element
 //   that's actually reachable without contrivance: `.shell__nav`'s
 //   `transition: transform 220ms ease` under the `max-width: 900px` drawer
@@ -436,7 +436,7 @@ test.describe.serial('responsive layout & accessibility baseline (#19)', () => {
 
     await page.emulateMedia({ reducedMotion: 'reduce' });
     const reducedDuration = await page.locator('.shell__nav').evaluate((el) => getComputedStyle(el).transitionDuration);
-    // base.css's global override: `transition-duration: 0.001ms !important`
+    // base.css's global override: `transition-duration: 0s !important`
     // under `@media (prefers-reduced-motion: reduce)`.
     expect(parseFloat(reducedDuration)).toBeLessThan(0.001);
   });

@@ -147,14 +147,15 @@ test('generateDashboard({context: "before-meeting"}) for a real seeded person (S
 
     const schema = generateDashboard({ context: 'before-meeting', params: { personId: sarah.id } });
     assert.doesNotThrow(() => validateDashboard(schema));
-    assert.match(schema.title, /Sarah/);
+    assert.match(schema.title, /^Before: /);
 
     // Sarah is seeded with an upcoming "Sync with Sarah" event and an open
     // task ("Send proposal draft to Sarah") -- the generated schema must
     // actually surface that real, person-specific data, not a generic shell.
     const scheduleComponent = schema.components.find((c) => c.type === 'schedule');
     assert.ok(scheduleComponent, 'expected a schedule component for Sarah\'s upcoming meeting');
-    assert.ok(scheduleComponent.data.events.some((e) => e.title === 'Sync with Sarah'));
+    assert.equal(scheduleComponent.data.events.length, 1);
+    assert.ok(scheduleComponent.data.events[0].attendees.some((attendee) => attendee.name === 'Sarah'));
 
     const taskListComponent = schema.components.find((c) => c.type === 'task-list');
     assert.ok(taskListComponent);
@@ -163,7 +164,7 @@ test('generateDashboard({context: "before-meeting"}) for a real seeded person (S
     const personComponent = schema.components.find((c) => c.type === 'person');
     assert.equal(personComponent.data.name, 'Sarah');
     assert.ok(personComponent.data.facts.some((fact) => fact.key === 'prefers_morning_meetings'));
-    assert.ok(personComponent.data.upcomingInteractions.some((event) => event.title === 'Sync with Sarah'));
+    assert.equal(personComponent.data.upcomingInteractions[0].title, scheduleComponent.data.events[0].title);
   } finally {
     cleanup(dir);
   }
@@ -183,6 +184,47 @@ test('generateDashboard({context: "before-meeting"}) for a person with no upcomi
     // schedule component.
     assert.ok(schema.components.length > 0);
     assert.ok(schema.components.some((c) => c.type === 'alert'));
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('event-based before-meeting dashboard identifies its topic and every known attendee', () => {
+  const dir = tempHome();
+  try {
+    const db = seedDemoData();
+    const event = db.prepare("SELECT * FROM calendar_events WHERE title = 'U2OS project standup'").get();
+    assert.ok(event);
+
+    const schema = generateDashboard({ context: 'before-meeting', params: { eventId: event.id } });
+    assert.doesNotThrow(() => validateDashboard(schema));
+    assert.equal(schema.title, 'Before: U2OS project standup');
+    const topic = schema.components.find((component) => component.type === 'alert');
+    assert.match(topic.data.message, /Meeting topic \(from calendar\): U2OS project standup/);
+    assert.deepEqual(
+      schema.components.filter((component) => component.type === 'person').map((component) => component.data.name).sort(),
+      ['Marcus Lee', 'Sarah']
+    );
+    const tasks = schema.components.find((component) => component.type === 'task-list');
+    assert.ok(tasks.data.tasks.some((task) => task.title === 'Send proposal draft to Sarah'));
+    assert.ok(schema.components.every((component) => component.provenance?.reason));
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('meeting preparation does not substitute a fuzzy match for an unknown attendee', () => {
+  const dir = tempHome();
+  try {
+    const db = seedDemoData();
+    const event = db.prepare("SELECT * FROM calendar_events WHERE title = 'U2OS project standup'").get();
+    db.prepare('UPDATE calendar_events SET attendees = ? WHERE id = ?').run(
+      JSON.stringify([{ name: 'Marcus Lee' }, { name: 'Sarah Unknown' }]), event.id
+    );
+    const schema = generateDashboard({ context: 'before-meeting', params: { eventId: event.id } });
+    assert.doesNotThrow(() => validateDashboard(schema));
+    assert.deepEqual(schema.components.filter((item) => item.type === 'person').map((item) => item.data.name), ['Marcus Lee']);
+    assert.ok(schema.components.some((item) => item.type === 'alert' && item.data.message.includes('No stored Person records matched: Sarah Unknown')));
   } finally {
     cleanup(dir);
   }
