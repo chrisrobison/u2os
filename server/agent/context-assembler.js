@@ -4,6 +4,7 @@ import { getFacts } from '../memory/fact-store.js';
 import { getRelationships } from '../memory/relationship-store.js';
 import { listEvents } from '../events/log.js';
 import { rankFactsHybrid } from '../memory/semantic-retrieval.js';
+import { selectMemoryCandidates } from '../memory/candidate-retrieval.js';
 import { getEmail } from '../integrations/mock-email-provider.js';
 import { getCachedCalendarEvent } from '../integrations/calendar-store.js';
 import { getTask } from '../integrations/mock-tasks-provider.js';
@@ -92,11 +93,12 @@ export class ContextAssembler {
    */
   async assemblePersonalContext(objective = '') {
     const objectiveLower = String(objective || '').toLowerCase();
+    const candidates = selectMemoryCandidates({ objective, ownerEntityId: this.ownerEntityId, eventTypes: CONTEXT_WORTHY_EVENT_TYPES });
 
     const context = {
       objective: String(objective || ''),
       currentTime: new Date().toISOString(),
-      relevantPeople: await this._rankPeople(objectiveLower, objective),
+      relevantPeople: await this._rankPeople(objectiveLower, objective, candidates),
       commitments: this._rankCommitments(objectiveLower),
       recentEvents: this._recentEvents(),
       truncated: false,
@@ -111,7 +113,8 @@ export class ContextAssembler {
 
   // --- people + facts + relationships -------------------------------------
 
-  async _rankPeople(objectiveLower, objectiveRaw) {
+  async _rankPeople(objectiveLower, objectiveRaw, candidates) {
+    const candidateById = new Map(candidates.entities.map((item) => [item.id, item]));
     const people = findEntities({ type: 'Person' });
     const ranked = people
       .map((person) => {
@@ -123,20 +126,26 @@ export class ContextAssembler {
         const facts = getFacts(person.id);
         const relationships = getRelationships(person.id);
         const lastActivityAt = latestTimestamp([person.updated_at, ...facts.map((f) => f.created_at), ...relationships.map((r) => r.created_at)]);
-        return { person, nameMentioned, facts, relationships, lastActivityAt };
+        const retrievalCandidate = candidateById.get(person.id);
+        return { person, nameMentioned, facts, relationships, lastActivityAt, retrievalCandidate };
       })
       .sort((a, b) => {
+        const aMatches = a.retrievalCandidate?.match.exactWordMatches || 0;
+        const bMatches = b.retrievalCandidate?.match.exactWordMatches || 0;
+        if (aMatches !== bMatches) return bMatches - aMatches;
         if (a.nameMentioned !== b.nameMentioned) return a.nameMentioned ? -1 : 1;
         return (b.lastActivityAt || '').localeCompare(a.lastActivityAt || '');
       })
       .slice(0, this.options.maxPeople);
 
     const results = [];
-    for (const { person, nameMentioned, facts, relationships } of ranked) {
+    for (const { person, nameMentioned, facts, relationships, retrievalCandidate } of ranked) {
       results.push({
         id: person.id,
         name: person.name,
-        matchedOn: nameMentioned ? 'objective mentions this name' : 'recently active',
+        matchedOn: nameMentioned
+          ? 'objective mentions this name'
+          : retrievalCandidate?.viaFactIds.length ? 'objective matches a current fact' : 'recently active',
         facts: await this._rankFacts(facts, objectiveRaw),
         relationshipCount: relationships.length,
         classification: person.classification || 'personal',

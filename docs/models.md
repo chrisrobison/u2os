@@ -65,6 +65,6 @@ Retrieval combines semantic similarity with recency, confidence, exact-word over
 ## Known limitations
 
 - The browser UI still exposes only the single-provider form; multi-provider configuration currently uses the HTTP API or config file.
-- `ContextAssembler` (docs/architecture.md) applies semantic ranking only to facts within an already-selected person, not to which people/commitments get selected in the first place.
+- `ContextAssembler` now performs bounded lexical/structural candidate selection across entities, current facts, open owner commitments, and allowlisted events before assembly. A matching current fact can promote its person before the people limit is applied. Semantic scoring is still applied only within a selected person's facts; cross-type hybrid semantic ranking is the next retrieval increment.
 - No streaming.
 - Provider failure (including after a fallback attempt) is explicit and never silently executes a stale plan or bypasses policy.
