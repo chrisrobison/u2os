@@ -23,7 +23,7 @@ The LLM never emits HTML/JS. It emits a JSON **dashboard schema**. The frontend 
 - `title` — string, shown as the workspace header.
 - `layout` — `"dashboard"` (grid of cards) in Phase 1; more layouts later.
 - `components[].type` — must be one of the registered component types below. Unknown types are rejected server-side before the schema is ever sent to the client (allowlist, not blocklist).
-- `components[].source` — a named data query the frontend resolves via `services/api.js` (e.g. `calendar.today` → `GET /api/calendar/events?range=today`). Sources are also an allowlist resolved server-side.
+- `components[].source` — a named, allowlisted data query resolved by `server/agent/dashboard-source-resolver.js` before the schema reaches the browser. Components never choose endpoints or execute data access.
 
 ## Registered component types
 
@@ -55,7 +55,7 @@ Dashboard instances subscribe to the shared authenticated SSE event stream while
 
 `GET /api/dashboard/morning` remains the compatibility route. `POST /api/dashboard/generate` accepts `morning`, `before-meeting`, or `project` plus context parameters and composes the schema from live data.
 
-The browser still resolves the compatibility schema's small allowlist of named `source` values through `services/api.js`. New generated rich cards use bounded inline data assembled by the server. A single documented server-side resolver for every named source, universal per-card provenance, and the planned `travel` context remain open roadmap work.
+Every named `source` is registered exactly once in `server/agent/dashboard-source-resolver.js`. Resolution reads bounded local synchronized stores, and schema validation imports the same registry-derived allowlist so validation and executable resolution cannot drift. Context planners may filter those bounded results for a selected person or project, then embed the resulting inert data in the validated schema. Universal per-card provenance and the planned `travel` context remain open roadmap work.
 
 The morning dashboard also includes up to five open recommendations. Its outer schema carries only a recommendation ID. The trusted `<u2-recommendation>` component fetches the persisted record, offers Keep/Dismiss controls, renders an attached prepared dashboard only when that dashboard passed the same server-side validator, and exposes a `<u2-why>` source trail.
 

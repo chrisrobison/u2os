@@ -9,6 +9,7 @@ import { initProjector } from '../server/memory/projector.js';
 import { runSeed } from '../server/seed/seed.js';
 import { findEntities } from '../server/memory/entity-store.js';
 import { validateDashboard } from '../server/api/dashboard-schema.js';
+import { DASHBOARD_SOURCES, resolveDashboardSource } from '../server/agent/dashboard-source-resolver.js';
 import {
   generateDashboard,
   DashboardNotFoundError,
@@ -59,6 +60,38 @@ test('generateDashboard({context: "morning"}) returns a schema that passes valid
     assert.ok(types.includes('schedule'));
     assert.ok(types.includes('task-list'));
     assert.ok(types.includes('approval'));
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('the shared dashboard source registry resolves every allowlisted source and rejects unknown names', () => {
+  const dir = tempHome();
+  try {
+    seedDemoData();
+    assert.deepEqual(DASHBOARD_SOURCES, [
+      'calendar.today', 'calendar.upcoming', 'tasks.priority', 'tasks.all',
+      'email.important', 'email.unread', 'actions.pending', 'events.recent', 'recommendations.open',
+    ]);
+    for (const source of DASHBOARD_SOURCES) {
+      const result = resolveDashboardSource(source);
+      assert.ok(Array.isArray(result), `${source} must resolve to an array`);
+      assert.ok(result.length <= 50, `${source} must be bounded`);
+    }
+    assert.throws(() => resolveDashboardSource('browser.arbitrary'), /Unknown dashboard source/);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('dashboard source filtering and limits stay bounded on the server', () => {
+  const dir = tempHome();
+  try {
+    seedDemoData();
+    const tasks = resolveDashboardSource('tasks.all', { filter: (task) => task.title.includes('U2OS'), limit: 1 });
+    assert.equal(tasks.length, 1);
+    assert.match(tasks[0].title, /U2OS/);
+    assert.equal(resolveDashboardSource('tasks.all', { limit: 0 }).length, 0);
   } finally {
     cleanup(dir);
   }
@@ -206,7 +239,7 @@ test('an invalid context value is rejected with a clear error, not silently retu
   }
 });
 
-test('GET /api/dashboard/morning still works identically after the provider-registry fix, and reflects the live calendar provider', async () => {
+test('GET /api/dashboard/morning reflects calendar data resolved from the synchronized server store', async () => {
   const dir = tempHome();
   let handle;
   try {

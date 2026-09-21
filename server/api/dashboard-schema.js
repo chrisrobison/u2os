@@ -1,3 +1,5 @@
+import { DASHBOARD_SOURCES } from '../agent/dashboard-source-resolver.js';
+
 // Allowlists per docs/dashboards.md. No dashboard schema reaches an HTTP
 // response without passing validateDashboard() -- this is a hard security
 // boundary (the LLM never emits HTML/JS, only this JSON shape).
@@ -23,17 +25,7 @@ const ALLOWED_COMPONENT_TYPES = new Set([
   'agent-status',
 ]);
 
-const ALLOWED_SOURCES = new Set([
-  'calendar.today',
-  'calendar.upcoming',
-  'tasks.priority',
-  'tasks.all',
-  'email.important',
-  'email.unread',
-  'actions.pending',
-  'events.recent',
-  'recommendations.open',
-]);
+const ALLOWED_SOURCES = new Set(DASHBOARD_SOURCES);
 const TOP_LEVEL_FIELDS = new Set(['title', 'layout', 'components']);
 const COMPONENT_FIELDS = new Set(['type', 'source', 'data']);
 const MAX_COMPONENTS = 50;
