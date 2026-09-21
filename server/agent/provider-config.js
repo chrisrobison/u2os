@@ -62,8 +62,8 @@ function instantiateSingleProvider(config, dataDir) {
  * multi-provider `roles` config is present, so every existing installation
  * keeps working with zero config changes.
  *
- * A multi-provider role config is opt-in and currently config-file-only
- * (no HTTP route writes one yet -- see docs/models.md's known gaps):
+ * A multi-provider role config is opt-in and may be written through
+ * POST /api/model or directly in config.json (see docs/models.md):
  *
  *   {
  *     "model": {

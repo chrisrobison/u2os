@@ -118,9 +118,9 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   // server/agent/model-router.js and docs/models.md.
   const modelRouter = createModelRouter(dataDir);
   // Semantic memory retrieval (PLAN.md Phase 5) is opt-in: most
-  // installations have no `embeddings` role configured (no HTTP route
-  // writes one yet -- see docs/models.md), so ContextAssembler falls back
-  // to its confidence/recency-only ranking. Deliberately does NOT rely on
+  // installations have no explicit `embeddings` role configured, so
+  // ContextAssembler falls back to its confidence/recency-only ranking.
+  // Deliberately does NOT rely on
   // ModelRouter's legacy single-provider "every role uses this one
   // provider" fallback here -- that fallback is correct for the planner/
   // classifier/summarizer/etc. roles (all the same ModelProvider
