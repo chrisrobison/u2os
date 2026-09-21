@@ -12,27 +12,45 @@ export function isConnected(dataDir) {
   return !!stored?.webhookUrl;
 }
 
-export async function send({ title, body, priority = 'normal' }, { fetchImpl = globalThis.fetch, dataDir } = {}) {
+export async function send({ title, body, priority = 'normal' }, { fetchImpl = globalThis.fetch, dataDir, timeoutMs = 10_000, signal } = {}) {
   const stored = readEncryptedFile('notify-webhook', dataDir);
   if (!stored?.webhookUrl) {
     throw new Error('webhook-notify: not connected');
   }
   const format = stored.format || 'json';
   let res;
-  if (format === 'ntfy') {
-    res = await fetchImpl(stored.webhookUrl, {
-      method: 'POST',
-      headers: { Title: title, Priority: mapNtfyPriority(priority) },
-      body,
-    });
-  } else {
-    res = await fetchImpl(stored.webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, body, priority }),
-    });
+  const timeoutController = signal ? null : new AbortController();
+  const timeout = timeoutController ? setTimeout(() => timeoutController.abort(new DOMException('Timed out', 'TimeoutError')), timeoutMs) : null;
+  try {
+    const requestSignal = signal || timeoutController.signal;
+    if (format === 'ntfy') {
+      res = await fetchImpl(stored.webhookUrl, {
+        method: 'POST',
+        headers: { Title: title, Priority: mapNtfyPriority(priority) },
+        body,
+        signal: requestSignal,
+      });
+    } else {
+      res = await fetchImpl(stored.webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, body, priority }),
+        signal: requestSignal,
+      });
+    }
+  } catch (cause) {
+    const timedOut = cause?.name === 'AbortError' || cause?.name === 'TimeoutError';
+    const error = new Error(timedOut ? 'webhook-notify: delivery timed out' : 'webhook-notify: delivery failed');
+    if (timedOut) error.code = 'ETIMEDOUT';
+    throw error;
+  } finally {
+    if (timeout) clearTimeout(timeout);
   }
-  if (!res.ok) throw new Error(`webhook-notify: send failed (status ${res.status})`);
+  if (!res.ok) {
+    const error = new Error(`webhook-notify: send failed (status ${res.status})`);
+    error.status = res.status;
+    throw error;
+  }
   return { title, body, priority, sentAt: new Date().toISOString() };
 }
 
