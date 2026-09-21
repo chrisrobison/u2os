@@ -224,6 +224,7 @@ test.describe.serial('responsive layout & accessibility baseline (#19)', () => {
       if (!el || el === document.body) return null;
       return {
         tag: el.tagName,
+        id: el.id || undefined,
         dataRoute: el.dataset ? el.dataset.route : undefined,
         className: typeof el.className === 'string' ? el.className : '',
       };
@@ -258,6 +259,17 @@ test.describe.serial('responsive layout & accessibility baseline (#19)', () => {
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(/#\/mail$/);
     await expect(page.locator('.workspace__title', { hasText: 'Mail' })).toBeVisible();
+    expect((await activeElementInfo())?.id).toBe('workspace');
+  });
+
+  test('keyboard: skip link is first and moves focus directly to the workspace', async () => {
+    const skip = page.locator('.skip-link');
+    await expect(page.locator('.shell > :first-child')).toHaveClass(/skip-link/);
+    await skip.focus();
+    await expect(skip).toBeFocused();
+    await expect(skip).toBeVisible();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#workspace')).toBeFocused();
   });
 
   test('keyboard: Space activates a keyboard-focused button (theme toggle)', async () => {
