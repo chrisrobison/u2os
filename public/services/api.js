@@ -109,6 +109,18 @@ export function getMemoryEntity(id) {
   return request(`/api/memory/entities/${encodeURIComponent(id)}`);
 }
 
+export function getMemoryEntityDeletionPreview(id) {
+  return request(`/api/memory/entities/${encodeURIComponent(id)}/deletion-preview`);
+}
+
+export function deleteMemoryEntity(id, previewToken) {
+  return request(`/api/memory/entities/${encodeURIComponent(id)}`, { method: 'DELETE', headers: JSON_HEADERS, body: JSON.stringify({ previewToken }) });
+}
+
+export function deleteMemoryRelationship(id) {
+  return request(`/api/memory/relationships/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
 export function getMemoryCandidates(status = 'pending') {
   return request(`/api/memory/candidates${qs({ status })}`);
 }

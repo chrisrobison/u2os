@@ -199,6 +199,9 @@ test('classification migration: entities/relationships/calendar_events/emails/ta
       db.prepare('SELECT classification FROM relationships WHERE id = ?').get('rel_1').classification,
       'personal'
     );
+    assert.equal(db.prepare('SELECT status FROM relationships WHERE id = ?').get('rel_1').status, 'active');
+    assert.ok(db.prepare("PRAGMA table_info(entities)").all().some((column) => column.name === 'deleted_at'));
+    assert.ok(db.prepare("PRAGMA table_info(relationships)").all().some((column) => column.name === 'deleted_at'));
     assert.equal(
       db.prepare('SELECT classification FROM emails WHERE id = ?').get('email_1').classification,
       'personal'
