@@ -94,6 +94,7 @@ test.describe.serial('memory candidate accept/reject flow (#17)', () => {
   let dedicated;
   let context;
   let page;
+  let chrisId;
 
   test.beforeAll(async ({ browser }) => {
     dedicated = await startDedicatedServer();
@@ -118,7 +119,7 @@ test.describe.serial('memory candidate accept/reject flow (#17)', () => {
 
     const chrisOption = card.locator('select[name="entityId"] option', { hasText: 'Chris' });
     await expect(chrisOption).toHaveCount(1);
-    const chrisId = await chrisOption.getAttribute('value');
+    chrisId = await chrisOption.getAttribute('value');
     expect(chrisId).toBeTruthy();
 
     await card.locator('select[name="entityId"]').selectOption(chrisId);
@@ -143,7 +144,42 @@ test.describe.serial('memory candidate accept/reject flow (#17)', () => {
     await expect(factRow).toContainText('Preferred meeting time:');
     await expect(factRow).toContainText(`"${content}"`);
     await expect(factRow).toContainText('memory-candidate-confirmation');
-    await expect(factRow).toContainText('confidence 95%');
+    await expect(factRow).toContainText('Confidence95%');
+  });
+
+  test('owner can inspect, confirm, reclassify, correct, and deliberately delete a fact', async () => {
+    let factRow = page.locator('.fact-row', { hasText: 'Preferred meeting time' }).filter({ hasText: 'current' });
+    await expect(factRow).toContainText('Explicit');
+    await expect(factRow).toContainText('personal');
+    await expect(factRow.locator('details')).toContainText('Provenance');
+
+    await factRow.getByRole('button', { name: 'Confirm', exact: true }).click();
+    factRow = page.locator('.fact-row', { hasText: 'Preferred meeting time' }).filter({ hasText: 'current' });
+    await expect(factRow).not.toContainText('Last confirmedNever');
+
+    await factRow.getByLabel('Classification').selectOption('private');
+    await Promise.all([
+      page.waitForResponse((response) => response.request().method() === 'PATCH' && response.url().includes('/api/memory/facts/')),
+      factRow.getByRole('button', { name: 'Save', exact: true }).click(),
+    ]);
+    factRow = page.locator('.fact-row', { hasText: 'Preferred meeting time' }).filter({ hasText: 'current' });
+    await expect(factRow.getByLabel('Classification')).toHaveValue('private');
+
+    await factRow.getByLabel('Correct value').fill('Prefers morning meetings');
+    await expect(factRow.getByLabel('Correct value')).toHaveValue('Prefers morning meetings');
+    const correctionRequest = page.waitForRequest((request) => request.method() === 'PATCH' && request.url().includes('/api/memory/facts/'));
+    await factRow.getByRole('button', { name: 'Correct', exact: true }).click();
+    expect((await correctionRequest).postDataJSON().value).toBe('Prefers morning meetings');
+    await expect(page.locator('.fact-row--superseded', { hasText: 'Prefers afternoon meetings' })).toBeVisible();
+    factRow = page.locator('.fact-row--current', { hasText: 'Preferred meeting time' });
+    await expect(factRow).toContainText('Prefers morning meetings');
+    await expect(factRow).toContainText('correction:');
+
+    page.once('dialog', (dialog) => dialog.accept());
+    await factRow.getByRole('button', { name: 'Delete', exact: true }).click();
+    await expect(page.locator('.fact-row--deleted', { hasText: 'Preferred meeting time' })).toContainText('Prefers morning meetings');
+    await expect(page.locator('.fact-row--current', { hasText: 'Preferred meeting time' })).toHaveCount(0);
+    expect(chrisId).toBeTruthy();
   });
 
   test('rejecting a pending candidate removes it without creating a fact', async () => {

@@ -109,6 +109,18 @@ export function rejectMemoryCandidate(id) {
   return request(`/api/memory/candidates/${encodeURIComponent(id)}/reject`, { method: 'POST', headers: JSON_HEADERS, body: '{}' });
 }
 
+export function confirmMemoryFact(id) {
+  return request(`/api/memory/facts/${encodeURIComponent(id)}/confirm`, { method: 'POST', headers: JSON_HEADERS, body: '{}' });
+}
+
+export function updateMemoryFact(id, payload) {
+  return request(`/api/memory/facts/${encodeURIComponent(id)}`, { method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify(payload) });
+}
+
+export function deleteMemoryFact(id) {
+  return request(`/api/memory/facts/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
 export function sendAgentMessage(text) {
   return request('/api/agent/message', {
     method: 'POST',
