@@ -231,6 +231,28 @@ export async function evaluateBirthdayApproaching(event, { proposeAction }) {
   return { decision: 'notify', eventType: event.type, outcome };
 }
 
+// message.received -> notify only for an explicitly direct, high-importance
+// message. Payload text is descriptive and bounded; it cannot select the tool,
+// policy domain, or authorization level.
+export async function evaluateMessageReceived(event, { proposeAction }) {
+  const importance = boundedText(event.data?.importance, 16).toLowerCase();
+  const sender = boundedText(event.data?.sender, 120);
+  const summary = boundedText(event.data?.subject || event.data?.preview, 240);
+  if (event.data?.direct !== true || !['high', 'urgent'].includes(importance) || !sender || !summary) {
+    return { decision: 'ignore', eventType: event.type, reason: 'Message is not a valid direct high/urgent message.' };
+  }
+
+  const messageId = event.subject?.type === 'message' ? boundedText(event.subject.id, 120) : '';
+  const outcome = await proposeAction({
+    tool: 'notifications.send',
+    arguments: { title: 'Important message', body: boundedText(`Message from ${sender}: ${summary}`, 500), priority: 'high' },
+    requestedBy: 'agent:evaluateEvent',
+    requestText: `message.received${messageId ? `: ${messageId}` : ''}`,
+    reasoningSummary: `A direct message carried an explicit ${importance} importance signal.`,
+  });
+  return { decision: 'notify', eventType: event.type, outcome };
+}
+
 function boundedText(value, limit) {
   return typeof value === 'string' ? value.trim().slice(0, limit) : '';
 }
@@ -306,6 +328,7 @@ export function registerBuiltinEvaluators(registry) {
   registry.register({ eventPattern: 'calendar.event_changed', evaluate: evaluateCalendarChanged, name: 'builtin:calendar.event_changed' });
   registry.register({ eventPattern: 'subscription.renewing', evaluate: evaluateSubscriptionRenewing, name: 'builtin:subscription.renewing' });
   registry.register({ eventPattern: 'contact.birthday_approaching', evaluate: evaluateBirthdayApproaching, name: 'builtin:contact.birthday_approaching' });
+  registry.register({ eventPattern: 'message.received', evaluate: evaluateMessageReceived, name: 'builtin:message.received' });
   registry.register({ eventPattern: 'task.overdue', evaluate: evaluateTaskOverdue, name: 'builtin:task.overdue' });
   registry.register({ eventPattern: 'commitment.made', evaluate: evaluateCommitmentMade, name: 'builtin:commitment.made' });
   return registry;
