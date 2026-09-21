@@ -540,6 +540,33 @@ export function listTriggers({ kind, enabled } = {}) {
   return rows.map(rowToTrigger);
 }
 
+export function listTriggerHistory(id, { limit = 20 } = {}) {
+  const boundedLimit = Math.max(1, Math.min(Number(limit) || 20, 50));
+  const rows = getDb().prepare(
+    `SELECT id, type, timestamp, data, correlation_id
+     FROM events
+     WHERE subject_type = 'trigger' AND subject_id = ?
+       AND type IN ('agent.action.completed', 'agent.action.failed')
+     ORDER BY timestamp DESC, id DESC LIMIT ?`
+  ).all(id, boundedLimit);
+  return rows.map((row) => {
+    let data = {};
+    try { data = JSON.parse(row.data || '{}'); } catch { /* malformed historical data stays metadata-free */ }
+    return {
+      id: row.id,
+      timestamp: row.timestamp,
+      status: row.type === 'agent.action.completed' ? 'completed' : 'failed',
+      eventType: boundedHistoryText(data.eventType),
+      actionKind: boundedHistoryText(data.actionKind),
+      correlationId: row.correlation_id || null,
+    };
+  });
+}
+
+function boundedHistoryText(value) {
+  return typeof value === 'string' ? value.slice(0, 120) : null;
+}
+
 export function updateTrigger(id, patch = {}) {
   const existing = getTrigger(id);
   if (!existing) return null;

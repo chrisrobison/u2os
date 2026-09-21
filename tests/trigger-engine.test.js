@@ -98,6 +98,34 @@ test('event_rule trigger fires on a matching event and produces a policy-gated, 
   }
 });
 
+test('trigger history is derived from events and excludes result and raw error payloads', async () => {
+  const dir = tempHome();
+  try {
+    const db = getDb();
+    const eventBus = new EventBus(db);
+    const trigger = triggerEngine.createTrigger({ name: 'History test', kind: 'timer', config: {}, source: 'user' });
+    eventBus.publish({
+      type: 'agent.action.completed', source: 'trigger-engine', subject: { type: 'trigger', id: trigger.id },
+      data: { eventType: 'trigger.fired', actionKind: 'notify', result: { secret: 'must-not-leak' }, arguments: { body: 'private' } },
+      metadata: { correlationId: 'corr_history_ok' },
+    });
+    eventBus.publish({
+      type: 'agent.action.failed', source: 'trigger-engine', subject: { type: 'trigger', id: trigger.id },
+      data: { eventType: 'trigger.fired', actionKind: 'notify', error: 'credential-bearing provider failure' },
+      metadata: { correlationId: 'corr_history_failed' },
+    });
+    eventBus.publish({ type: 'agent.action.completed', source: 'trigger-engine', subject: { type: 'trigger', id: 'other' }, data: {} });
+
+    const history = triggerEngine.listTriggerHistory(trigger.id, { limit: 1000 });
+    assert.equal(history.length, 2);
+    assert.deepEqual(history.map(({ status }) => status).sort(), ['completed', 'failed']);
+    assert.deepEqual(Object.keys(history[0]).sort(), ['actionKind', 'correlationId', 'eventType', 'id', 'status', 'timestamp']);
+    assert.doesNotMatch(JSON.stringify(history), /must-not-leak|private|credential-bearing/);
+  } finally {
+    await cleanup(dir);
+  }
+});
+
 test('condition_watch (task_overdue) dedupes via trigger_fired_log -- firing the tick twice does not double-notify the same task', async () => {
   const dir = tempHome();
   try {
