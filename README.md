@@ -82,6 +82,7 @@ Key documentation:
 - [Feedback](docs/feedback.md)
 - [Deployment](docs/deployment.md)
 - [Model providers](docs/models.md)
+- [Contributing](CONTRIBUTING.md)
 
 ## Requirements
 
