@@ -108,6 +108,44 @@ function validateComponentData(type, data) {
     optionalString(data.excerpt, 4000, 'document.excerpt');
     optionalString(data.whyRelevant, 2000, 'document.whyRelevant');
   }
+  if (type === 'chart') validateChart(data);
+  if (type === 'map') validateMap(data);
+  if (type === 'photo-grid') validatePhotoGrid(data);
+}
+
+function validateChart(data) {
+  optionalString(data.title, 200, 'chart.title');
+  boundedArray(data.series, 4, 'chart.series');
+  if (!data.series?.length) throw new Error('Dashboard chart.series requires at least one series');
+  for (const series of data.series) {
+    requireString(series.label, 'chart series label'); boundedArray(series.values, 24, 'chart series values');
+    if (!series.values?.length || series.values.some((point) => !point || typeof point.label !== 'string' || point.label.length > 200 || typeof point.value !== 'number' || !Number.isFinite(point.value))) {
+      throw new Error('Dashboard chart series values require bounded labels and finite numeric values');
+    }
+  }
+}
+
+function validateMap(data) {
+  optionalString(data.title, 200, 'map.title'); boundedArray(data.locations, 50, 'map.locations');
+  for (const location of data.locations || []) {
+    requireString(location.label, 'map location label');
+    if (typeof location.latitude !== 'number' || location.latitude < -90 || location.latitude > 90 || typeof location.longitude !== 'number' || location.longitude < -180 || location.longitude > 180) {
+      throw new Error('Dashboard map locations require valid latitude and longitude');
+    }
+  }
+}
+
+function validatePhotoGrid(data) {
+  optionalString(data.title, 200, 'photo-grid.title'); boundedArray(data.photos, 24, 'photo-grid.photos');
+  for (const photo of data.photos || []) {
+    if (!photo || typeof photo !== 'object' || !safeLocalImageSource(photo.src)) throw new Error('Dashboard photo-grid sources must be local media paths or bounded image data URLs');
+    optionalString(photo.caption, 500, 'photo-grid caption');
+    optionalString(photo.alt, 500, 'photo-grid alt text');
+  }
+}
+
+function safeLocalImageSource(value) {
+  return typeof value === 'string' && (value.startsWith('/media/') || value.startsWith('/api/media/') || /^data:image\/(?:png|jpeg|webp|gif);base64,[a-z0-9+/=]+$/i.test(value));
 }
 
 function requireString(value, label) {

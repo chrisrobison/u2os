@@ -163,6 +163,15 @@ export class U2Dashboard extends HTMLElement {
         card.appendChild(el);
         break;
       }
+      case 'chart':
+      case 'map':
+      case 'photo-grid': {
+        card.title = CARD_TITLES[type];
+        const el = document.createElement(`u2-${type}`);
+        el.data = data;
+        card.appendChild(el);
+        break;
+      }
       default: {
         const tag = `u2-${type}`;
         card.title = CARD_TITLES[type] || humanizeType(type);

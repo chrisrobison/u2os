@@ -158,6 +158,17 @@ test('conversation and document payloads require bounded structured fields', () 
   assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [{ type: 'document', data: { title: 'x', excerpt: 'x'.repeat(4001) } }] }), /document.excerpt/);
 });
 
+test('chart, map, and photo-grid accept only bounded safe structured data', () => {
+  assert.doesNotThrow(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [
+    { type: 'chart', data: { series: [{ label: 'Tasks', values: [{ label: 'Open', value: 3 }] }] } },
+    { type: 'map', data: { locations: [{ label: 'Home', latitude: 37.7, longitude: -122.4 }] } },
+    { type: 'photo-grid', data: { photos: [{ src: '/media/demo.png', caption: 'Demo' }] } },
+  ] }));
+  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [{ type: 'chart', data: { series: [{ label: 'x', values: [{ label: 'bad', value: Infinity }] }] } }] }), /finite numeric/);
+  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [{ type: 'map', data: { locations: [{ label: 'bad', latitude: 91, longitude: 0 }] } }] }), /valid latitude/);
+  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [{ type: 'photo-grid', data: { photos: [{ src: 'https://tracker.example/photo.jpg' }] } }] }), /local media/);
+});
+
 test('an unknown personId is handled cleanly (no crash, clear 404-style error)', () => {
   const dir = tempHome();
   try {
