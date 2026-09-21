@@ -17,6 +17,8 @@ export class U2Triggers extends HTMLElement {
     super();
     this._triggers = null;
     this._busy = new Set();
+    this._history = new Map();
+    this._expandedHistory = new Set();
     this._message = null;
     this._onClick = this._onClick.bind(this);
     this._onSubmit = this._onSubmit.bind(this);
@@ -66,6 +68,7 @@ export class U2Triggers extends HTMLElement {
   _row(trigger) {
     const busy = this._busy.has(trigger.id);
     const userCreated = trigger.source === 'user';
+    const expanded = this._expandedHistory.has(trigger.id);
     return `<article class="trigger-row" data-trigger-id="${escapeHtml(trigger.id)}">
       <div class="trigger-row__body">
         <div class="trigger-row__heading"><strong>${escapeHtml(trigger.name)}</strong><span class="trigger-state trigger-state--${trigger.enabled ? 'enabled' : 'paused'}">${trigger.enabled ? 'Enabled' : 'Paused'}</span></div>
@@ -73,10 +76,23 @@ export class U2Triggers extends HTMLElement {
         ${trigger.next_check_at ? `<div class="trigger-row__next">Next check: ${escapeHtml(formatDateTime(trigger.next_check_at))}</div>` : ''}
       </div>
       <div class="trigger-row__actions">
+        <button type="button" data-trigger-history="${escapeHtml(trigger.id)}" aria-expanded="${expanded}">${expanded ? 'Hide history' : 'History'}</button>
         <button type="button" data-toggle-trigger="${escapeHtml(trigger.id)}" data-enabled="${trigger.enabled}" ${busy ? 'disabled' : ''}>${trigger.enabled ? 'Pause' : 'Resume'}</button>
         ${userCreated ? `<button type="button" class="btn-danger" data-delete-trigger="${escapeHtml(trigger.id)}" ${busy ? 'disabled' : ''}>Delete</button>` : ''}
       </div>
+      ${expanded ? this._renderHistory(trigger.id) : ''}
     </article>`;
+  }
+
+  _renderHistory(id) {
+    const history = this._history.get(id);
+    if (!history) return '<div class="trigger-history" role="status">Loading history...</div>';
+    if (!history.length) return '<div class="trigger-history"><div class="trigger-history__empty">No runs yet.</div></div>';
+    return `<div class="trigger-history" aria-label="Recent run history"><ul>${history.map((run) => `<li>
+      <span class="trigger-history__status trigger-history__status--${escapeHtml(run.status)}">${escapeHtml(run.status)}</span>
+      <span>${escapeHtml(formatDateTime(run.timestamp))}</span>
+      <span>${escapeHtml(humanizeKey(run.actionKind || 'evaluate'))} · ${escapeHtml(run.eventType || 'trigger event')}</span>
+    </li>`).join('')}</ul></div>`;
   }
 
   _onKindChange(event) {
@@ -90,12 +106,33 @@ export class U2Triggers extends HTMLElement {
   }
 
   _onClick(event) {
+    const history = event.target.closest('[data-trigger-history]');
+    if (history) return this._toggleHistory(history.dataset.triggerHistory);
     const toggle = event.target.closest('[data-toggle-trigger]');
     if (toggle) return this._mutate(toggle.dataset.toggleTrigger, () => api.updateTrigger(toggle.dataset.toggleTrigger, { enabled: toggle.dataset.enabled !== 'true' }), 'Automation updated.');
     const remove = event.target.closest('[data-delete-trigger]');
     if (remove && window.confirm('Delete this automation? This cannot be undone.')) {
       return this._mutate(remove.dataset.deleteTrigger, () => api.deleteTrigger(remove.dataset.deleteTrigger), 'Automation deleted.');
     }
+  }
+
+  async _toggleHistory(id) {
+    if (this._expandedHistory.has(id)) {
+      this._expandedHistory.delete(id);
+      this._render();
+      return;
+    }
+    this._expandedHistory.add(id);
+    this._render();
+    if (this._history.has(id)) return;
+    try {
+      const result = await api.getTriggerHistory(id);
+      this._history.set(id, result.history || []);
+    } catch (err) {
+      this._expandedHistory.delete(id);
+      this._message = { text: err.message, error: true };
+    }
+    this._render();
   }
 
   async _onSubmit(event) {

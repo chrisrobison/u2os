@@ -1,5 +1,5 @@
 import { sendJson } from '../router.js';
-import { listTriggers, getTrigger, createTrigger, updateTrigger, deleteTrigger } from '../../triggers/trigger-engine.js';
+import { listTriggers, listTriggerHistory, getTrigger, createTrigger, updateTrigger, deleteTrigger } from '../../triggers/trigger-engine.js';
 import { assertSafeRegexPattern } from '../../triggers/regex-safety.js';
 
 const VALID_KINDS = ['timer', 'schedule', 'event_rule', 'condition_watch'];
@@ -43,6 +43,12 @@ export function registerTriggerRoutes(router) {
     const trigger = getTrigger(req.params.id);
     if (!trigger) return sendJson(res, 404, { error: 'Not Found' });
     sendJson(res, 200, trigger);
+  });
+
+  router.get('/api/triggers/:id/history', async (req, res) => {
+    const trigger = getTrigger(req.params.id);
+    if (!trigger) return sendJson(res, 404, { error: 'Not Found' });
+    sendJson(res, 200, { triggerId: trigger.id, history: listTriggerHistory(trigger.id, { limit: req.query.limit }) });
   });
 
   // User-created triggers, per docs/automation.md -- structured data

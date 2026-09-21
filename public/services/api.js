@@ -246,6 +246,10 @@ export function getTriggers() {
   return request('/api/triggers');
 }
 
+export function getTriggerHistory(id, limit = 20) {
+  return request(`/api/triggers/${encodeURIComponent(id)}/history${qs({ limit })}`);
+}
+
 export function createTrigger({ name, kind, config, enabled = true }) {
   return request('/api/triggers', {
     method: 'POST',

@@ -28,6 +28,12 @@ test('owner creates, pauses, resumes, and deletes a structured automation', asyn
     await expect(row).toContainText('Enabled');
     await expect(row.locator('[data-delete-trigger]')).toBeVisible();
 
+    await row.locator('[data-trigger-history]').click();
+    await expect(row.locator('[data-trigger-history]')).toHaveAttribute('aria-expanded', 'true');
+    await expect(row.locator('.trigger-history')).toContainText('No runs yet.');
+    const missingHistory = await page.request.get(`${dedicated.baseURL}/api/triggers/missing/history`);
+    expect(missingHistory.status()).toBe(404);
+
     await row.locator('[data-toggle-trigger]').press('Enter');
     await expect(row).toContainText('Paused');
     await row.locator('[data-toggle-trigger]').press('Enter');

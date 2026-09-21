@@ -100,9 +100,9 @@ WHEN commitment.made IF no task exists THEN create task
 
 ## Owner interface
 
-The **Automation** screen (`#/automation`) lists every system and user trigger with its kind, source, current state, schedule summary, and next check where applicable. Owners can pause or resume any trigger. The constrained creation form supports one-time timers and recurring minute schedules; it sends only structured `kind` and `config` data to the existing validated trigger API. User-created triggers can also be deleted after confirmation. Seeded system triggers deliberately have no delete control so the built-in proactive behaviors remain recoverable, although they can be paused.
+The **Automation** screen (`#/automation`) lists every system and user trigger with its kind, source, current state, schedule summary, and next check where applicable. Owners can pause or resume any trigger and expand a recent-run history. `GET /api/triggers/:id/history?limit=` derives that bounded history from the immutable event log and exposes only run id/time, completed-or-failed status, event/action kind, and correlation id; action results, arguments, and raw errors are deliberately omitted. The constrained creation form supports one-time timers and recurring minute schedules; it sends only structured `kind` and `config` data to the existing validated trigger API. User-created triggers can also be deleted after confirmation. Seeded system triggers deliberately have no delete control so the built-in proactive behaviors remain recoverable, although they can be paused.
 
-Event-rule and condition-watch authoring remain API-only because their richer action and matching configuration needs a purpose-built safe editor. Execution history, next-run previews, and manual dry runs remain milestone-5 work.
+Event-rule and condition-watch authoring remain API-only because their richer action and matching configuration needs a purpose-built safe editor. Pause/resume, persisted next-run display, and bounded execution history are implemented; manual dry runs remain milestone-5 work.
 
 ## Security note: `when.matches` is a ReDoS surface, and is validated accordingly
 
