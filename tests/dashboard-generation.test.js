@@ -149,6 +149,15 @@ test('person and project dashboard payloads are bounded by type-specific validat
   assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [{ type: 'project', data: { name: 'x', openTasks: Array.from({ length: 21 }, () => ({})) } }] }), /at most 20/);
 });
 
+test('conversation and document payloads require bounded structured fields', () => {
+  assert.doesNotThrow(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [
+    { type: 'conversation', data: { thread: 'Jamie', messages: [{ sender: 'Jamie', text: 'Hello' }], summary: 'Follow-up' } },
+    { type: 'document', data: { title: 'Budget', type: 'PDF', source: 'local', excerpt: 'Summary' } },
+  ] }));
+  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [{ type: 'conversation', data: { thread: 'x', messages: Array.from({ length: 21 }, () => ({})) } }] }), /at most 20/);
+  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [{ type: 'document', data: { title: 'x', excerpt: 'x'.repeat(4001) } }] }), /document.excerpt/);
+});
+
 test('an unknown personId is handled cleanly (no crash, clear 404-style error)', () => {
   const dir = tempHome();
   try {
