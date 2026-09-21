@@ -13,6 +13,7 @@
 //   context.generateDashboard(args)       -- Agent.generateDashboard(),
 //     reused rather than reimplemented.
 import { getCachedCalendarEvent } from '../../integrations/calendar-store.js';
+import { getDb } from '../../db/connection.js';
 import { findEntities } from '../../memory/entity-store.js';
 import * as tasksProvider from '../../integrations/mock-tasks-provider.js';
 import { scoreForSuggestion } from '../../feedback/prioritizer.js';
@@ -143,6 +144,53 @@ export async function evaluateCalendarApproaching(event, { correlationId, actor,
   return { decision: 'prepare', eventType: event.type, recommendation };
 }
 
+// calendar.event_changed -> notify only when the authoritative local calendar
+// mirror shows a real interval overlap. This deliberately does not trust a
+// model-authored category or make a provider network call during evaluation.
+export async function evaluateCalendarChanged(event, { proposeAction }) {
+  const eventId = event.subject?.id || event.data?.eventId;
+  const changed = eventId ? getCachedCalendarEvent(eventId) : null;
+  const candidate = changed || normalizeCalendarEvent(event.data?.after, eventId);
+  if (!validInterval(candidate) || candidate.status === 'cancelled' || candidate.status === 'canceled') {
+    return { decision: 'ignore', eventType: event.type, reason: 'Changed event has no active, valid interval.' };
+  }
+
+  const candidateStart = Date.parse(candidate.start_at);
+  const candidateEnd = Date.parse(candidate.end_at);
+  const conflicts = getDb().prepare('SELECT id, title, start_at, end_at, status FROM calendar_events WHERE id != ?').all(candidate.id || '')
+    .filter((other) => other.status !== 'cancelled' && other.status !== 'canceled' && validInterval(other))
+    .filter((other) => Date.parse(other.start_at) < candidateEnd && Date.parse(other.end_at) > candidateStart)
+    .sort((a, b) => Date.parse(a.start_at) - Date.parse(b.start_at) || a.id.localeCompare(b.id));
+  if (!conflicts.length) {
+    return { decision: 'ignore', eventType: event.type, reason: 'No overlapping active calendar event was found.' };
+  }
+
+  const titles = conflicts.slice(0, 3).map((conflict) => conflict.title || 'Untitled event').join(', ');
+  const suffix = conflicts.length > 3 ? ` and ${conflicts.length - 3} more` : '';
+  const outcome = await proposeAction({
+    tool: 'notifications.send',
+    arguments: {
+      title: 'Calendar conflict',
+      body: `“${candidate.title || 'Changed event'}” overlaps with ${titles}${suffix}.`,
+      priority: 'high',
+    },
+    requestedBy: 'agent:evaluateEvent',
+    requestText: `calendar.event_changed: ${candidate.id}`,
+    reasoningSummary: `Authoritative cached calendar intervals show ${conflicts.length} conflict(s) after the event changed.`,
+  });
+  return { decision: 'notify', eventType: event.type, conflicts: conflicts.map(({ id }) => id), outcome };
+}
+
+function normalizeCalendarEvent(value = {}, id = null) {
+  return { id, title: value?.title, start_at: value?.start_at || value?.startAt, end_at: value?.end_at || value?.endAt, status: value?.status };
+}
+
+function validInterval(event) {
+  const start = Date.parse(event?.start_at);
+  const end = Date.parse(event?.end_at);
+  return Number.isFinite(start) && Number.isFinite(end) && end > start;
+}
+
 // task.overdue -> notify.
 export async function evaluateTaskOverdue(event, { proposeAction }) {
   const title = event.data?.title || 'a task';
@@ -197,10 +245,11 @@ export async function evaluateCommitmentMade(event, { proposeAction }) {
   return { decision: 'act', eventType: event.type, outcome };
 }
 
-/** Registers the four Phase 6 built-in evaluators on the given registry. */
+/** Registers the built-in evaluators on the given registry. */
 export function registerBuiltinEvaluators(registry) {
   registry.register({ eventPattern: 'email.received', evaluate: evaluateEmailReceived, name: 'builtin:email.received' });
   registry.register({ eventPattern: 'calendar.event_approaching', evaluate: evaluateCalendarApproaching, name: 'builtin:calendar.event_approaching' });
+  registry.register({ eventPattern: 'calendar.event_changed', evaluate: evaluateCalendarChanged, name: 'builtin:calendar.event_changed' });
   registry.register({ eventPattern: 'task.overdue', evaluate: evaluateTaskOverdue, name: 'builtin:task.overdue' });
   registry.register({ eventPattern: 'commitment.made', evaluate: evaluateCommitmentMade, name: 'builtin:commitment.made' });
   return registry;
