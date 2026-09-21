@@ -230,6 +230,30 @@ export function getConnectors() {
   return request('/api/connectors');
 }
 
+export function getTriggers() {
+  return request('/api/triggers');
+}
+
+export function createTrigger({ name, kind, config, enabled = true }) {
+  return request('/api/triggers', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ name, kind, config, enabled }),
+  });
+}
+
+export function updateTrigger(id, patch) {
+  return request(`/api/triggers/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(patch),
+  });
+}
+
+export function deleteTrigger(id) {
+  return request(`/api/triggers/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
 export function saveGoogleCredentials({ clientId, clientSecret } = {}) {
   return request('/api/connectors/google/credentials', {
     method: 'POST',

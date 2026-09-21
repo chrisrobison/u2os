@@ -74,7 +74,7 @@ Turn the current UI from a largely backend-tested shell into a dependable client
 
 ### Work
 
-- [ ] Add Playwright coverage for onboarding/login, navigation, chat, approval/rejection, dashboards, connectors, triggers, feedback, themes, and responsive layouts. (59 scenarios run in Chromium, Firefox, and WebKit and cover every listed area except trigger management.)
+- [x] Add Playwright coverage for onboarding/login, navigation, chat, approval/rejection, dashboards, connectors, triggers, feedback, themes, and responsive layouts. (61 scenarios run in Chromium, Firefox, and WebKit, including the complete create/pause/resume/delete trigger workflow.)
 - [x] Add SSE reconnect with exponential backoff, last-event recovery, duplicate suppression, and session-expiry handling. (The client exposes connection state, bounds remembered event ids, and stops retrying to return the owner to login on HTTP 401.)
 - [ ] Make dashboards update in place from relevant events. (Activity, memory, operations, and diagnostics update from SSE; generated dashboard cards do not yet refresh comprehensively.)
 - [x] Surface offline, degraded connector, and queued-action states consistently. (`u2-connectors`, `u2-operations`, and `u2-diagnostics` expose connector health and durable queue states with owner-readable recovery information.)

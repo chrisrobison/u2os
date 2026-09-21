@@ -200,6 +200,14 @@ test.describe.serial('navigation shell (#15)', () => {
       },
     },
     {
+      hash: '#/automation',
+      async assert() {
+        await expect(workspaceTitle('Automation')).toBeVisible();
+        await expect(page.locator('[data-create-trigger]')).toBeVisible();
+        await expect(page.locator('.trigger-row')).toHaveCount(3);
+      },
+    },
+    {
       hash: '#/devices',
       async assert() {
         await expect(workspaceTitle('Devices')).toBeVisible();
@@ -234,7 +242,8 @@ test.describe.serial('navigation shell (#15)', () => {
     const checkOnly = async (activeHash) => {
       for (const [hash] of [
         ['#/home'], ['#/briefing'], ['#/memory'], ['#/mail'], ['#/calendar'], ['#/tasks'],
-        ['#/projects'], ['#/dashboards'], ['#/activity'], ['#/connectors'], ['#/devices'], ['#/voice'],
+        ['#/projects'], ['#/dashboards'], ['#/activity'], ['#/operations'], ['#/automation'], ['#/diagnostics'],
+        ['#/connectors'], ['#/devices'], ['#/voice'],
       ]) {
         const link = navLink(hash);
         if (hash === activeHash) await expect(link).toHaveClass(/is-active/);

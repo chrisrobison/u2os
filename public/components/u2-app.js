@@ -14,6 +14,7 @@ import './u2-timeline.js';
 import './u2-voice.js';
 import './u2-devices.js';
 import './u2-operations.js';
+import './u2-triggers.js';
 import './u2-diagnostics.js';
 
 // Dashboard contexts the #/dashboards picker offers, per PROMPT.md section
@@ -199,6 +200,9 @@ export class U2App extends HTMLElement {
         break;
       case 'operations':
         this._renderOperations();
+        break;
+      case 'automation':
+        this._renderTriggers();
         break;
       case 'diagnostics':
         this._renderDiagnostics();
@@ -452,6 +456,10 @@ export class U2App extends HTMLElement {
   _renderDevices() {
     // u2-devices (docs/devices.md Phase 6) -- same self-fetching pattern.
     this._setWorkspace('', document.createElement('u2-devices'));
+  }
+
+  _renderTriggers() {
+    this._setWorkspace('', document.createElement('u2-triggers'));
   }
 
   _renderOperations() {

@@ -1090,6 +1090,35 @@ u2-device-panel .u2-card {
 }
 .btn-danger:hover { background: var(--accent-danger); color: #FFFFFF; }
 
+/* ---------- automation management ---------- */
+
+.trigger-create {
+  display: grid;
+  grid-template-columns: minmax(12rem, 2fr) minmax(9rem, 1fr) minmax(11rem, 1fr) auto;
+  gap: var(--space-3);
+  align-items: end;
+  margin-bottom: var(--space-4);
+}
+.trigger-create .u2-card__title { grid-column: 1 / -1; }
+.trigger-create label { display: flex; flex-direction: column; gap: var(--space-1); color: var(--text-secondary); font-size: var(--text-sm); }
+.trigger-create input, .trigger-create select { padding: var(--space-2); background: var(--bg-page); border: var(--border-width) solid var(--border-color); border-radius: var(--radius-sm); color: var(--text-primary); }
+.trigger-message { min-height: 1.5rem; color: var(--accent-active); }
+.trigger-message.is-error { color: var(--accent-danger); }
+.trigger-list { display: flex; flex-direction: column; gap: var(--space-3); }
+.trigger-row { display: flex; gap: var(--space-4); align-items: center; padding: var(--space-4); background: var(--bg-card); border: var(--border-width) solid var(--border-color); border-radius: var(--radius-md); }
+.trigger-row__body { flex: 1; min-width: 0; }
+.trigger-row__heading { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.trigger-row__meta, .trigger-row__next { color: var(--text-tertiary); font-size: var(--text-sm); margin-top: var(--space-1); }
+.trigger-row__actions { display: flex; gap: var(--space-2); }
+.trigger-state { padding: 2px var(--space-2); border-radius: var(--radius-full); border: var(--border-width) solid var(--border-color); font-size: var(--text-xs); font-weight: 600; }
+.trigger-state--enabled { color: var(--accent-active); border-color: var(--accent-active); }
+.trigger-state--paused { color: var(--text-tertiary); }
+
+@media (max-width: 760px) {
+  .trigger-create { grid-template-columns: 1fr; }
+  .trigger-row { align-items: flex-start; flex-direction: column; }
+}
+
 .device-list { display: flex; flex-direction: column; gap: var(--space-3); }
 
 .device-row {
