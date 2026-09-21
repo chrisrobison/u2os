@@ -88,6 +88,26 @@ function validateComponentData(type, data) {
     boundedArray(data.unresolvedDecisions, 20, 'project.unresolvedDecisions');
     boundedArray(data.relatedDocuments, 20, 'project.relatedDocuments');
   }
+  if (type === 'conversation') {
+    requireString(data.thread || data.person, 'conversation.thread');
+    boundedArray(data.messages, 20, 'conversation.messages');
+    for (const message of data.messages || []) {
+      if (!message || typeof message !== 'object' || Array.isArray(message)) throw new Error('Dashboard conversation.messages entries must be objects');
+      optionalString(message.sender, 200, 'conversation message sender');
+      requireString(message.text, 'conversation message text');
+      optionalString(message.at, 100, 'conversation message timestamp');
+    }
+    optionalString(data.summary, 2000, 'conversation.summary');
+    optionalString(data.unresolvedQuestion, 1000, 'conversation.unresolvedQuestion');
+    optionalString(data.nextStep, 1000, 'conversation.nextStep');
+  }
+  if (type === 'document') {
+    requireString(data.title, 'document.title');
+    optionalString(data.type, 100, 'document.type');
+    optionalString(data.source, 500, 'document.source');
+    optionalString(data.excerpt, 4000, 'document.excerpt');
+    optionalString(data.whyRelevant, 2000, 'document.whyRelevant');
+  }
 }
 
 function requireString(value, label) {
@@ -96,6 +116,10 @@ function requireString(value, label) {
 
 function boundedArray(value, limit, label) {
   if (value !== undefined && (!Array.isArray(value) || value.length > limit)) throw new Error(`Dashboard ${label} must be an array of at most ${limit} items`);
+}
+
+function optionalString(value, limit, label) {
+  if (value !== undefined && (typeof value !== 'string' || value.length > limit)) throw new Error(`Dashboard ${label} must be a string of at most ${limit} characters`);
 }
 
 function rejectUnknown(value, allowed, label) {
