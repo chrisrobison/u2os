@@ -38,7 +38,7 @@ export class Agent {
     this.eventBus = eventBus;
     this.ownerEntityId = ownerEntityId;
 
-    this.contextAssembler = new ContextAssembler({ toolRegistry, eventBus, ownerEntityId, embeddingProvider });
+    this.contextAssembler = new ContextAssembler({ toolRegistry, eventBus, ownerEntityId, embeddingProvider, dataProcessingPolicy });
     this.planner = new Planner({ modelProvider, modelRouter, role: 'planner', dataProcessingPolicy });
     this.actionEvaluator = new ActionEvaluator({ toolRegistry, policyEngine });
     this.actionExecutor = new ActionExecutor({ eventBus });

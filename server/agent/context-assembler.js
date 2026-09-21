@@ -4,10 +4,11 @@ import { getFacts } from '../memory/fact-store.js';
 import { getRelationships } from '../memory/relationship-store.js';
 import { listEvents } from '../events/log.js';
 import { rankFactsHybrid } from '../memory/semantic-retrieval.js';
-import { selectMemoryCandidates } from '../memory/candidate-retrieval.js';
+import { selectMemoryCandidates, rankMemoryCandidates } from '../memory/candidate-retrieval.js';
 import { getEmail } from '../integrations/mock-email-provider.js';
 import { getCachedCalendarEvent } from '../integrations/calendar-store.js';
 import { getTask } from '../integrations/mock-tasks-provider.js';
+import { DataProcessingPolicy } from '../policy/data-processing-policy.js';
 
 const DEFAULTS = {
   maxChars: 6000,
@@ -40,12 +41,11 @@ const CONTEXT_WORTHY_EVENT_TYPES = [
  * (toolRegistry/eventBus/correlationId/actor) a ModelProvider needs.
  *
  * This deliberately does NOT dump the database into the prompt: it ranks
- * candidates with simple, explainable heuristics (does the objective
- * mention this person by name? how recently were they active? is this
- * commitment still open?) rather than semantic search -- true semantic
- * retrieval is later work (PLAN.md's embeddings/semantic-memory phase);
- * this assembler is written so that phase can slot in as an additional
- * ranking signal without changing its output shape.
+ * candidates with inspectable hybrid signals (semantic similarity when a
+ * provider is configured, exact matches, recency, authority, confidence,
+ * and structural relevance). Semantic retrieval remains optional and its
+ * inputs pass through the data-processing policy before any remote
+ * embedding endpoint is called.
  *
  * Every included item carries its own id (factId/entityId/relationshipId/
  * eventId) so a caller can explain "why was this included" later --
@@ -57,7 +57,7 @@ const CONTEXT_WORTHY_EVENT_TYPES = [
  * low-ranked context instead of truncating arbitrary serialized JSON."
  */
 export class ContextAssembler {
-  constructor({ toolRegistry, eventBus, ownerEntityId = null, embeddingProvider = null, ...options } = {}) {
+  constructor({ toolRegistry, eventBus, ownerEntityId = null, embeddingProvider = null, dataProcessingPolicy = null, ...options } = {}) {
     this.toolRegistry = toolRegistry;
     this.eventBus = eventBus;
     this.ownerEntityId = ownerEntityId;
@@ -67,6 +67,7 @@ export class ContextAssembler {
     // default -- ranking then falls back to the Phase 4 confidence+recency
     // heuristic, unchanged.
     this.embeddingProvider = embeddingProvider;
+    this.dataProcessingPolicy = dataProcessingPolicy || new DataProcessingPolicy();
     this.options = { ...DEFAULTS, ...options };
   }
 
@@ -79,7 +80,7 @@ export class ContextAssembler {
       eventBus: this.eventBus,
       correlationId,
       actor,
-      personalContext: await this.assemblePersonalContext(objective),
+      personalContext: await this.assemblePersonalContext(objective, { correlationId, actor }),
     };
   }
 
@@ -91,18 +92,31 @@ export class ContextAssembler {
    * Async because semantic fact ranking may call an embedding provider;
    * with none configured this still resolves promptly (no network calls).
    */
-  async assemblePersonalContext(objective = '') {
+  async assemblePersonalContext(objective = '', audit = {}) {
     const objectiveLower = String(objective || '').toLowerCase();
-    const candidates = selectMemoryCandidates({ objective, ownerEntityId: this.ownerEntityId, eventTypes: CONTEXT_WORTHY_EVENT_TYPES });
+    const selected = selectMemoryCandidates({ objective, ownerEntityId: this.ownerEntityId, eventTypes: CONTEXT_WORTHY_EVENT_TYPES });
+    selected.events = selected.events.map((item) => ({ ...item, classification: classificationForEvent(candidateRowToEvent(item)) }));
+    const semanticOmitted = [];
+    const semanticFilter = (item) => {
+      const destination = this.embeddingProvider?.destination || 'configured_remote_model';
+      const result = this.dataProcessingPolicy.evaluate({ classification: item.classification || 'personal', destination });
+      if (result.decision === 'allow') return true;
+      semanticOmitted.push({ type: item.subjectType, id: item.id, classification: item.classification || 'personal', destination, decision: result.decision, rule: result.rule });
+      return false;
+    };
+    const candidates = await rankMemoryCandidates({ candidates: selected, objective, embeddingProvider: this.embeddingProvider, semanticFilter });
 
     const context = {
       objective: String(objective || ''),
       currentTime: new Date().toISOString(),
-      relevantPeople: await this._rankPeople(objectiveLower, objective, candidates),
+      relevantPeople: await this._rankPeople(objectiveLower, objective, candidates, semanticOmitted),
       commitments: this._rankCommitments(objectiveLower),
       recentEvents: this._recentEvents(),
       truncated: false,
     };
+    if (semanticOmitted.length && this.eventBus) {
+      this.eventBus.publish({ type: 'agent.context_restricted', source: 'agent', actor: audit.actor, data: { destination: this.embeddingProvider?.destination || 'configured_remote_model', providerId: this.embeddingProvider?.id, stage: 'embeddings', omitted: dedupeOmissions(semanticOmitted) }, metadata: { correlationId: audit.correlationId, provenance: 'context-assembler:data-processing-policy' } });
+    }
 
     // provenanceRefs is derived from whatever survives budgeting below --
     // computed fresh each fit-loop iteration (see _fitBudget) so it never
@@ -113,7 +127,7 @@ export class ContextAssembler {
 
   // --- people + facts + relationships -------------------------------------
 
-  async _rankPeople(objectiveLower, objectiveRaw, candidates) {
+  async _rankPeople(objectiveLower, objectiveRaw, candidates, semanticOmitted) {
     const candidateById = new Map(candidates.entities.map((item) => [item.id, item]));
     const people = findEntities({ type: 'Person' });
     const ranked = people
@@ -130,9 +144,9 @@ export class ContextAssembler {
         return { person, nameMentioned, facts, relationships, lastActivityAt, retrievalCandidate };
       })
       .sort((a, b) => {
-        const aMatches = a.retrievalCandidate?.match.exactWordMatches || 0;
-        const bMatches = b.retrievalCandidate?.match.exactWordMatches || 0;
-        if (aMatches !== bMatches) return bMatches - aMatches;
+        const aScore = a.retrievalCandidate?._relevance.total || 0;
+        const bScore = b.retrievalCandidate?._relevance.total || 0;
+        if (aScore !== bScore) return bScore - aScore;
         if (a.nameMentioned !== b.nameMentioned) return a.nameMentioned ? -1 : 1;
         return (b.lastActivityAt || '').localeCompare(a.lastActivityAt || '');
       })
@@ -145,8 +159,9 @@ export class ContextAssembler {
         name: person.name,
         matchedOn: nameMentioned
           ? 'objective mentions this name'
-          : retrievalCandidate?.viaFactIds.length ? 'objective matches a current fact' : 'recently active',
-        facts: await this._rankFacts(facts, objectiveRaw),
+          : retrievalCandidate?.matchedFactIds?.length ? 'objective matches a current fact'
+            : retrievalCandidate?._relevance.semantic > 0 ? 'hybrid semantic and structural relevance' : 'recently active',
+        facts: await this._rankFacts(facts, objectiveRaw, semanticOmitted),
         relationshipCount: relationships.length,
         classification: person.classification || 'personal',
       });
@@ -157,7 +172,7 @@ export class ContextAssembler {
   // Confidence+recency by default; blends in semantic similarity (and an
   // exact-word-overlap signal, and an inferred-fact penalty) when an
   // embeddingProvider is configured -- see server/memory/semantic-retrieval.js.
-  async _rankFacts(facts, objectiveRaw) {
+  async _rankFacts(facts, objectiveRaw, semanticOmitted = []) {
     const normalized = facts.map((f) => ({
       id: f.id,
       key: f.key,
@@ -173,7 +188,7 @@ export class ContextAssembler {
     let ranked;
     let relevanceById = null;
     if (this.embeddingProvider) {
-      const hybrid = await rankFactsHybrid({ facts: normalized, query: objectiveRaw, embeddingProvider: this.embeddingProvider });
+      const hybrid = await rankFactsHybrid({ facts: normalized, query: objectiveRaw, embeddingProvider: this.embeddingProvider, semanticFilter: (fact) => this._semanticAllowed(fact, semanticOmitted) });
       ranked = hybrid;
       relevanceById = new Map(hybrid.map((f) => [f.id, f._relevance]));
     } else {
@@ -192,6 +207,16 @@ export class ContextAssembler {
       classification: f.classification,
       ...(relevanceById ? { relevance: relevanceById.get(f.id) } : {}),
     }));
+  }
+
+  _semanticAllowed(item, omitted) {
+    if (!this.embeddingProvider) return false;
+    const classification = item.classification || 'personal';
+    const destination = this.embeddingProvider.destination || 'configured_remote_model';
+    const result = this.dataProcessingPolicy.evaluate({ classification, destination });
+    if (result.decision === 'allow') return true;
+    omitted.push({ type: 'fact', id: item.id, classification, destination, decision: result.decision, rule: result.rule });
+    return false;
   }
 
   // --- commitments ----------------------------------------------------------
@@ -301,6 +326,21 @@ function buildProvenanceRefs(context) {
   }
   for (const event of context.recentEvents) refs.push({ type: 'event', id: event.eventId });
   return refs;
+}
+
+function candidateRowToEvent(row) {
+  let data = {};
+  try { data = JSON.parse(row.data || '{}'); } catch { /* malformed stored data stays conservatively personal */ }
+  return { type: row.type, data, subject: row.subject_type ? { type: row.subject_type, id: row.subject_id } : null };
+}
+
+function dedupeOmissions(items) {
+  const seen = new Set();
+  return items.filter((item) => {
+    const key = `${item.type}:${item.id}:${item.classification}:${item.destination}`;
+    if (seen.has(key)) return false;
+    seen.add(key); return true;
+  });
 }
 
 // Simple bidirectional word-overlap heuristic (no embeddings yet -- see

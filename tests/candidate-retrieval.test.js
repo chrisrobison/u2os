@@ -72,3 +72,28 @@ test('candidate selection returns only open owner commitments and allowlisted ev
     assert.ok(candidates.events[0].match.exactWordMatches > 0);
   } finally { cleanup(dir); }
 });
+
+test('remote embeddings never receive restricted candidates while local embeddings may rank them', async () => {
+  const { dir, db, eventBus } = fixture();
+  try {
+    const person = createEntity({ type: 'Person', name: 'Morgan' });
+    recordFact({ entityId: person.id, key: 'public_note', value: 'safe project context', source: 'owner', classification: 'personal' });
+    recordFact({ entityId: person.id, key: 'medical_note', value: 'secret-diagnosis-marker', source: 'owner', classification: 'sensitive' });
+    createEntity({ type: 'Person', name: 'Newer decoy' });
+    const derived = selectMemoryCandidates({ objective: 'secret diagnosis marker', limits: { entities: 1 } }).entities[0];
+    assert.equal(derived.id, person.id);
+    assert.equal(derived.classification, 'sensitive', 'entity retrieval text must inherit its most restricted fact classification');
+    const remoteInputs = [];
+    const remote = { id: 'remote-embedding-test', destination: 'configured_remote_model', async embed(text) { remoteInputs.push(String(text)); return [1, 0]; } };
+    await new ContextAssembler({ eventBus, embeddingProvider: remote }).assemble({ correlationId: 'corr-remote', actor: { type: 'user', id: 'owner' }, objective: 'review safe project context' });
+    assert.equal(remoteInputs.some((text) => text.includes('secret-diagnosis-marker')), false);
+    assert.equal(remoteInputs.some((text) => text.includes('safe project context')), true);
+    const auditRows = db.prepare("SELECT data FROM events WHERE type = 'agent.context_restricted'").all().map((row) => JSON.parse(row.data));
+    assert.ok(auditRows.some((row) => row.stage === 'embeddings' && row.omitted.some((item) => item.classification === 'sensitive')));
+
+    const localInputs = [];
+    const local = { id: 'local-embedding-test', destination: 'local_model', async embed(text) { localInputs.push(String(text)); return [1, 0]; } };
+    await new ContextAssembler({ eventBus, embeddingProvider: local }).assemblePersonalContext('review safe project context');
+    assert.equal(localInputs.some((text) => text.includes('secret-diagnosis-marker')), true);
+  } finally { cleanup(dir); }
+});
