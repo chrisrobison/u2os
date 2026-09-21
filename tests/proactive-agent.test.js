@@ -247,6 +247,43 @@ test('message.received notifies only for bounded direct high/urgent messages', a
   }
 });
 
+test('project.changed uses active local project state for blocked and deadline notifications', async () => {
+  const dir = tempHome();
+  try {
+    const { db, agent } = buildAgent();
+    const blockedProject = createEntity({ type: 'Project', name: 'Orion', attributes: { status: 'blocked' } });
+    const blocked = await agent.evaluateEvent({
+      type: 'project.changed',
+      subject: { type: 'entity', id: blockedProject.id },
+      data: { change: 'status', name: 'Spoofed project', status: 'active' },
+    });
+    assert.equal(blocked.decision, 'notify');
+    let notifications = db.prepare("SELECT data FROM events WHERE type = 'notification.sent' ORDER BY created_at, id").all().map(({ data }) => JSON.parse(data));
+    assert.match(notifications[0].body, /Orion is blocked/);
+    assert.doesNotMatch(notifications[0].body, /Spoofed project/);
+
+    const deadlineProject = createEntity({ type: 'Project', name: 'Atlas', attributes: { status: 'active', deadline: '2026-11-05' } });
+    const deadline = await agent.evaluateEvent({ type: 'project.changed', data: { entityId: deadlineProject.id, change: 'deadline', deadline: '2099-01-01' } });
+    assert.equal(deadline.decision, 'notify');
+    notifications = db.prepare("SELECT data FROM events WHERE type = 'notification.sent' ORDER BY created_at, id").all().map(({ data }) => JSON.parse(data));
+    assert.match(notifications[1].body, /Atlas has a deadline change: 2026-11-05/);
+    assert.doesNotMatch(notifications[1].body, /2099/);
+
+    const routine = await agent.evaluateEvent({ type: 'project.changed', subject: { type: 'entity', id: deadlineProject.id }, data: { change: 'description' } });
+    const wrongType = createEntity({ type: 'Person', name: 'Not a project' });
+    const wrong = await agent.evaluateEvent({ type: 'project.changed', subject: { type: 'entity', id: wrongType.id }, data: { change: 'status' } });
+    const preview = getEntityDeletionPreview(blockedProject.id);
+    deleteEntity(blockedProject.id, preview.token);
+    const deleted = await agent.evaluateEvent({ type: 'project.changed', subject: { type: 'entity', id: blockedProject.id }, data: { change: 'status' } });
+    assert.equal(routine.decision, 'ignore');
+    assert.equal(wrong.decision, 'ignore');
+    assert.equal(deleted.decision, 'ignore');
+    assert.equal(db.prepare("SELECT count(*) AS count FROM events WHERE type = 'notification.sent'").get().count, 2);
+  } finally {
+    cleanup(dir);
+  }
+});
+
 test('task.overdue -> decision "notify", policy-gated notification sent', async () => {
   const dir = tempHome();
   try {
@@ -309,7 +346,7 @@ test('an unhandled event type reaching evaluateEvent returns "ignore" and does n
     const actionsBefore = db.prepare('SELECT COUNT(*) AS n FROM agent_actions').get().n;
     const tasksBefore = db.prepare('SELECT COUNT(*) AS n FROM tasks').get().n;
 
-    const result = await agent.evaluateEvent({ type: 'project.changed', data: {}, subject: null });
+    const result = await agent.evaluateEvent({ type: 'document.changed', data: {}, subject: null });
 
     assert.equal(result.decision, 'ignore');
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM agent_actions').get().n, actionsBefore);

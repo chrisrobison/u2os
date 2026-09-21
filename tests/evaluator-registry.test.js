@@ -46,9 +46,9 @@ test('first registered match wins when multiple patterns could match', () => {
 test('a skill can register a new evaluator without editing Agent, and it is discoverable via list()', () => {
   const registry = registerBuiltinEvaluators(new EvaluatorRegistry());
   const before = registry.list().length;
-  registry.register({ eventPattern: 'project.changed', evaluate: async () => ({ decision: 'remember' }), name: 'skill:project-tracker' });
+  registry.register({ eventPattern: 'custom.project_changed', evaluate: async () => ({ decision: 'remember' }), name: 'skill:project-tracker' });
   assert.equal(registry.list().length, before + 1);
-  assert.equal(registry.find('project.changed').name, 'skill:project-tracker');
+  assert.equal(registry.find('custom.project_changed').name, 'skill:project-tracker');
   // Existing builtins are untouched.
   assert.ok(registry.find('email.received'));
 });

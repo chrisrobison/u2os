@@ -253,6 +253,41 @@ export async function evaluateMessageReceived(event, { proposeAction }) {
   return { decision: 'notify', eventType: event.type, outcome };
 }
 
+// project.changed -> notify for actionable activity confirmed against the
+// active local Project. Event text cannot override the project name/state.
+export async function evaluateProjectChanged(event, { proposeAction }) {
+  const entityId = event.subject?.type === 'entity' ? event.subject.id : event.data?.entityId;
+  const project = entityId ? getEntity(entityId) : null;
+  const change = boundedText(event.data?.change, 32).toLowerCase();
+  if (!project || project.type !== 'Project') {
+    return { decision: 'ignore', eventType: event.type, reason: 'Project event has no active local Project.' };
+  }
+
+  const projectName = boundedText(project.name, 120) || 'A project';
+  let body;
+  if (change === 'status' && boundedText(project.attributes?.status, 32).toLowerCase() === 'blocked') {
+    body = `${projectName} is blocked and may need attention.`;
+  } else if (change === 'deadline') {
+    const deadline = boundedText(project.attributes?.deadline, 64);
+    const deadlineAt = Date.parse(deadline);
+    if (!deadline || !Number.isFinite(deadlineAt)) {
+      return { decision: 'ignore', eventType: event.type, reason: 'Project has no valid locally stored deadline.' };
+    }
+    body = `${projectName} has a deadline change: ${new Date(deadlineAt).toISOString().slice(0, 10)}.`;
+  } else {
+    return { decision: 'ignore', eventType: event.type, reason: 'Project activity is not an actionable blocked-status or deadline change.' };
+  }
+
+  const outcome = await proposeAction({
+    tool: 'notifications.send',
+    arguments: { title: 'Project needs attention', body: boundedText(body, 500), priority: 'high' },
+    requestedBy: 'agent:evaluateEvent',
+    requestText: `project.changed: ${project.id}`,
+    reasoningSummary: `The ${change} signal matches actionable state stored on the active local Project.`,
+  });
+  return { decision: 'notify', eventType: event.type, outcome };
+}
+
 function boundedText(value, limit) {
   return typeof value === 'string' ? value.trim().slice(0, limit) : '';
 }
@@ -329,6 +364,7 @@ export function registerBuiltinEvaluators(registry) {
   registry.register({ eventPattern: 'subscription.renewing', evaluate: evaluateSubscriptionRenewing, name: 'builtin:subscription.renewing' });
   registry.register({ eventPattern: 'contact.birthday_approaching', evaluate: evaluateBirthdayApproaching, name: 'builtin:contact.birthday_approaching' });
   registry.register({ eventPattern: 'message.received', evaluate: evaluateMessageReceived, name: 'builtin:message.received' });
+  registry.register({ eventPattern: 'project.changed', evaluate: evaluateProjectChanged, name: 'builtin:project.changed' });
   registry.register({ eventPattern: 'task.overdue', evaluate: evaluateTaskOverdue, name: 'builtin:task.overdue' });
   registry.register({ eventPattern: 'commitment.made', evaluate: evaluateCommitmentMade, name: 'builtin:commitment.made' });
   return registry;
