@@ -66,9 +66,36 @@ export function validateDashboard(schema) {
       if (!component.data || typeof component.data !== 'object' || Array.isArray(component.data)) throw new Error('Dashboard component data must be an object');
       if (Buffer.byteLength(JSON.stringify(component.data), 'utf8') > MAX_DATA_BYTES) throw new Error('Dashboard component data is too large');
       assertSafeData(component.data, 0);
+      validateComponentData(component.type, component.data);
     }
   }
   return true;
+}
+
+function validateComponentData(type, data) {
+  if (type === 'person') {
+    requireString(data.name, 'person.name');
+    boundedArray(data.facts, 10, 'person.facts');
+    boundedArray(data.recentActivity, 10, 'person.recentActivity');
+    boundedArray(data.commitments, 10, 'person.commitments');
+    boundedArray(data.upcomingInteractions, 10, 'person.upcomingInteractions');
+  }
+  if (type === 'project') {
+    requireString(data.name, 'project.name');
+    boundedArray(data.openTasks, 20, 'project.openTasks');
+    boundedArray(data.people, 20, 'project.people');
+    boundedArray(data.deadlines, 20, 'project.deadlines');
+    boundedArray(data.unresolvedDecisions, 20, 'project.unresolvedDecisions');
+    boundedArray(data.relatedDocuments, 20, 'project.relatedDocuments');
+  }
+}
+
+function requireString(value, label) {
+  if (typeof value !== 'string' || !value.trim() || value.length > 500) throw new Error(`Dashboard ${label} must be a non-empty bounded string`);
+}
+
+function boundedArray(value, limit, label) {
+  if (value !== undefined && (!Array.isArray(value) || value.length > limit)) throw new Error(`Dashboard ${label} must be an array of at most ${limit} items`);
 }
 
 function rejectUnknown(value, allowed, label) {

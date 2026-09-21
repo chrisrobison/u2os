@@ -37,7 +37,7 @@ The LLM never emits HTML/JS. It emits a JSON **dashboard schema**. The frontend 
 | `alert` | `<u2-alert>` | inline `data` (no source needed) |
 | `recommendation` | `<u2-recommendation>` | `recommendations.open` |
 
-(`<u2-person>`, `<u2-project>`, `<u2-photo-grid>`, `<u2-document>`, `<u2-map>`, `<u2-chart>`, `<u2-conversation>`, `<u2-agent-status>` are reserved component names for Phase 2+ dashboards — e.g. "before a meeting" and "project work" briefings — and are not required to render anything in Phase 1 beyond a placeholder.)
+`<u2-person>` and `<u2-project>` are implemented structured cards used by before-meeting and project dashboards. They render bounded facts/activity/commitments/interactions and project status/tasks/people/deadlines/decisions/documents respectively, using DOM text nodes for untrusted values. `<u2-agent-status>` is also implemented. `<u2-photo-grid>`, `<u2-document>`, `<u2-map>`, `<u2-chart>`, and `<u2-conversation>` remain reserved placeholders pending their structured contracts.
 
 ## Current scope
 
