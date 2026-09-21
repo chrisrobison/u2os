@@ -47,6 +47,10 @@ The LLM never emits HTML/JS. It emits a JSON **dashboard schema**. The frontend 
 
 All reserved primitives are implemented. Person, project, conversation, and document cards consume bounded domain structures and render supplied text through DOM text nodes. Chart accepts up to four labeled finite-number series, map accepts bounded valid coordinates and uses a local CSS plot (no mapping SDK or tile requests), and photo-grid accepts only local media paths or bounded image data URLs. `<u2-agent-status>` exposes the agent's current observable state. No primitive accepts HTML, JavaScript, or arbitrary component code.
 
+## Live updates
+
+Dashboard instances subscribe to the shared authenticated SSE event stream while they are connected. Task, calendar, email, action, recommendation, and memory events trigger a short debounced reload through the same server-side generator that produced the current view. Dynamic dashboards retain their selected context and entity parameters. Existing cards remain visible if a refresh fails, with an owner-readable inline error instead of replacing the dashboard.
+
 ## Current scope
 
 `GET /api/dashboard/morning` remains the compatibility route. `POST /api/dashboard/generate` accepts `morning`, `before-meeting`, or `project` plus context parameters and composes the schema from live data.

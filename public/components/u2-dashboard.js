@@ -37,6 +37,8 @@ const CARD_TITLES = {
   recommendation: 'Recommendation',
 };
 
+const REFRESH_EVENT_PREFIXES = ['task.', 'calendar.', 'email.', 'agent.action.', 'recommendation.', 'memory.'];
+
 function humanizeType(type) {
   const label = String(type || '').replace(/-/g, ' ');
   return label.charAt(0).toUpperCase() + label.slice(1);
@@ -46,6 +48,21 @@ function humanizeType(type) {
 // e.g. from GET /api/dashboard/morning. Renders `title` as a heading and
 // one <u2-card> per entry in `components[]`.
 export class U2Dashboard extends HTMLElement {
+  constructor() {
+    super();
+    this._refreshSequence = 0;
+    this._onEvent = (event) => {
+      const type = event.detail?.type || '';
+      if (!this._refreshLoader || !REFRESH_EVENT_PREFIXES.some((prefix) => type.startsWith(prefix))) return;
+      clearTimeout(this._refreshTimer);
+      this._refreshTimer = setTimeout(() => this._refresh(), 150);
+    };
+  }
+
+  set refreshLoader(value) {
+    this._refreshLoader = typeof value === 'function' ? value : null;
+  }
+
   set schema(value) {
     this._schema = value || null;
     this._render();
@@ -56,7 +73,32 @@ export class U2Dashboard extends HTMLElement {
   }
 
   connectedCallback() {
+    window.addEventListener('u2-event', this._onEvent);
     if (this._schema) this._render();
+  }
+
+  disconnectedCallback() {
+    window.removeEventListener('u2-event', this._onEvent);
+    clearTimeout(this._refreshTimer);
+    this._refreshSequence += 1;
+  }
+
+  async _refresh() {
+    const sequence = ++this._refreshSequence;
+    try {
+      const schema = await this._refreshLoader();
+      if (this.isConnected && sequence === this._refreshSequence) this.schema = schema;
+    } catch (err) {
+      if (!this.isConnected || sequence !== this._refreshSequence) return;
+      let status = this.querySelector('.dashboard-refresh-error');
+      if (!status) {
+        status = document.createElement('div');
+        status.className = 'dashboard-refresh-error load-error';
+        status.setAttribute('role', 'status');
+        this.prepend(status);
+      }
+      status.textContent = `Live update failed: ${err.message}`;
+    }
   }
 
   _render() {

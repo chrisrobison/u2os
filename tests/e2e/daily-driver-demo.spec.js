@@ -19,7 +19,11 @@ test('daily-driver story runs through the real browser, approval, explanation, a
     await page.locator('.agent-panel__composer button[type="submit"]').click();
     await expect(page.locator('.chat-bubble.is-agent').last()).toContainText('northwindtalent.example');
 
-    const cards = page.locator('.approval-list u2-approval');
+    // The live dashboard now mirrors newly proposed actions in its own
+    // approval card. This story deliberately drives the agent transcript,
+    // so keep the locator scoped to that panel instead of matching both
+    // legitimate presentations of the same action.
+    const cards = page.locator('u2-agent .approval-list u2-approval');
     await expect(cards).toHaveCount(2);
     const automatic = cards.filter({ hasText: 'send a notification' });
     await expect(automatic).toHaveAttribute('data-status', 'executed');

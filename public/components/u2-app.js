@@ -274,6 +274,7 @@ export class U2App extends HTMLElement {
     try {
       const schema = await api.getDashboard();
       const dashboardEl = document.createElement('u2-dashboard');
+      dashboardEl.refreshLoader = () => api.getDashboard();
       dashboardEl.schema = schema;
       this._setWorkspace('', dashboardEl);
     } catch (err) {
@@ -317,6 +318,7 @@ export class U2App extends HTMLElement {
         const params = contextDef.paramKey && entityId ? { [contextDef.paramKey]: entityId } : {};
         const schema = await api.generateDashboard(contextDef.id, params);
         const dashboardEl = document.createElement('u2-dashboard');
+        dashboardEl.refreshLoader = () => api.generateDashboard(contextDef.id, params);
         dashboardEl.schema = schema;
         setBody(dashboardEl);
       } catch (err) {
