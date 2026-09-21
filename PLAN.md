@@ -99,7 +99,7 @@ Finish the trusted UI primitive set and give the owner meaningful control over r
 - [x] Add dashboard provenance so the owner can see why each card was included. (Every validated component requires a bounded reason and source references, rendered through the trusted `<u2-why>` component.)
 - [x] Add memory correction, confirmation, deletion, and contradiction-resolution APIs and UI. (Deletion is an audited soft-delete, preserving history.)
 - [x] Add safe entity and relationship deletion with impact previews and audit events. (Deletion is audited and soft; entity deletion requires a current impact token and preserves linked records.)
-- Distinguish explicit, imported, derived, and inferred facts visually.
+- [x] Distinguish explicit, imported, derived, and inferred facts visually. (Authority is derived deterministically from stored source/inference metadata and shown as labeled, non-color-only badges.)
 - Implement deterministic event replay for rebuilding derived projections, with dry-run support.
 - [x] Expand demo data to exercise every supported component and memory state.
 
@@ -247,4 +247,4 @@ U2OS reaches usable alpha when Milestones 1–3 are complete: a single owner can
 
 Milestones 4–8 deepen the product toward the broader personal digital-agent vision; they are not reasons to postpone the security boundary required for alpha use.
 
-**Status: usable alpha reached.** Milestones 1–3 are complete, with 366 Node tests and 65 Playwright scenarios running across Chromium, Firefox, and WebKit.
+**Status: usable alpha reached.** Milestones 1–3 are complete, with 367 Node tests and 65 Playwright scenarios running across Chromium, Firefox, and WebKit.

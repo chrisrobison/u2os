@@ -151,6 +151,7 @@ test.describe.serial('memory candidate accept/reject flow (#17)', () => {
   test('owner can inspect, confirm, reclassify, correct, and deliberately delete a fact', async () => {
     let factRow = page.locator('.fact-row', { hasText: 'Preferred meeting time' }).filter({ hasText: 'current' });
     await expect(factRow).toContainText('Explicit');
+    await expect(factRow.locator('.fact-origin')).toHaveAttribute('data-origin', 'explicit');
     await expect(factRow).toContainText('personal');
     await expect(factRow.locator('details')).toContainText('Provenance');
 

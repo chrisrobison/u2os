@@ -820,6 +820,11 @@ u2-why { display: block; }
 .fact-row__metadata div { min-width: 0; }
 .fact-row__metadata dt { color: var(--text-tertiary); font-size: var(--text-xs); }
 .fact-row__metadata dd { margin: 0; overflow-wrap: anywhere; }
+.fact-origin { display: inline-flex; padding: 1px 6px; border: var(--border-width) solid var(--border-color); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: var(--text-xs); font-weight: 600; text-transform: uppercase; }
+.fact-origin[data-origin="explicit"] { border-color: var(--accent-active); }
+.fact-origin[data-origin="imported"] { border-style: dashed; }
+.fact-origin[data-origin="derived"] { border-color: var(--accent-pending); }
+.fact-origin[data-origin="inferred"] { border-style: dotted; color: var(--text-secondary); }
 .fact-row details code { white-space: pre-wrap; overflow-wrap: anywhere; }
 .fact-row__controls { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-2); margin-top: var(--space-3); }
 .fact-row__controls form, .fact-row__controls label { display: flex; align-items: end; gap: var(--space-2); }

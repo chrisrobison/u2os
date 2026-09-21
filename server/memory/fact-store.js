@@ -2,6 +2,16 @@ import { getDb, withTransaction } from '../db/connection.js';
 import { newId } from '../db/ids.js';
 
 const CLASSIFICATIONS = new Set(['public', 'personal', 'private', 'sensitive']);
+const EXPLICIT_SOURCES = new Set(['owner', 'user', 'memory-candidate-confirmation']);
+const EXPLICIT_SOURCE_PREFIXES = ['user:', 'correction:'];
+const DERIVED_SOURCE_PREFIXES = ['system:projector', 'projector:', 'agent:commitment_detection'];
+
+export function classifyFactOrigin({ source = '', inferred = false } = {}) {
+  const normalized = String(source).toLowerCase();
+  if (EXPLICIT_SOURCES.has(normalized) || EXPLICIT_SOURCE_PREFIXES.some((prefix) => normalized.startsWith(prefix))) return 'explicit';
+  if (inferred && DERIVED_SOURCE_PREFIXES.some((prefix) => normalized.startsWith(prefix))) return 'derived';
+  return inferred ? 'inferred' : 'imported';
+}
 
 /**
  * Records a fact with full provenance. A fact is never silently promoted
@@ -120,6 +130,7 @@ function rowToFact(row) {
     ...row,
     value: JSON.parse(row.value),
     inferred: !!row.inferred,
+    origin: classifyFactOrigin(row),
     provenance: JSON.parse(row.provenance || '{}'),
   };
 }

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createEntity } from '../server/memory/entity-store.js';
-import { recordFact, getFacts } from '../server/memory/fact-store.js';
+import { recordFact, getFacts, classifyFactOrigin } from '../server/memory/fact-store.js';
 import { recordRelationship, getRelationships } from '../server/memory/relationship-store.js';
 import { EventBus } from '../server/events/event-bus.js';
 import { initProjector } from '../server/memory/projector.js';
@@ -56,6 +56,16 @@ test('recordFact and recordRelationship store provenance fields correctly', () =
   } finally {
     cleanup(dir);
   }
+});
+
+test('fact authority is deterministically classified from trusted provenance fields', () => {
+  assert.equal(classifyFactOrigin({ source: 'owner', inferred: false }), 'explicit');
+  assert.equal(classifyFactOrigin({ source: 'user', inferred: false }), 'explicit');
+  assert.equal(classifyFactOrigin({ source: 'correction:owner_1', inferred: false }), 'explicit');
+  assert.equal(classifyFactOrigin({ source: 'ownership-import', inferred: false }), 'imported');
+  assert.equal(classifyFactOrigin({ source: 'google-contacts', inferred: false }), 'imported');
+  assert.equal(classifyFactOrigin({ source: 'system:projector', inferred: true }), 'derived');
+  assert.equal(classifyFactOrigin({ source: 'agent:model', inferred: true }), 'inferred');
 });
 
 test('projector turns calendar.event_changed into a fact on the matching person', () => {
