@@ -53,6 +53,10 @@ export function getHealth() {
   return request('/api/health');
 }
 
+export function getDiagnostics() {
+  return request('/api/diagnostics');
+}
+
 export function getCalendarEvents(range = 'upcoming') {
   return request(`/api/calendar/events${qs({ range })}`);
 }
