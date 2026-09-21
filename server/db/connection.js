@@ -104,6 +104,11 @@ export function getDb() {
   // Durable action delivery initially shipped without persisted actor
   // provenance. Add it without rebuilding existing queue tables.
   ensureColumn(db, 'action_queue', 'actor', 'TEXT');
+  // Durable trigger scheduling: older installations have persisted due
+  // times but no execution ownership. Additive leases allow atomic claims
+  // and expired-worker recovery without rebuilding or discarding triggers.
+  ensureColumn(db, 'triggers', 'lease_owner', 'TEXT');
+  ensureColumn(db, 'triggers', 'lease_expires_at', 'TEXT');
 
   const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
   db.exec(schema);

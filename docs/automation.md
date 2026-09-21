@@ -16,12 +16,15 @@ CREATE TABLE IF NOT EXISTS triggers (
   enabled INTEGER NOT NULL DEFAULT 1,
   config TEXT NOT NULL DEFAULT '{}',   -- JSON, shape depends on `kind` -- see below
   last_fired_at TEXT,
-  next_check_at TEXT,              -- for timer/schedule/condition_watch; NULL for event_rule (event-driven, not polled)
+  next_check_at TEXT,              -- for timer/schedule; NULL for event_rule/condition_watch
+  lease_owner TEXT,
+  lease_expires_at TEXT,
   source TEXT NOT NULL DEFAULT 'system',  -- 'system' (seeded) | 'user' (created via API)
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_triggers_kind ON triggers(kind);
+CREATE INDEX IF NOT EXISTS idx_triggers_due_lease ON triggers(enabled, kind, next_check_at, lease_expires_at);
 ```
 
 `config` shapes:
@@ -37,6 +40,8 @@ Two halves:
 
 1. **Event-driven** (`kind: 'event_rule'`): subscribes to the event bus (`eventBus.subscribe('*', ...)`) at startup, matches every incoming event against enabled `event_rule` triggers' `eventType`/`when` clause, and if matched, hands off to `runAction()`.
 2. **Polled** (`kind: 'timer' | 'schedule' | 'condition_watch'`): a single `setInterval` tick (default every 60s, configurable) that finds triggers whose `next_check_at <= now`, evaluates them, runs `runAction()` for any that fire, and reschedules `next_check_at` (once-only for `timer`, recurring for `schedule`, and for `condition_watch` re-checks the built-in condition each tick — e.g. "is any calendar event now within 60 minutes and not already flagged" — publishing the relevant synthetic event, per below, only once per underlying object so it doesn't re-notify every tick).
+
+Polled work is claimed with an atomic lease stored on the trigger row (`lease_owner`, `lease_expires_at`) before evaluation begins. A heartbeat renews ownership while the action is in flight; completion consumes or reschedules timer/schedule state and releases the lease, while condition watches release it after their scan. Competing ticks therefore cannot execute the same trigger concurrently. If a process exits, its persisted lease eventually expires and a replacement scheduler can recover the still-due work. The columns are added through an additive migration for existing installations.
 
 Built-in `condition_watch` checks produce the previously-reserved synthetic events from `docs/events.md`:
 

@@ -27,7 +27,9 @@ import { getFacts } from '../memory/fact-store.js';
 import { log } from '../logging/logger.js';
 
 const DEFAULT_TICK_MS = 60 * 1000;
+const DEFAULT_LEASE_MS = 5 * 60 * 1000;
 const VALID_KINDS = new Set(['timer', 'schedule', 'event_rule', 'condition_watch']);
+const PROCESS_LEASE_OWNER = newId('scheduler');
 
 let unsubscribe = null;
 let tickHandle = null;
@@ -117,10 +119,9 @@ export async function resetForTests() {
 }
 
 /** Runs one polled tick immediately (manual "run now" / test helper). */
-export async function runTick({ eventBus, agent } = {}) {
+export async function runTick({ eventBus, agent, now = new Date(), leaseOwner = PROCESS_LEASE_OWNER, leaseMs = DEFAULT_LEASE_MS } = {}) {
   if (!eventBus || !agent) return;
   const db = getDb();
-  const now = new Date();
   const nowIso = now.toISOString();
 
   const dueRows = db
@@ -129,14 +130,60 @@ export async function runTick({ eventBus, agent } = {}) {
     )
     .all(nowIso);
   for (const row of dueRows) {
-    const trigger = rowToTrigger(row);
-    await fireTimerOrSchedule(trigger, { eventBus, agent, now });
+    const trigger = claimTrigger(row.id, { leaseOwner, leaseMs, now, requireDue: true });
+    if (!trigger) continue;
+    await withLeaseHeartbeat(trigger.id, { leaseOwner, leaseMs }, () =>
+      fireTimerOrSchedule(trigger, { eventBus, agent, now, leaseOwner })
+    );
   }
 
   const watchRows = db.prepare("SELECT * FROM triggers WHERE enabled = 1 AND kind = 'condition_watch'").all();
   for (const row of watchRows) {
-    const trigger = rowToTrigger(row);
-    await runConditionWatch(trigger, { eventBus, agent, now });
+    const trigger = claimTrigger(row.id, { leaseOwner, leaseMs, now });
+    if (!trigger) continue;
+    await withLeaseHeartbeat(trigger.id, { leaseOwner, leaseMs }, () =>
+      runConditionWatch(trigger, { eventBus, agent, now })
+    );
+  }
+}
+
+function claimTrigger(id, { leaseOwner, leaseMs, now, requireDue = false }) {
+  const db = getDb();
+  const nowIso = now.toISOString();
+  const expiresAt = new Date(now.getTime() + leaseMs).toISOString();
+  const dueClause = requireDue ? ' AND next_check_at IS NOT NULL AND next_check_at <= ?' : '';
+  const params = [leaseOwner, expiresAt, nowIso, id, nowIso];
+  if (requireDue) params.push(nowIso);
+  const result = db.prepare(
+    `UPDATE triggers SET lease_owner = ?, lease_expires_at = ?, updated_at = ?
+     WHERE id = ? AND enabled = 1
+       AND (lease_owner IS NULL OR lease_expires_at IS NULL OR lease_expires_at <= ?)${dueClause}`
+  ).run(...params);
+  return result.changes === 1 ? getTrigger(id) : null;
+}
+
+function renewTriggerLease(id, { leaseOwner, leaseMs }) {
+  const expiresAt = new Date(Date.now() + leaseMs).toISOString();
+  getDb().prepare(
+    'UPDATE triggers SET lease_expires_at = ? WHERE id = ? AND lease_owner = ?'
+  ).run(expiresAt, id, leaseOwner);
+}
+
+function releaseTriggerLease(id, leaseOwner) {
+  getDb().prepare(
+    'UPDATE triggers SET lease_owner = NULL, lease_expires_at = NULL WHERE id = ? AND lease_owner = ?'
+  ).run(id, leaseOwner);
+}
+
+async function withLeaseHeartbeat(id, { leaseOwner, leaseMs }, work) {
+  const heartbeatMs = Math.max(10, Math.floor(leaseMs / 3));
+  const handle = setInterval(() => renewTriggerLease(id, { leaseOwner, leaseMs }), heartbeatMs);
+  handle.unref?.();
+  try {
+    return await work();
+  } finally {
+    clearInterval(handle);
+    releaseTriggerLease(id, leaseOwner);
   }
 }
 
@@ -376,7 +423,7 @@ async function checkBirthdayApproaching(trigger, { eventBus, agent, now }) {
 
 // --- timer / schedule ------------------------------------------------------
 
-async function fireTimerOrSchedule(trigger, { eventBus, agent, now }) {
+async function fireTimerOrSchedule(trigger, { eventBus, agent, now, leaseOwner }) {
   // Not published to the durable event log (it isn't a real domain event,
   // just an internal handoff object) -- only ever passed directly to
   // runAction() for this one trigger.
@@ -398,12 +445,12 @@ async function fireTimerOrSchedule(trigger, { eventBus, agent, now }) {
     // Fires once, then disables itself (docs/automation.md).
     const db = getDb();
     const nowIso = new Date().toISOString();
-    db.prepare('UPDATE triggers SET enabled = 0, next_check_at = NULL, updated_at = ? WHERE id = ?').run(nowIso, trigger.id);
+    db.prepare('UPDATE triggers SET enabled = 0, next_check_at = NULL, lease_owner = NULL, lease_expires_at = NULL, updated_at = ? WHERE id = ? AND lease_owner = ?').run(nowIso, trigger.id, leaseOwner);
   } else if (trigger.kind === 'schedule') {
     const next = computeNextForSchedule(trigger.config, now);
     const db = getDb();
     const nowIso = new Date().toISOString();
-    db.prepare('UPDATE triggers SET next_check_at = ?, updated_at = ? WHERE id = ?').run(next, nowIso, trigger.id);
+    db.prepare('UPDATE triggers SET next_check_at = ?, lease_owner = NULL, lease_expires_at = NULL, updated_at = ? WHERE id = ? AND lease_owner = ?').run(next, nowIso, trigger.id, leaseOwner);
   }
 }
 
@@ -464,9 +511,9 @@ export function createTrigger({ name, kind, config = {}, enabled = true, source 
   const now = new Date().toISOString();
   const nextCheckAt = computeInitialNextCheckAt(kind, config);
   db.prepare(
-    `INSERT INTO triggers (id, name, kind, enabled, config, last_fired_at, next_check_at, source, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`
-  ).run(triggerId, name, kind, enabled ? 1 : 0, JSON.stringify(config), null, nextCheckAt, source, now, now);
+    `INSERT INTO triggers (id, name, kind, enabled, config, last_fired_at, next_check_at, lease_owner, lease_expires_at, source, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+  ).run(triggerId, name, kind, enabled ? 1 : 0, JSON.stringify(config), null, nextCheckAt, null, null, source, now, now);
   return getTrigger(triggerId);
 }
 

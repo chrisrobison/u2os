@@ -116,7 +116,7 @@ Make proactive behavior reliable across restarts and intermittent connectivity.
 
 ### Work
 
-- Persist scheduler leases/state so restarts do not lose or double-run due work.
+- [x] Persist scheduler leases/state so restarts do not lose or concurrently double-run due work.
 - [x] Add idempotency keys and execution leases for consequential actions.
 - [x] Introduce an explicit durable queue for unavailable external actions.
 - [x] Re-evaluate policy, freshness, and owner intent before executing a queued consequential action.
@@ -247,4 +247,4 @@ U2OS reaches usable alpha when Milestones 1–3 are complete: a single owner can
 
 Milestones 4–8 deepen the product toward the broader personal digital-agent vision; they are not reasons to postpone the security boundary required for alpha use.
 
-**Status: usable alpha reached.** Milestones 1–3 are complete, with 373 Node tests and 65 Playwright scenarios running across Chromium, Firefox, and WebKit.
+**Status: usable alpha reached.** Milestones 1–3 are complete, with 377 Node tests and 65 Playwright scenarios running across Chromium, Firefox, and WebKit.
