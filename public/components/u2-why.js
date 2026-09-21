@@ -52,6 +52,14 @@ export class U2Why extends HTMLElement {
 
   get recommendationId() { return this.getAttribute('recommendation-id'); }
 
+  set explanation(value) {
+    this._inlineExplanation = value || null;
+    this._explanation = this._inlineExplanation;
+    this._render();
+  }
+
+  get explanation() { return this._inlineExplanation; }
+
   attributeChangedCallback() {
     this._explanation = null;
     this._render();
@@ -61,13 +69,13 @@ export class U2Why extends HTMLElement {
 
   _render() {
     this.textContent = '';
-    if (!this.actionId && !this.recommendationId) return;
+    if (!this.actionId && !this.recommendationId && !this._inlineExplanation) return;
 
     const details = document.createElement('details');
     details.className = 'u2-why';
     const summary = document.createElement('summary');
     summary.textContent = 'Why?';
-    summary.setAttribute('aria-label', 'Explain why U2OS proposed or performed this action');
+    summary.setAttribute('aria-label', 'Explain why U2OS included, proposed, or performed this item');
     details.appendChild(summary);
 
     const panel = document.createElement('div');
@@ -76,6 +84,7 @@ export class U2Why extends HTMLElement {
     details.addEventListener('toggle', () => {
       if (details.open && !this._explanation && !this._loading) this._load(panel);
     });
+    if (this._inlineExplanation) this._renderExplanation(panel, this._inlineExplanation);
     this.appendChild(details);
   }
 
@@ -102,14 +111,14 @@ export class U2Why extends HTMLElement {
     panel.removeAttribute('role');
     panel.className = 'u2-why__panel';
 
-    const provenance = (explanation.contextProvenance || []).map((ref) =>
-      `${humanize(ref.type)} ${ref.id}`
+    const provenance = (explanation.contextProvenance || explanation.references || []).map((ref) =>
+      `${humanize(ref.type)} ${ref.label || ref.id}`
     );
     if (explanation.sourceEvent) {
       provenance.push(`${humanize(explanation.sourceEvent.type)}${explanation.sourceEvent.id ? ` ${explanation.sourceEvent.id}` : ''}`);
     }
     appendListSection(panel, 'What it noticed', provenance);
-    appendSection(panel, 'Decision', explanation.reasoningSummary);
+    appendSection(panel, explanation.reason ? 'Why included' : 'Decision', explanation.reason || explanation.reasoningSummary);
 
     const policy = [explanation.policyDomain, explanation.policyRule].filter(Boolean).join(' · ');
     appendSection(panel, 'Policy', policy);

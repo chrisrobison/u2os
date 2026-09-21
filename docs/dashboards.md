@@ -24,6 +24,7 @@ The LLM never emits HTML/JS. It emits a JSON **dashboard schema**. The frontend 
 - `layout` — `"dashboard"` (grid of cards) in Phase 1; more layouts later.
 - `components[].type` — must be one of the registered component types below. Unknown types are rejected server-side before the schema is ever sent to the client (allowlist, not blocklist).
 - `components[].source` — a named, allowlisted data query resolved by `server/agent/dashboard-source-resolver.js` before the schema reaches the browser. Components never choose endpoints or execute data access.
+- `components[].provenance` — required bounded explanation metadata: a concise `reason` and at most 10 `{ type, id, label? }` references to the exact source, entity, event, task, action, fact, relationship, or recommendation that caused the card to be included. Unknown fields are rejected.
 
 ## Registered component types
 
@@ -55,7 +56,11 @@ Dashboard instances subscribe to the shared authenticated SSE event stream while
 
 `GET /api/dashboard/morning` remains the compatibility route. `POST /api/dashboard/generate` accepts `morning`, `before-meeting`, or `project` plus context parameters and composes the schema from live data.
 
-Every named `source` is registered exactly once in `server/agent/dashboard-source-resolver.js`. Resolution reads bounded local synchronized stores, and schema validation imports the same registry-derived allowlist so validation and executable resolution cannot drift. Context planners may filter those bounded results for a selected person or project, then embed the resulting inert data in the validated schema. Universal per-card provenance and the planned `travel` context remain open roadmap work.
+Every named `source` is registered exactly once in `server/agent/dashboard-source-resolver.js`. Resolution reads bounded local synchronized stores, and schema validation imports the same registry-derived allowlist so validation and executable resolution cannot drift. Context planners may filter those bounded results for a selected person or project, then embed the resulting inert data in the validated schema.
+
+Every validated card also carries provenance. The dashboard renderer passes this data to the inline mode of the same trusted `<u2-why>` component used for action and recommendation explanations. It builds DOM nodes and assigns untrusted values with `textContent`; it never interprets provenance as HTML and never exposes model chain-of-thought. The planned `travel` context remains open roadmap work.
+
+Recommendation dashboards saved before this contract was introduced are upgraded when read with a candid compatibility reason and a reference to their recommendation record. U2OS does not fabricate missing historical source references.
 
 The morning dashboard also includes up to five open recommendations. Its outer schema carries only a recommendation ID. The trusted `<u2-recommendation>` component fetches the persisted record, offers Keep/Dismiss controls, renders an attached prepared dashboard only when that dashboard passed the same server-side validator, and exposes a `<u2-why>` source trail.
 

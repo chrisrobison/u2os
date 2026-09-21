@@ -40,11 +40,12 @@ test.describe('safe action explanation component (#30)', () => {
     await page.evaluate(async () => {
       await import('/components/u2-why.js');
       const why = document.createElement('u2-why');
+      why.id = 'action-explanation-probe';
       why.setAttribute('action-id', 'action-safe');
       document.querySelector('#workspace').appendChild(why);
     });
 
-    const why = page.locator('u2-why');
+    const why = page.locator('#action-explanation-probe');
     await expect(why.locator('summary')).toHaveText('Why?');
     expect(requests).toBe(0);
 
@@ -74,11 +75,13 @@ test.describe('safe action explanation component (#30)', () => {
     await page.evaluate(async () => {
       await import('/components/u2-why.js');
       const why = document.createElement('u2-why');
+      why.id = 'missing-explanation-probe';
       why.actionId = 'missing';
       document.querySelector('#workspace').appendChild(why);
     });
 
-    await page.locator('u2-why summary').click();
-    await expect(page.locator('u2-why .load-error')).toHaveText("Couldn't load explanation: Not Found");
+    const why = page.locator('#missing-explanation-probe');
+    await why.locator('summary').click();
+    await expect(why.locator('.load-error')).toHaveText("Couldn't load explanation: Not Found");
   });
 });

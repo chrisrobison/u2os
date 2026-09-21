@@ -15,6 +15,7 @@ import './u2-chart.js';
 import './u2-conversation.js';
 import './u2-agent-status.js';
 import './u2-recommendation.js';
+import './u2-why.js';
 
 // Card titles per docs/dashboards.md component type -- the trusted set the
 // LLM composes from; unknown types still render (as a placeholder) rather
@@ -177,10 +178,12 @@ export class U2Dashboard extends HTMLElement {
         break;
       }
       case 'alert': {
+        card.title = CARD_TITLES.alert || 'Notice';
         const el = document.createElement('u2-alert');
         el.variant = data.variant || 'info';
         el.message = data.message || '';
-        return el; // banner-style, not wrapped in a titled card
+        card.appendChild(el);
+        break;
       }
       case 'recommendation': {
         card.title = CARD_TITLES.recommendation;
@@ -223,6 +226,12 @@ export class U2Dashboard extends HTMLElement {
           card.insertAdjacentHTML('beforeend', emptyState(`Unrecognized component type: ${escapeHtml(type)}`));
         }
       }
+    }
+
+    if (component.provenance) {
+      const why = document.createElement('u2-why');
+      why.explanation = component.provenance;
+      card.appendChild(why);
     }
 
     return card;

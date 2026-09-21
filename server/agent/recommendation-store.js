@@ -70,9 +70,27 @@ export function updateRecommendationStatus(id, status) {
 }
 
 function rowToRecommendation(row) {
+  const dashboard = row.dashboard ? JSON.parse(row.dashboard) : null;
   return {
     ...row,
     arguments: row.arguments ? JSON.parse(row.arguments) : null,
-    dashboard: row.dashboard ? JSON.parse(row.dashboard) : null,
+    dashboard: addLegacyDashboardProvenance(dashboard, row),
+  };
+}
+
+// Recommendations persisted before component-level provenance was introduced
+// remain renderable after upgrade. The fallback is deliberately candid: it
+// identifies the recommendation record but does not invent source evidence.
+function addLegacyDashboardProvenance(dashboard, recommendation) {
+  if (!dashboard?.components || !Array.isArray(dashboard.components)) return dashboard;
+  return {
+    ...dashboard,
+    components: dashboard.components.map((component) => component?.provenance ? component : {
+      ...component,
+      provenance: {
+        reason: 'Included in a recommendation created before card-level provenance was recorded.',
+        references: [{ type: 'recommendation', id: recommendation.id, label: recommendation.decision }],
+      },
+    }),
   };
 }

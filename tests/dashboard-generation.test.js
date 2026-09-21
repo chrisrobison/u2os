@@ -10,6 +10,7 @@ import { runSeed } from '../server/seed/seed.js';
 import { findEntities } from '../server/memory/entity-store.js';
 import { validateDashboard } from '../server/api/dashboard-schema.js';
 import { DASHBOARD_SOURCES, resolveDashboardSource } from '../server/agent/dashboard-source-resolver.js';
+import { createRecommendation } from '../server/agent/recommendation-store.js';
 import {
   generateDashboard,
   DashboardNotFoundError,
@@ -48,6 +49,9 @@ async function cleanupServer(dir, handle) {
   cleanup(dir);
 }
 
+const testProvenance = () => ({ reason: 'Included for this test.', references: [] });
+const component = (type, data) => ({ type, data, provenance: testProvenance() });
+
 test('generateDashboard({context: "morning"}) returns a schema that passes validateDashboard', () => {
   const dir = tempHome();
   try {
@@ -60,6 +64,8 @@ test('generateDashboard({context: "morning"}) returns a schema that passes valid
     assert.ok(types.includes('schedule'));
     assert.ok(types.includes('task-list'));
     assert.ok(types.includes('approval'));
+    assert.ok(schema.components.every((item) => item.provenance?.reason));
+    assert.ok(schema.components.every((item) => item.provenance.references.length <= 10));
   } finally {
     cleanup(dir);
   }
@@ -100,8 +106,32 @@ test('dashboard source filtering and limits stay bounded on the server', () => {
 test('dashboard validation rejects unknown fields, unsafe keys, excessive nesting, and oversized component sets', () => {
   assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [], html: '<script>' }), /Unrecognized/);
   const deep = {}; let cursor = deep; for (let i = 0; i < 10; i++) cursor = cursor.next = {};
-  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [{ type: 'alert', data: deep }] }), /deeply/);
+  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [component('alert', deep)] }), /deeply/);
   assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: Array.from({ length: 51 }, () => ({ type: 'alert', data: {} })) }), /at most/);
+});
+
+test('dashboard provenance is required, bounded, and rejects unknown fields', () => {
+  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [{ type: 'alert', data: {} }] }), /provenance/);
+  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [{ ...component('alert', {}), provenance: { reason: 'x', references: [], secret: true } }] }), /Unrecognized/);
+  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [{ ...component('alert', {}), provenance: { reason: 'x', references: Array.from({ length: 11 }, (_, i) => ({ type: 'event', id: `evt_${i}` })) } }] }), /at most 10/);
+  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [{ ...component('alert', {}), provenance: { reason: 'x', references: [{ type: 'event', id: 'evt_1', raw: '<script>' }] } }] }), /Unrecognized/);
+});
+
+test('legacy persisted recommendation dashboards gain candid compatibility provenance', () => {
+  const dir = tempHome();
+  try {
+    seedDemoData();
+    const recommendation = createRecommendation({
+      decision: 'prepare',
+      reasoningSummary: 'Legacy briefing',
+      dashboard: { title: 'Legacy', layout: 'dashboard', components: [{ type: 'alert', data: { variant: 'info', message: 'Old card' } }] },
+    });
+    assert.match(recommendation.dashboard.components[0].provenance.reason, /before card-level provenance/);
+    assert.equal(recommendation.dashboard.components[0].provenance.references[0].id, recommendation.id);
+    assert.doesNotThrow(() => validateDashboard(recommendation.dashboard));
+  } finally {
+    cleanup(dir);
+  }
 });
 
 test('generateDashboard({context: "before-meeting"}) for a real seeded person (Sarah) reflects her real data and validates', () => {
@@ -178,28 +208,28 @@ test('generateDashboard({context: "project"}) for the seeded U2OS project reflec
 });
 
 test('person and project dashboard payloads are bounded by type-specific validation', () => {
-  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [{ type: 'person', data: { facts: [] } }] }), /person.name/);
-  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [{ type: 'project', data: { name: 'x', openTasks: Array.from({ length: 21 }, () => ({})) } }] }), /at most 20/);
+  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [component('person', { facts: [] })] }), /person.name/);
+  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [component('project', { name: 'x', openTasks: Array.from({ length: 21 }, () => ({})) })] }), /at most 20/);
 });
 
 test('conversation and document payloads require bounded structured fields', () => {
   assert.doesNotThrow(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [
-    { type: 'conversation', data: { thread: 'Jamie', messages: [{ sender: 'Jamie', text: 'Hello' }], summary: 'Follow-up' } },
-    { type: 'document', data: { title: 'Budget', type: 'PDF', source: 'local', excerpt: 'Summary' } },
+    component('conversation', { thread: 'Jamie', messages: [{ sender: 'Jamie', text: 'Hello' }], summary: 'Follow-up' }),
+    component('document', { title: 'Budget', type: 'PDF', source: 'local', excerpt: 'Summary' }),
   ] }));
-  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [{ type: 'conversation', data: { thread: 'x', messages: Array.from({ length: 21 }, () => ({})) } }] }), /at most 20/);
-  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [{ type: 'document', data: { title: 'x', excerpt: 'x'.repeat(4001) } }] }), /document.excerpt/);
+  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [component('conversation', { thread: 'x', messages: Array.from({ length: 21 }, () => ({})) })] }), /at most 20/);
+  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [component('document', { title: 'x', excerpt: 'x'.repeat(4001) })] }), /document.excerpt/);
 });
 
 test('chart, map, and photo-grid accept only bounded safe structured data', () => {
   assert.doesNotThrow(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [
-    { type: 'chart', data: { series: [{ label: 'Tasks', values: [{ label: 'Open', value: 3 }] }] } },
-    { type: 'map', data: { locations: [{ label: 'Home', latitude: 37.7, longitude: -122.4 }] } },
-    { type: 'photo-grid', data: { photos: [{ src: '/media/demo.png', caption: 'Demo' }] } },
+    component('chart', { series: [{ label: 'Tasks', values: [{ label: 'Open', value: 3 }] }] }),
+    component('map', { locations: [{ label: 'Home', latitude: 37.7, longitude: -122.4 }] }),
+    component('photo-grid', { photos: [{ src: '/media/demo.png', caption: 'Demo' }] }),
   ] }));
-  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [{ type: 'chart', data: { series: [{ label: 'x', values: [{ label: 'bad', value: Infinity }] }] } }] }), /finite numeric/);
-  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [{ type: 'map', data: { locations: [{ label: 'bad', latitude: 91, longitude: 0 }] } }] }), /valid latitude/);
-  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [{ type: 'photo-grid', data: { photos: [{ src: 'https://tracker.example/photo.jpg' }] } }] }), /local media/);
+  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [component('chart', { series: [{ label: 'x', values: [{ label: 'bad', value: Infinity }] }] })] }), /finite numeric/);
+  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [component('map', { locations: [{ label: 'bad', latitude: 91, longitude: 0 }] })] }), /valid latitude/);
+  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [component('photo-grid', { photos: [{ src: 'https://tracker.example/photo.jpg' }] })] }), /local media/);
 });
 
 test('an unknown personId is handled cleanly (no crash, clear 404-style error)', () => {

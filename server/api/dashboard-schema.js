@@ -27,7 +27,9 @@ const ALLOWED_COMPONENT_TYPES = new Set([
 
 const ALLOWED_SOURCES = new Set(DASHBOARD_SOURCES);
 const TOP_LEVEL_FIELDS = new Set(['title', 'layout', 'components']);
-const COMPONENT_FIELDS = new Set(['type', 'source', 'data']);
+const COMPONENT_FIELDS = new Set(['type', 'source', 'data', 'provenance']);
+const PROVENANCE_FIELDS = new Set(['reason', 'references']);
+const PROVENANCE_REFERENCE_FIELDS = new Set(['type', 'id', 'label']);
 const MAX_COMPONENTS = 50;
 const MAX_DATA_BYTES = 100000;
 
@@ -54,6 +56,7 @@ export function validateDashboard(schema) {
     if (component.source !== undefined && !ALLOWED_SOURCES.has(component.source)) {
       throw new Error(`Invalid dashboard component source: ${component.source}`);
     }
+    validateProvenance(component.provenance);
     if (component.data !== undefined) {
       if (!component.data || typeof component.data !== 'object' || Array.isArray(component.data)) throw new Error('Dashboard component data must be an object');
       if (Buffer.byteLength(JSON.stringify(component.data), 'utf8') > MAX_DATA_BYTES) throw new Error('Dashboard component data is too large');
@@ -62,6 +65,24 @@ export function validateDashboard(schema) {
     }
   }
   return true;
+}
+
+function validateProvenance(provenance) {
+  if (!provenance || typeof provenance !== 'object' || Array.isArray(provenance)) {
+    throw new Error('Dashboard component provenance must be an object');
+  }
+  rejectUnknown(provenance, PROVENANCE_FIELDS, 'dashboard component provenance');
+  requireString(provenance.reason, 'component provenance reason');
+  boundedArray(provenance.references, 10, 'component provenance references');
+  for (const reference of provenance.references || []) {
+    if (!reference || typeof reference !== 'object' || Array.isArray(reference)) {
+      throw new Error('Dashboard component provenance references must be objects');
+    }
+    rejectUnknown(reference, PROVENANCE_REFERENCE_FIELDS, 'dashboard component provenance reference');
+    requireString(reference.type, 'component provenance reference type');
+    requireString(reference.id, 'component provenance reference id');
+    optionalString(reference.label, 500, 'component provenance reference label');
+  }
 }
 
 function validateComponentData(type, data) {
