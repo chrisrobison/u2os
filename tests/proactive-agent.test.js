@@ -13,6 +13,7 @@ import { Agent } from '../server/agent/agent.js';
 import { runSeed } from '../server/seed/seed.js';
 import { createEntity } from '../server/memory/entity-store.js';
 import * as tasksProvider from '../server/integrations/mock-tasks-provider.js';
+import * as calendarProvider from '../server/integrations/mock-calendar-provider.js';
 import { listRecommendations } from '../server/agent/recommendation-store.js';
 import { explainRecommendation } from '../server/agent/explain-recommendation.js';
 
@@ -138,6 +139,30 @@ test('calendar.event_approaching -> decision "prepare", generates a before-meeti
     // GET /api/recommendations' backing store must surface it, dismissible.
     const open = listRecommendations({ status: 'open' });
     assert.ok(open.some((r) => r.id === result.recommendation.id));
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('calendar.event_changed detects authoritative interval conflicts and ignores non-overlaps', async () => {
+  const dir = tempHome();
+  try {
+    const { db, agent } = buildAgent();
+    const changed = calendarProvider.createEvent({ title: 'Changed meeting', startAt: '2026-10-01T10:00:00.000Z', endAt: '2026-10-01T11:00:00.000Z' });
+    const overlap = calendarProvider.createEvent({ title: 'Existing focus block', startAt: '2026-10-01T05:30:00-05:00', endAt: '2026-10-01T06:30:00-05:00' });
+    calendarProvider.createEvent({ title: 'Later meeting', startAt: '2026-10-01T12:00:00.000Z', endAt: '2026-10-01T13:00:00.000Z' });
+
+    const conflict = await agent.evaluateEvent({ type: 'calendar.event_changed', subject: { type: 'calendar_event', id: changed.id }, data: { after: changed } });
+    assert.equal(conflict.decision, 'notify');
+    assert.deepEqual(conflict.conflicts, [overlap.id]);
+    assert.equal(conflict.outcome.status, 'executed');
+    assert.equal(conflict.outcome.tool, 'notifications.send');
+    assert.equal(db.prepare("SELECT count(*) AS count FROM events WHERE type = 'notification.sent'").get().count, 1);
+
+    const isolated = calendarProvider.createEvent({ title: 'Isolated event', startAt: '2026-10-02T10:00:00.000Z', endAt: '2026-10-02T11:00:00.000Z' });
+    const noConflict = await agent.evaluateEvent({ type: 'calendar.event_changed', subject: { type: 'calendar_event', id: isolated.id }, data: { after: isolated } });
+    assert.equal(noConflict.decision, 'ignore');
+    assert.equal(db.prepare("SELECT count(*) AS count FROM events WHERE type = 'notification.sent'").get().count, 1);
   } finally {
     cleanup(dir);
   }
