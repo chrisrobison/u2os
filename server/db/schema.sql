@@ -50,9 +50,23 @@ CREATE TABLE IF NOT EXISTS facts (
   -- this fact may be included in context sent to a remote model provider --
   -- see server/policy/data-processing-policy.js.
   classification TEXT NOT NULL DEFAULT 'personal',
+  status TEXT NOT NULL DEFAULT 'current',
+  supersedes_fact_id TEXT,
+  deleted_at TEXT,
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_facts_entity ON facts(entity_id);
+
+CREATE TABLE IF NOT EXISTS fact_revisions (
+  id TEXT PRIMARY KEY,
+  fact_id TEXT NOT NULL,
+  operation TEXT NOT NULL,
+  before_state TEXT,
+  after_state TEXT,
+  actor TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_fact_revisions_fact ON fact_revisions(fact_id, created_at);
 
 -- Semantic memory retrieval (PLAN.md Phase 5): a small local embedding
 -- index/access mechanism OVER the structured entities/facts/relationships

@@ -85,6 +85,10 @@ Emitted by the agent/policy/tool pipeline (internal, domain-independent):
 | `agent.action.failed` | a tool execution threw / returned an error |
 | `agent.action.queue_updated` | committed durable delivery state changed; metadata only, with no arguments or raw provider error |
 | `agent.memory_candidate.proposed` | a validated plan included `memoryCandidates`. A durable pending candidate is created, but no fact/entity is written until the owner accepts it through `/api/memory/candidates/:id/accept`. Rejection preserves the candidate and audit state without promoting it. |
+| `memory.fact_confirmed` | owner explicitly confirmed an existing fact; content is unchanged and `last_confirmed_at` advances |
+| `memory.fact_reclassified` | owner changed the data-processing classification through the dedicated fact endpoint |
+| `memory.fact_corrected` | owner created a replacement fact; the previous fact remains as `superseded` history |
+| `memory.fact_deleted` | owner removed a fact from active retrieval; the row remains as an audited soft-deleted record |
 | `agent.context_restricted` | the data-processing privacy policy (server/policy/data-processing-policy.js) withheld one or more context items -- facts, people, commitments, or event-derived summaries -- from the context sent to a specific model provider for this request -- data(classification) x destination, separate from tool authorization. `data` includes `destination`, `providerId`, and an `omitted` list where each entry carries `type` (`fact`/`person`/`commitment`/`event`), `id`, `classification`, `destination`, `decision`, and `rule`, so the omission is auditable, never silent. |
 | `user.feedback` | user accepted/rejected/edited a suggestion post-hoc (Phase 7 hook, schema reserved now) |
 
