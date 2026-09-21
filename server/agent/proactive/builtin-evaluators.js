@@ -14,7 +14,7 @@
 //     reused rather than reimplemented.
 import { getCachedCalendarEvent } from '../../integrations/calendar-store.js';
 import { getDb } from '../../db/connection.js';
-import { findEntities } from '../../memory/entity-store.js';
+import { findEntities, getEntity } from '../../memory/entity-store.js';
 import * as tasksProvider from '../../integrations/mock-tasks-provider.js';
 import { scoreForSuggestion } from '../../feedback/prioritizer.js';
 import { createRecommendation } from '../recommendation-store.js';
@@ -210,6 +210,27 @@ export async function evaluateSubscriptionRenewing(event, { proposeAction }) {
   return { decision: 'notify', eventType: event.type, outcome };
 }
 
+// contact.birthday_approaching -> notify. The person's display name comes
+// from authoritative local memory, never from event-supplied text.
+export async function evaluateBirthdayApproaching(event, { proposeAction }) {
+  const entityId = event.subject?.type === 'entity' ? event.subject.id : event.data?.entityId;
+  const person = entityId ? getEntity(entityId) : null;
+  const daysUntil = typeof event.data?.daysUntil === 'number' ? event.data.daysUntil : NaN;
+  if (!person || person.type !== 'Person' || !Number.isInteger(daysUntil) || daysUntil < 0 || daysUntil > 366) {
+    return { decision: 'ignore', eventType: event.type, reason: 'Birthday event has no active Person or valid days-until value.' };
+  }
+
+  const timing = daysUntil === 0 ? 'today' : daysUntil === 1 ? 'tomorrow' : `in ${daysUntil} days`;
+  const outcome = await proposeAction({
+    tool: 'notifications.send',
+    arguments: { title: 'Birthday approaching', body: `${boundedText(person.name, 120) || 'A contact'}’s birthday is ${timing}.`, priority: 'normal' },
+    requestedBy: 'agent:evaluateEvent',
+    requestText: `contact.birthday_approaching: ${person.id}`,
+    reasoningSummary: `The local birthday trigger reports ${daysUntil} day(s) until this contact's birthday.`,
+  });
+  return { decision: 'notify', eventType: event.type, outcome };
+}
+
 function boundedText(value, limit) {
   return typeof value === 'string' ? value.trim().slice(0, limit) : '';
 }
@@ -284,6 +305,7 @@ export function registerBuiltinEvaluators(registry) {
   registry.register({ eventPattern: 'calendar.event_approaching', evaluate: evaluateCalendarApproaching, name: 'builtin:calendar.event_approaching' });
   registry.register({ eventPattern: 'calendar.event_changed', evaluate: evaluateCalendarChanged, name: 'builtin:calendar.event_changed' });
   registry.register({ eventPattern: 'subscription.renewing', evaluate: evaluateSubscriptionRenewing, name: 'builtin:subscription.renewing' });
+  registry.register({ eventPattern: 'contact.birthday_approaching', evaluate: evaluateBirthdayApproaching, name: 'builtin:contact.birthday_approaching' });
   registry.register({ eventPattern: 'task.overdue', evaluate: evaluateTaskOverdue, name: 'builtin:task.overdue' });
   registry.register({ eventPattern: 'commitment.made', evaluate: evaluateCommitmentMade, name: 'builtin:commitment.made' });
   return registry;
