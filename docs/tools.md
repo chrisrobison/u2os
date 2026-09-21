@@ -14,11 +14,14 @@ class Tool {
   get domain() {}        // "calendar" — matches policies.yaml top-level key
   get category() {}      // "read" | "draft" | "consequential"
   get schema() {}         // JSON Schema for arguments
-  async execute(args, context) {}  // context: { eventBus, correlationId, actor }
+  get supportsIdempotency() { return false; }
+  async execute(args, context) {}  // context: { eventBus, correlationId, actor, idempotencyKey }
 }
 ```
 
 `ToolRegistry.get(name)`, `ToolRegistry.list()`, `ToolRegistry.register(tool)`.
+
+`supportsIdempotency` is a security-relevant capability, not a model hint. It must remain `false` unless the concrete provider consumes `context.idempotencyKey` and guarantees that repeating a call with the same key cannot repeat its external side effect. After a crash during an unknown non-idempotent outcome, the durable worker stops for owner attention instead of guessing or replaying. Network/timeout retries likewise require either this explicit capability or an error deterministically marked `safeToRetry` by trusted provider code.
 
 ## Tools
 
@@ -50,4 +53,4 @@ The policy engine looks up `policies.yaml[domain][operationKey]` where `operatio
 
 ## Provenance
 
-Every tool execution writes an `agent_actions` row (even autonomous ones, for audit) and every state-changing tool publishes an event whose `metadata.provenance` is `tool:<name>`.
+Every proposed tool execution writes an `agent_actions` row (even autonomous ones, for audit). Authorized work is then persisted in `action_queue` before the registered tool runs; numbered attempts live in `action_attempts`. Every state-changing tool publishes an event whose `metadata.provenance` is `tool:<name>`, and committed delivery transitions publish metadata-only `agent.action.queue_updated` events.

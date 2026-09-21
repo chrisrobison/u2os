@@ -147,6 +147,8 @@ test('completion and terminal failures clear leases and cannot be settled twice'
 
 test('error classification and backoff are deterministic and fail closed', () => {
   assert.equal(classifyActionError(Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' })), 'retryable');
+  assert.equal(classifyActionError(Object.assign(new Error('connection reset'), { code: 'ECONNRESET' })), 'retryable');
+  assert.equal(classifyActionError({ status: 503 }), 'retryable');
   assert.equal(classifyActionError({ status: 401 }), 'authentication_required');
   assert.equal(classifyActionError({ ownerAttentionRequired: true }), 'owner_attention_required');
   assert.equal(classifyActionError(new Error('unknown provider failure')), 'non_retryable');
