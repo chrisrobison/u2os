@@ -91,6 +91,7 @@ Emitted by the agent/policy/tool pipeline (internal, domain-independent):
 | `memory.fact_deleted` | owner removed a fact from active retrieval; the row remains as an audited soft-deleted record |
 | `memory.relationship_deleted` | owner removed a relationship from active graph reads; the row remains for audit history |
 | `memory.entity_deleted` | owner confirmed an impact preview and removed an entity from active reads; linked records remain stored |
+| `system.projections_replayed` | an operator explicitly applied a bounded derived-projection rebuild; counts only, with no projected content |
 | `agent.context_restricted` | the data-processing privacy policy (server/policy/data-processing-policy.js) withheld one or more context items -- facts, people, commitments, or event-derived summaries -- from the context sent to a specific model provider for this request -- data(classification) x destination, separate from tool authorization. `data` includes `destination`, `providerId`, and an `omitted` list where each entry carries `type` (`fact`/`person`/`commitment`/`event`), `id`, `classification`, `destination`, `decision`, and `rule`, so the omission is auditable, never silent. |
 | `user.feedback` | user accepted/rejected/edited a suggestion post-hoc (Phase 7 hook, schema reserved now) |
 
@@ -132,3 +133,5 @@ eventBus.subscribe('*', handler); // activity feed, SSE hub
 `GET /api/events?type=&since=&correlationId=&subjectType=&subjectId=&limit=` reads directly from the `events` table — the API never has a separate "history" store to keep in sync; it's the same log. `subjectType`/`subjectId` (added for the device management UI's "recent activity" panel, docs/devices.md) are generically useful for any subject, not device-specific — e.g. `?subjectType=device&subjectId=mock.camera.kitchen`.
 
 The SSE stream includes each event's durable id. Reconnecting clients send `Last-Event-ID`; the server replays later persisted events before resuming live delivery. Comment heartbeats keep otherwise-idle connections alive.
+
+Operators can deterministically rebuild registered derived projections in durable append order with `npm run maintain -- --replay-projections`. This is a dry run unless `--apply` is also supplied. Apply runs atomically, replaces only the registered rebuildable rows, and records `system.projections_replayed`; it does not republish historical events through the live bus, so tools, connectors, notifications, and agent actions cannot execute. The initial registry covers the memory projector's `calendar.event_changed` attendee facts. Authoritative connector rows and owner-entered memory are never rebuilt or deleted.
