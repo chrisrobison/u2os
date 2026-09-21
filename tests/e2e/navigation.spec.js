@@ -110,6 +110,16 @@ test.describe.serial('navigation shell (#15)', () => {
         // #/home, rendered inside this page's own body.
         await expect(page.locator('.workspace__title', { hasText: 'Morning Briefing' })).toBeVisible();
         await expect(page.locator('u2-card[title="Schedule"] .u2-schedule__title', { hasText: 'Sync with Sarah' })).toBeVisible();
+
+        await page.locator('.folder-toggle button', { hasText: 'Before a meeting' }).click();
+        const selector = page.locator('select.connector-select');
+        await selector.selectOption({ label: 'Sarah' });
+        await expect(page.locator('u2-person')).toContainText('Sarah');
+        await expect(page.locator('u2-person')).toContainText('Prefers morning meetings');
+
+        await page.locator('.folder-toggle button', { hasText: 'Project' }).click();
+        await expect(page.locator('u2-project')).toContainText('U2OS');
+        await expect(page.locator('u2-project')).toContainText('Sarah');
       },
     },
     {

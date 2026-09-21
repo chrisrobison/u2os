@@ -93,11 +93,10 @@ test('generateDashboard({context: "before-meeting"}) for a real seeded person (S
     assert.ok(taskListComponent);
     assert.ok(taskListComponent.data.tasks.some((t) => t.title === 'Send proposal draft to Sarah'));
 
-    // The fact/relationship summary alert should mention something real
-    // about Sarah, not be generic boilerplate.
-    const alertComponent = schema.components.find((c) => c.type === 'alert');
-    assert.ok(alertComponent);
-    assert.ok(alertComponent.data.message.length > 0);
+    const personComponent = schema.components.find((c) => c.type === 'person');
+    assert.equal(personComponent.data.name, 'Sarah');
+    assert.ok(personComponent.data.facts.some((fact) => fact.key === 'prefers_morning_meetings'));
+    assert.ok(personComponent.data.upcomingInteractions.some((event) => event.title === 'Sync with Sarah'));
   } finally {
     cleanup(dir);
   }
@@ -136,9 +135,18 @@ test('generateDashboard({context: "project"}) for the seeded U2OS project reflec
     const taskListComponent = schema.components.find((c) => c.type === 'task-list');
     assert.ok(taskListComponent);
     assert.ok(taskListComponent.data.tasks.some((t) => t.title === 'Review U2OS architecture doc'));
+    const projectComponent = schema.components.find((c) => c.type === 'project');
+    assert.equal(projectComponent.data.name, 'U2OS');
+    assert.equal(projectComponent.data.status, 'active');
+    assert.ok(projectComponent.data.people.some((person) => person.name === 'Sarah'));
   } finally {
     cleanup(dir);
   }
+});
+
+test('person and project dashboard payloads are bounded by type-specific validation', () => {
+  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [{ type: 'person', data: { facts: [] } }] }), /person.name/);
+  assert.throws(() => validateDashboard({ title: 'x', layout: 'dashboard', components: [{ type: 'project', data: { name: 'x', openTasks: Array.from({ length: 21 }, () => ({})) } }] }), /at most 20/);
 });
 
 test('an unknown personId is handled cleanly (no crash, clear 404-style error)', () => {

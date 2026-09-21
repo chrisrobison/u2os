@@ -122,8 +122,17 @@ function buildBeforeMeetingDashboard({ personId } = {}) {
   components.push({ type: 'task-list', source: 'tasks.all', data: { tasks: openTasks } });
 
   components.push({
-    type: 'alert',
-    data: { variant: 'info', message: summarizePerson(person, facts, relationships) },
+    type: 'person',
+    data: {
+      id: person.id,
+      name: person.name,
+      relationship: summarizeRelationships(relationships, person),
+      facts: facts.slice(0, 5).map((fact) => ({ key: fact.key, value: fact.value, source: fact.source, classification: fact.classification, inferred: Boolean(fact.inferred) })),
+      recentActivity: relevantEvents.slice(0, 3).map((event) => ({ label: event.title, at: event.start_at, source: 'calendar' })),
+      commitments: relationships.filter((rel) => rel.relation === 'promised').slice(0, 5).map((rel) => ({ description: describeRelationship(rel, person), source: rel.source })),
+      upcomingInteractions: relevantEvents.map((event) => ({ title: event.title, at: event.start_at })),
+      provenance: { entityId: person.id },
+    },
   });
 
   return {
@@ -164,10 +173,21 @@ function buildProjectDashboard({ projectId } = {}) {
     components.push({ type: 'schedule', source: 'calendar.upcoming', data: { events: relevantEvents } });
   }
 
-  const peopleMessage = people.length
-    ? `People connected to ${project.name}: ${people.map((p) => p.name).join(', ')}.`
-    : `No people are currently linked to ${project.name}.`;
-  components.push({ type: 'alert', data: { variant: 'info', message: peopleMessage } });
+  components.push({
+    type: 'project',
+    data: {
+      id: project.id,
+      name: project.name,
+      status: project.attributes?.status || 'unknown',
+      recentActivity: relevantEvents.slice(0, 5).map((event) => ({ label: event.title, at: event.start_at, source: 'calendar' })),
+      openTasks: openTasks.slice(0, 10).map((task) => ({ title: task.title, dueAt: task.due_at, status: task.status })),
+      people: people.slice(0, 10).map((person) => ({ id: person.id, name: person.name })),
+      deadlines: openTasks.filter((task) => task.due_at).slice(0, 10).map((task) => ({ label: task.title, at: task.due_at })),
+      unresolvedDecisions: openTasks.filter((task) => /decid|review|choose|approve/i.test(task.title)).slice(0, 10).map((task) => ({ label: task.title })),
+      relatedDocuments: [],
+      provenance: { entityId: project.id },
+    },
+  });
 
   if (!openTasks.length && !relevantEvents.length) {
     components.push({
@@ -211,29 +231,9 @@ function eventMentionsTitle(event, name) {
   return (event.title || '').toLowerCase().includes(name.toLowerCase());
 }
 
-function summarizePerson(person, facts, relationships) {
-  const parts = [];
-
-  if (facts.length) {
-    const factText = facts.slice(0, 3).map(describeFact).join('; ');
-    parts.push(`Known facts: ${factText}.`);
-  }
-
-  const relText = relationships
-    .map((rel) => describeRelationship(rel, person))
-    .filter(Boolean)
-    .slice(0, 3)
-    .join('; ');
-  if (relText) parts.push(`Relationships: ${relText}.`);
-
-  if (!parts.length) return `No additional facts or relationships recorded for ${person.name} yet.`;
-  return parts.join(' ');
-}
-
-function describeFact(fact) {
-  const key = String(fact.key).replace(/_/g, ' ');
-  const value = typeof fact.value === 'string' ? fact.value : JSON.stringify(fact.value);
-  return `${key} = ${value}${fact.inferred ? ' (inferred)' : ''}`;
+function summarizeRelationships(relationships, person) {
+  const descriptions = relationships.map((rel) => describeRelationship(rel, person)).filter(Boolean).slice(0, 3);
+  return descriptions.length ? descriptions.join('; ') : 'No relationship context recorded yet.';
 }
 
 function describeRelationship(rel, person) {
