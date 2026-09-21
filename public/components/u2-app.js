@@ -69,6 +69,7 @@ export class U2App extends HTMLElement {
 
     this.innerHTML = `
       <div class="shell">
+        <a class="skip-link" href="#workspace">Skip to workspace</a>
         <header class="shell__header">
           <button type="button" class="icon-btn shell__drawer-toggle" data-toggle="nav" aria-label="Toggle navigation">&#9776;</button>
           <span class="shell__brand">U2OS</span>
@@ -77,9 +78,9 @@ export class U2App extends HTMLElement {
           <button type="button" class="icon-btn" data-toggle="theme" aria-label="Toggle color theme"></button>
           <button type="button" class="icon-btn shell__drawer-toggle" data-toggle="agent" aria-label="Toggle agent panel">&#128172;</button>
         </header>
-        <nav class="shell__nav"><u2-nav></u2-nav></nav>
-        <main class="shell__main"><div class="workspace" id="workspace"></div></main>
-        <aside class="shell__agent"><u2-agent></u2-agent></aside>
+        <nav class="shell__nav" aria-label="Primary"><u2-nav></u2-nav></nav>
+        <main class="shell__main"><div class="workspace" id="workspace" tabindex="-1" role="region" aria-label="Workspace"></div></main>
+        <aside class="shell__agent" aria-label="Agent"><u2-agent></u2-agent></aside>
         <div class="shell__scrim"></div>
         <u2-device-panel></u2-device-panel>
       </div>
@@ -90,6 +91,10 @@ export class U2App extends HTMLElement {
     this._updateThemeIcon(document.documentElement.dataset.theme || effectiveTheme());
 
     this._themeBtn.addEventListener('click', () => this._toggleTheme());
+    this.querySelector('.skip-link').addEventListener('click', (event) => {
+      event.preventDefault();
+      this._workspace.focus();
+    });
     this.querySelector('[data-toggle="nav"]').addEventListener('click', () => this._toggleDrawer('nav'));
     this.querySelector('[data-toggle="agent"]').addEventListener('click', () => this._toggleDrawer('agent'));
     this.querySelector('.shell__scrim').addEventListener('click', () => this._closeDrawers());
@@ -110,6 +115,7 @@ export class U2App extends HTMLElement {
     this._onHashChange = () => {
       this._closeDrawers();
       this._route();
+      this._workspace.focus({ preventScroll: true });
     };
     window.addEventListener('hashchange', this._onHashChange);
     this._route();

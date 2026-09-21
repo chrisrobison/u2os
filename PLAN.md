@@ -78,7 +78,7 @@ Turn the current UI from a largely backend-tested shell into a dependable client
 - [x] Add SSE reconnect with exponential backoff, last-event recovery, duplicate suppression, and session-expiry handling. (The client exposes connection state, bounds remembered event ids, and stops retrying to return the owner to login on HTTP 401.)
 - [x] Make dashboards update in place from relevant events. (Visible morning and contextual dashboards debounce relevant SSE events and reload through their current server-side generator without navigation.)
 - [x] Surface offline, degraded connector, and queued-action states consistently. (`u2-connectors`, `u2-operations`, and `u2-diagnostics` expose connector health and durable queue states with owner-readable recovery information.)
-- [ ] Complete keyboard navigation, focus management, semantic labels, contrast checks, and reduced-motion support. (Responsive layouts, automated axe checks, semantic labels, contrast, and reduced-motion behavior are covered; a complete keyboard/focus audit remains.)
+- [x] Complete keyboard navigation, focus management, semantic labels, contrast checks, and reduced-motion support. (The shell includes skip navigation, labeled regions, deterministic route focus, visible focus treatment, automated axe/contrast checks, and cross-browser keyboard coverage.)
 - [ ] Add error boundaries and actionable user-facing error messages for failed API operations. (Route and component-level errors are owner-readable; a consistent application-level boundary and SSE connection status remain.)
 
 ### Acceptance criteria
