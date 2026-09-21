@@ -10,6 +10,7 @@ import { writeEncryptedFile } from '../server/security/vault.js';
 import { validateSettings, sendEmail } from '../server/integrations/smtp-transport.js';
 import { EmailSendTool } from '../server/tools/email-tools.js';
 import { PolicyEngine } from '../server/policy/policy-engine.js';
+import { classifyActionError } from '../server/agent/action-error-classifier.js';
 
 function withHome() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-smtp-test-'));
@@ -87,7 +88,8 @@ test('SMTP rejects header injection and sanitizes uncertain delivery errors', as
     await assert.rejects(sendEmail({ to: 'a@example.test', subject: 'x\r\nBcc: b@example.test', body: 'x' }, { dataDir: dir, transportFactory }), /invalid subject/);
     assert.equal(called, false);
     await assert.rejects(sendEmail({ to: 'a@example.test', subject: 'x', body: 'x' }, { dataDir: dir, transportFactory }),
-      (err) => !err.message.includes('private-password') && /uncertain/.test(err.message));
+      (err) => !err.message.includes('private-password') && /uncertain/.test(err.message)
+        && classifyActionError(err) === 'owner_attention_required');
     assert.equal(getDb().prepare("SELECT count(*) AS n FROM emails WHERE folder = 'sent'").get().n, 0);
   } finally { cleanup(dir); }
 });

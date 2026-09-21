@@ -25,6 +25,12 @@ export function isConfigured(dataDir) {
   try { return !!validateSettings(readEncryptedFile('smtp', dataDir)); } catch { return false; }
 }
 
+function uncertainOutcome(message) {
+  const error = new Error(message);
+  error.ownerAttentionRequired = true;
+  return error;
+}
+
 function validateMessage({ to, subject, body, inReplyTo } = {}) {
   const recipients = Array.isArray(to) ? to : [to];
   if (!recipients.length || recipients.length > 20 || !recipients.every(validAddress)) throw new Error('smtp: invalid recipients');
@@ -59,7 +65,7 @@ export async function sendEmail(message, { dataDir, transportFactory = (config) 
   } catch {
     // An SMTP timeout can occur after acceptance. Do not reveal provider
     // frames or imply it is safe for a worker to replay the send.
-    throw new Error('smtp: delivery outcome is uncertain; review before retrying');
+    throw uncertainOutcome('smtp: delivery outcome is uncertain; review before retrying');
   } finally {
     transport.close?.();
   }
@@ -71,7 +77,7 @@ export async function sendEmail(message, { dataDir, transportFactory = (config) 
       localId, inReplyTo || null, settings.from, JSON.stringify(recipients), subject, body, 'sent', 1, now, now
     );
   } catch {
-    throw new Error('smtp: provider accepted the message but local recording failed; review before retrying');
+    throw uncertainOutcome('smtp: provider accepted the message but local recording failed; review before retrying');
   }
   return { id: localId, thread_id: inReplyTo || null, from_addr: settings.from, to_addr: recipients,
     subject, body, folder: 'sent', is_read: true, received_at: now, created_at: now };
