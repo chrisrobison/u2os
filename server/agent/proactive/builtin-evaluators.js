@@ -181,6 +181,39 @@ export async function evaluateCalendarChanged(event, { proposeAction }) {
   return { decision: 'notify', eventType: event.type, conflicts: conflicts.map(({ id }) => id), outcome };
 }
 
+// subscription.renewing -> notify. Event data is descriptive context only:
+// it cannot select a tool, policy domain, or authorization level.
+export async function evaluateSubscriptionRenewing(event, { proposeAction }) {
+  const name = boundedText(event.data?.subscriptionName || event.data?.name, 120);
+  const renewalAt = Date.parse(boundedText(event.data?.renewalAt, 64));
+  const status = boundedText(event.data?.status, 20).toLowerCase();
+  if (!name || !Number.isFinite(renewalAt) || renewalAt <= Date.now() || status === 'cancelled' || status === 'canceled') {
+    return { decision: 'ignore', eventType: event.type, reason: 'Renewal is malformed, cancelled, or no longer upcoming.' };
+  }
+
+  const rawAmount = event.data?.amount;
+  const amount = typeof rawAmount === 'number'
+    ? rawAmount
+    : typeof rawAmount === 'string' && rawAmount.length <= 32 && rawAmount.trim() ? Number(rawAmount) : NaN;
+  const currency = /^[A-Za-z]{3}$/.test(String(event.data?.currency || '')) ? String(event.data.currency).toUpperCase() : null;
+  const price = Number.isFinite(amount) && amount >= 0 && amount <= 1_000_000_000
+    ? ` for ${currency ? `${currency} ` : ''}${amount.toFixed(2)}`
+    : '';
+  const date = new Date(renewalAt).toISOString().slice(0, 10);
+  const outcome = await proposeAction({
+    tool: 'notifications.send',
+    arguments: { title: 'Upcoming subscription renewal', body: boundedText(`${name} renews on ${date}${price}.`, 500), priority: 'normal' },
+    requestedBy: 'agent:evaluateEvent',
+    requestText: `subscription.renewing: ${name}`,
+    reasoningSummary: `A validated subscription renewal is scheduled for ${date}.`,
+  });
+  return { decision: 'notify', eventType: event.type, outcome };
+}
+
+function boundedText(value, limit) {
+  return typeof value === 'string' ? value.trim().slice(0, limit) : '';
+}
+
 function normalizeCalendarEvent(value = {}, id = null) {
   return { id, title: value?.title, start_at: value?.start_at || value?.startAt, end_at: value?.end_at || value?.endAt, status: value?.status };
 }
@@ -250,6 +283,7 @@ export function registerBuiltinEvaluators(registry) {
   registry.register({ eventPattern: 'email.received', evaluate: evaluateEmailReceived, name: 'builtin:email.received' });
   registry.register({ eventPattern: 'calendar.event_approaching', evaluate: evaluateCalendarApproaching, name: 'builtin:calendar.event_approaching' });
   registry.register({ eventPattern: 'calendar.event_changed', evaluate: evaluateCalendarChanged, name: 'builtin:calendar.event_changed' });
+  registry.register({ eventPattern: 'subscription.renewing', evaluate: evaluateSubscriptionRenewing, name: 'builtin:subscription.renewing' });
   registry.register({ eventPattern: 'task.overdue', evaluate: evaluateTaskOverdue, name: 'builtin:task.overdue' });
   registry.register({ eventPattern: 'commitment.made', evaluate: evaluateCommitmentMade, name: 'builtin:commitment.made' });
   return registry;

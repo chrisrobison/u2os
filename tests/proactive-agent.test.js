@@ -168,6 +168,31 @@ test('calendar.event_changed detects authoritative interval conflicts and ignore
   }
 });
 
+test('subscription.renewing notifies for a bounded upcoming renewal and ignores invalid or cancelled events', async () => {
+  const dir = tempHome();
+  try {
+    const { db, agent } = buildAgent();
+    const renewalAt = new Date(Date.now() + 7 * 86400000).toISOString();
+    const valid = await agent.evaluateEvent({ type: 'subscription.renewing', data: { subscriptionName: 'Cloud storage', renewalAt, amount: 12.5, currency: 'usd' } });
+    assert.equal(valid.decision, 'notify');
+    assert.equal(valid.outcome.status, 'executed');
+    assert.equal(valid.outcome.tool, 'notifications.send');
+    assert.equal(db.prepare("SELECT count(*) AS count FROM events WHERE type = 'notification.sent'").get().count, 1);
+    const notification = db.prepare("SELECT data FROM events WHERE type = 'notification.sent'").get();
+    assert.match(JSON.parse(notification.data).body, /Cloud storage renews on \d{4}-\d{2}-\d{2} for USD 12\.50/);
+
+    const invalid = await agent.evaluateEvent({ type: 'subscription.renewing', data: { subscriptionName: 'Missing date' } });
+    const cancelled = await agent.evaluateEvent({ type: 'subscription.renewing', data: { subscriptionName: 'Cancelled plan', renewalAt, status: 'cancelled' } });
+    const expired = await agent.evaluateEvent({ type: 'subscription.renewing', data: { subscriptionName: 'Old plan', renewalAt: '2000-01-01T00:00:00.000Z' } });
+    assert.equal(invalid.decision, 'ignore');
+    assert.equal(cancelled.decision, 'ignore');
+    assert.equal(expired.decision, 'ignore');
+    assert.equal(db.prepare("SELECT count(*) AS count FROM events WHERE type = 'notification.sent'").get().count, 1);
+  } finally {
+    cleanup(dir);
+  }
+});
+
 test('task.overdue -> decision "notify", policy-gated notification sent', async () => {
   const dir = tempHome();
   try {

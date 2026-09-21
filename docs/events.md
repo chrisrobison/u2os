@@ -73,6 +73,7 @@ Emitted by mock tools/integrations:
 | `task.completed` | `tasks.complete` executes | `mock-tasks` |
 | `task.overdue` | trigger engine detects an overdue open task, deduplicated per trigger/task | `trigger-engine` |
 | `notification.sent` | `notifications.send` completes successfully | active provider: `mock-notifications` or `webhook` |
+| `subscription.renewing` | an upstream source reports a future renewal with bounded name/date and optional price data | connector/import source |
 
 Emitted by the agent/policy/tool pipeline (internal, domain-independent):
 
@@ -118,7 +119,7 @@ Device/capability/stream events (docs/devices.md's device/capability subsystem -
 | `stream.available` | `StreamRegistry.open()` recorded a stream reference as active | `device:<id>` |
 | `stream.closed` | `StreamRegistry.close()` removed an active stream reference | `device:<id>` |
 
-Not implemented until later phases (reserved names, do not repurpose): `document.created`, `document.changed`, `project.changed`, `purchase.completed`, `subscription.renewing`, `package.shipped`, `location.changed`, `message.received`.
+Not implemented until later phases (reserved names, do not repurpose): `document.created`, `document.changed`, `project.changed`, `purchase.completed`, `package.shipped`, `location.changed`, `message.received`.
 
 ## Subscribing
 
