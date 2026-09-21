@@ -176,11 +176,15 @@ PROMPT.md's Phase 3 list names "task system" alongside the real integrations. Ta
 
 The owner can now enter an IMAP hostname, username, and app password on the Connectors page, then select IMAP as the active email provider. Credentials are encrypted in `imap.enc.json`; the status API returns no password. IMAP uses TLS on port 993 with normal certificate validation. It fetches at most the latest 50 inbox messages per sync and skips messages over 512 KiB, storing text (not attachments) in the local email cache. IDs include an account hash, mailbox UIDVALIDITY, and UID so repeat syncs do not duplicate mail. Use **Sync now** to verify access; `lastError` reports a sanitized connection failure without credentials.
 
-This is a read-only transport. `email.send` fails clearly while IMAP is selected until the separate SMTP transport is implemented. If a real email provider is selected but its credentials are missing, sending fails rather than silently creating a mock sent item. Inbox contents are private user data and remain subject to U2OS's normal data-processing policy when used as model context. No mailbox was contacted during automated tests; the tests use a fake IMAP client.
+IMAP itself reads only. To send from this account, also configure the SMTP companion below. If IMAP is selected without SMTP, `email.send` fails clearly. If a real email provider is selected but its credentials are missing, sending fails rather than silently creating a mock sent item. Inbox contents are private user data and remain subject to U2OS's normal data-processing policy when used as model context. No mailbox was contacted during automated tests; the tests use a fake IMAP client.
+
+## SMTP companion for IMAP
+
+Enter SMTP host, port, username, app password, and From address in the Connectors page. Only implicit TLS on port 465 or required STARTTLS on port 587 is supported; certificate validation stays enabled. These settings are encrypted separately in `smtp.enc.json`. SMTP is used only when IMAP is the active email provider; Gmail continues to send through its own API. Every `email.send` still follows the existing consequential-action policy/approval and durable queue path. The transport accepts plain-text messages without attachments, validates recipients and headers, and records a local sent row only after provider acceptance. A timeout or rejection is reported as an uncertain outcome for owner review; it is not advertised as idempotent or automatically replayed. Automated delivery tests use a local capture SMTP server, not real recipients.
 
 ## Remaining fast-follow stubs
 
-`skills/caldav/manifest.json` remains a calendar stub. SMTP sending is tracked separately; IMAP does not imply send capability.
+`skills/caldav/manifest.json` remains a calendar stub. Live-account validation is still owner-driven and tracked separately.
 
 ## Setting up your Google OAuth client (do this yourself, in your own browser)
 

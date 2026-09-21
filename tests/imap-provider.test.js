@@ -87,7 +87,7 @@ test('IMAP-selected email.send never silently falls back to mock delivery', asyn
     setActiveProvider('email', 'imap', dir);
     await assert.rejects(new EmailSendTool().execute({ to: 'a@example.com', subject: 'x', body: 'x' }), /not connected/);
     writeEncryptedFile('imap', { host: 'mail.example.com', port: 993, username: 'owner', password: 'secret' }, dir);
-    await assert.rejects(new EmailSendTool().execute({ to: 'a@example.com', subject: 'x', body: 'x' }), /SMTP/);
+    await assert.rejects(new EmailSendTool().execute({ to: 'a@example.com', subject: 'x', body: 'x' }), /smtp: credentials/);
     assert.equal(getDb().prepare("SELECT count(*) AS n FROM emails WHERE folder = 'sent'").get().n, 0);
   } finally { cleanup(dir); }
 });
