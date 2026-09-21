@@ -205,7 +205,7 @@ export class U2Agent extends HTMLElement {
       if (hasPending) {
         this._pipeline.setBusy('waiting-for-approval');
       } else {
-        this._speak(res.reasoning_summary);
+        this._speak(res.response || res.reasoning_summary);
       }
     } catch (err) {
       this._appendBubble('system', `Something went wrong: ${err.message}`);
@@ -226,13 +226,13 @@ export class U2Agent extends HTMLElement {
   // ---- shared rendering (typed text and voice both funnel through this) ----
 
   _renderAgentResponse(res) {
-    this._appendBubble('agent', res.reasoning_summary || "I don't have anything to add.");
+    this._appendBubble('agent', res.response || res.reasoning_summary || "I don't have anything to add.");
     const actions = res.actions || [];
     if (actions.length) {
       const list = document.createElement('div');
       list.className = 'approval-list';
       for (const action of actions) {
-        this._pendingActionIds.add(action.id);
+        if (action.status === 'pending') this._pendingActionIds.add(action.id);
         const el = document.createElement('u2-approval');
         el.action = action;
         list.appendChild(el);

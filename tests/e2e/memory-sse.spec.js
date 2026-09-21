@@ -7,26 +7,9 @@ import { proposeMemoryCandidate } from '../../server/memory/candidate-store.js';
 // 417) and (b) the SSE client's live-update/reconnect/recovery behavior
 // (public/services/events.js's EventsService, server/events/sse-hub.js).
 //
-// ---- No chat-driven trigger for memory candidates exists yet ----
-//
-// Verified by reading server/agent/mock-model-provider.js's plan(): it only
-// ever returns { reasoning_summary, actions } -- never memoryCandidates --
-// and grepping server/api/routes/memory.js shows no endpoint to directly
-// propose one (only GET /api/memory/candidates and the accept/reject POSTs).
-// The only code path that ever inserts a `memory_candidates` row is
-// server/agent/agent.js calling proposeMemoryCandidate()
-// (server/memory/candidate-store.js) when a model's plan actually includes
-// one -- which MockModelProvider never does. So, mirroring how
-// agent-approval.spec.js documented its own getPendingActions()-unused gap,
-// this file seeds pending candidates by importing proposeMemoryCandidate
-// directly and calling it in-process against the dedicated server's own DB
-// (same process, same U2OS_HOME as set by startDedicatedServer() -- see
-// server/db/connection.js's getDb(), which re-reads process.env.U2OS_HOME
-// on every call and keys its connection cache by the resulting db path, so
-// this call transparently shares the exact same SQLite connection the
-// running dedicated server is using). This is real production code
-// (candidate-store.js) exercised for real, just via direct import rather
-// than through a chat message, because no chat-driven path exists yet.
+// These focused accept/reject tests seed their own candidates directly so
+// each assertion controls exactly one record. The coherent chat-driven path
+// is covered separately by daily-driver-demo.spec.js.
 //
 // ---- /api/events/stream auth-protection assumption, verified not assumed ----
 //
