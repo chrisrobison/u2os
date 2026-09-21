@@ -93,6 +93,12 @@ WHEN commitment.made IF no task exists THEN create task
 - No arbitrary user-authored automation scripting language — triggers are structured data (`kind`/`config`), matched and executed by fixed, audited, policy-gated engine code, never `eval`'d or interpreted as code. This is the same "trusted primitives" boundary as tools and dashboards, applied to automation.
 - Does not modify policy/security configuration based on trigger outcomes (explicitly forbidden, same as the existing Phase 7 feedback-loop rule).
 
+## Owner interface
+
+The **Automation** screen (`#/automation`) lists every system and user trigger with its kind, source, current state, schedule summary, and next check where applicable. Owners can pause or resume any trigger. The constrained creation form supports one-time timers and recurring minute schedules; it sends only structured `kind` and `config` data to the existing validated trigger API. User-created triggers can also be deleted after confirmation. Seeded system triggers deliberately have no delete control so the built-in proactive behaviors remain recoverable, although they can be paused.
+
+Event-rule and condition-watch authoring remain API-only because their richer action and matching configuration needs a purpose-built safe editor. Execution history, next-run previews, and manual dry runs remain milestone-5 work.
+
 ## Security note: `when.matches` is a ReDoS surface, and is validated accordingly
 
 `event_rule` triggers' `config.when.matches` becomes a live `RegExp` tested against every matching event, inline inside the event bus's synchronous dispatch loop (`matchesWhen()` in `server/triggers/trigger-engine.js`). A security review caught this as exploitable: a catastrophic-backtracking pattern (e.g. `^(a+)+$`) accepted with no validation could hang the entire single-threaded server for every user via one `POST /api/triggers` plus any subsequent ordinary event — verified live, 20+ seconds of hang from a 39-character input.
