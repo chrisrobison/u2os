@@ -123,7 +123,7 @@ Make proactive behavior reliable across restarts and intermittent connectivity.
 - [x] Add retry classes, exponential backoff, dead-letter handling, and operator-visible recovery controls.
 - [x] Expand event evaluation beyond the initial email, approaching-meeting, overdue-task, and commitment cases.
 - [x] Add calendar-conflict, birthday, renewal, important-message, and project-activity evaluators.
-- Add trigger history, next-run previews, pause/resume, and manual dry runs. (History, persisted next-run display, and pause/resume are complete; manual dry runs remain.)
+- [x] Add trigger history, next-run previews, pause/resume, and manual dry runs.
 
 ### Acceptance criteria
 
@@ -247,4 +247,4 @@ U2OS reaches usable alpha when Milestones 1–3 are complete: a single owner can
 
 Milestones 4–8 deepen the product toward the broader personal digital-agent vision; they are not reasons to postpone the security boundary required for alpha use.
 
-**Status: usable alpha reached.** Milestones 1–3 are complete, with 378 Node tests and 65 Playwright scenarios running across Chromium, Firefox, and WebKit.
+**Status: usable alpha reached.** Milestones 1–3 are complete, with 379 Node tests and 65 Playwright scenarios running across Chromium, Firefox, and WebKit.

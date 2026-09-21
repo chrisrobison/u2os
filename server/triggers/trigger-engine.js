@@ -563,6 +563,68 @@ export function listTriggerHistory(id, { limit = 20 } = {}) {
   });
 }
 
+export function previewTrigger(id, { now = new Date() } = {}) {
+  const trigger = getTrigger(id);
+  if (!trigger) return null;
+  const actionKind = boundedHistoryText(trigger.config?.action?.kind) || 'evaluate';
+  const action = {
+    kind: actionKind,
+    target: actionKind === 'notify' ? 'notifications.send' : actionKind === 'create_task' ? 'tasks.create' : 'agent.evaluateEvent',
+  };
+  const preview = {
+    triggerId: trigger.id,
+    dryRun: true,
+    sideEffects: false,
+    kind: trigger.kind,
+    enabled: trigger.enabled,
+    action,
+    nextCheckAt: trigger.next_check_at || null,
+  };
+
+  if (trigger.kind === 'timer' || trigger.kind === 'schedule') {
+    const dueAt = Date.parse(trigger.next_check_at || '');
+    return { ...preview, wouldRunNow: trigger.enabled && Number.isFinite(dueAt) && dueAt <= now.getTime() };
+  }
+  if (trigger.kind === 'event_rule') {
+    return { ...preview, eventType: boundedHistoryText(trigger.config?.eventType), requiresMatchingEvent: true };
+  }
+  return { ...preview, check: boundedHistoryText(trigger.config?.check), currentMatchCount: countConditionMatches(trigger, now) };
+}
+
+function countConditionMatches(trigger, now) {
+  if (trigger.config?.check === 'calendar_approaching') {
+    const leadMinutes = trigger.config?.params?.leadMinutes ?? 60;
+    const end = now.getTime() + leadMinutes * 60000;
+    return getDb().prepare('SELECT id, start_at, status FROM calendar_events').all()
+      .filter((event) => event.status !== 'cancelled' && event.status !== 'canceled')
+      .filter((event) => { const start = Date.parse(event.start_at); return Number.isFinite(start) && start >= now.getTime() && start <= end; })
+      .filter((event) => !alreadyFired(trigger.id, event.id)).length;
+  }
+  if (trigger.config?.check === 'task_overdue') {
+    return tasksProvider.listTasks({ status: 'open' })
+      .filter((task) => task.due_at && Date.parse(task.due_at) < now.getTime())
+      .filter((task) => !alreadyFired(trigger.id, task.id)).length;
+  }
+  if (trigger.config?.check === 'birthday_approaching') {
+    const leadDays = trigger.config?.params?.leadDays ?? 7;
+    const today = new Date(now); today.setHours(0, 0, 0, 0);
+    let count = 0;
+    for (const person of findEntities({ type: 'Person' })) {
+      for (const fact of getFacts(person.id).filter((item) => item.key === 'birthday')) {
+        const match = BIRTHDAY_PATTERN.exec(String(fact.value).replace(/"/g, ''));
+        if (!match) continue;
+        let year = today.getFullYear();
+        let occurrence = new Date(year, Number(match[1]) - 1, Number(match[2]));
+        if (occurrence < today) occurrence = new Date(++year, Number(match[1]) - 1, Number(match[2]));
+        const daysUntil = Math.round((occurrence - today) / 86400000);
+        if (daysUntil >= 0 && daysUntil <= leadDays && !alreadyFired(trigger.id, `${person.id}:${year}`)) count += 1;
+      }
+    }
+    return count;
+  }
+  return 0;
+}
+
 function boundedHistoryText(value) {
   return typeof value === 'string' ? value.slice(0, 120) : null;
 }

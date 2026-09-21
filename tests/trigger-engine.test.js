@@ -126,6 +126,39 @@ test('trigger history is derived from events and excludes result and raw error p
   }
 });
 
+test('manual trigger previews cover every kind without persistent side effects', async () => {
+  const dir = tempHome();
+  try {
+    const db = getDb();
+    const now = new Date('2026-09-21T12:00:00.000Z');
+    tasksProvider.createTask({ title: 'Preview overdue task', dueAt: '2026-09-20T12:00:00.000Z' });
+    const timer = triggerEngine.createTrigger({ name: 'Preview timer', kind: 'timer', config: { fireAt: '2026-09-21T11:00:00.000Z', action: { kind: 'notify' } } });
+    const schedule = triggerEngine.createTrigger({ name: 'Preview schedule', kind: 'schedule', config: { everyMinutes: 60 } });
+    const eventRule = triggerEngine.createTrigger({ name: 'Preview event', kind: 'event_rule', config: { eventType: 'demo.ping', action: { kind: 'create_task' } } });
+    const watch = triggerEngine.createTrigger({ name: 'Preview watch', kind: 'condition_watch', config: { check: 'task_overdue', action: { kind: 'notify' } } });
+    const before = {
+      triggers: db.prepare('SELECT * FROM triggers ORDER BY id').all(),
+      events: db.prepare('SELECT count(*) AS count FROM events').get().count,
+      actions: db.prepare('SELECT count(*) AS count FROM agent_actions').get().count,
+      fired: db.prepare('SELECT count(*) AS count FROM trigger_fired_log').get().count,
+    };
+
+    assert.equal(triggerEngine.previewTrigger(timer.id, { now }).wouldRunNow, true);
+    assert.equal(triggerEngine.previewTrigger(schedule.id, { now }).wouldRunNow, false);
+    assert.deepEqual(triggerEngine.previewTrigger(eventRule.id, { now }).action, { kind: 'create_task', target: 'tasks.create' });
+    assert.equal(triggerEngine.previewTrigger(eventRule.id, { now }).requiresMatchingEvent, true);
+    assert.equal(triggerEngine.previewTrigger(watch.id, { now }).currentMatchCount, 1);
+    assert.equal(triggerEngine.previewTrigger('missing', { now }), null);
+
+    assert.deepEqual(db.prepare('SELECT * FROM triggers ORDER BY id').all(), before.triggers);
+    assert.equal(db.prepare('SELECT count(*) AS count FROM events').get().count, before.events);
+    assert.equal(db.prepare('SELECT count(*) AS count FROM agent_actions').get().count, before.actions);
+    assert.equal(db.prepare('SELECT count(*) AS count FROM trigger_fired_log').get().count, before.fired);
+  } finally {
+    await cleanup(dir);
+  }
+});
+
 test('condition_watch (task_overdue) dedupes via trigger_fired_log -- firing the tick twice does not double-notify the same task', async () => {
   const dir = tempHome();
   try {

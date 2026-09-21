@@ -18,6 +18,7 @@ export class U2Triggers extends HTMLElement {
     this._triggers = null;
     this._busy = new Set();
     this._history = new Map();
+    this._previews = new Map();
     this._expandedHistory = new Set();
     this._message = null;
     this._onClick = this._onClick.bind(this);
@@ -77,11 +78,22 @@ export class U2Triggers extends HTMLElement {
       </div>
       <div class="trigger-row__actions">
         <button type="button" data-trigger-history="${escapeHtml(trigger.id)}" aria-expanded="${expanded}">${expanded ? 'Hide history' : 'History'}</button>
+        <button type="button" data-trigger-dry-run="${escapeHtml(trigger.id)}" ${busy ? 'disabled' : ''}>Dry run</button>
         <button type="button" data-toggle-trigger="${escapeHtml(trigger.id)}" data-enabled="${trigger.enabled}" ${busy ? 'disabled' : ''}>${trigger.enabled ? 'Pause' : 'Resume'}</button>
         ${userCreated ? `<button type="button" class="btn-danger" data-delete-trigger="${escapeHtml(trigger.id)}" ${busy ? 'disabled' : ''}>Delete</button>` : ''}
       </div>
       ${expanded ? this._renderHistory(trigger.id) : ''}
+      ${this._previews.has(trigger.id) ? this._renderPreview(this._previews.get(trigger.id)) : ''}
     </article>`;
+  }
+
+  _renderPreview(preview) {
+    const detail = preview.kind === 'timer' || preview.kind === 'schedule'
+      ? `Would run now: ${preview.wouldRunNow ? 'Yes' : 'No'}`
+      : preview.kind === 'event_rule'
+        ? `Waits for: ${preview.eventType || 'configured event'}`
+        : `Current matches: ${preview.currentMatchCount}`;
+    return `<div class="trigger-preview" role="status"><strong>Dry run</strong> · ${escapeHtml(detail)} · Action: ${escapeHtml(humanizeKey(preview.action?.kind || 'evaluate'))} · No side effects</div>`;
   }
 
   _renderHistory(id) {
@@ -108,12 +120,29 @@ export class U2Triggers extends HTMLElement {
   _onClick(event) {
     const history = event.target.closest('[data-trigger-history]');
     if (history) return this._toggleHistory(history.dataset.triggerHistory);
+    const dryRun = event.target.closest('[data-trigger-dry-run]');
+    if (dryRun) return this._dryRun(dryRun.dataset.triggerDryRun);
     const toggle = event.target.closest('[data-toggle-trigger]');
     if (toggle) return this._mutate(toggle.dataset.toggleTrigger, () => api.updateTrigger(toggle.dataset.toggleTrigger, { enabled: toggle.dataset.enabled !== 'true' }), 'Automation updated.');
     const remove = event.target.closest('[data-delete-trigger]');
     if (remove && window.confirm('Delete this automation? This cannot be undone.')) {
       return this._mutate(remove.dataset.deleteTrigger, () => api.deleteTrigger(remove.dataset.deleteTrigger), 'Automation deleted.');
     }
+  }
+
+  async _dryRun(id) {
+    if (this._busy.has(id)) return;
+    this._busy.add(id);
+    this._render();
+    try {
+      this._previews.set(id, await api.dryRunTrigger(id));
+      this._message = { text: 'Dry run complete. No actions were executed.' };
+    } catch (err) {
+      this._message = { text: err.message, error: true };
+    } finally {
+      this._busy.delete(id);
+    }
+    this._render();
   }
 
   async _toggleHistory(id) {

@@ -34,6 +34,11 @@ test('owner creates, pauses, resumes, and deletes a structured automation', asyn
     const missingHistory = await page.request.get(`${dedicated.baseURL}/api/triggers/missing/history`);
     expect(missingHistory.status()).toBe(404);
 
+    await row.locator('[data-trigger-dry-run]').click();
+    await expect(page.locator('.trigger-message')).toHaveText('Dry run complete. No actions were executed.');
+    await expect(row.locator('.trigger-preview')).toContainText('Would run now: No');
+    await expect(row.locator('.trigger-preview')).toContainText('No side effects');
+
     await row.locator('[data-toggle-trigger]').press('Enter');
     await expect(row).toContainText('Paused');
     await row.locator('[data-toggle-trigger]').press('Enter');

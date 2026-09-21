@@ -250,6 +250,10 @@ export function getTriggerHistory(id, limit = 20) {
   return request(`/api/triggers/${encodeURIComponent(id)}/history${qs({ limit })}`);
 }
 
+export function dryRunTrigger(id) {
+  return request(`/api/triggers/${encodeURIComponent(id)}/dry-run`, { method: 'POST', headers: JSON_HEADERS, body: '{}' });
+}
+
 export function createTrigger({ name, kind, config, enabled = true }) {
   return request('/api/triggers', {
     method: 'POST',

@@ -1157,6 +1157,7 @@ u2-device-panel .u2-card {
 .trigger-history__status--completed { color: var(--accent-active); }
 .trigger-history__status--failed { color: var(--accent-danger); }
 .trigger-history__empty { color: var(--text-tertiary); }
+.trigger-preview { flex-basis: 100%; border-top: var(--border-width) solid var(--border-color); padding-top: var(--space-3); color: var(--text-secondary); font-size: var(--text-sm); }
 
 @media (max-width: 760px) {
   .trigger-create { grid-template-columns: 1fr; }
