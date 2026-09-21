@@ -143,14 +143,17 @@ function buildBeforeMeetingDashboard({ eventId, personId, personIds } = {}) {
     }, 'No matching calendar event was found for the selected people.', people.map((person) => ({ type: 'entity', id: person.id, label: person.name }))));
   }
 
-  if (eventId && !people.length) {
-    const attendeeNames = (selectedEvent.attendees || []).map((attendee) => typeof attendee === 'string' ? attendee : attendee?.name).filter(Boolean).slice(0, 10);
-    components.push(withProvenance({
-      type: 'alert',
-      data: { variant: 'warning', message: attendeeNames.length
-        ? `No stored Person records matched: ${attendeeNames.join(', ')}.`
-        : 'This calendar event has no named attendees to match with stored people.' },
-    }, 'Attendees are shown honestly when no active Person record can be resolved.', [{ type: 'calendar_event', id: selectedEvent.id, label: topic }]));
+  if (eventId) {
+    const attendeeNames = (selectedEvent.attendees || []).map((attendee) => typeof attendee === 'string' ? attendee : attendee?.name).filter(Boolean).slice(0, 25);
+    const unmatched = attendeeNames.filter((name) => !people.some((person) => person.name?.localeCompare(name, undefined, { sensitivity: 'base' }) === 0));
+    if (unmatched.length || !attendeeNames.length) {
+      components.push(withProvenance({
+        type: 'alert',
+        data: { variant: 'warning', message: attendeeNames.length
+          ? `No stored Person records matched: ${unmatched.join(', ')}.`
+          : 'This calendar event has no named attendees to match with stored people.' },
+      }, 'Attendees are shown honestly when no active Person record can be resolved.', [{ type: 'calendar_event', id: selectedEvent.id, label: topic }]));
+    }
   }
 
   components.push(withProvenance({ type: 'task-list', source: 'tasks.all', data: { tasks: openTasks } },
@@ -297,8 +300,7 @@ function resolveAttendeePeople(attendees = []) {
     if (!name) continue;
     const candidates = findEntities({ type: 'Person', query: name });
     const exact = candidates.find((person) => person.name?.localeCompare(name, undefined, { sensitivity: 'base' }) === 0);
-    const person = exact || candidates[0];
-    if (person) matches.set(person.id, person);
+    if (exact) matches.set(exact.id, exact);
   }
   return [...matches.values()];
 }

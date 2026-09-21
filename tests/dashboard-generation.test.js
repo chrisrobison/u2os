@@ -213,6 +213,23 @@ test('event-based before-meeting dashboard identifies its topic and every known 
   }
 });
 
+test('meeting preparation does not substitute a fuzzy match for an unknown attendee', () => {
+  const dir = tempHome();
+  try {
+    const db = seedDemoData();
+    const event = db.prepare("SELECT * FROM calendar_events WHERE title = 'U2OS project standup'").get();
+    db.prepare('UPDATE calendar_events SET attendees = ? WHERE id = ?').run(
+      JSON.stringify([{ name: 'Marcus Lee' }, { name: 'Sarah Unknown' }]), event.id
+    );
+    const schema = generateDashboard({ context: 'before-meeting', params: { eventId: event.id } });
+    assert.doesNotThrow(() => validateDashboard(schema));
+    assert.deepEqual(schema.components.filter((item) => item.type === 'person').map((item) => item.data.name), ['Marcus Lee']);
+    assert.ok(schema.components.some((item) => item.type === 'alert' && item.data.message.includes('No stored Person records matched: Sarah Unknown')));
+  } finally {
+    cleanup(dir);
+  }
+});
+
 test('generateDashboard({context: "project"}) for the seeded U2OS project reflects real linked data and validates', () => {
   const dir = tempHome();
   try {
