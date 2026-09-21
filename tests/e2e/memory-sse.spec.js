@@ -25,7 +25,7 @@ import { proposeMemoryCandidate } from '../../server/memory/candidate-store.js';
 //
 // ---- Test isolation ----
 //
-// Tests 1 and 2 (accept/reject) share one dedicated server + logged-in page
+// The memory-management tests share one dedicated server + logged-in page
 // (describe.serial, agent-approval.spec.js's pattern): each seeds its OWN
 // fresh candidate and only touches that candidate's own card/fact, so they
 // don't corrupt each other's assertions despite sharing DB state.
@@ -36,8 +36,8 @@ import { proposeMemoryCandidate } from '../../server/memory/candidate-store.js';
 // (not a reload) -- a page reload would construct a brand-new EventsService
 // with `_lastEventId` reset to null, which would make it impossible to
 // prove the *live* client recovers its own connection and correctly
-// remembers the last id it saw. Test 3 (live update) runs first in that
-// block specifically so tests 4/5 have a real "received before the drop"
+// remembers the last id it saw. The live-update case runs first in that
+// block specifically so the recovery cases have a real "received before the drop"
 // event already in hand. The final test proves client-side suppression even
 // if a misbehaving or changed server sends the same id twice.
 //
@@ -46,7 +46,7 @@ import { proposeMemoryCandidate } from '../../server/memory/candidate-store.js';
 // file's own rationale must never be applied to a server shared with any
 // other scenario.
 //
-// ---- How the connection-drop is simulated (tests 4/5/6) ----
+// ---- How the connection drop is simulated ----
 //
 // The issue text suggests `page.route('**/api/events/stream', route =>
 // route.abort())`, but Playwright route interception only applies at
