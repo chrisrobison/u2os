@@ -100,6 +100,10 @@ what memory informed it  context_provenance (retrieved fact/entity/event ids, af
 
 Recommendations use the parallel `explainRecommendation(id)` / `GET /api/recommendations/:id/explain` path. It exposes the deterministic evaluator summary, source-event reference, relevant prepared-dashboard title, and correlated event trail. Both paths render concise stored summaries and references as inert text; neither stores, reconstructs, or displays raw model chain-of-thought.
 
+## Durable execution re-evaluation
+
+Authorization is not frozen when an action enters the durable queue. Immediately before a worker invokes a tool, U2OS re-resolves the registered tool and re-evaluates current policy, approval/rejection state, and action freshness from authoritative server state. A newly blocked action is cancelled, a newly confirmation-required action returns to owner attention, and stale intent does not execute silently. Provider failures are classified deterministically outside the model. Uncertain expired executions are never replayed for a non-idempotent tool; they stop for owner review.
+
 ## Data-processing privacy policy (separate from the above)
 
 Everything above answers "may this tool execute?" A SEPARATE question, answered by `server/policy/data-processing-policy.js` and `~/.u2os/policies/data-processing.yaml`, is "may this DATA reach this DESTINATION?" -- e.g. a local model may be allowed to summarize a sensitive document while the same content is forbidden from ever reaching a remote inference API, independent of whether any tool is involved at all.

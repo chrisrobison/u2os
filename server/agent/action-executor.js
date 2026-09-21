@@ -13,9 +13,9 @@ export class ActionExecutor {
     this.eventBus = eventBus;
   }
 
-  async execute(actionId, tool, args, { correlationId, actor }) {
+  async execute(actionId, tool, args, { correlationId, actor, idempotencyKey = null, rethrow = false }) {
     try {
-      const result = await tool.execute(args, { eventBus: this.eventBus, correlationId, actor });
+      const result = await tool.execute(args, { eventBus: this.eventBus, correlationId, actor, idempotencyKey });
       updateAgentAction(actionId, { status: 'executed', result });
       this.eventBus.publish({
         type: 'agent.action.completed',
@@ -49,6 +49,7 @@ export class ActionExecutor {
         data: { tool: tool.name, error: err.message },
         metadata: { correlationId, provenance: 'agent:execute' },
       });
+      if (rethrow) throw err;
       return { id: actionId, status: 'failed', tool: tool.name, arguments: args, error: err.message };
     }
   }

@@ -7,6 +7,8 @@ import { Planner } from './planner.js';
 import { ActionEvaluator } from './action-evaluator.js';
 import { ActionExecutor } from './action-executor.js';
 import { ApprovalManager } from './approval-manager.js';
+import { ActionQueueWorker } from './action-queue-worker.js';
+import { enqueueAction } from './action-queue-store.js';
 import { EvaluatorRegistry } from './proactive/evaluator-registry.js';
 import { registerBuiltinEvaluators } from './proactive/builtin-evaluators.js';
 import { proposeMemoryCandidate } from '../memory/candidate-store.js';
@@ -40,7 +42,8 @@ export class Agent {
     this.planner = new Planner({ modelProvider, modelRouter, role: 'planner', dataProcessingPolicy });
     this.actionEvaluator = new ActionEvaluator({ toolRegistry, policyEngine });
     this.actionExecutor = new ActionExecutor({ eventBus });
-    this.approvalManager = new ApprovalManager({ eventBus, actionEvaluator: this.actionEvaluator, actionExecutor: this.actionExecutor });
+    this.actionQueueWorker = new ActionQueueWorker({ actionEvaluator: this.actionEvaluator, actionExecutor: this.actionExecutor, eventBus });
+    this.approvalManager = new ApprovalManager({ eventBus, actionEvaluator: this.actionEvaluator, actionQueueWorker: this.actionQueueWorker });
     this.evaluatorRegistry = evaluatorRegistry || registerBuiltinEvaluators(new EvaluatorRegistry());
   }
 
@@ -172,7 +175,16 @@ export class Agent {
     if (evaluation.requiresApproval) {
       return { id: auditRow.id, status: 'pending', tool: toolName, arguments: args, reason: evaluation.reason };
     }
-    return this.actionExecutor.execute(auditRow.id, tool, args, { correlationId, actor });
+    enqueueAction({
+      actionId: auditRow.id,
+      correlationId,
+      tool: tool.name,
+      arguments: args,
+      actor,
+      approvalReference: 'autonomous',
+      policyDecisionReference: evaluation.rule,
+    });
+    return this.actionQueueWorker.processAction(auditRow.id);
   }
 
   /**

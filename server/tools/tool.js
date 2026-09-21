@@ -23,7 +23,13 @@ export class Tool {
     return { type: 'object', properties: {}, required: [] };
   }
 
-  // context: { eventBus, correlationId, actor }
+  // A tool may opt in only when its provider consumes context.idempotencyKey
+  // and guarantees repeated calls with that key cannot repeat a side effect.
+  get supportsIdempotency() {
+    return false;
+  }
+
+  // context: { eventBus, correlationId, actor, idempotencyKey }
   async execute(_args, _context) {
     throw new Error(`Tool.execute not implemented for ${this.name}`);
   }

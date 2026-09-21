@@ -95,6 +95,9 @@ export function getDb() {
   // model plan (e.g. a direct evaluateAndMaybeExecute() call from a
   // non-chat route, or a proactive evaluator, may have none).
   ensureColumn(db, 'agent_actions', 'context_provenance', 'TEXT');
+  // Durable action delivery initially shipped without persisted actor
+  // provenance. Add it without rebuilding existing queue tables.
+  ensureColumn(db, 'action_queue', 'actor', 'TEXT');
 
   const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
   db.exec(schema);

@@ -1,4 +1,5 @@
 import { recordAudit, updateAgentAction, getAgentAction } from '../policy/policy-engine.js';
+import { enqueueAction, getQueuedActionByActionId, requeueAction } from './action-queue-store.js';
 
 /**
  * ApprovalManager: owns the pending-approval lifecycle -- create (audit row
@@ -13,10 +14,10 @@ import { recordAudit, updateAgentAction, getAgentAction } from '../policy/policy
  * decision that was true when the action was first proposed.
  */
 export class ApprovalManager {
-  constructor({ eventBus, actionEvaluator, actionExecutor }) {
+  constructor({ eventBus, actionEvaluator, actionQueueWorker }) {
     this.eventBus = eventBus;
     this.actionEvaluator = actionEvaluator;
-    this.actionExecutor = actionExecutor;
+    this.actionQueueWorker = actionQueueWorker;
   }
 
   /**
@@ -101,7 +102,24 @@ export class ApprovalManager {
       metadata: { correlationId: action.correlation_id, provenance: 'user:approve' },
     });
 
-    return this.actionExecutor.execute(id, tool, action.arguments, { correlationId: action.correlation_id, actor });
+    const existingQueue = getQueuedActionByActionId(id);
+    if (existingQueue && ['failed', 'cancelled'].includes(existingQueue.status)) {
+      requeueAction(existingQueue.id, {
+        approvalReference: `${id}:${new Date().toISOString()}`,
+        policyDecisionReference: evaluation.rule,
+      });
+    } else {
+      enqueueAction({
+        actionId: id,
+        correlationId: action.correlation_id,
+        tool: tool.name,
+        arguments: action.arguments,
+        actor,
+        approvalReference: `${id}:${new Date().toISOString()}`,
+        policyDecisionReference: evaluation.rule,
+      });
+    }
+    return this.actionQueueWorker.processAction(id);
   }
 
   async reject(id, rejectedBy) {
