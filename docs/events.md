@@ -75,8 +75,11 @@ Emitted by mock tools/integrations:
 | `notification.sent` | `notifications.send` completes successfully | active provider: `mock-notifications` or `webhook` |
 | `subscription.renewing` | an upstream source reports a future renewal with bounded name/date and optional price data | connector/import source |
 | `message.received` | an upstream source reports a message with bounded sender/subject metadata, explicit importance, and whether it was direct | connector/import source |
+| `project.changed` | an upstream source reports which aspect of a locally stored Project changed | connector/import source |
 
 `message.received` uses `{ direct: boolean, importance: 'normal' | 'high' | 'urgent', sender: string, subject?: string, preview?: string }`. The built-in proactive evaluator requires `direct: true`, an exact `high` or `urgent` importance value (case-insensitive), a sender, and either a subject or preview. It truncates sender and display text before proposing the fixed `notifications.send` tool; the event cannot choose a tool or authorization level. This importance value is an upstream signal, not sender authentication or a model verdict.
+
+`project.changed` identifies an active local Project with `subject: { type: 'entity', id }` (or `data.entityId`) and uses `data.change: 'status' | 'deadline'`. The proactive evaluator notifies only when the local Project is currently blocked or has a valid locally stored deadline, respectively. Names, status, and deadline values supplied in event data are ignored, and other change kinds are non-actionable.
 
 Emitted by the agent/policy/tool pipeline (internal, domain-independent):
 
@@ -122,7 +125,7 @@ Device/capability/stream events (docs/devices.md's device/capability subsystem -
 | `stream.available` | `StreamRegistry.open()` recorded a stream reference as active | `device:<id>` |
 | `stream.closed` | `StreamRegistry.close()` removed an active stream reference | `device:<id>` |
 
-Not implemented until later phases (reserved names, do not repurpose): `document.created`, `document.changed`, `project.changed`, `purchase.completed`, `package.shipped`, `location.changed`.
+Not implemented until later phases (reserved names, do not repurpose): `document.created`, `document.changed`, `purchase.completed`, `package.shipped`, `location.changed`.
 
 ## Subscribing
 
