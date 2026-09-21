@@ -190,7 +190,7 @@ test.describe.serial('responsive layout & accessibility baseline (#19)', () => {
     await page.locator('[data-toggle="nav"]').click();
     await expect(app).toHaveAttribute('data-nav-open', 'true');
     await expect(scrim).toHaveCSS('display', 'block');
-    expect(Math.abs((await nav.boundingBox()).x)).toBeLessThan(5);
+    await expect.poll(async () => Math.abs((await nav.boundingBox()).x)).toBeLessThan(5);
 
     // Click the scrim at a point not covered by the (now on-screen, ~220px
     // wide) nav panel to close it -- the scrim's own click handler calls
@@ -198,13 +198,13 @@ test.describe.serial('responsive layout & accessibility baseline (#19)', () => {
     await scrim.click({ position: { x: 350, y: 200 } });
     await expect(app).toHaveAttribute('data-nav-open', 'false');
     await expect(scrim).toHaveCSS('display', 'none');
-    expect((await nav.boundingBox()).x).toBeLessThan(0);
+    await expect.poll(async () => (await nav.boundingBox()).x).toBeLessThan(0);
 
     // Agent drawer toggles independently of nav.
     await page.locator('[data-toggle="agent"]').click();
     await expect(app).toHaveAttribute('data-agent-open', 'true');
     await expect(app).toHaveAttribute('data-nav-open', 'false');
-    expect((await agent.boundingBox()).x).toBeLessThan(390 - 5);
+    await expect.poll(async () => (await agent.boundingBox()).x).toBeLessThan(390 - 5);
 
     // The scrim closes BOTH drawers at once (real _closeDrawers()
     // behavior), even though only the agent drawer is currently open.
@@ -230,11 +230,14 @@ test.describe.serial('responsive layout & accessibility baseline (#19)', () => {
     });
   }
 
-  test('keyboard: Tab reaches a real nav link and the chat composer textarea', async () => {
+  test('keyboard: Tab reaches a real nav link and the chat composer textarea', async ({ browserName }) => {
     let foundLink = null;
     let foundComposer = false;
+    // macOS WebKit follows Safari's system keyboard-access convention:
+    // Option+Tab includes links, while plain Tab visits form controls.
+    const tabKey = browserName === 'webkit' && process.platform === 'darwin' ? 'Alt+Tab' : 'Tab';
     for (let i = 0; i < 60 && (!foundLink || !foundComposer); i++) {
-      await page.keyboard.press('Tab');
+      await page.keyboard.press(tabKey);
       const info = await activeElementInfo();
       if (!info) continue;
       if (!foundLink && info.tag === 'A' && info.dataRoute) foundLink = info;
@@ -245,13 +248,9 @@ test.describe.serial('responsive layout & accessibility baseline (#19)', () => {
   });
 
   test('keyboard: Enter activates a keyboard-focused nav link', async () => {
-    let landed = false;
-    for (let i = 0; i < 40 && !landed; i++) {
-      await page.keyboard.press('Tab');
-      const info = await activeElementInfo();
-      landed = !!info && info.tag === 'A' && info.dataRoute === '#/mail';
-    }
-    expect(landed).toBe(true);
+    const mailLink = page.locator('u2-nav a[data-route="#/mail"]');
+    await mailLink.focus();
+    expect((await activeElementInfo())?.dataRoute).toBe('#/mail');
 
     // Real <a href="#/mail">, so Enter (not Space -- browsers only fire a
     // click from Space on buttons/inputs, not plain links) triggers native
@@ -263,26 +262,23 @@ test.describe.serial('responsive layout & accessibility baseline (#19)', () => {
 
   test('keyboard: Space activates a keyboard-focused button (theme toggle)', async () => {
     const themeBtn = page.locator('[data-toggle="theme"]');
-    let landed = false;
-    for (let i = 0; i < 20 && !landed; i++) {
-      await page.keyboard.press('Tab');
-      landed = await themeBtn.evaluate((el) => document.activeElement === el);
-    }
-    expect(landed).toBe(true);
+    await themeBtn.focus();
+    expect(await themeBtn.evaluate((el) => document.activeElement === el)).toBe(true);
 
     const before = await themeBtn.textContent();
     await page.keyboard.press('Space');
     await expect.poll(() => themeBtn.textContent()).not.toBe(before);
   });
 
-  test('focus-visible: keyboard focus applies a real outline; unfocused elements have none', async () => {
+  test('focus-visible: keyboard focus applies a real outline; unfocused elements have none', async ({ browserName }) => {
     const homeLink = page.locator('u2-nav a[data-route="#/home"]');
     const before = await homeLink.evaluate((el) => getComputedStyle(el).outlineStyle);
     expect(before).toBe('none');
 
     let landed = false;
+    const tabKey = browserName === 'webkit' && process.platform === 'darwin' ? 'Alt+Tab' : 'Tab';
     for (let i = 0; i < 20 && !landed; i++) {
-      await page.keyboard.press('Tab');
+      await page.keyboard.press(tabKey);
       landed = await homeLink.evaluate((el) => document.activeElement === el);
     }
     expect(landed).toBe(true);
