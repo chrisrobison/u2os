@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { getDb, closeAllForTests } from '../server/db/connection.js';
 import { EventBus } from '../server/events/event-bus.js';
 import { initProjector } from '../server/memory/projector.js';
@@ -157,6 +158,110 @@ test('timer trigger fires exactly once, then disables itself', async () => {
     const after = triggerEngine.getTrigger(trigger.id);
     assert.equal(after.enabled, false);
     assert.equal(after.next_check_at, null);
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test('competing scheduler ticks atomically lease one due timer', async () => {
+  const dir = tempHome();
+  try {
+    const db = getDb();
+    const eventBus = new EventBus(db);
+    triggerEngine.createTrigger({
+      name: 'Test: leased timer',
+      kind: 'timer',
+      config: { fireAt: new Date(Date.now() - 1000).toISOString(), action: { kind: 'notify' } },
+      source: 'user',
+    });
+
+    let release;
+    let entered;
+    const enteredPromise = new Promise((resolve) => { entered = resolve; });
+    const gate = new Promise((resolve) => { release = resolve; });
+    let calls = 0;
+    const agent = { evaluateAndMaybeExecute: async () => { calls += 1; entered(); await gate; return { status: 'executed' }; } };
+
+    const first = triggerEngine.runTick({ eventBus, agent, leaseOwner: 'scheduler-a', leaseMs: 1000 });
+    await enteredPromise;
+    await triggerEngine.runTick({ eventBus, agent, leaseOwner: 'scheduler-b', leaseMs: 1000 });
+    assert.equal(calls, 1, 'the competing tick must not enter the leased trigger');
+    release();
+    await first;
+    assert.equal(db.prepare("SELECT count(*) AS count FROM events WHERE type = 'agent.action.completed'").get().count, 1);
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test('an unexpired scheduler lease blocks work and an expired lease is recovered', async () => {
+  const dir = tempHome();
+  try {
+    const db = getDb();
+    const eventBus = new EventBus(db);
+    const trigger = triggerEngine.createTrigger({
+      name: 'Test: recovered timer',
+      kind: 'timer',
+      config: { fireAt: new Date(Date.now() - 1000).toISOString(), action: { kind: 'notify' } },
+      source: 'user',
+    });
+    const agent = { calls: 0, async evaluateAndMaybeExecute() { this.calls += 1; return { status: 'executed' }; } };
+    db.prepare('UPDATE triggers SET lease_owner = ?, lease_expires_at = ? WHERE id = ?').run('dead-worker', '2999-01-01T00:00:00.000Z', trigger.id);
+    await triggerEngine.runTick({ eventBus, agent, leaseOwner: 'new-worker' });
+    assert.equal(agent.calls, 0);
+
+    db.prepare('UPDATE triggers SET lease_expires_at = ? WHERE id = ?').run('2000-01-01T00:00:00.000Z', trigger.id);
+    await triggerEngine.runTick({ eventBus, agent, leaseOwner: 'new-worker' });
+    assert.equal(agent.calls, 1);
+    assert.equal(triggerEngine.getTrigger(trigger.id).enabled, false);
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test('competing ticks lease a condition watch while its object action is in flight', async () => {
+  const dir = tempHome();
+  try {
+    const db = getDb();
+    const eventBus = new EventBus(db);
+    tasksProvider.createTask({ title: 'Lease watched task', dueAt: new Date(Date.now() - 60_000).toISOString() });
+    triggerEngine.createTrigger({ name: 'Test: leased watch', kind: 'condition_watch', config: { check: 'task_overdue', action: { kind: 'notify' } }, source: 'user' });
+    let release;
+    let entered;
+    const enteredPromise = new Promise((resolve) => { entered = resolve; });
+    const gate = new Promise((resolve) => { release = resolve; });
+    let calls = 0;
+    const agent = { evaluateAndMaybeExecute: async () => { calls += 1; entered(); await gate; return { status: 'executed' }; } };
+    const first = triggerEngine.runTick({ eventBus, agent, leaseOwner: 'watch-a', leaseMs: 1000 });
+    await enteredPromise;
+    await triggerEngine.runTick({ eventBus, agent, leaseOwner: 'watch-b', leaseMs: 1000 });
+    assert.equal(calls, 1);
+    release();
+    await first;
+  } finally {
+    await cleanup(dir);
+  }
+});
+
+test('existing trigger tables gain lease columns without losing rows', async () => {
+  const dir = tempHome();
+  try {
+    const dbPath = path.join(dir, 'db', 'u2os.sqlite');
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+    const legacy = new DatabaseSync(dbPath);
+    legacy.exec(`CREATE TABLE triggers (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1,
+      config TEXT NOT NULL DEFAULT '{}', last_fired_at TEXT, next_check_at TEXT, source TEXT NOT NULL DEFAULT 'system',
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    )`);
+    legacy.prepare('INSERT INTO triggers VALUES (?,?,?,?,?,?,?,?,?,?)').run('trg_legacy', 'Legacy timer', 'timer', 1, '{}', null, '2030-01-01T00:00:00.000Z', 'user', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
+    legacy.close();
+
+    const migrated = getDb();
+    const columns = migrated.prepare('PRAGMA table_info(triggers)').all().map(({ name }) => name);
+    assert.ok(columns.includes('lease_owner'));
+    assert.ok(columns.includes('lease_expires_at'));
+    assert.equal(triggerEngine.getTrigger('trg_legacy').name, 'Legacy timer');
   } finally {
     await cleanup(dir);
   }

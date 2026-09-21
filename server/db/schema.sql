@@ -262,11 +262,14 @@ CREATE TABLE IF NOT EXISTS triggers (
   config TEXT NOT NULL DEFAULT '{}',   -- JSON, shape depends on `kind`
   last_fired_at TEXT,
   next_check_at TEXT,              -- for timer/schedule; NULL for event_rule/condition_watch (not next_check_at-scheduled)
+  lease_owner TEXT,
+  lease_expires_at TEXT,
   source TEXT NOT NULL DEFAULT 'system',  -- 'system' (seeded) | 'user' (created via API)
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_triggers_kind ON triggers(kind);
+CREATE INDEX IF NOT EXISTS idx_triggers_due_lease ON triggers(enabled, kind, next_check_at, lease_expires_at);
 
 -- Dedupe log for condition_watch built-in checks (calendar_approaching,
 -- task_overdue, birthday_approaching) so the same underlying object never
