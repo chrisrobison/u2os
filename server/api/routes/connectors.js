@@ -6,6 +6,8 @@ import { triggerSync, reconcile as reconcileSyncScheduler } from '../../integrat
 import { manifestsByDomain } from '../../integrations/skill-manifests.js';
 import { readEncryptedFile, writeEncryptedFile } from '../../security/vault.js';
 import { validateSettings as validateImapSettings } from '../../integrations/imap-provider.js';
+import { validateSettings as validateSmtpSettings } from '../../integrations/smtp-transport.js';
+import { isConfigured as isSmtpConfigured } from '../../integrations/smtp-transport.js';
 import {
   buildAuthUrl,
   exchangeCodeForTokens,
@@ -47,7 +49,7 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
         status: m.status || 'available',
       })),
     }));
-    sendJson(res, 200, { connectors: enriched });
+    sendJson(res, 200, { connectors: enriched, smtpConfigured: isSmtpConfigured() });
   });
 
   router.post('/api/connectors/google/credentials', async (req, res) => {
@@ -154,6 +156,22 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
     if (existing) writeEncryptedFile('imap', {});
     reconcileSyncScheduler({ db, eventBus });
     sendJson(res, 200, { disconnected: 'imap' });
+  });
+
+  router.post('/api/connectors/smtp/credentials', async (req, res) => {
+    try {
+      const settings = validateSmtpSettings(req.body);
+      writeEncryptedFile('smtp', settings);
+      sendJson(res, 200, { configured: true });
+    } catch {
+      sendJson(res, 400, { error: 'Invalid SMTP settings; use a host, port 465 or 587, username, app password, and From address' });
+    }
+  });
+
+  router.post('/api/connectors/smtp/disconnect', async (_req, res) => {
+    const existing = readEncryptedFile('smtp');
+    if (existing) writeEncryptedFile('smtp', {});
+    sendJson(res, 200, { disconnected: 'smtp' });
   });
 
   router.post('/api/connectors/notify-webhook/credentials', async (req, res) => {

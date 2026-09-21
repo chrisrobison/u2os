@@ -165,6 +165,27 @@ function renderImapCard(ctx) {
   `;
 }
 
+function renderSmtpCard(ctx) {
+  const formMsg = ctx.formMessages.smtp;
+  return `
+    <u2-card title="SMTP sending">
+      <div class="connector-status"><span class="status-dot ${ctx.smtpConfigured ? 'is-connected' : 'is-disconnected'}"></span><span>${ctx.smtpConfigured ? 'Configured for IMAP account' : 'Not configured'}</span></div>
+      <form data-form="smtp-credentials" class="connector-form" autocomplete="off">
+        <label class="connector-field"><span>Mail host</span><input name="host" placeholder="smtp.example.com" autocomplete="off" required></label>
+        <label class="connector-field"><span>Port</span><select name="port"><option value="465">465 (TLS)</option><option value="587">587 (STARTTLS required)</option></select></label>
+        <label class="connector-field"><span>Username</span><input name="username" autocomplete="off" required></label>
+        <label class="connector-field"><span>App password</span><input type="password" name="password" autocomplete="off" required></label>
+        <label class="connector-field"><span>From address</span><input type="email" name="from" autocomplete="off" required></label>
+        <div class="connector-form__actions">
+          <button type="submit" class="btn btn-primary">Save</button>
+          <button type="button" class="btn" data-smtp-disconnect>Disconnect</button>
+          <span class="connector-form__message${formMsg?.isError ? ' is-error' : ''}" data-message>${formMsg ? escapeHtml(formMsg.text) : ''}</span>
+        </div>
+      </form>
+    </u2-card>
+  `;
+}
+
 function renderNotifyCard(ctx) {
   const formMsg = ctx.formMessages.notify;
   return `
@@ -201,11 +222,12 @@ export class U2Connectors extends HTMLElement {
   constructor() {
     super();
     this._connectors = null;
+    this._smtpConfigured = false;
     this._banner = null; // { variant, message } from the OAuth redirect, shown once
     this._busySyncDomains = new Set();
     this._busyKeys = new Set(); // e.g. "google:calendar" while disconnecting
     this._domainMessages = {}; // domain -> { text, isError } (provider switch / sync result)
-    this._formMessages = { google: null, imap: null, webSearch: null, notify: null };
+    this._formMessages = { google: null, imap: null, smtp: null, webSearch: null, notify: null };
 
     this._onChange = this._onChange.bind(this);
     this._onClick = this._onClick.bind(this);
@@ -249,8 +271,9 @@ export class U2Connectors extends HTMLElement {
   async _load() {
     this.innerHTML = `<div class="empty-state">Loading connectors...</div>`;
     try {
-      const { connectors } = await api.getConnectors();
+      const { connectors, smtpConfigured } = await api.getConnectors();
       this._connectors = connectors;
+      this._smtpConfigured = !!smtpConfigured;
       this._render();
     } catch (err) {
       this.innerHTML = `<div class="load-error">Couldn't load connectors: ${escapeHtml(err.message)}</div>`;
@@ -264,6 +287,7 @@ export class U2Connectors extends HTMLElement {
       domainMessages: this._domainMessages,
       busyKeys: this._busyKeys,
       formMessages: this._formMessages,
+      smtpConfigured: this._smtpConfigured,
     };
 
     const bannerHtml = this._banner
@@ -290,7 +314,7 @@ export class U2Connectors extends HTMLElement {
       <div class="connectors__section-title">Google</div>
       <div class="connectors__grid">${renderGoogleCard(connectors, ctx)}</div>
       <div class="connectors__section-title">Mail</div>
-      <div class="connectors__grid">${renderImapCard(ctx)}</div>
+      <div class="connectors__grid">${renderImapCard(ctx)}${renderSmtpCard(ctx)}</div>
       <div class="connectors__section-title">Web &amp; notifications</div>
       <div class="connectors__grid">
         ${renderBraveCard(ctx)}
@@ -306,6 +330,10 @@ export class U2Connectors extends HTMLElement {
   }
 
   _onClick(e) {
+    if (e.target.closest('button[data-smtp-disconnect]')) {
+      this._disconnectSmtp();
+      return;
+    }
     if (e.target.closest('button[data-imap-disconnect]')) {
       this._disconnectImap();
       return;
@@ -344,6 +372,9 @@ export class U2Connectors extends HTMLElement {
         break;
       case 'imap-credentials':
         this._submitImapCredentials(form);
+        break;
+      case 'smtp-credentials':
+        this._submitSmtpCredentials(form);
         break;
       case 'notify-webhook-credentials':
         this._submitNotifyWebhookCredentials(form);
@@ -434,6 +465,26 @@ export class U2Connectors extends HTMLElement {
       this._formMessages.imap = { text: 'Disconnected.', isError: false };
     } catch (err) {
       this._formMessages.imap = { text: err.message, isError: true };
+    }
+    await this._load();
+  }
+
+  async _submitSmtpCredentials(form) {
+    const host = form.elements.host.value.trim();
+    const port = Number(form.elements.port.value);
+    const username = form.elements.username.value.trim();
+    const password = form.elements.password.value;
+    const from = form.elements.from.value.trim();
+    await this._submitCredentialForm(form, 'smtp', () => api.saveSmtpCredentials({ host, port, username, password, from }));
+    await this._load();
+  }
+
+  async _disconnectSmtp() {
+    try {
+      await api.disconnectSmtp();
+      this._formMessages.smtp = { text: 'Disconnected.', isError: false };
+    } catch (err) {
+      this._formMessages.smtp = { text: err.message, isError: true };
     }
     await this._load();
   }

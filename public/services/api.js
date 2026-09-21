@@ -301,6 +301,17 @@ export function disconnectImap() {
   return request('/api/connectors/imap/disconnect', { method: 'POST', headers: JSON_HEADERS });
 }
 
+export function saveSmtpCredentials({ host, port, username, password, from } = {}) {
+  return request('/api/connectors/smtp/credentials', {
+    method: 'POST', headers: JSON_HEADERS,
+    body: JSON.stringify({ host, port, username, password, from }),
+  });
+}
+
+export function disconnectSmtp() {
+  return request('/api/connectors/smtp/disconnect', { method: 'POST', headers: JSON_HEADERS });
+}
+
 export function saveNotifyWebhookCredentials({ webhookUrl, format } = {}) {
   return request('/api/connectors/notify-webhook/credentials', {
     method: 'POST',

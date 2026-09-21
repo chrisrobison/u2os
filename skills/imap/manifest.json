@@ -3,7 +3,7 @@
   "name": "IMAP",
   "version": "0.1.0",
   "domain": "email",
-  "provides": ["email.search", "email.read"],
+  "provides": ["email.search", "email.read", "email.send"],
   "auth": {
     "type": "app_password",
     "provider": "imap",
@@ -13,5 +13,5 @@
   "eventsEmitted": ["email.received"],
   "permissions": ["network:*"],
   "status": "available",
-  "notes": "TLS-only inbox sync and reads. Sending requires a separately configured SMTP transport."
+  "notes": "TLS-only inbox sync and reads. Sending is available only when the SMTP companion is configured."
 }

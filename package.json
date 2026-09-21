@@ -26,10 +26,12 @@
     "imapflow": "^2.0.5",
     "js-yaml": "^4.1.0",
     "mailparser": "^3.9.28",
+    "nodemailer": "^10.0.10",
     "ws": "^8.21.3"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
-    "@playwright/test": "^1.63.0"
+    "@playwright/test": "^1.63.0",
+    "smtp-server": "^3.19.13"
   }
 }

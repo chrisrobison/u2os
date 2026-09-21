@@ -5,6 +5,7 @@ import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { getDb } from '../db/connection.js';
 import { readEncryptedFile } from '../security/vault.js';
+import { sendEmail as sendViaSmtp } from './smtp-transport.js';
 
 export const id = 'imap';
 const MAX_RECENT = 50;
@@ -125,6 +126,6 @@ export async function getEmail(localId, { dataDir } = {}) {
   return getRow(localId);
 }
 
-export async function sendEmail() {
-  throw new Error('imap: sending is unavailable until SMTP is configured');
+export async function sendEmail(message) {
+  return sendViaSmtp(message);
 }
