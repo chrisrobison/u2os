@@ -12,7 +12,7 @@ const ALLOWED_COMPONENT_TYPES = new Set([
   'activity',
   'alert',
   'recommendation',
-  // Reserved for Phase 2+ (allowed, but render only as a placeholder today)
+  // Rich structured components, implemented by trusted Web Components.
   'person',
   'project',
   'photo-grid',

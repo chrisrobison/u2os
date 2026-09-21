@@ -71,6 +71,7 @@ Key documentation:
 
 - [Overview](docs/overview.md) — what U2OS is, why it exists, and how it's meant to be used (start here)
 - [Architecture](docs/architecture.md)
+- [Architecture decisions](docs/adr/README.md)
 - [Events](docs/events.md)
 - [Policies](docs/policies.md)
 - [Tools](docs/tools.md)
