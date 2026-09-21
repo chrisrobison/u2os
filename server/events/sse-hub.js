@@ -47,6 +47,10 @@ export class SseHub {
       }
     }
   }
+
+  get clientCount() {
+    return this.clients.size;
+  }
 }
 
 function formatEvent(event) {

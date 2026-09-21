@@ -47,6 +47,7 @@ import { registerFeedbackRoutes } from './api/routes/feedback.js';
 import { registerAuthRoutes } from './api/routes/auth.js';
 import { registerModelRoutes } from './api/routes/model.js';
 import { registerDeviceRoutes } from './api/routes/devices.js';
+import { registerDiagnosticsRoutes } from './api/routes/diagnostics.js';
 
 export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsoluteSeconds } = {}) {
 
@@ -185,6 +186,7 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   registerRecommendationRoutes(router);
   registerFeedbackRoutes(router, { eventBus });
   registerDeviceRoutes(router, { deviceRegistry, capabilityRegistry, eventBus, deviceConnectToken, streamRegistry });
+  registerDiagnosticsRoutes(router, { db, dbPath, dataDir, startTime, sseHub, modelRouter, embeddingProvider });
 
   // Minimal HTTP access log (method, path, status, duration_ms) wrapped
   // around the existing router/static dispatch. This only observes the

@@ -16,6 +16,9 @@
 // log, provider-registry.js's warn-once fallback, sync-scheduler.js's sync
 // error handling) -- it is not a repo-wide console.* sweep.
 
+const RECENT_LIMIT = 50;
+const recent = [];
+
 function isJsonFormat() {
   return process.env.LOG_FORMAT === 'json';
 }
@@ -40,6 +43,17 @@ function formatJson(timestamp, level, component, message, fields) {
 
 function write(level, component, message, fields = {}) {
   const timestamp = new Date().toISOString();
+  if (level === 'warn' || level === 'error') {
+    // Diagnostics keeps only the static summary, never arbitrary fields:
+    // provider errors, URLs, ids, and request paths can contain owner data.
+    recent.push({
+      timestamp,
+      level,
+      component,
+      message: level === 'error' ? 'An error was reported' : 'A warning was reported',
+    });
+    if (recent.length > RECENT_LIMIT) recent.splice(0, recent.length - RECENT_LIMIT);
+  }
   const line = isJsonFormat()
     ? formatJson(timestamp, level, component, message, fields)
     : formatPretty(timestamp, level, component, message, fields);
@@ -51,6 +65,15 @@ function write(level, component, message, fields = {}) {
   } else {
     console.log(line);
   }
+}
+
+export function getRecentLogEntries({ limit = 20 } = {}) {
+  const bounded = Math.max(0, Math.min(Number(limit) || 0, RECENT_LIMIT));
+  return recent.slice(-bounded).map((entry) => ({ ...entry }));
+}
+
+export function clearRecentLogEntriesForTests() {
+  recent.length = 0;
 }
 
 export const log = {

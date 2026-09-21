@@ -25,9 +25,9 @@ export function registerHealthRoutes(router, { startTime }) {
       status: 'ok',
       version,
       uptimeSeconds: Math.round((Date.now() - startTime) / 1000),
-      // Per docs/deployment.md §8: a glance at /api/health should tell you
-      // if a configured real connector has gone unhealthy. Never includes
-      // decrypted secrets -- see provider-registry.getHealth()'s own note.
+      // This endpoint is intentionally safe for unauthenticated process
+      // healthchecks. Dependency detail belongs to the owner-only diagnostics
+      // endpoint and is never added here.
     });
   });
 }
