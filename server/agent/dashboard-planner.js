@@ -5,18 +5,14 @@
 // docs/dashboards.md, that is the one hard security boundary that must hold
 // for every context, not just "morning".
 //
-// Per docs/connectors.md's "Task system" note, tasks are intentionally
-// always-native (mock-tasks-provider.js directly), never behind
-// provider-registry. Calendar goes through getProvider('calendar') so a
-// connected real calendar is actually reflected here.
-import { getProvider } from '../integrations/provider-registry.js';
-import * as tasksProvider from '../integrations/mock-tasks-provider.js';
+// Named component sources are resolved server-side from bounded local stores
+// through dashboard-source-resolver.js. Browser clients only render the
+// validated data embedded in the schema.
 import { getEntity } from '../memory/entity-store.js';
 import { getFacts } from '../memory/fact-store.js';
 import { getRelationships } from '../memory/relationship-store.js';
-import { listPendingActions } from '../policy/policy-engine.js';
 import { validateDashboard } from '../api/dashboard-schema.js';
-import { listRecommendations } from './recommendation-store.js';
+import { resolveDashboardSource } from './dashboard-source-resolver.js';
 
 const SUPPORTED_CONTEXTS = new Set(['morning', 'before-meeting', 'project']);
 
@@ -62,14 +58,10 @@ export function generateDashboard({ context, params = {} } = {}) {
 }
 
 function buildMorningDashboard() {
-  const now = new Date();
-  const today = now.toDateString();
-
-  const calendarProvider = getProvider('calendar');
-  const todaysEvents = calendarProvider.listEvents({}).filter((e) => new Date(e.start_at).toDateString() === today);
-  const priorityTasks = tasksProvider.listTasks({ status: 'open' }).slice(0, 5);
-  const pendingActions = listPendingActions();
-  const recommendations = listRecommendations({ status: 'open' }).slice(0, 5).filter((recommendation) => {
+  const todaysEvents = resolveDashboardSource('calendar.today');
+  const priorityTasks = resolveDashboardSource('tasks.priority');
+  const pendingActions = resolveDashboardSource('actions.pending');
+  const recommendations = resolveDashboardSource('recommendations.open', { limit: 5 }).filter((recommendation) => {
     if (!recommendation.dashboard) return true;
     try { return validateDashboard(recommendation.dashboard); } catch { return false; }
   });
@@ -99,11 +91,12 @@ function buildBeforeMeetingDashboard({ personId } = {}) {
     throw new DashboardNotFoundError(`No such person: ${personId}`);
   }
 
-  const calendarProvider = getProvider('calendar');
-  const eventsWithPerson = calendarProvider.listEvents({}).filter((event) => eventHasAttendeeNamed(event, person.name));
+  const eventsWithPerson = resolveDashboardSource('calendar.upcoming', {
+    filter: (event) => eventHasAttendeeNamed(event, person.name),
+  });
   const relevantEvents = pickRelevantEvents(eventsWithPerson, 3);
 
-  const openTasks = tasksProvider.listTasks({ status: 'open' }).filter((t) => t.related_entity_id === person.id);
+  const openTasks = resolveDashboardSource('tasks.all', { filter: (task) => task.related_entity_id === person.id });
 
   const facts = getFacts(person.id);
   const relationships = getRelationships(person.id);
@@ -151,7 +144,7 @@ function buildProjectDashboard({ projectId } = {}) {
     throw new DashboardNotFoundError(`No such project: ${projectId}`);
   }
 
-  const openTasks = tasksProvider.listTasks({ status: 'open' }).filter((t) => t.related_entity_id === project.id);
+  const openTasks = resolveDashboardSource('tasks.all', { filter: (task) => task.related_entity_id === project.id });
   const relationships = getRelationships(project.id);
 
   const peopleIds = new Set();
@@ -161,10 +154,9 @@ function buildProjectDashboard({ projectId } = {}) {
   }
   const people = [...peopleIds].map((id) => getEntity(id)).filter((e) => e && e.type === 'Person');
 
-  const calendarProvider = getProvider('calendar');
-  const linkedEvents = calendarProvider
-    .listEvents({})
-    .filter((event) => eventMentionsTitle(event, project.name) || people.some((p) => eventHasAttendeeNamed(event, p.name)));
+  const linkedEvents = resolveDashboardSource('calendar.upcoming', {
+    filter: (event) => eventMentionsTitle(event, project.name) || people.some((p) => eventHasAttendeeNamed(event, p.name)),
+  });
   const relevantEvents = pickRelevantEvents(linkedEvents, 5);
 
   const components = [{ type: 'task-list', source: 'tasks.all', data: { tasks: openTasks } }];

@@ -95,7 +95,7 @@ Finish the trusted UI primitive set and give the owner meaningful control over r
 ### Work
 
 - [x] Implement functional person, project, document, conversation, chart, map, and photo-grid components.
-- [ ] Extend dashboard sources through a documented server-side resolver rather than embedding arbitrary data access in components. (Generated dashboards are composed from bounded server-side stores; the compatibility source-bearing schema still resolves allowlisted sources in the browser.)
+- [x] Extend dashboard sources through a documented server-side resolver rather than embedding arbitrary data access in components. (Every allowlisted source shares one bounded local-store resolver registry with schema validation; browsers receive inert hydrated data only.)
 - [ ] Add dashboard provenance so the owner can see why each card was included. (Person/project cards and prepared recommendations carry provenance, but this is not yet universal for every card.)
 - [x] Add memory correction, confirmation, deletion, and contradiction-resolution APIs and UI. (Deletion is an audited soft-delete, preserving history.)
 - Add safe entity and relationship deletion with impact previews and audit events.
@@ -247,4 +247,4 @@ U2OS reaches usable alpha when Milestones 1–3 are complete: a single owner can
 
 Milestones 4–8 deepen the product toward the broader personal digital-agent vision; they are not reasons to postpone the security boundary required for alpha use.
 
-**Status: usable alpha reached.** Milestones 1–3 are complete, with 361 Node tests and 64 Playwright scenarios running across Chromium, Firefox, and WebKit.
+**Status: usable alpha reached.** Milestones 1–3 are complete, with 363 Node tests and 64 Playwright scenarios running across Chromium, Firefox, and WebKit.
