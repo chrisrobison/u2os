@@ -71,6 +71,7 @@ export class U2App extends HTMLElement {
         <header class="shell__header">
           <button type="button" class="icon-btn shell__drawer-toggle" data-toggle="nav" aria-label="Toggle navigation">&#9776;</button>
           <span class="shell__brand">U2OS</span>
+          <span class="connection-state" data-connection-state role="status" aria-live="polite">Connecting</span>
           <span class="shell__header-spacer"></span>
           <button type="button" class="icon-btn" data-toggle="theme" aria-label="Toggle color theme"></button>
           <button type="button" class="icon-btn shell__drawer-toggle" data-toggle="agent" aria-label="Toggle agent panel">&#128172;</button>
@@ -93,6 +94,8 @@ export class U2App extends HTMLElement {
     this.querySelector('.shell__scrim').addEventListener('click', () => this._closeDrawers());
 
     // One SSE connection for the life of the app, independent of routing.
+    this._onConnectionState = (event) => this._handleConnectionState(event.detail?.state);
+    window.addEventListener('u2-connection-state', this._onConnectionState);
     this._events = new EventsService();
 
     // Phase 4 (docs/devices.md): this tab registers itself as a device
@@ -103,11 +106,39 @@ export class U2App extends HTMLElement {
     this._deviceClient = new DeviceClientService();
     this.querySelector('u2-device-panel').client = this._deviceClient;
 
-    window.addEventListener('hashchange', () => {
+    this._onHashChange = () => {
       this._closeDrawers();
       this._route();
-    });
+    };
+    window.addEventListener('hashchange', this._onHashChange);
     this._route();
+  }
+
+  disconnectedCallback() {
+    window.removeEventListener('u2-connection-state', this._onConnectionState);
+    window.removeEventListener('hashchange', this._onHashChange);
+    this._events?.close();
+    this._deviceClient?.close?.();
+  }
+
+  _handleConnectionState(state) {
+    if (state === 'session-expired') {
+      this._events?.close();
+      this._deviceClient?.close?.();
+      window.removeEventListener('u2-connection-state', this._onConnectionState);
+      window.removeEventListener('hashchange', this._onHashChange);
+      this._built = false;
+      this._renderAuth(false);
+      const subtitle = this.querySelector('.workspace__subtitle');
+      if (subtitle) subtitle.textContent = 'Your session expired. Log in again to reconnect.';
+      return;
+    }
+
+    const indicator = this.querySelector('[data-connection-state]');
+    if (!indicator) return;
+    const connected = state === 'connected';
+    indicator.textContent = connected ? 'Live' : state === 'reconnecting' ? 'Reconnecting' : 'Connecting';
+    indicator.dataset.state = connected ? 'connected' : 'disconnected';
   }
 
   _renderAuth(setupRequired) {

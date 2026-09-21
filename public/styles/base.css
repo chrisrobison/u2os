@@ -79,6 +79,26 @@ u2-app {
   color: var(--text-primary);
 }
 
+.connection-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.connection-state::before {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--warning, #b7791f);
+  content: '';
+}
+
+.connection-state[data-state="connected"]::before {
+  background: var(--success, #2f855a);
+}
+
 .shell__header-spacer { flex: 1; }
 
 .shell__drawer-toggle {
