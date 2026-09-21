@@ -71,6 +71,9 @@ export function getDb() {
   // restricted OR less restricted than it would have been if classified at
   // write time.
   ensureColumn(db, 'facts', 'classification', "TEXT NOT NULL DEFAULT 'personal'");
+  ensureColumn(db, 'facts', 'status', "TEXT NOT NULL DEFAULT 'current'");
+  ensureColumn(db, 'facts', 'supersedes_fact_id', 'TEXT');
+  ensureColumn(db, 'facts', 'deleted_at', 'TEXT');
   // Data-processing privacy policy, extended to the rest of the memory/
   // context surface (issue #2, part of #1): `facts` was the only table
   // carrying a classification column; entities, relationships,
