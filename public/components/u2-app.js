@@ -14,6 +14,7 @@ import './u2-timeline.js';
 import './u2-voice.js';
 import './u2-devices.js';
 import './u2-operations.js';
+import './u2-diagnostics.js';
 
 // Dashboard contexts the #/dashboards picker offers, per PROMPT.md section
 // 10's examples + docs/dashboards.md's Phase 2 contexts. 'before-meeting'
@@ -167,6 +168,9 @@ export class U2App extends HTMLElement {
         break;
       case 'operations':
         this._renderOperations();
+        break;
+      case 'diagnostics':
+        this._renderDiagnostics();
         break;
       case 'memory':
         if (sub) this._renderEntityDetail(sub);
@@ -421,6 +425,10 @@ export class U2App extends HTMLElement {
 
   _renderOperations() {
     this._setWorkspace('', document.createElement('u2-operations'));
+  }
+
+  _renderDiagnostics() {
+    this._setWorkspace('', document.createElement('u2-diagnostics'));
   }
 
   async _renderMemory() {
