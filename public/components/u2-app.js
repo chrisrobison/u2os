@@ -579,7 +579,7 @@ export class U2App extends HTMLElement {
             <div class="fact-row__heading"><strong>${escapeHtml(humanizeKey(f.key))}:</strong> <span class="fact-row__value">${escapeHtml(JSON.stringify(f.value))}</span><span class="fact-row__status">${escapeHtml(f.status)}</span></div>
             <dl class="fact-row__metadata">
               <div><dt>Source</dt><dd>${escapeHtml(f.source)}</dd></div>
-              <div><dt>Authority</dt><dd>${f.inferred ? 'Inferred' : 'Explicit'}</dd></div>
+              <div><dt>Authority</dt><dd><span class="fact-origin" data-origin="${escapeHtml(f.origin)}">${escapeHtml(humanizeKey(f.origin))}</span></dd></div>
               <div><dt>Confidence</dt><dd>${Math.round((f.confidence ?? 1) * 100)}%</dd></div>
               <div><dt>Classification</dt><dd>${escapeHtml(f.classification)}</dd></div>
               <div><dt>Last confirmed</dt><dd>${f.last_confirmed_at ? escapeHtml(new Date(f.last_confirmed_at).toLocaleString()) : 'Never'}</dd></div>
