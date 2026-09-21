@@ -496,6 +496,30 @@ export class U2App extends HTMLElement {
       wrap.appendChild(back);
 
       const attrEntries = Object.entries(entity.attributes || {});
+      const factMarkup = facts.length
+        ? facts.map((f) => {
+          const provenance = Object.keys(f.provenance || {}).length ? JSON.stringify(f.provenance) : 'No additional provenance';
+          const current = f.status === 'current';
+          return `<article class="fact-row fact-row--${escapeHtml(f.status)}" data-fact-id="${escapeHtml(f.id)}">
+            <div class="fact-row__heading"><strong>${escapeHtml(humanizeKey(f.key))}:</strong> <span class="fact-row__value">${escapeHtml(JSON.stringify(f.value))}</span><span class="fact-row__status">${escapeHtml(f.status)}</span></div>
+            <dl class="fact-row__metadata">
+              <div><dt>Source</dt><dd>${escapeHtml(f.source)}</dd></div>
+              <div><dt>Authority</dt><dd>${f.inferred ? 'Inferred' : 'Explicit'}</dd></div>
+              <div><dt>Confidence</dt><dd>${Math.round((f.confidence ?? 1) * 100)}%</dd></div>
+              <div><dt>Classification</dt><dd>${escapeHtml(f.classification)}</dd></div>
+              <div><dt>Last confirmed</dt><dd>${f.last_confirmed_at ? escapeHtml(new Date(f.last_confirmed_at).toLocaleString()) : 'Never'}</dd></div>
+            </dl>
+            <details><summary>Provenance</summary><code>${escapeHtml(provenance)}</code></details>
+            <div class="fact-row__controls">
+              ${current ? '<button type="button" data-confirm>Confirm</button>' : ''}
+              <form data-classification><label>Classification <select name="classification">${['public', 'personal', 'private', 'sensitive'].map((value) => `<option value="${value}"${f.classification === value ? ' selected' : ''}>${value}</option>`).join('')}</select></label><button type="submit">Save</button></form>
+              ${current ? `<form data-correct><label>Correct value <input name="value" value="${escapeHtml(typeof f.value === 'string' ? f.value : JSON.stringify(f.value))}" required></label><button type="submit">Correct</button></form>` : ''}
+              <button type="button" class="fact-row__delete" data-delete>Delete</button>
+            </div>
+            <div class="fact-row__error" role="alert" aria-live="polite"></div>
+          </article>`;
+        }).join('')
+        : '<div class="empty-state">No facts recorded yet.</div>';
       wrap.insertAdjacentHTML(
         'beforeend',
         `
@@ -508,19 +532,7 @@ export class U2App extends HTMLElement {
             : ''
         }
         <div class="entity-detail__section-title">Facts</div>
-        ${
-          facts.length
-            ? facts
-                .map(
-                  (f) => `
-              <div class="fact-row">
-                <strong>${escapeHtml(humanizeKey(f.key))}:</strong> ${escapeHtml(JSON.stringify(f.value))}
-                <span class="mono"> -- ${escapeHtml(f.source)}${f.inferred ? ', inferred' : ''}, confidence ${Math.round((f.confidence ?? 1) * 100)}%</span>
-              </div>`
-                )
-                .join('')
-            : `<div class="empty-state">No facts recorded yet.</div>`
-        }
+        ${factMarkup}
         <div class="entity-detail__section-title">Relationships</div>
         ${
           relationships.length
@@ -534,6 +546,26 @@ export class U2App extends HTMLElement {
         }
       `
       );
+
+      for (const row of wrap.querySelectorAll('[data-fact-id]')) {
+        const factId = row.dataset.factId;
+        const run = async (operation) => {
+          const error = row.querySelector('.fact-row__error'); error.textContent = '';
+          try { await operation(); await this._renderEntityDetail(id); } catch (err) { error.textContent = err.message; }
+        };
+        row.querySelector('[data-confirm]')?.addEventListener('click', () => run(() => api.confirmMemoryFact(factId)));
+        row.querySelector('[data-classification]').addEventListener('submit', (event) => {
+          event.preventDefault(); const classification = event.currentTarget.elements.namedItem('classification').value;
+          run(() => api.updateMemoryFact(factId, { classification }));
+        });
+        row.querySelector('[data-correct]')?.addEventListener('submit', (event) => {
+          event.preventDefault(); const value = event.currentTarget.querySelector('input[name="value"]').value;
+          run(() => api.updateMemoryFact(factId, { value }));
+        });
+        row.querySelector('[data-delete]').addEventListener('click', () => {
+          if (window.confirm('Delete this fact? Its audit history will be retained.')) run(() => api.deleteMemoryFact(factId));
+        });
+      }
 
       this._setWorkspace('', wrap);
     } catch (err) {
