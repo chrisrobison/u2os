@@ -2,7 +2,7 @@
 
 Every tool declares whether it is `read`, `draft`, or `consequential` — the policy engine uses this classification plus a `domain` to decide the autonomy level. Tools never call the LLM and never call each other; only the agent orchestrates calls, and only through the registry, via `evaluateAndMaybeExecute()`'s policy-gated pipeline.
 
-Most tools (`email.*`, `calendar.*`, `contacts.search`, `web.search`) are **provider-agnostic**: `execute()` calls `getProvider(domain)` and runs against whichever provider is currently configured -- CURRENTLY IMPLEMENTED mock providers for every domain, plus real Google Calendar/Gmail/Google Contacts/Brave Search adapters (see docs/connectors.md for exactly which are real vs MOCK-only, and how to configure a real one). `tasks.*` and `notifications.send` are MOCK/STUB only for now -- no real task-manager or push-notification integration exists yet.
+Most tools (`email.*`, `calendar.*`, `contacts.search`, `web.search`, `notifications.send`) are **provider-agnostic**: `execute()` calls `getProvider(domain)` and runs against whichever provider is currently configured -- CURRENTLY IMPLEMENTED mock providers for every domain, plus real Google Calendar/Gmail/Google Contacts/Brave Search and generic webhook/ntfy notification adapters (see docs/connectors.md for exactly which are real vs MOCK-only, and how to configure one). `tasks.*` remains local-only; no external task-manager integration exists yet.
 
 `presentation.present`/`presentation.notify` (docs/devices.md) are a different shape from every other tool here: instead of calling a connector provider, they call `invokeCapability()` (server/devices/capabilities.js), which resolves an eligible *device* deterministically (trust/privacy/ownership-aware, never LLM-driven) and delegates to that device's adapter. They also take their dependencies via constructor injection (`deviceRegistry`/`capabilityRegistry`) rather than a module-level provider accessor -- see server/tools/presentation-tools.js's header comment for why.
 
@@ -39,7 +39,7 @@ class Tool {
 | `tasks.create` | tasks | consequential | `{ title, dueAt?, relatedEntityId? }` | MOCK/STUB only -- inserts a local row → `task.created` |
 | `tasks.complete` | tasks | consequential | `{ id }` | MOCK/STUB only -- updates local status → `task.completed` |
 | `web.search` | web | read | `{ query }` | active provider (mock canned results, or real Brave Search) |
-| `notifications.send` | notifications | consequential | `{ title, body, priority? }` | MOCK/STUB only -- inserts a local row → `notification.sent` (this is how the agent "prominently notifies" the owner; no real push/desktop-notification integration exists) |
+| `notifications.send` | notifications | consequential | `{ title, body, priority? }` | active provider: local mock audit event or real bounded JSON/ntfy webhook delivery → `notification.sent` only after success |
 | `presentation.present` | presentation | consequential | `{ audience, privacy?, content }` | resolves a device via `ui.render` and invokes it → `capability.invoked`/`capability.failed` (docs/devices.md) |
 | `presentation.notify` | presentation | consequential | `{ audience, privacy?, title, body? }` | resolves a device via `ui.notify` and invokes it → `capability.invoked`/`capability.failed` (docs/devices.md) |
 

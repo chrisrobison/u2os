@@ -72,7 +72,7 @@ Emitted by mock tools/integrations:
 | `task.created` | `tasks.create` executes | `mock-tasks` |
 | `task.completed` | `tasks.complete` executes | `mock-tasks` |
 | `task.overdue` | trigger engine detects an overdue open task, deduplicated per trigger/task | `trigger-engine` |
-| `notification.sent` | `notifications.send` executes | `mock-notifications` |
+| `notification.sent` | `notifications.send` completes successfully | active provider: `mock-notifications` or `webhook` |
 
 Emitted by the agent/policy/tool pipeline (internal, domain-independent):
 
