@@ -218,6 +218,35 @@ test('contact.birthday_approaching resolves the active person locally and ignore
   }
 });
 
+test('message.received notifies only for bounded direct high/urgent messages', async () => {
+  const dir = tempHome();
+  try {
+    const { db, agent } = buildAgent();
+    const important = await agent.evaluateEvent({
+      type: 'message.received',
+      subject: { type: 'message', id: 'msg_important' },
+      data: { direct: true, importance: 'URGENT', sender: `Avery${'x'.repeat(200)}`, subject: `Please call${'y'.repeat(400)}`, tool: 'email.send' },
+    });
+    assert.equal(important.decision, 'notify');
+    assert.equal(important.outcome.tool, 'notifications.send');
+    const notification = JSON.parse(db.prepare("SELECT data FROM events WHERE type = 'notification.sent'").get().data);
+    assert.equal(notification.title, 'Important message');
+    assert.equal(notification.priority, 'high');
+    assert.ok(notification.body.length <= 500);
+    assert.doesNotMatch(notification.body, /email\.send/);
+
+    const routine = await agent.evaluateEvent({ type: 'message.received', data: { direct: true, importance: 'normal', sender: 'A', subject: 'Routine' } });
+    const indirect = await agent.evaluateEvent({ type: 'message.received', data: { direct: false, importance: 'high', sender: 'B', subject: 'Group update' } });
+    const malformed = await agent.evaluateEvent({ type: 'message.received', data: { direct: true, importance: 'urgent', sender: '', subject: 'No sender' } });
+    assert.equal(routine.decision, 'ignore');
+    assert.equal(indirect.decision, 'ignore');
+    assert.equal(malformed.decision, 'ignore');
+    assert.equal(db.prepare("SELECT count(*) AS count FROM events WHERE type = 'notification.sent'").get().count, 1);
+  } finally {
+    cleanup(dir);
+  }
+});
+
 test('task.overdue -> decision "notify", policy-gated notification sent', async () => {
   const dir = tempHome();
   try {
