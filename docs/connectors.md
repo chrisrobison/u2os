@@ -162,6 +162,7 @@ REST v3, via native `fetch` (no `googleapis` SDK dependency):
 
 - `POST /api/connectors/notify-webhook/credentials { webhookUrl, format }` where `format` is `'json'` (default: POST `{title, body, priority}` as JSON) or `'ntfy'` (POST `body` as the raw text payload with `Title` and `Priority` headers, per ntfy.sh's convention — this also happens to work for most simple "POST a message" webhook receivers).
 - `notifications.send` tool, when this provider is active, does the real `fetch(webhookUrl, {...})` and still also inserts the `notification.sent` event exactly as the mock does (the event log doesn't care which provider delivered it).
+- Delivery has a 10-second default timeout. Network/timeout errors are sanitized so a credential-bearing URL cannot enter queue errors or logs; HTTP status is retained for trusted failure classification. The provider does not claim idempotency, so an uncertain outcome is sent to owner attention rather than automatically replayed.
 
 ## Relationship to the device/capability subsystem
 
