@@ -78,7 +78,7 @@ notifications:
 }
 ```
 
-The server discovers every `skills/*/manifest.json` at startup (`server/integrations/connectors.js`, or fold into `provider-registry.js` — implementer's call, just keep discovery in one obvious place) and uses it purely for the `/api/connectors` listing (name, domain, auth type, declared scopes/permissions) — manifests are metadata/documentation, not code; the actual provider logic lives in the `server/integrations/*-provider.js` files listed above. This keeps the "installable skill" shape real (per PROMPT.md §29) without inventing a plugin-loading mechanism this phase doesn't need yet (only 5-7 built-in connectors; dynamic third-party loading is future work, noted as such).
+`server/integrations/skill-manifests.js` discovers every `skills/*/manifest.json` for the `/api/connectors` listing (name, domain, auth type, declared scopes/permissions). Manifests are metadata, not executable plugin code; provider logic remains in the explicit `server/integrations/*-provider.js` modules registered by `provider-registry.js`. Dynamic third-party loading and enforcement of declared network permissions are not implemented.
 
 ## Provider interface
 
@@ -141,7 +141,7 @@ REST v3, via native `fetch` (no `googleapis` SDK dependency):
 
 ## Gmail provider — real API calls
 
-- List: `GET https://gmail.googleapis.com/gmail/v1/users/me/messages?q=` then `GET .../messages/{id}?format=metadata` for each (or `format=full` if you want body — implementer's call on which is lighter for list vs. read).
+- Sync: `GET https://gmail.googleapis.com/gmail/v1/users/me/messages?q=in:inbox+newer_than:1d`, then `GET .../messages/{id}?format=full` for unseen messages so the local row includes its plain-text body.
 - Read: `GET .../messages/{id}?format=full`, extract plain-text body from the MIME parts.
 - Send: `POST .../messages/send` with `raw` = base64url of a minimal hand-built RFC 2822 message (`To:`, `Subject:`, blank line, body) — no MIME/attachment support this phase, documented as a simplification.
 - Map → `emails` row: `from_addr`, `to_addr`, `subject`, `body`, `folder` (`INBOX` label → `inbox`, else best-effort), `received_at` from the message's internal date.

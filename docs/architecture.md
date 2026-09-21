@@ -110,7 +110,7 @@ The same story is available through the default offline planner and real browser
 
 ## Explainability
 
-`agent_actions` (docs/policies.md's audit log) already records who/what/why for every evaluated action: requester, request text, model, tool, arguments, policy domain/rule, autonomy level, approval/rejection identity, and result. PLAN.md's Phase 9 adds the one genuinely missing piece: `context_provenance` -- the retrieved fact/entity/event ids (`ContextAssembler`'s `provenanceRefs`, AFTER the data-processing privacy filter) that actually reached the provider which produced a given plan. `Planner.lastProvenanceRefs` carries this from a `plan()` call to `Agent.handleMessage`, which attaches it to every action proposed from that same plan -- a direct (non-chat) `evaluateAndMaybeExecute()` call, with no `ContextAssembler` involved, simply has none.
+`agent_actions` (docs/policies.md's audit log) records who/what/why for every evaluated action: requester, request text, model, tool, arguments, policy domain/rule, autonomy level, approval/rejection identity, result, and `context_provenance` -- the retrieved fact/entity/event ids (`ContextAssembler`'s `provenanceRefs`, after data-processing privacy filtering) that actually reached the provider which produced a given plan. `Planner.lastProvenanceRefs` carries this from a `plan()` call to `Agent.handleMessage`, which attaches it to every action proposed from that same plan. A direct (non-chat) `evaluateAndMaybeExecute()` call, with no `ContextAssembler` involved, simply has no retrieved-context provenance.
 
 `server/agent/explain.js`'s `explainAction(id)` (also `GET /api/actions/:id/explain`) assembles all of this plus the full correlated event chain, in causal order, into one queryable structure. The browser now renders that structure through `<u2-why>` on approval cards and action-related activity entries. `server/agent/explain-recommendation.js` provides the equivalent stored-summary/source-event trail for proactive recommendations and recommendation-derived dashboards.
 
@@ -151,12 +151,12 @@ docs/devices.md.
 
 ## Known gaps
 
-- `ModelRouter` resolves a provider per role and supports OpenAI-compatible, Anthropic, and embedding adapters. The HTTP model endpoint accepts both legacy single-provider and validated multi-provider/role configuration. Semantic ranking is implemented but remains opt-in and only ranks facts within already-selected people.
+- `ModelRouter` resolves a provider per role and supports OpenAI-compatible, Anthropic, and embedding adapters. The HTTP model endpoint accepts both legacy single-provider and validated multi-provider/role configuration; the browser form still configures only the legacy single-provider shape. Semantic ranking remains opt-in, application-side, and intentionally bounded at personal scale, but candidate selection/ranking spans entities, current facts, open owner commitments, and allowlisted events before final context limits.
 - Authentication is single-owner/passphrase only; there are no passkeys, roles, or supported internet exposure.
 - Rate limits are memory-backed, not distributed or durable.
-- SQLite has one synchronous in-process connection; durable leases and an external-action queue remain Milestone 5.
-- Voice similarity is simplified and is not identity. Some dashboard types remain placeholders.
-- SSE cursor recovery and heartbeats are implemented. Broad browser end-to-end coverage and full accessibility verification remain gaps.
+- SQLite uses synchronous in-process connections. The durable action queue, leases, bounded retries, restart recovery, policy re-evaluation, and owner-facing operations view are implemented; Gmail, Google Calendar, and webhook notifications do not claim provider idempotency, so uncertain external outcomes stop for owner attention rather than replaying.
+- Voice similarity is simplified and is not identity. All registered dashboard primitives are implemented and schema-validated; maps are deliberately local CSS plots rather than a full mapping service.
+- SSE cursor recovery, heartbeats, multi-tab fan-out, and broad Playwright coverage are implemented. Automated checks and manual improvements cover core accessibility behavior, but this is not a claim of a complete external accessibility audit.
 - CalDAV/IMAP and skill network-permission enforcement are not implemented.
 - `node:sqlite` remains experimental. Manual audited retention and backup/restore exist; automated retention and a production rollback system do not.
 - Device/capability subsystem gaps (real cryptographic pairing, policy-gating the remaining owner-only debug routes, `listen()`, unifying more connectors) are listed in full in docs/devices.md's own "Known gaps" section rather than duplicated here.

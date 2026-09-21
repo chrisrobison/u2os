@@ -32,4 +32,4 @@ Every row is itself published as a `user.feedback` event on the normal event bus
 ## What this explicitly does not do
 
 - Never changes `policies.yaml`, autonomy levels, or anything `policy-engine.js` reads, automatically. A user could always choose to hand-edit policy config themselves based on what they've noticed — that's a human decision through the existing config surface, not something feedback data writes to.
-- Not a training loop / no model fine-tuning (there's no real model to fine-tune yet — this is a small deterministic scoring adjustment over a mock model's suggestion prioritization, honestly scoped the same way every other "AI" piece of U2OS is).
+- Not a training loop or model fine-tuning. Real planning providers are supported, but this feedback path remains a small deterministic scoring adjustment over proactive suggestion prioritization; it never rewrites prompts, model weights, or authorization policy.

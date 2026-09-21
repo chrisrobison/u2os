@@ -635,12 +635,11 @@ authenticated owner — see Known gaps.
   by request id only, not by device -- a device that disconnects mid-command
   leaves that specific call to resolve via its own timeout rather than
   failing immediately.
-- No browser/DOM test coverage for `device-client.js`/`u2-device-panel.js`
-  (this repo has no browser test runner yet -- PLAN.md Milestone 3's
-  Playwright coverage is separate, future work); Phase 4 is instead proven
-  end to end by `tests/browser-device-end-to-end.test.js` using a raw `ws`
-  client that sends the exact hello shape the real browser client sends,
-  plus manual verification in a real browser.
+- Browser-device registration and the Devices route run throughout the
+  Playwright suite, while `tests/browser-device-end-to-end.test.js` proves
+  the exact realtime hello/invoke/render/notify/prompt protocol with a raw
+  `ws` client. There is not yet a dedicated Playwright scenario that drives
+  every `u2-device-panel.js` command-rendering state through a live adapter.
 - `StreamRegistry.open()`/`.close()` are not policy-gated either, same
   known-gap class as the raw capability invoke route above -- opening a
   video stream reference is currently an owner-authenticated action, not
