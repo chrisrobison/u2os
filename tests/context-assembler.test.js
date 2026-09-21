@@ -370,3 +370,43 @@ test('assemble() returns the toolRegistry/eventBus/correlationId/actor plumbing 
     cleanup(dir);
   }
 });
+
+test('ranked facts from non-person entities enter bounded context with relevance and provenance', async () => {
+  const dir = tempHome();
+  try {
+    const { db } = setup();
+    const relevantProject = createEntity({ type: 'Project', name: 'Orion' });
+    const otherProject = createEntity({ type: 'Project', name: 'Routine work' });
+    setClassification(db, 'entities', relevantProject.id, 'private');
+    const relevant = recordFact({ entityId: relevantProject.id, key: 'deadline', value: 'Orion launch is Friday', source: 'owner', confidence: 0.8, classification: 'public' });
+    recordFact({ entityId: otherProject.id, key: 'note', value: 'Unrelated filing', source: 'owner', confidence: 1 });
+
+    const context = await new ContextAssembler({ maxRelevantFacts: 1 }).assemblePersonalContext('When is the Orion launch?');
+    assert.equal(context.relevantFacts.length, 1);
+    assert.equal(context.relevantFacts[0].factId, relevant.id);
+    assert.equal(context.relevantFacts[0].entityId, relevantProject.id);
+    assert.equal(context.relevantFacts[0].classification, 'private', 'derived context inherits the strongest source classification');
+    assert.ok(context.relevantFacts[0].relevance.exactMatch > 0);
+    assert.ok(context.provenanceRefs.some((ref) => ref.type === 'fact' && ref.id === relevant.id));
+    assert.ok(context.provenanceRefs.some((ref) => ref.type === 'entity' && ref.id === relevantProject.id));
+  } finally { cleanup(dir); }
+});
+
+test('commitments and events use hybrid relevance before their context limits', async () => {
+  const dir = tempHome();
+  try {
+    const { ownerEntityId, eventBus } = setup();
+    const relevant = createEntity({ type: 'Commitment', name: 'Send Orion launch brief', attributes: { status: 'open', description: 'Send Orion launch brief' } });
+    const unrelated = createEntity({ type: 'Commitment', name: 'Buy groceries', attributes: { status: 'open', description: 'Buy groceries' } });
+    recordRelationship({ fromEntityId: ownerEntityId, relation: 'promised', toEntityId: relevant.id, source: 'owner' });
+    recordRelationship({ fromEntityId: ownerEntityId, relation: 'promised', toEntityId: unrelated.id, source: 'owner' });
+    eventBus.publish({ type: 'email.received', source: 'test', data: { subject: 'Orion launch brief' } });
+    eventBus.publish({ type: 'email.received', source: 'test', data: { subject: 'Grocery coupon' } });
+
+    const context = await new ContextAssembler({ ownerEntityId, maxCommitments: 1, maxRecentEvents: 1 }).assemblePersonalContext('Orion launch brief');
+    assert.deepEqual(context.commitments.map((item) => item.id), [relevant.id]);
+    assert.match(context.recentEvents[0].summary, /Orion launch brief/);
+    assert.ok(context.commitments[0].relevance.total > 0);
+    assert.ok(context.recentEvents[0].relevance.total > 0);
+  } finally { cleanup(dir); }
+});

@@ -12,8 +12,8 @@ import { DataProcessingPolicy } from '../policy/data-processing-policy.js';
  * classification (public/personal/private/sensitive), so this filters at
  * TWO independent levels:
  *
- *   - Whole-item level: each person in `relevantPeople`, each entry in
- *     `commitments`, and each entry in `recentEvents` is evaluated on its
+ *   - Whole-item level: each person in `relevantPeople`, each standalone
+ *     fact in `relevantFacts`, each entry in `commitments`, and each entry in `recentEvents` is evaluated on its
  *     OWN classification. If the policy doesn't `allow` it for
  *     `destination`, the entire item is dropped.
  *   - Per-fact level (people only): a person who IS allowed through can
@@ -63,6 +63,11 @@ export function filterPersonalContextForDestination(personalContext, destination
     return evaluate('commitment', commitment.id, classification);
   });
 
+  const relevantFacts = (personalContext.relevantFacts || []).filter((fact) => {
+    const classification = fact.classification || 'personal';
+    return evaluate('fact', fact.factId, classification);
+  });
+
   const recentEvents = (personalContext.recentEvents || []).filter((event) => {
     const classification = event.classification || 'personal';
     return evaluate('event', event.eventId, classification);
@@ -71,7 +76,23 @@ export function filterPersonalContextForDestination(personalContext, destination
   if (!omitted.length) return { context: personalContext, omitted };
 
   return {
-    context: { ...personalContext, relevantPeople, commitments, recentEvents, dataProcessingRestricted: true },
+    context: { ...personalContext, relevantPeople, relevantFacts, commitments, recentEvents, provenanceRefs: filterProvenanceRefs(personalContext.provenanceRefs, { relevantPeople, relevantFacts, commitments, recentEvents }), dataProcessingRestricted: true },
     omitted,
   };
+}
+
+function filterProvenanceRefs(refs = [], { relevantPeople, relevantFacts, commitments, recentEvents }) {
+  const allowed = new Set();
+  for (const person of relevantPeople) {
+    allowed.add(`entity:${person.id}`);
+    for (const fact of person.facts) allowed.add(`fact:${fact.factId}`);
+  }
+  for (const fact of relevantFacts) {
+    allowed.add(`entity:${fact.entityId}`); allowed.add(`fact:${fact.factId}`);
+  }
+  for (const commitment of commitments) {
+    allowed.add(`entity:${commitment.id}`); allowed.add(`relationship:${commitment.relationshipId}`);
+  }
+  for (const event of recentEvents) allowed.add(`event:${event.eventId}`);
+  return refs.filter((ref) => allowed.has(`${ref.type}:${ref.id}`));
 }

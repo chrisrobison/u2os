@@ -37,8 +37,8 @@ export async function rankMemoryCandidates({ candidates, objective = '', embeddi
   const rank = (items, normalize) => rankCandidatesHybrid({ candidates: items.map(normalize), query: objective, embeddingProvider, model, semanticFilter });
   const [entities, facts, commitments, events] = await Promise.all([
     rank(candidates.entities, (item) => ({ ...item, subjectType: 'entity', text: item.retrievalText, observedAt: item.updatedAt, confidence: 1, inferred: false, entityRelevance: item.viaFactIds.length ? 1 : 0 })),
-    rank(candidates.facts, (item) => ({ ...item, subjectType: 'fact', text: `${item.key || ''} ${parseText(item.value)}`, observedAt: item.observed_at, entityRelevance: 1, classification: item.classification || 'personal' })),
-    rank(candidates.commitments, (item) => ({ ...item, subjectType: 'commitment', text: `${item.name || ''} ${parseText(item.attributes)}`, observedAt: item.created_at, openCommitment: true, relationshipDistance: 1, classification: item.relationship_classification || 'personal' })),
+    rank(candidates.facts, (item) => ({ ...item, subjectType: 'fact', text: `${item.key || ''} ${parseText(item.value)}`, observedAt: item.observed_at, entityRelevance: 1, classification: maxClassification(item.classification, item.entity_classification) })),
+    rank(candidates.commitments, (item) => ({ ...item, subjectType: 'commitment', text: `${item.name || ''} ${parseText(item.attributes)}`, observedAt: item.created_at, openCommitment: true, relationshipDistance: 1, classification: maxClassification(item.relationship_classification, item.classification) })),
     rank(candidates.events, (item) => ({ ...item, subjectType: 'event', text: `${item.type || ''} ${parseText(item.data)}`, observedAt: item.timestamp, confidence: 0.8, inferred: false, classification: item.classification || 'personal' })),
   ]);
   return { ...candidates, entities, facts, commitments, events };

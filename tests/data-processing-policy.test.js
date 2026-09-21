@@ -110,6 +110,26 @@ test('a sensitive fact is omitted from context bound for a remote model, but kep
   assert.equal(forLocal.omitted.length, 0);
 });
 
+test('standalone ranked facts are filtered and omitted provenance is pruned', () => {
+  const policy = new DataProcessingPolicy({ policies: testPolicies() });
+  const personalContext = {
+    objective: 'x', relevantPeople: [], commitments: [], recentEvents: [],
+    relevantFacts: [
+      { factId: 'restricted', entityId: 'project-private', classification: 'sensitive', value: 'secret' },
+      { factId: 'allowed', entityId: 'project-public', classification: 'public', value: 'shareable' },
+    ],
+    provenanceRefs: [
+      { type: 'entity', id: 'project-private' }, { type: 'fact', id: 'restricted' },
+      { type: 'entity', id: 'project-public' }, { type: 'fact', id: 'allowed' },
+    ],
+    truncated: false,
+  };
+  const result = filterPersonalContextForDestination(personalContext, 'configured_remote_model', policy);
+  assert.deepEqual(result.context.relevantFacts.map((fact) => fact.factId), ['allowed']);
+  assert.deepEqual(result.context.provenanceRefs, [{ type: 'entity', id: 'project-public' }, { type: 'fact', id: 'allowed' }]);
+  assert.ok(result.omitted.some((item) => item.type === 'fact' && item.id === 'restricted'));
+});
+
 test('a fact with no explicit classification defaults to "personal" for filtering purposes', () => {
   const policy = new DataProcessingPolicy({ policies: testPolicies() });
   const facts = [{ factId: 'f1', key: 'note', value: 'likes coffee', confidence: 1, inferred: false }]; // no classification field
