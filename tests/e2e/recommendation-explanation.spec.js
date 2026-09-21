@@ -29,7 +29,7 @@ test('a recommendation-derived dashboard explains its relevance from stored prov
     await expect(why).toContainText('Meeting');
     await expect(why).toContainText('Calendar event approaching');
     await expect(why).toContainText(calendarEvent.id);
-    await expect(why).toContainText('Before your meeting with Sarah');
+    await expect(why).toContainText('Before: Sync with Sarah');
 
     await card.getByRole('button', { name: 'Dismiss' }).click();
     await expect(card.getByRole('button', { name: 'Dismiss' })).toHaveCount(0);

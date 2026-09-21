@@ -70,7 +70,7 @@ export function runSeed({ eventBus } = {}) {
     title: 'U2OS project standup',
     startAt: tomorrow10am.toISOString(),
     endAt: tomorrow11am.toISOString(),
-    attendees: [{ name: 'Marcus Lee' }],
+    attendees: [{ name: 'Marcus Lee' }, { name: 'Sarah' }],
     category: 'personal',
   });
 

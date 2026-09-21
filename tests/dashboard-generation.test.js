@@ -188,6 +188,30 @@ test('generateDashboard({context: "before-meeting"}) for a person with no upcomi
   }
 });
 
+test('event-based before-meeting dashboard identifies its topic and every known attendee', () => {
+  const dir = tempHome();
+  try {
+    const db = seedDemoData();
+    const event = db.prepare("SELECT * FROM calendar_events WHERE title = 'U2OS project standup'").get();
+    assert.ok(event);
+
+    const schema = generateDashboard({ context: 'before-meeting', params: { eventId: event.id } });
+    assert.doesNotThrow(() => validateDashboard(schema));
+    assert.equal(schema.title, 'Before: U2OS project standup');
+    const topic = schema.components.find((component) => component.type === 'alert');
+    assert.match(topic.data.message, /Meeting topic \(from calendar\): U2OS project standup/);
+    assert.deepEqual(
+      schema.components.filter((component) => component.type === 'person').map((component) => component.data.name).sort(),
+      ['Marcus Lee', 'Sarah']
+    );
+    const tasks = schema.components.find((component) => component.type === 'task-list');
+    assert.ok(tasks.data.tasks.some((task) => task.title === 'Send proposal draft to Sarah'));
+    assert.ok(schema.components.every((component) => component.provenance?.reason));
+  } finally {
+    cleanup(dir);
+  }
+});
+
 test('generateDashboard({context: "project"}) for the seeded U2OS project reflects real linked data and validates', () => {
   const dir = tempHome();
   try {
