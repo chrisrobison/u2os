@@ -37,7 +37,7 @@ The LLM never emits HTML/JS. It emits a JSON **dashboard schema**. The frontend 
 | `alert` | `<u2-alert>` | inline `data` (no source needed) |
 | `recommendation` | `<u2-recommendation>` | `recommendations.open` |
 
-`<u2-person>` and `<u2-project>` are implemented structured cards used by before-meeting and project dashboards. `<u2-conversation>` accepts a bounded thread/message/summary/question/next-step structure, and `<u2-document>` accepts bounded metadata/excerpt/relevance data. All render through DOM text nodes. `<u2-agent-status>` is also implemented. `<u2-photo-grid>`, `<u2-map>`, and `<u2-chart>` remain reserved placeholders pending their structured contracts.
+All reserved primitives are implemented. Person, project, conversation, and document cards consume bounded domain structures and render supplied text through DOM text nodes. Chart accepts up to four labeled finite-number series, map accepts bounded valid coordinates and uses a local CSS plot (no mapping SDK or tile requests), and photo-grid accepts only local media paths or bounded image data URLs. `<u2-agent-status>` exposes the agent's current observable state. No primitive accepts HTML, JavaScript, or arbitrary component code.
 
 ## Current scope
 

@@ -546,6 +546,16 @@ u2-why { display: block; }
 .u2-domain-card li small { display: block; color: var(--text-muted); }
 .u2-domain-card p { margin: 0; white-space: pre-wrap; }
 .u2-document__meta { color: var(--text-muted); }
+.u2-chart { display: grid; gap: var(--space-3); }
+.u2-chart__row { display: grid; grid-template-columns: minmax(5rem, 1fr) 3fr auto; gap: var(--space-2); align-items: center; }
+.u2-chart__bar { height: .65rem; border-radius: var(--radius-sm); background: linear-gradient(90deg, var(--accent) var(--bar-size), var(--surface-raised) var(--bar-size)); }
+.u2-map { display: grid; gap: var(--space-3); }
+.u2-map__plot { position: relative; min-height: 12rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: linear-gradient(90deg, transparent 49.5%, var(--border-subtle) 50%, transparent 50.5%), linear-gradient(transparent 49.5%, var(--border-subtle) 50%, transparent 50.5%); }
+.u2-map__marker { position: absolute; width: .7rem; height: .7rem; transform: translate(-50%, -50%); border-radius: 50%; background: var(--accent); }
+.u2-photo-grid__items { display: grid; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); gap: var(--space-3); }
+.u2-photo-grid figure { margin: 0; }
+.u2-photo-grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--radius-md); background: var(--surface-raised); }
+.u2-photo-grid figcaption { margin-top: var(--space-1); color: var(--text-muted); font-size: var(--text-sm); }
 
 /* ---------- agent panel ---------- */
 
