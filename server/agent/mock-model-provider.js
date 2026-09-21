@@ -8,6 +8,7 @@ const RESCHEDULE_PATTERN = /\b(?:move|reschedule)\b.*?\bwith\s+([A-Za-z][\w'-]*)
 const HOUR_PATTERN = /(\d{1,2})\s*(am|pm)/i;
 const REMINDER_PATTERN = /\bremind me to\s+(.+?)[.!]?$/i;
 const SCHEDULE_QUERY_PATTERN = /\b(what'?s|show|list)\b.*\b(calendar|schedule|today)\b/i;
+const DAILY_DRIVER_PATTERN = /\bwhat'?s going on today\b[\s\S]*\b(routine|doesn'?t need me|do not need me)\b/i;
 
 export class MockModelProvider extends ModelProvider {
   id = 'mock-model-provider';
@@ -16,6 +17,9 @@ export class MockModelProvider extends ModelProvider {
   destination = 'local_model';
   async plan(context, objective) {
     const text = String(objective || '').trim();
+
+    const dailyDriver = this._planDailyDriver(context, text);
+    if (dailyDriver) return dailyDriver;
 
     const reschedule = await this._planReschedule(context, text);
     if (reschedule) return reschedule;
@@ -113,9 +117,63 @@ export class MockModelProvider extends ModelProvider {
     return { reasoning_summary: `Today: ${summary}.`, actions: [] };
   }
 
+  _planDailyDriver(context, text) {
+    if (!DAILY_DRIVER_PATTERN.test(text)) return null;
+
+    const personal = context.personalContext || {};
+    const events = Array.isArray(personal.recentEvents) ? personal.recentEvents : [];
+    const recruiterEmail = events
+      .filter((event) => event.type === 'email.received')
+      .map((event) => parseEmailSummary(event.summary))
+      .find((email) => email && isEmailAddress(email.from) && /recruit|talent/i.test(`${email.from} ${email.subject}`));
+    const openCommitments = Array.isArray(personal.commitments) ? personal.commitments : [];
+    const attention = recruiterEmail
+      ? `A follow-up from ${recruiterEmail.from} needs a reply.`
+      : openCommitments.length
+        ? `${openCommitments.length} open commitment${openCommitments.length === 1 ? '' : 's'} need attention.`
+        : 'No urgent item was found in the bounded context.';
+
+    const actions = [{
+      tool: 'notifications.send',
+      arguments: { title: 'Daily briefing ready', body: attention, priority: 'normal' },
+      reason: 'A local briefing notification is routine and permitted autonomously by owner policy.',
+    }];
+    const memoryCandidates = [];
+
+    if (recruiterEmail) {
+      const { from, subject } = recruiterEmail;
+      actions.push({
+        tool: 'email.send',
+        arguments: {
+          to: from,
+          subject: subject.toLowerCase().startsWith('re:') ? subject : `Re: ${subject}`,
+          body: 'Thanks for following up. I would be happy to continue the conversation. What times work for you this week?',
+        },
+        reason: 'This outbound reply is consequential and must wait for owner approval.',
+      });
+      memoryCandidates.push({ content: `${from} wants to schedule a follow-up conversation this week`, confidence: 'medium' });
+    }
+
+    return {
+      reasoning_summary: `${attention} I handled the routine briefing notification and prepared any consequential reply for approval.`,
+      response: `Today’s briefing: ${attention} ${openCommitments.length ? `You also have ${openCommitments.length} open commitment${openCommitments.length === 1 ? '' : 's'}.` : ''}`.trim(),
+      actions,
+      memoryCandidates,
+    };
+  }
+
   _toolContext(context) {
     return { eventBus: context.eventBus, correlationId: context.correlationId, actor: context.actor };
   }
+}
+
+function parseEmailSummary(summary) {
+  const match = String(summary || '').match(/^Email from ([^:]+):\s*(.+)$/i);
+  return match ? { from: match[1].trim(), subject: match[2].trim() } : null;
+}
+
+function isEmailAddress(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 function matchesName(attendee, name) {

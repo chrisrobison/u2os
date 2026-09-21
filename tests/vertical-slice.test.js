@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { getDb } from '../server/db/connection.js';
+import { getDb, closeAllForTests } from '../server/db/connection.js';
 import { EventBus } from '../server/events/event-bus.js';
 import { initProjector } from '../server/memory/projector.js';
 import { PolicyEngine } from '../server/policy/policy-engine.js';
@@ -20,6 +20,7 @@ function tempHome() {
 }
 
 function cleanup(dir) {
+  closeAllForTests();
   delete process.env.U2OS_HOME;
   fs.rmSync(dir, { recursive: true, force: true });
 }
@@ -90,6 +91,45 @@ test('vertical slice: "Move my 2 PM meeting with Sarah to tomorrow afternoon" ->
     assert.equal(proposedEvents.length, 1);
     assert.equal(approvedEvents.length, 1);
     assert.equal(completedEvents.length, 1);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('daily-driver mock plan uses retrieved context and preserves policy, queue, and memory boundaries', async () => {
+  const dir = tempHome();
+  try {
+    const db = getDb();
+    const eventBus = new EventBus(db);
+    initProjector(eventBus);
+    const ownerEntityId = runSeed({ eventBus });
+    const agent = new Agent({
+      modelProvider: new MockModelProvider(),
+      policyEngine: new PolicyEngine(),
+      toolRegistry: createToolRegistry(),
+      eventBus,
+      ownerEntityId,
+    });
+
+    const result = await agent.handleMessage({
+      text: "What's going on today? Handle anything routine that doesn't need me and tell me what I need to pay attention to.",
+      actorId: 'user',
+    });
+
+    assert.match(result.response, /northwindtalent\.example/);
+    assert.equal(result.actions.length, 2);
+    assert.equal(result.actions[0].tool, 'notifications.send');
+    assert.equal(result.actions[0].status, 'executed');
+    assert.equal(result.actions[1].tool, 'email.send');
+    assert.equal(result.actions[1].status, 'pending');
+    assert.equal(result.actions[1].arguments.to, 'jamie.alvarez@northwindtalent.example');
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events WHERE type = 'notification.sent'").get().n, 1);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events WHERE type = 'email.sent'").get().n, 0, 'no new email is sent before approval');
+
+    const candidate = db.prepare("SELECT * FROM memory_candidates WHERE status = 'pending' AND correlation_id = ?").get(result.correlationId);
+    assert.ok(candidate);
+    assert.match(candidate.content, /northwindtalent\.example/);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events WHERE type = 'agent.memory_candidate.proposed' AND correlation_id = ?").get(result.correlationId).n, 1);
   } finally {
     cleanup(dir);
   }
