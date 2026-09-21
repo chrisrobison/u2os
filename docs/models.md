@@ -67,6 +67,6 @@ Embedding providers identify their authoritative destination just like planning 
 ## Known limitations
 
 - The browser UI still exposes only the single-provider form; multi-provider configuration currently uses the HTTP API or config file.
-- `ContextAssembler` performs bounded candidate selection and inspectable hybrid ranking across entities, current facts, open owner commitments, and allowlisted events. Direct inclusion of every ranked non-person candidate in final context remains intentionally bounded by the context schema and is completed in the next retrieval increment.
+- Retrieval is application-side and intentionally bounded; installations that grow far beyond personal scale may eventually need measured indexing improvements, but no vector database is currently warranted.
 - No streaming.
 - Provider failure (including after a fallback attempt) is explicit and never silently executes a stale plan or bypasses policy.

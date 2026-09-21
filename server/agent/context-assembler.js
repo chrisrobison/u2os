@@ -1,8 +1,6 @@
-import { getDb } from '../db/connection.js';
-import { findEntities, getEntity } from '../memory/entity-store.js';
+import { findEntities } from '../memory/entity-store.js';
 import { getFacts } from '../memory/fact-store.js';
 import { getRelationships } from '../memory/relationship-store.js';
-import { listEvents } from '../events/log.js';
 import { rankFactsHybrid } from '../memory/semantic-retrieval.js';
 import { selectMemoryCandidates, rankMemoryCandidates } from '../memory/candidate-retrieval.js';
 import { getEmail } from '../integrations/mock-email-provider.js';
@@ -14,6 +12,7 @@ const DEFAULTS = {
   maxChars: 6000,
   maxPeople: 5,
   maxFactsPerPerson: 5,
+  maxRelevantFacts: 10,
   maxCommitments: 10,
   maxRecentEvents: 15,
 };
@@ -106,12 +105,14 @@ export class ContextAssembler {
     };
     const candidates = await rankMemoryCandidates({ candidates: selected, objective, embeddingProvider: this.embeddingProvider, semanticFilter });
 
+    const relevantPeople = await this._rankPeople(objectiveLower, objective, candidates, semanticOmitted);
     const context = {
       objective: String(objective || ''),
       currentTime: new Date().toISOString(),
-      relevantPeople: await this._rankPeople(objectiveLower, objective, candidates, semanticOmitted),
-      commitments: this._rankCommitments(objectiveLower),
-      recentEvents: this._recentEvents(),
+      relevantPeople,
+      relevantFacts: this._rankStandaloneFacts(candidates.facts, new Set(relevantPeople.map((person) => person.id))),
+      commitments: this._rankCommitments(candidates.commitments),
+      recentEvents: this._rankEvents(candidates.events),
       truncated: false,
     };
     if (semanticOmitted.length && this.eventBus) {
@@ -164,9 +165,29 @@ export class ContextAssembler {
         facts: await this._rankFacts(facts, objectiveRaw, semanticOmitted),
         relationshipCount: relationships.length,
         classification: person.classification || 'personal',
+        ...(retrievalCandidate ? { relevance: compactRelevance(retrievalCandidate._relevance) } : {}),
       });
     }
     return results;
+  }
+
+  _rankStandaloneFacts(candidates, selectedPersonIds) {
+    return candidates.filter((item) => item.entity_type !== 'Person' || !selectedPersonIds.has(item.entity_id))
+      .slice(0, this.options.maxRelevantFacts)
+      .map((item) => ({
+        factId: item.id,
+        entityId: item.entity_id,
+        entityType: item.entity_type,
+        entityName: item.entity_name,
+        key: item.key,
+        value: parseStoredJson(item.value),
+        source: item.source,
+        confidence: item.confidence,
+        inferred: !!item.inferred,
+        observedAt: item.observed_at,
+        classification: item.classification || 'personal',
+        relevance: compactRelevance(item._relevance),
+      }));
   }
 
   // Confidence+recency by default; blends in semantic similarity (and an
@@ -221,60 +242,36 @@ export class ContextAssembler {
 
   // --- commitments ----------------------------------------------------------
 
-  _rankCommitments(objectiveLower) {
-    if (!this.ownerEntityId) return [];
-    const promises = getRelationships(this.ownerEntityId).filter((r) => r.relation === 'promised' && r.from_entity_id === this.ownerEntityId);
-
-    const open = promises
-      .map((rel) => {
-        const commitment = rel.to_entity_id ? getEntity(rel.to_entity_id) : null;
-        return commitment && commitment.attributes?.status === 'open' ? { commitment, rel } : null;
-      })
-      .filter(Boolean)
-      .map(({ commitment, rel }) => {
-        const description = String(commitment.attributes?.description || commitment.name || '');
-        return {
-          id: commitment.id,
-          relationshipId: rel.id,
-          description,
-          mentioned: sharesASignificantWord(objectiveLower, description.toLowerCase()),
-          createdAt: commitment.created_at,
-          confidence: rel.confidence,
-          inferred: rel.inferred,
-          // Sourced from the `promised` relationship row itself (issue #3) --
-          // commitments are relationships, not a separate table, so the
-          // relationship's own classification column is the deterministic
-          // source, never the model.
-          classification: rel.classification || 'personal',
-        };
-      })
-      .sort((a, b) => {
-        if (a.mentioned !== b.mentioned) return a.mentioned ? -1 : 1;
-        return (b.createdAt || '').localeCompare(a.createdAt || '');
-      })
-      .slice(0, this.options.maxCommitments);
-
-    return open.map(({ mentioned: _mentioned, ...rest }) => rest);
+  _rankCommitments(candidates) {
+    return candidates.slice(0, this.options.maxCommitments).map((item) => {
+      const attributes = parseStoredJson(item.attributes) || {};
+      return {
+        id: item.id,
+        relationshipId: item.relationship_id,
+        description: String(attributes.description || item.name || ''),
+        createdAt: item.created_at,
+        confidence: item.confidence,
+        inferred: !!item.inferred,
+        classification: item.classification || 'personal',
+        relevance: compactRelevance(item._relevance),
+      };
+    });
   }
 
   // --- recent events ----------------------------------------------------------
 
-  _recentEvents() {
-    const db = getDb();
-    const events = [];
-    for (const type of CONTEXT_WORTHY_EVENT_TYPES) {
-      events.push(...listEvents(db, { type, limit: this.options.maxRecentEvents }));
-    }
-    return events
-      .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''))
-      .slice(0, this.options.maxRecentEvents)
-      .map((event) => ({
+  _rankEvents(candidates) {
+    return candidates.slice(0, this.options.maxRecentEvents).map((item) => {
+      const event = candidateRowToEvent(item);
+      return {
         eventId: event.id,
         type: event.type,
         timestamp: event.timestamp,
         summary: summarizeEvent(event),
-        classification: classificationForEvent(event),
-      }));
+        classification: item.classification || 'personal',
+        relevance: compactRelevance(item._relevance),
+      };
+    });
   }
 
   // --- budget -----------------------------------------------------------------
@@ -285,6 +282,11 @@ export class ContextAssembler {
     const overBudget = () => sizeOf() > this.options.maxChars;
 
     while (overBudget()) {
+      if (context.relevantFacts.length) {
+        context.relevantFacts.pop();
+        truncated = true;
+        continue;
+      }
       if (context.recentEvents.length > 1) {
         context.recentEvents.pop();
         truncated = true;
@@ -321,6 +323,9 @@ function buildProvenanceRefs(context) {
     refs.push({ type: 'entity', id: person.id });
     for (const fact of person.facts) refs.push({ type: 'fact', id: fact.factId });
   }
+  for (const fact of context.relevantFacts || []) {
+    refs.push({ type: 'entity', id: fact.entityId }, { type: 'fact', id: fact.factId });
+  }
   for (const commitment of context.commitments) {
     refs.push({ type: 'entity', id: commitment.id }, { type: 'relationship', id: commitment.relationshipId });
   }
@@ -331,7 +336,7 @@ function buildProvenanceRefs(context) {
 function candidateRowToEvent(row) {
   let data = {};
   try { data = JSON.parse(row.data || '{}'); } catch { /* malformed stored data stays conservatively personal */ }
-  return { type: row.type, data, subject: row.subject_type ? { type: row.subject_type, id: row.subject_id } : null };
+  return { id: row.id, type: row.type, timestamp: row.timestamp, data, subject: row.subject_type ? { type: row.subject_type, id: row.subject_id } : null };
 }
 
 function dedupeOmissions(items) {
@@ -343,17 +348,25 @@ function dedupeOmissions(items) {
   });
 }
 
-// Simple bidirectional word-overlap heuristic (no embeddings yet -- see
-// PLAN.md's semantic-memory phase). "Significant" excludes short filler
-// words so "the"/"and" don't count as a match.
-function sharesASignificantWord(a, b) {
-  const wordsOf = (s) => String(s || '').split(/\W+/).filter((w) => w.length > 3);
-  const bWords = new Set(wordsOf(b));
-  return wordsOf(a).some((word) => bWords.has(word));
-}
-
 function latestTimestamp(timestamps) {
   return timestamps.filter(Boolean).sort().at(-1) || null;
+}
+
+function parseStoredJson(value) {
+  if (typeof value !== 'string') return value;
+  try { return JSON.parse(value); } catch { return value; }
+}
+
+function compactRelevance(relevance = {}) {
+  const result = {};
+  for (const [key, value] of Object.entries(relevance)) {
+    if (Array.isArray(value)) {
+      if (value.length) result[key] = value;
+    } else if (typeof value === 'number') {
+      if (value !== 0 || key === 'total') result[key] = Number(value.toFixed(4));
+    } else if (value) result[key] = value;
+  }
+  return result;
 }
 
 // Event types whose summary describes an email/calendar/task row, and can
