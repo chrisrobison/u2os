@@ -70,13 +70,20 @@ function buildMorningDashboard() {
     title: 'Morning Briefing',
     layout: 'dashboard',
     components: [
-      { type: 'schedule', source: 'calendar.today', data: { events: todaysEvents } },
-      { type: 'task-list', source: 'tasks.priority', data: { tasks: priorityTasks } },
-      { type: 'approval', source: 'actions.pending', data: { actions: pendingActions } },
+      withProvenance({ type: 'schedule', source: 'calendar.today', data: { events: todaysEvents } },
+        'Shows calendar events scheduled for today.', sourceReferences('calendar.today', 'calendar_event', todaysEvents)),
+      withProvenance({ type: 'task-list', source: 'tasks.priority', data: { tasks: priorityTasks } },
+        'Shows the highest-priority open tasks.', sourceReferences('tasks.priority', 'task', priorityTasks)),
+      withProvenance({ type: 'approval', source: 'actions.pending', data: { actions: pendingActions } },
+        'Shows consequential actions waiting for owner approval.', sourceReferences('actions.pending', 'action', pendingActions)),
       ...recommendations.map((recommendation) => ({
         type: 'recommendation',
         source: 'recommendations.open',
         data: { recommendationId: recommendation.id },
+        provenance: {
+          reason: 'Shows an open recommendation prepared by the agent.',
+          references: [{ type: 'recommendation', id: recommendation.id, label: boundedLabel(recommendation.reasoning_summary || recommendation.decision) }],
+        },
       })),
     ],
   };
@@ -104,17 +111,19 @@ function buildBeforeMeetingDashboard({ personId } = {}) {
   const components = [];
 
   if (relevantEvents.length) {
-    components.push({ type: 'schedule', source: 'calendar.upcoming', data: { events: relevantEvents } });
+    components.push(withProvenance({ type: 'schedule', source: 'calendar.upcoming', data: { events: relevantEvents } },
+      `Shows meetings whose attendee list includes ${person.name}.`, sourceReferences('calendar.upcoming', 'calendar_event', relevantEvents)));
   } else {
-    components.push({
+    components.push(withProvenance({
       type: 'alert',
       data: { variant: 'info', message: `No upcoming meetings scheduled with ${person.name}.` },
-    });
+    }, `No matching calendar event was found for ${person.name}.`, [{ type: 'entity', id: person.id, label: person.name }]));
   }
 
-  components.push({ type: 'task-list', source: 'tasks.all', data: { tasks: openTasks } });
+  components.push(withProvenance({ type: 'task-list', source: 'tasks.all', data: { tasks: openTasks } },
+    `Shows open tasks linked to ${person.name}.`, sourceReferences('tasks.all', 'task', openTasks, [{ type: 'entity', id: person.id, label: person.name }])));
 
-  components.push({
+  components.push(withProvenance({
     type: 'person',
     data: {
       id: person.id,
@@ -124,9 +133,12 @@ function buildBeforeMeetingDashboard({ personId } = {}) {
       recentActivity: relevantEvents.slice(0, 3).map((event) => ({ label: event.title, at: event.start_at, source: 'calendar' })),
       commitments: relationships.filter((rel) => rel.relation === 'promised').slice(0, 5).map((rel) => ({ description: describeRelationship(rel, person), source: rel.source })),
       upcomingInteractions: relevantEvents.map((event) => ({ title: event.title, at: event.start_at })),
-      provenance: { entityId: person.id },
     },
-  });
+  }, `Summarizes stored context relevant to ${person.name}.`, [
+    { type: 'entity', id: person.id, label: person.name },
+    ...facts.slice(0, 5).map((fact) => ({ type: 'fact', id: fact.id, label: fact.key })),
+    ...relationships.slice(0, 4).map((relationship) => ({ type: 'relationship', id: relationship.id, label: relationship.relation })),
+  ]));
 
   return {
     title: `Before your meeting with ${person.name}`,
@@ -159,13 +171,15 @@ function buildProjectDashboard({ projectId } = {}) {
   });
   const relevantEvents = pickRelevantEvents(linkedEvents, 5);
 
-  const components = [{ type: 'task-list', source: 'tasks.all', data: { tasks: openTasks } }];
+  const components = [withProvenance({ type: 'task-list', source: 'tasks.all', data: { tasks: openTasks } },
+    `Shows open tasks linked to ${project.name}.`, sourceReferences('tasks.all', 'task', openTasks, [{ type: 'entity', id: project.id, label: project.name }]))];
 
   if (relevantEvents.length) {
-    components.push({ type: 'schedule', source: 'calendar.upcoming', data: { events: relevantEvents } });
+    components.push(withProvenance({ type: 'schedule', source: 'calendar.upcoming', data: { events: relevantEvents } },
+      `Shows meetings that mention ${project.name} or include linked people.`, sourceReferences('calendar.upcoming', 'calendar_event', relevantEvents, [{ type: 'entity', id: project.id, label: project.name }])));
   }
 
-  components.push({
+  components.push(withProvenance({
     type: 'project',
     data: {
       id: project.id,
@@ -177,15 +191,18 @@ function buildProjectDashboard({ projectId } = {}) {
       deadlines: openTasks.filter((task) => task.due_at).slice(0, 10).map((task) => ({ label: task.title, at: task.due_at })),
       unresolvedDecisions: openTasks.filter((task) => /decid|review|choose|approve/i.test(task.title)).slice(0, 10).map((task) => ({ label: task.title })),
       relatedDocuments: [],
-      provenance: { entityId: project.id },
     },
-  });
+  }, `Summarizes stored work and relationships for ${project.name}.`, [
+    { type: 'entity', id: project.id, label: project.name },
+    ...relationships.slice(0, 5).map((relationship) => ({ type: 'relationship', id: relationship.id, label: relationship.relation })),
+    ...people.slice(0, 4).map((person) => ({ type: 'entity', id: person.id, label: person.name })),
+  ]));
 
   if (!openTasks.length && !relevantEvents.length) {
-    components.push({
+    components.push(withProvenance({
       type: 'alert',
       data: { variant: 'warning', message: `No open tasks or upcoming events found for ${project.name} yet.` },
-    });
+    }, `No matching task or calendar records were found for ${project.name}.`, [{ type: 'entity', id: project.id, label: project.name }]));
   }
 
   return {
@@ -193,6 +210,22 @@ function buildProjectDashboard({ projectId } = {}) {
     layout: 'dashboard',
     components,
   };
+}
+
+function withProvenance(component, reason, references) {
+  return { ...component, provenance: { reason, references: references.slice(0, 10) } };
+}
+
+function sourceReferences(source, type, records, additional = []) {
+  return [
+    { type: 'source', id: source, label: source },
+    ...additional,
+    ...records.map((record) => ({ type, id: record.id, label: boundedLabel(record.title || record.subject || record.tool || record.id) })),
+  ].slice(0, 10);
+}
+
+function boundedLabel(value) {
+  return String(value || '').slice(0, 500);
 }
 
 // Prefers the next `limit` events that haven't started yet (chronological

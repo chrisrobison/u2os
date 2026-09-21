@@ -24,11 +24,12 @@ test('a recommendation-derived dashboard explains its relevance from stored prov
     await expect(card).toContainText('Prepared for you');
     await expect(card.locator('u2-dashboard .workspace__title')).toContainText('Sarah');
 
-    await card.locator('u2-why summary').click();
-    await expect(card.locator('u2-why')).toContainText('Meeting');
-    await expect(card.locator('u2-why')).toContainText('Calendar event approaching');
-    await expect(card.locator('u2-why')).toContainText(calendarEvent.id);
-    await expect(card.locator('u2-why')).toContainText('Before your meeting with Sarah');
+    const why = card.locator('u2-recommendation > u2-why');
+    await why.locator('summary').click();
+    await expect(why).toContainText('Meeting');
+    await expect(why).toContainText('Calendar event approaching');
+    await expect(why).toContainText(calendarEvent.id);
+    await expect(why).toContainText('Before your meeting with Sarah');
 
     await card.getByRole('button', { name: 'Dismiss' }).click();
     await expect(card.getByRole('button', { name: 'Dismiss' })).toHaveCount(0);
