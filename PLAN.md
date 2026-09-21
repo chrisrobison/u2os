@@ -74,12 +74,12 @@ Turn the current UI from a largely backend-tested shell into a dependable client
 
 ### Work
 
-- Add Playwright coverage for onboarding/login, navigation, chat, approval/rejection, dashboards, connectors, triggers, feedback, themes, and responsive layouts.
-- Add SSE reconnect with exponential backoff, last-event recovery, duplicate suppression, and session-expiry handling.
-- Make dashboards update in place from relevant events.
-- Surface offline, degraded connector, and queued-action states consistently.
-- Complete keyboard navigation, focus management, semantic labels, contrast checks, and reduced-motion support.
-- Add error boundaries and actionable user-facing error messages for failed API operations.
+- [ ] Add Playwright coverage for onboarding/login, navigation, chat, approval/rejection, dashboards, connectors, triggers, feedback, themes, and responsive layouts. (58 Chromium tests cover every listed area except trigger management; Firefox and WebKit projects are still required.)
+- [ ] Add SSE reconnect with exponential backoff, last-event recovery, duplicate suppression, and session-expiry handling. (Backoff and `Last-Event-ID` recovery are implemented and browser-tested; explicit client-side duplicate suppression and terminal session-expiry handling remain.)
+- [ ] Make dashboards update in place from relevant events. (Activity, memory, operations, and diagnostics update from SSE; generated dashboard cards do not yet refresh comprehensively.)
+- [x] Surface offline, degraded connector, and queued-action states consistently. (`u2-connectors`, `u2-operations`, and `u2-diagnostics` expose connector health and durable queue states with owner-readable recovery information.)
+- [ ] Complete keyboard navigation, focus management, semantic labels, contrast checks, and reduced-motion support. (Responsive layouts, automated axe checks, semantic labels, contrast, and reduced-motion behavior are covered; a complete keyboard/focus audit remains.)
+- [ ] Add error boundaries and actionable user-facing error messages for failed API operations. (Route and component-level errors are owner-readable; a consistent application-level boundary and SSE connection status remain.)
 
 ### Acceptance criteria
 
@@ -94,14 +94,14 @@ Finish the trusted UI primitive set and give the owner meaningful control over r
 
 ### Work
 
-- Implement functional person, project, document, conversation, chart, map, and photo-grid components.
-- Extend dashboard sources through a documented server-side resolver rather than embedding arbitrary data access in components.
-- Add dashboard provenance so the owner can see why each card was included.
-- Add memory correction, confirmation, deletion, and contradiction-resolution APIs and UI.
+- [x] Implement functional person, project, document, conversation, chart, map, and photo-grid components.
+- [ ] Extend dashboard sources through a documented server-side resolver rather than embedding arbitrary data access in components. (Generated dashboards are composed from bounded server-side stores; the compatibility source-bearing schema still resolves allowlisted sources in the browser.)
+- [ ] Add dashboard provenance so the owner can see why each card was included. (Person/project cards and prepared recommendations carry provenance, but this is not yet universal for every card.)
+- [x] Add memory correction, confirmation, deletion, and contradiction-resolution APIs and UI. (Deletion is an audited soft-delete, preserving history.)
 - Add safe entity and relationship deletion with impact previews and audit events.
 - Distinguish explicit, imported, derived, and inferred facts visually.
 - Implement deterministic event replay for rebuilding derived projections, with dry-run support.
-- Expand demo data to exercise every supported component and memory state.
+- [x] Expand demo data to exercise every supported component and memory state.
 
 ### Acceptance criteria
 
@@ -117,10 +117,10 @@ Make proactive behavior reliable across restarts and intermittent connectivity.
 ### Work
 
 - Persist scheduler leases/state so restarts do not lose or double-run due work.
-- Add idempotency keys and execution leases for consequential actions.
-- Introduce an explicit durable queue for unavailable external actions.
-- Re-evaluate policy, freshness, and owner intent before executing a queued consequential action.
-- Add retry classes, exponential backoff, dead-letter handling, and operator-visible recovery controls.
+- [x] Add idempotency keys and execution leases for consequential actions.
+- [x] Introduce an explicit durable queue for unavailable external actions.
+- [x] Re-evaluate policy, freshness, and owner intent before executing a queued consequential action.
+- [x] Add retry classes, exponential backoff, dead-letter handling, and operator-visible recovery controls.
 - Expand event evaluation beyond the initial email, approaching-meeting, overdue-task, and commitment cases.
 - Add calendar-conflict, birthday, renewal, important-message, and project-activity evaluators.
 - Add trigger history, next-run previews, pause/resume, and manual dry runs.
@@ -168,6 +168,8 @@ Harden current adapters before expanding breadth.
 - Define signed/installable third-party skill packaging, compatibility, permission review, enable/disable, and upgrade behavior.
 - Add outbound network permission enforcement rather than treating manifest permissions as documentation only.
 
+The current foundation already includes encrypted connector credentials, Google Calendar/Gmail/Google Contacts and Brave Search adapters, bounded webhook/ntfy delivery, health-aware mock fallback, a connector UI, and notification-service capability unification. Those foundations do not satisfy the ecosystem acceptance criteria above on their own.
+
 ### Acceptance criteria
 
 - Each real provider passes the same behavioral contract as its mock.
@@ -189,6 +191,8 @@ Package the secure alpha for ordinary self-hosting without creating a cloud depe
 - Add HTTPS/reverse-proxy deployment recipes and secure remote-access guidance.
 - Add encrypted offsite backup adapters without requiring U2OS-operated infrastructure.
 - Define release versioning, changelogs, support windows, and reproducible release artifacts.
+
+Distribution foundations already present are a Dockerfile/Compose deployment, Linux systemd and macOS launchd templates, additive startup migrations, portable JSON export, full-fidelity backup/restore, and reverse-proxy guidance. Multi-architecture validation, Windows packaging, upgrade rollback, PWA support, and release engineering remain open.
 
 ### Acceptance criteria
 
