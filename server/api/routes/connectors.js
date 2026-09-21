@@ -5,6 +5,7 @@ import { setActiveProvider, validProviderIdsFor } from '../../integrations/conne
 import { triggerSync, reconcile as reconcileSyncScheduler } from '../../integrations/sync-scheduler.js';
 import { manifestsByDomain } from '../../integrations/skill-manifests.js';
 import { readEncryptedFile, writeEncryptedFile } from '../../security/vault.js';
+import { validateSettings as validateImapSettings } from '../../integrations/imap-provider.js';
 import {
   buildAuthUrl,
   exchangeCodeForTokens,
@@ -135,6 +136,24 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
     if (!apiKey) return sendJson(res, 400, { error: 'apiKey is required' });
     writeEncryptedFile('web-search', { apiKey });
     sendJson(res, 200, { configured: true });
+  });
+
+  router.post('/api/connectors/imap/credentials', async (req, res) => {
+    try {
+      const settings = validateImapSettings(req.body);
+      writeEncryptedFile('imap', settings);
+      reconcileSyncScheduler({ db, eventBus });
+      sendJson(res, 200, { configured: true });
+    } catch {
+      sendJson(res, 400, { error: 'Invalid IMAP settings; use a host, username, app password, and TLS port 993' });
+    }
+  });
+
+  router.post('/api/connectors/imap/disconnect', async (_req, res) => {
+    const existing = readEncryptedFile('imap');
+    if (existing) writeEncryptedFile('imap', {});
+    reconcileSyncScheduler({ db, eventBus });
+    sendJson(res, 200, { disconnected: 'imap' });
   });
 
   router.post('/api/connectors/notify-webhook/credentials', async (req, res) => {
