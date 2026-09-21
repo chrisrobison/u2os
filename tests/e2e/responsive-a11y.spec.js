@@ -272,6 +272,18 @@ test.describe.serial('responsive layout & accessibility baseline (#19)', () => {
     await expect(page.locator('#workspace')).toBeFocused();
   });
 
+  test('unexpected client errors show a privacy-safe, dismissible recovery notice', async () => {
+    await page.evaluate(() => window.dispatchEvent(new ErrorEvent('error', { message: 'private payload must not render' })));
+    const notice = page.locator('.shell-error');
+    await expect(notice).toBeVisible();
+    await expect(notice).toContainText('saved data is unchanged');
+    await expect(notice).not.toContainText('private payload');
+    await expect(notice.locator('[data-error-reload]')).toBeVisible();
+    await notice.locator('[data-error-dismiss]').click();
+    await expect(notice).toBeHidden();
+    await expect(page.locator('#workspace')).toBeFocused();
+  });
+
   test('keyboard: Space activates a keyboard-focused button (theme toggle)', async () => {
     const themeBtn = page.locator('[data-toggle="theme"]');
     await themeBtn.focus();

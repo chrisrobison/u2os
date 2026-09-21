@@ -78,6 +78,11 @@ export class U2App extends HTMLElement {
           <button type="button" class="icon-btn" data-toggle="theme" aria-label="Toggle color theme"></button>
           <button type="button" class="icon-btn shell__drawer-toggle" data-toggle="agent" aria-label="Toggle agent panel">&#128172;</button>
         </header>
+        <div class="shell-error" role="alert" hidden>
+          <span>Something unexpected went wrong in this view. Your saved data is unchanged.</span>
+          <button type="button" data-error-reload>Reload</button>
+          <button type="button" data-error-dismiss>Dismiss</button>
+        </div>
         <nav class="shell__nav" aria-label="Primary"><u2-nav></u2-nav></nav>
         <main class="shell__main"><div class="workspace" id="workspace" tabindex="-1" role="region" aria-label="Workspace"></div></main>
         <aside class="shell__agent" aria-label="Agent"><u2-agent></u2-agent></aside>
@@ -91,6 +96,17 @@ export class U2App extends HTMLElement {
     this._updateThemeIcon(document.documentElement.dataset.theme || effectiveTheme());
 
     this._themeBtn.addEventListener('click', () => this._toggleTheme());
+    this._onUnexpectedError = () => {
+      const notice = this.querySelector('.shell-error');
+      if (notice) notice.hidden = false;
+    };
+    window.addEventListener('error', this._onUnexpectedError);
+    window.addEventListener('unhandledrejection', this._onUnexpectedError);
+    this.querySelector('[data-error-reload]').addEventListener('click', () => window.location.reload());
+    this.querySelector('[data-error-dismiss]').addEventListener('click', () => {
+      this.querySelector('.shell-error').hidden = true;
+      this._workspace.focus();
+    });
     this.querySelector('.skip-link').addEventListener('click', (event) => {
       event.preventDefault();
       this._workspace.focus();
@@ -122,6 +138,8 @@ export class U2App extends HTMLElement {
   }
 
   disconnectedCallback() {
+    window.removeEventListener('error', this._onUnexpectedError);
+    window.removeEventListener('unhandledrejection', this._onUnexpectedError);
     window.removeEventListener('u2-connection-state', this._onConnectionState);
     window.removeEventListener('hashchange', this._onHashChange);
     this._events?.close();
@@ -134,6 +152,8 @@ export class U2App extends HTMLElement {
       this._deviceClient?.close?.();
       window.removeEventListener('u2-connection-state', this._onConnectionState);
       window.removeEventListener('hashchange', this._onHashChange);
+      window.removeEventListener('error', this._onUnexpectedError);
+      window.removeEventListener('unhandledrejection', this._onUnexpectedError);
       this._built = false;
       this._renderAuth(false);
       const subtitle = this.querySelector('.workspace__subtitle');
