@@ -12,6 +12,8 @@ import { MockModelProvider } from '../server/agent/mock-model-provider.js';
 import { OpenAICompatibleProvider } from '../server/agent/openai-compatible-provider.js';
 import { AnthropicProvider } from '../server/agent/anthropic-provider.js';
 import { Planner } from '../server/agent/planner.js';
+import { MockEmbeddingProvider } from '../server/agent/embeddings/mock-embedding-provider.js';
+import { OpenAICompatibleEmbeddingProvider } from '../server/agent/embeddings/openai-compatible-embedding-provider.js';
 import { createToolRegistry } from '../server/tools/register-all.js';
 
 function testPolicies() {
@@ -82,6 +84,9 @@ test('real providers classify their own destination: Mock is always local, OpenA
   assert.equal(new OpenAICompatibleProvider({ baseUrl: 'http://127.0.0.1:11434', model: 'm' }).destination, 'local_model');
   assert.equal(new OpenAICompatibleProvider({ baseUrl: 'https://api.hosted-llm.example', model: 'm' }).destination, 'configured_remote_model');
   assert.equal(new AnthropicProvider({ apiKey: 'k', model: 'claude-test' }).destination, 'configured_remote_model');
+  assert.equal(new MockEmbeddingProvider().destination, 'local_model');
+  assert.equal(new OpenAICompatibleEmbeddingProvider({ baseUrl: 'http://localhost:11434', model: 'embed' }).destination, 'local_model');
+  assert.equal(new OpenAICompatibleEmbeddingProvider({ baseUrl: 'https://embed.example', model: 'embed' }).destination, 'configured_remote_model');
 });
 
 // --- filterPersonalContextForDestination() ------------------------------

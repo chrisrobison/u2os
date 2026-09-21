@@ -6,7 +6,7 @@ import path from 'node:path';
 import { getDb, closeAllForTests } from '../server/db/connection.js';
 import { MockEmbeddingProvider } from '../server/agent/embeddings/mock-embedding-provider.js';
 import { setEmbedding, getEmbedding, deleteEmbedding, cosineSimilarity } from '../server/memory/embedding-store.js';
-import { semanticSimilarityScores, rankFactsHybrid } from '../server/memory/semantic-retrieval.js';
+import { semanticSimilarityScores, rankFactsHybrid, rankCandidatesHybrid } from '../server/memory/semantic-retrieval.js';
 
 function tempHome() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-semantic-'));
@@ -177,4 +177,35 @@ test('rankFactsHybrid never mutates confidence/inferred/provenance fields -- ran
   } finally {
     cleanup(dir);
   }
+});
+
+test('cross-type ranking exposes every deterministic signal and explicit authority can break a tie', async () => {
+  const candidates = [
+    { id: 'inferred', subjectType: 'fact', text: 'same text', observedAt: null, confidence: 1, inferred: true, entityRelevance: 1, relationshipDistance: 2 },
+    { id: 'explicit', subjectType: 'fact', text: 'same text', observedAt: null, confidence: 1, inferred: false, entityRelevance: 1, relationshipDistance: 2 },
+  ];
+  const ranked = await rankCandidatesHybrid({ candidates, query: 'unmatched', weights: { semantic: 0, exactMatch: 0, recency: 0, confidence: 0, entityRelevance: 0, relationshipProximity: 0, openCommitment: 0, currentProject: 0, interactionFrequency: 0, explicitAuthority: 1 } });
+  assert.equal(ranked[0].id, 'explicit');
+  for (const key of ['semantic', 'exactMatch', 'matchedWords', 'recency', 'confidence', 'explicitAuthority', 'entityRelevance', 'relationshipProximity', 'openCommitment', 'currentProject', 'interactionFrequency', 'total']) {
+    assert.ok(Object.hasOwn(ranked[0]._relevance, key), `missing inspectable ${key} signal`);
+  }
+});
+
+test('cross-type semantic ranking is optional and can reorder otherwise competing candidates', async () => {
+  const dir = tempHome();
+  try {
+    const provider = {
+      id: 'controlled-test-embedding',
+      async embed(text) { return String(text).includes('semantic-target') || text === 'find related work' ? [1, 0] : [0, 1]; },
+    };
+    const candidates = [
+      { id: 'unrelated', subjectType: 'entity', text: 'other material', observedAt: null, confidence: 1, inferred: false },
+      { id: 'related', subjectType: 'entity', text: 'semantic-target material', observedAt: null, confidence: 1, inferred: false },
+    ];
+    const without = await rankCandidatesHybrid({ candidates, query: 'find related work' });
+    const withSemantic = await rankCandidatesHybrid({ candidates, query: 'find related work', embeddingProvider: provider });
+    assert.equal(without.every((item) => item._relevance.semantic === 0), true);
+    assert.equal(withSemantic[0].id, 'related');
+    assert.ok(withSemantic[0]._relevance.semantic > withSemantic[1]._relevance.semantic);
+  } finally { cleanup(dir); }
 });

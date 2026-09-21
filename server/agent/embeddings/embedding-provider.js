@@ -9,6 +9,7 @@
  */
 export class EmbeddingProvider {
   id = 'embedding-provider';
+  destination = 'configured_remote_model';
 
   /** @returns {Promise<number[]>} */
   async embed(_text) {

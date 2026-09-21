@@ -1,4 +1,5 @@
 import { EmbeddingProvider } from './embedding-provider.js';
+import { classifyProviderDestination } from '../provider-destination.js';
 
 /**
  * Real embedding provider using the common OpenAI-compatible
@@ -9,11 +10,12 @@ import { EmbeddingProvider } from './embedding-provider.js';
  * role at the same server with a different model name.
  */
 export class OpenAICompatibleEmbeddingProvider extends EmbeddingProvider {
-  constructor({ baseUrl, model, apiKey = null, timeoutMs = 30000, fetchImpl = fetch }) {
+  constructor({ baseUrl, model, apiKey = null, timeoutMs = 30000, fetchImpl = fetch, destination = null }) {
     super();
     if (!baseUrl || !model) throw new Error('OpenAI-compatible embedding provider requires baseUrl and model');
     this.id = `embedding-openai-compatible:${model}`;
     this.baseUrl = baseUrl.replace(/\/$/, '');
+    this.destination = classifyProviderDestination(this.baseUrl, destination);
     this.model = model;
     this.apiKey = apiKey;
     this.timeoutMs = timeoutMs;

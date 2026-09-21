@@ -16,6 +16,7 @@ const DIM = 64;
  */
 export class MockEmbeddingProvider extends EmbeddingProvider {
   id = 'mock-embedding-provider';
+  destination = 'local_model';
 
   async embed(text) {
     const vector = new Array(DIM).fill(0);
