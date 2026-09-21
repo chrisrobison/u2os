@@ -9,6 +9,7 @@ const HOUR_PATTERN = /(\d{1,2})\s*(am|pm)/i;
 const REMINDER_PATTERN = /\bremind me to\s+(.+?)[.!]?$/i;
 const SCHEDULE_QUERY_PATTERN = /\b(what'?s|show|list)\b.*\b(calendar|schedule|today)\b/i;
 const DAILY_DRIVER_PATTERN = /\bwhat'?s going on today\b[\s\S]*\b(routine|doesn'?t need me|do not need me)\b/i;
+const MEMORY_RECALL_PATTERN = /\bwhat do you remember about\s+(.+?)[?.!]*$/i;
 
 export class MockModelProvider extends ModelProvider {
   id = 'mock-model-provider';
@@ -20,6 +21,9 @@ export class MockModelProvider extends ModelProvider {
 
     const dailyDriver = this._planDailyDriver(context, text);
     if (dailyDriver) return dailyDriver;
+
+    const memoryRecall = this._planMemoryRecall(context, text);
+    if (memoryRecall) return memoryRecall;
 
     const reschedule = await this._planReschedule(context, text);
     if (reschedule) return reschedule;
@@ -162,6 +166,28 @@ export class MockModelProvider extends ModelProvider {
     };
   }
 
+  _planMemoryRecall(context, text) {
+    const match = text.match(MEMORY_RECALL_PATTERN);
+    if (!match) return null;
+    const requestedName = match[1].trim().toLowerCase();
+    const people = Array.isArray(context.personalContext?.relevantPeople) ? context.personalContext.relevantPeople : [];
+    const person = people.find((candidate) => {
+      const name = String(candidate.name || '').toLowerCase();
+      return name === requestedName || name.split(/\s+/).some((part) => requestedName.includes(part));
+    });
+    const facts = person?.facts || [];
+    const remembered = facts.length
+      ? facts.map((fact) => `${humanizeKey(fact.key)}: ${formatFactValue(fact.value)}`).join('; ')
+      : `I do not have a confirmed fact about ${person?.name || match[1].trim()}.`;
+    return {
+      reasoning_summary: facts.length
+        ? `Retrieved ${facts.length} confirmed fact${facts.length === 1 ? '' : 's'} about ${person.name}.`
+        : remembered,
+      response: facts.length ? `I remember this about ${person.name}: ${remembered}` : remembered,
+      actions: [],
+    };
+  }
+
   _toolContext(context) {
     return { eventBus: context.eventBus, correlationId: context.correlationId, actor: context.actor };
   }
@@ -174,6 +200,16 @@ function parseEmailSummary(summary) {
 
 function isEmailAddress(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function humanizeKey(value) {
+  return String(value || 'fact').replaceAll('_', ' ');
+}
+
+function formatFactValue(value) {
+  if (value === true) return 'yes';
+  if (value === false) return 'no';
+  return typeof value === 'string' ? value : JSON.stringify(value);
 }
 
 function matchesName(attendee, name) {
