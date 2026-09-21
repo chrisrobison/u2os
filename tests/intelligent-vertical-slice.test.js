@@ -30,7 +30,7 @@ import { OpenAICompatibleProvider } from '../server/agent/openai-compatible-prov
 import { Agent } from '../server/agent/agent.js';
 import { runSeed } from '../server/seed/seed.js';
 import { findEntities } from '../server/memory/entity-store.js';
-import { recordFact } from '../server/memory/fact-store.js';
+import { acceptMemoryCandidate, listMemoryCandidates } from '../server/memory/candidate-store.js';
 
 function tempHome() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-intelligent-slice-'));
@@ -182,19 +182,16 @@ test('PERSISTENT MEMORY ACROSS TURNS: a fact established on "day one" is retriev
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM tasks WHERE title = 'Send Dana the budget summary'").get().n, 1);
     assert.deepEqual(day1.memoryCandidates, [{ content: 'Dana prefers afternoon meetings', confidence: 'high' }]);
 
-    // Confirming a memory candidate into an established fact is explicit
-    // owner action -- Milestone 4's memory-confirmation API/UI doesn't
-    // exist yet (see PLAN.md), so this stands in for it exactly the way a
-    // future "confirm this candidate" endpoint would: a plain recordFact()
-    // call with full provenance, never something the agent does to itself.
+    // Confirming a memory candidate into an established fact is an explicit
+    // owner action through the same production candidate store used by the
+    // memory API. The agent never promotes its own proposal.
     const [dana] = findEntities({ type: 'Person', query: 'Dana Osei' });
-    recordFact({
+    const [candidate] = listMemoryCandidates({ status: 'pending' });
+    acceptMemoryCandidate(candidate.id, {
       entityId: dana.id,
       key: 'prefers_afternoon_meetings',
       value: true,
-      source: 'user:confirmed_memory_candidate',
-      confidence: 1.0,
-      inferred: false,
+      resolvedBy: 'owner',
     });
 
     // --- Day 2: a COMPLETELY NEW Agent (new ContextAssembler, Planner,
@@ -205,8 +202,8 @@ test('PERSISTENT MEMORY ACROSS TURNS: a fact established on "day one" is retriev
       const dana = payload.retrieved_context.relevantPeople.find((p) => p.name === 'Dana Osei');
       const preference = dana?.facts.find((f) => f.key === 'prefers_afternoon_meetings');
       assert.ok(preference, 'day 2 must retrieve the fact day 1 caused to be recorded, from a brand-new Agent instance');
-      assert.equal(preference.source, 'user:confirmed_memory_candidate');
-      assert.equal(preference.confidence, 1.0);
+      assert.equal(preference.source, 'memory-candidate-confirmation');
+      assert.equal(preference.confidence, 0.95);
 
       // Genuinely uses the retrieved preference to pick a time, rather than
       // a coincidentally-matching hardcoded hour.

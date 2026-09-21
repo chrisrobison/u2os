@@ -96,6 +96,8 @@ On first start, U2OS creates its local data directory at `~/.u2os/`. Set `U2OS_H
 
 The first run also seeds demo people, projects, calendar events, email, tasks, commitments, and activity so the interface is immediately usable. Mock providers remain the default until real connectors are configured from the Connectors page.
 
+For an isolated, deterministic five-minute walkthrough, run `npm run demo` and follow [docs/demo.md](docs/demo.md). It uses a separate `~/.u2os-demo` data home and refuses to overwrite an existing demo database without explicit `--reuse`.
+
 For development with automatic server restarts:
 
 ```sh
@@ -108,7 +110,7 @@ npm run dev
 npm test
 ```
 
-The current suite contains 336 Node tests covering the event bus, memory, policy enforcement, tools, durable action leasing/recovery/idempotency and sanitized operational status, the complete approval vertical slice, dashboard generation, connectors and OAuth security, encrypted credentials, deployment utilities, triggers, proactive decisions, feedback, voice authorization, the Agent-refactor regression suite, model providers and routing, the strict plan schema, real bounded context assembly, semantic memory retrieval, the data-processing privacy policy, prompt-injection containment, the intelligent end-to-end vertical slice, explainability, and the device/capability subsystem (registry, resolver, the realtime WebSocket device bus, the browser-as-device flow, policy-gated presentation tools, device management, the trust lifecycle, streams, and service-provider unification — see [docs/devices.md](docs/devices.md)). The Playwright suite contains 53 real-browser tests covering authentication, navigation, chat, approval/rejection, memory candidates, SSE recovery, multi-tab synchronization, responsive/accessibility behavior, owner-facing explainability, and durable action operations.
+The current suite contains 339 Node tests covering the event bus, memory, policy enforcement, tools, durable action leasing/recovery/idempotency and sanitized operational status, the complete approval vertical slice, dashboard generation, connectors and OAuth security, encrypted credentials, deployment utilities, triggers, proactive decisions, feedback, voice authorization, the Agent-refactor regression suite, model providers and routing, the strict plan schema, real bounded context assembly, semantic memory retrieval, the data-processing privacy policy, prompt-injection containment, the daily-driver restart slice, explainability, and the device/capability subsystem (registry, resolver, the realtime WebSocket device bus, the browser-as-device flow, policy-gated presentation tools, device management, the trust lifecycle, streams, and service-provider unification — see [docs/devices.md](docs/devices.md)). The Playwright suite contains 54 real-browser tests covering authentication, navigation, chat, approval/rejection, memory candidates, the coherent daily-driver story, SSE recovery, multi-tab synchronization, responsive/accessibility behavior, owner-facing explainability, and durable action operations.
 
 A small Playwright harness also covers real-browser smoke coverage (boots the actual server in-process, no frontend build step):
 
