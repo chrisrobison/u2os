@@ -183,3 +183,17 @@ test('actionIdempotencyKey requires durable action identity and does not depend 
   assert.equal(actionIdempotencyKey({ tool: 'calendar.create', correlationId: 'corr_x', actionId: 'act_y' }), 'calendar.create:corr_x:act_y');
   assert.throws(() => actionIdempotencyKey({ tool: 'email.send' }), /required/);
 });
+
+test('queue actor provenance migrates additively from the initial queue schema', () => withTempHome(() => {
+  const action = auditAction();
+  const queued = enqueueAction({ actionId: action.id, tool: action.tool, actor: { type: 'user', id: 'owner' } });
+  const dbPath = getDbPath();
+  closeAllForTests();
+  const prior = new DatabaseSync(dbPath);
+  prior.exec('ALTER TABLE action_queue DROP COLUMN actor');
+  prior.close();
+
+  const migrated = getDb();
+  assert.ok(migrated.prepare('PRAGMA table_info(action_queue)').all().some((column) => column.name === 'actor'));
+  assert.equal(migrated.prepare('SELECT action_id FROM action_queue WHERE id = ?').get(queued.id).action_id, action.id);
+}));

@@ -29,6 +29,7 @@ export function enqueueAction({
   idempotencyKey,
   approvalReference = null,
   policyDecisionReference = null,
+  actor = null,
   now = new Date().toISOString(),
 }) {
   if (!actionId || !tool) throw new TypeError('actionId and tool are required');
@@ -38,12 +39,12 @@ export function enqueueAction({
     INSERT INTO action_queue (
       id, action_id, correlation_id, tool, arguments, idempotency_key,
       status, attempt_count, next_attempt_at, approval_reference,
-      policy_decision_reference, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?, ?)
+      policy_decision_reference, actor, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(action_id) DO NOTHING
   `).run(
     newId('queue'), actionId, correlationId, tool, JSON.stringify(args), key,
-    now, approvalReference, policyDecisionReference, now, now,
+    now, approvalReference, policyDecisionReference, actor ? JSON.stringify(actor) : null, now, now,
   );
   return getQueuedActionByActionId(actionId);
 }
@@ -62,6 +63,44 @@ export function listQueuedActions({ status } = {}) {
     ? db.prepare('SELECT * FROM action_queue WHERE status = ? ORDER BY created_at').all(status)
     : db.prepare('SELECT * FROM action_queue ORDER BY created_at').all();
   return rows.map(rowToQueuedAction);
+}
+
+export function stopLeasedAction(queueId, {
+  leaseOwner,
+  status = 'cancelled',
+  error = null,
+  errorClass = null,
+  now = new Date(),
+}) {
+  if (!['failed', 'cancelled', 'dead_letter'].includes(status)) throw new TypeError(`Invalid stop status: ${status}`);
+  const nowIso = toDate(now).toISOString();
+  const result = getDb().prepare(`
+    UPDATE action_queue
+    SET status = ?, lease_owner = NULL, lease_expires_at = NULL,
+        last_error = ?, error_class = ?, updated_at = ?
+    WHERE id = ? AND status = 'leased' AND lease_owner = ?
+  `).run(status, boundedError(error), errorClass, nowIso, queueId, leaseOwner);
+  if (result.changes !== 1) throw new Error(`Queued action ${queueId} is not leased to ${leaseOwner}`);
+  return getQueuedAction(queueId);
+}
+
+export function requeueAction(queueId, {
+  approvalReference = null,
+  policyDecisionReference = null,
+  now = new Date(),
+} = {}) {
+  const nowIso = toDate(now).toISOString();
+  const result = getDb().prepare(`
+    UPDATE action_queue
+    SET status = 'queued', next_attempt_at = ?, lease_owner = NULL,
+        lease_expires_at = NULL, last_error = NULL, error_class = NULL,
+        approval_reference = COALESCE(?, approval_reference),
+        policy_decision_reference = COALESCE(?, policy_decision_reference),
+        updated_at = ?
+    WHERE id = ? AND status IN ('failed', 'cancelled')
+  `).run(nowIso, approvalReference, policyDecisionReference, nowIso, queueId);
+  if (result.changes !== 1) throw new Error(`Queued action ${queueId} cannot be requeued from its current state`);
+  return getQueuedAction(queueId);
 }
 
 /** Atomically claims one due or expired item. Concurrent ticks cannot both win. */
@@ -101,6 +140,42 @@ export function leaseNextAction({ leaseOwner, leaseMs = 30_000, now = new Date()
     WHERE queue_id = ? AND status = 'executing'
   `).run(nowIso, row.id);
   return rowToQueuedAction(row);
+}
+
+export function leaseActionByActionId(actionId, { leaseOwner, leaseMs = 30_000, now = new Date() }) {
+  if (!actionId || !leaseOwner) throw new TypeError('actionId and leaseOwner are required');
+  const nowDate = toDate(now);
+  const nowIso = nowDate.toISOString();
+  const expiresAt = new Date(nowDate.getTime() + leaseMs).toISOString();
+  const row = getDb().prepare(`
+    UPDATE action_queue
+    SET status = 'leased', lease_owner = ?, lease_expires_at = ?, updated_at = ?
+    WHERE action_id = ? AND (
+      (status IN ('queued', 'retry_wait') AND next_attempt_at <= ?)
+      OR (status IN ('leased', 'executing') AND lease_expires_at <= ?)
+    )
+    RETURNING *
+  `).get(leaseOwner, expiresAt, nowIso, actionId, nowIso, nowIso);
+  if (!row) return null;
+  getDb().prepare(`
+    UPDATE action_attempts
+    SET status = 'failed', finished_at = ?, error = 'lease expired', error_class = 'retryable'
+    WHERE queue_id = ? AND status = 'executing'
+  `).run(nowIso, row.id);
+  return rowToQueuedAction(row);
+}
+
+export function renewActionLease(queueId, { leaseOwner, leaseMs = 30_000, now = new Date() }) {
+  if (!queueId || !leaseOwner) throw new TypeError('queueId and leaseOwner are required');
+  if (!Number.isFinite(leaseMs) || leaseMs <= 0) throw new TypeError('leaseMs must be positive');
+  const nowDate = toDate(now);
+  const expiresAt = new Date(nowDate.getTime() + leaseMs).toISOString();
+  const result = getDb().prepare(`
+    UPDATE action_queue
+    SET lease_expires_at = ?, updated_at = ?
+    WHERE id = ? AND status IN ('leased', 'executing') AND lease_owner = ?
+  `).run(expiresAt, nowDate.toISOString(), queueId, leaseOwner);
+  return result.changes === 1;
 }
 
 export function beginActionAttempt({ queueId, leaseOwner, now = new Date().toISOString() }) {
@@ -188,7 +263,11 @@ export function listActionAttempts(queueId) {
 
 function rowToQueuedAction(row) {
   if (!row) return null;
-  return { ...row, arguments: JSON.parse(row.arguments || '{}') };
+  return {
+    ...row,
+    arguments: JSON.parse(row.arguments || '{}'),
+    actor: row.actor ? JSON.parse(row.actor) : null,
+  };
 }
 
 function settleAttempt(id, {

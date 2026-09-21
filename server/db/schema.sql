@@ -195,6 +195,7 @@ CREATE TABLE IF NOT EXISTS action_queue (
   error_class TEXT,
   approval_reference TEXT,
   policy_decision_reference TEXT,
+  actor TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );

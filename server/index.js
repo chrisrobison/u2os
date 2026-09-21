@@ -148,6 +148,12 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   startSyncScheduler({ db, eventBus, dataDir });
 
   const agent = new Agent({ modelRouter, policyEngine, toolRegistry, eventBus, ownerEntityId, embeddingProvider, dataProcessingPolicy });
+  const actionQueueTimer = setInterval(() => {
+    agent.actionQueueWorker.processNext().catch((err) => {
+      log.error('action-queue', 'Queue tick failed', { error: err?.message || String(err) });
+    });
+  }, Number(process.env.U2OS_ACTION_QUEUE_TICK_MS) || 1_000);
+  actionQueueTimer.unref?.();
 
   // Phase 6 / PROMPT.md §9: trigger engine. Event-driven half subscribes to
   // the event bus immediately; polled half ticks every `tickMs` (default
@@ -232,6 +238,7 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   // multicast socket.
   const mdnsHandle = !isLoopback(resolvedBind) ? startMdns({ port: boundPort }) : null;
   server.on('close', () => {
+    clearInterval(actionQueueTimer);
     mdnsHandle?.stop();
     stopSyncScheduler();
     triggerEngine.stopAll().catch(() => {});
