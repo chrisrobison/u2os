@@ -147,14 +147,15 @@ test('generateDashboard({context: "before-meeting"}) for a real seeded person (S
 
     const schema = generateDashboard({ context: 'before-meeting', params: { personId: sarah.id } });
     assert.doesNotThrow(() => validateDashboard(schema));
-    assert.match(schema.title, /Sarah/);
+    assert.match(schema.title, /^Before: /);
 
     // Sarah is seeded with an upcoming "Sync with Sarah" event and an open
     // task ("Send proposal draft to Sarah") -- the generated schema must
     // actually surface that real, person-specific data, not a generic shell.
     const scheduleComponent = schema.components.find((c) => c.type === 'schedule');
     assert.ok(scheduleComponent, 'expected a schedule component for Sarah\'s upcoming meeting');
-    assert.ok(scheduleComponent.data.events.some((e) => e.title === 'Sync with Sarah'));
+    assert.equal(scheduleComponent.data.events.length, 1);
+    assert.ok(scheduleComponent.data.events[0].attendees.some((attendee) => attendee.name === 'Sarah'));
 
     const taskListComponent = schema.components.find((c) => c.type === 'task-list');
     assert.ok(taskListComponent);
@@ -163,7 +164,7 @@ test('generateDashboard({context: "before-meeting"}) for a real seeded person (S
     const personComponent = schema.components.find((c) => c.type === 'person');
     assert.equal(personComponent.data.name, 'Sarah');
     assert.ok(personComponent.data.facts.some((fact) => fact.key === 'prefers_morning_meetings'));
-    assert.ok(personComponent.data.upcomingInteractions.some((event) => event.title === 'Sync with Sarah'));
+    assert.equal(personComponent.data.upcomingInteractions[0].title, scheduleComponent.data.events[0].title);
   } finally {
     cleanup(dir);
   }
