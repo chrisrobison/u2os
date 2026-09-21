@@ -29,11 +29,33 @@ export function recordFact({
   const id = newId('fact');
   const now = new Date().toISOString();
   const observed = observedAt || now;
-  db.prepare(
-    `INSERT INTO facts (id, entity_id, key, value, source, confidence, inferred, observed_at, last_confirmed_at, provenance, classification, created_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
-  ).run(id, entityId, key, JSON.stringify(value), source, confidence, inferred ? 1 : 0, observed, null, JSON.stringify(provenance), classification, now);
-  return getFact(id);
+  const write = () => {
+    const current = db.prepare("SELECT * FROM facts WHERE entity_id = ? AND key = ? AND status = 'current' ORDER BY created_at DESC").all(entityId, key).map(rowToFact);
+    const encodedValue = JSON.stringify(value);
+    let status = 'current';
+    if (current.length) {
+      const sameValue = current.every((fact) => JSON.stringify(fact.value) === encodedValue);
+      const hasExplicit = current.some((fact) => !fact.inferred);
+      if (inferred && hasExplicit) {
+        // A weaker observation cannot replace owner-stated knowledge, even
+        // when it merely repeats the same value.
+        status = sameValue ? 'superseded' : 'disputed';
+      } else if (sameValue || (!inferred && current.every((fact) => fact.inferred))) {
+        db.prepare("UPDATE facts SET status = 'superseded' WHERE entity_id = ? AND key = ? AND status = 'current'").run(entityId, key);
+      } else {
+        db.prepare("UPDATE facts SET status = 'disputed' WHERE entity_id = ? AND key = ? AND status = 'current'").run(entityId, key);
+        status = 'disputed';
+      }
+    }
+    db.prepare(
+      `INSERT INTO facts (id, entity_id, key, value, source, confidence, inferred, observed_at, last_confirmed_at, provenance, classification, status, created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
+    ).run(id, entityId, key, encodedValue, source, confidence, inferred ? 1 : 0, observed, null, JSON.stringify(provenance), classification, status, now);
+    return getFact(id);
+  };
+  // correctFact already owns a transaction. Standalone observations need
+  // the status transition and insert to commit or roll back together.
+  return db.isTransaction ? write() : withTransaction(db, write);
 }
 
 export function getFact(id) {

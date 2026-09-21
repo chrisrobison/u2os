@@ -51,3 +51,20 @@ test('existing fact tables migrate additively without changing stored values', (
 function requireSqlite() {
   return process.getBuiltinModule('node:sqlite');
 }
+
+test('contradictory facts use deterministic authority and never reach context as equally current', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-fact-conflict-')); process.env.U2OS_HOME = home;
+  try {
+    const person = createEntity({ type: 'Person', name: 'Sam' });
+    const inferred = recordFact({ entityId: person.id, key: 'meeting_time', value: 'afternoon', source: 'import', confidence: 0.7, inferred: true });
+    const explicit = recordFact({ entityId: person.id, key: 'meeting_time', value: 'morning', source: 'owner', inferred: false });
+    assert.equal(getFact(inferred.id).status, 'superseded'); assert.equal(explicit.status, 'current');
+    const repeatedInference = recordFact({ entityId: person.id, key: 'meeting_time', value: 'morning', source: 'inference', inferred: true });
+    assert.equal(repeatedInference.status, 'superseded'); assert.equal(getFact(explicit.id).status, 'current');
+    const weakConflict = recordFact({ entityId: person.id, key: 'meeting_time', value: 'evening', source: 'inference', inferred: true });
+    assert.equal(weakConflict.status, 'disputed'); assert.deepEqual(getFacts(person.id).map((fact) => fact.id), [explicit.id]);
+    const explicitConflict = recordFact({ entityId: person.id, key: 'meeting_time', value: 'noon', source: 'trusted-import', inferred: false });
+    assert.equal(explicitConflict.status, 'disputed'); assert.equal(getFact(explicit.id).status, 'disputed'); assert.equal(getFacts(person.id).length, 0);
+    assert.equal(getFacts(person.id, { includeInactive: true }).filter((fact) => fact.status === 'disputed').length, 3);
+  } finally { closeAllForTests(); delete process.env.U2OS_HOME; fs.rmSync(home, { recursive: true, force: true }); }
+});
