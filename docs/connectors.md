@@ -21,7 +21,7 @@ skills/
     web-search/manifest.json         (Brave Search)
     notify-webhook/manifest.json     (generic webhook / ntfy.sh)
     caldav/manifest.json             (stub only this phase -- see "Fast-follow" below)
-    imap/manifest.json               (stub only this phase)
+    imap/manifest.json               (TLS-only inbox sync and reads)
 
 server/security/vault.js             credential encryption (AES-256-GCM, local master key)
 server/integrations/oauth/google-oauth.js   generic Google OAuth2 client (auth URL, code exchange, refresh)
@@ -172,9 +172,15 @@ The connector/provider system above and the device/capability model (docs/device
 
 PROMPT.md's Phase 3 list names "task system" alongside the real integrations. Tasks in U2OS are already a native, real (non-mocked) entity — `tasks.*` tools read/write the `tasks` table directly; there is no external task provider to swap in yet. Nothing changes here this phase; a future connector (e.g. a Todoist/Reminders skill) would slot into the exact same provider-registry pattern (`domain: 'tasks'`) when there's a concrete external system to target.
 
-## Fast-follow (stubbed this phase, per your "Google first" choice)
+## IMAP inbox connector
 
-`skills/caldav/manifest.json` and `skills/imap/manifest.json` exist with real manifests (declaring domain/auth type `basic` or `app-password`, scopes N/A) but their provider modules are intentionally `throw new Error('Not implemented yet — see skills/caldav/manifest.json')` stubs, and `connectors.yaml` schema validation should accept `caldav`/`imap` as valid `active` values for calendar/email respectively so wiring them up later doesn't require another schema migration — it just requires writing the provider module and removing the stub throw.
+The owner can now enter an IMAP hostname, username, and app password on the Connectors page, then select IMAP as the active email provider. Credentials are encrypted in `imap.enc.json`; the status API returns no password. IMAP uses TLS on port 993 with normal certificate validation. It fetches at most the latest 50 inbox messages per sync and skips messages over 512 KiB, storing text (not attachments) in the local email cache. IDs include an account hash, mailbox UIDVALIDITY, and UID so repeat syncs do not duplicate mail. Use **Sync now** to verify access; `lastError` reports a sanitized connection failure without credentials.
+
+This is a read-only transport. `email.send` fails clearly while IMAP is selected until the separate SMTP transport is implemented. If a real email provider is selected but its credentials are missing, sending fails rather than silently creating a mock sent item. Inbox contents are private user data and remain subject to U2OS's normal data-processing policy when used as model context. No mailbox was contacted during automated tests; the tests use a fake IMAP client.
+
+## Remaining fast-follow stubs
+
+`skills/caldav/manifest.json` remains a calendar stub. SMTP sending is tracked separately; IMAP does not imply send capability.
 
 ## Setting up your Google OAuth client (do this yourself, in your own browser)
 

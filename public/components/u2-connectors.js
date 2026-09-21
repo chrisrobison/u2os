@@ -147,6 +147,24 @@ function renderBraveCard(ctx) {
   `;
 }
 
+function renderImapCard(ctx) {
+  const formMsg = ctx.formMessages.imap;
+  return `
+    <u2-card title="IMAP inbox (read-only)">
+      <form data-form="imap-credentials" class="connector-form" autocomplete="off">
+        <label class="connector-field"><span>Mail host (TLS port 993)</span><input name="host" placeholder="imap.example.com" autocomplete="off" required></label>
+        <label class="connector-field"><span>Username</span><input name="username" autocomplete="off" required></label>
+        <label class="connector-field"><span>App password</span><input type="password" name="password" autocomplete="off" required></label>
+        <div class="connector-form__actions">
+          <button type="submit" class="btn btn-primary">Save</button>
+          <button type="button" class="btn" data-imap-disconnect>Disconnect</button>
+          <span class="connector-form__message${formMsg?.isError ? ' is-error' : ''}" data-message>${formMsg ? escapeHtml(formMsg.text) : ''}</span>
+        </div>
+      </form>
+    </u2-card>
+  `;
+}
+
 function renderNotifyCard(ctx) {
   const formMsg = ctx.formMessages.notify;
   return `
@@ -187,7 +205,7 @@ export class U2Connectors extends HTMLElement {
     this._busySyncDomains = new Set();
     this._busyKeys = new Set(); // e.g. "google:calendar" while disconnecting
     this._domainMessages = {}; // domain -> { text, isError } (provider switch / sync result)
-    this._formMessages = { google: null, webSearch: null, notify: null };
+    this._formMessages = { google: null, imap: null, webSearch: null, notify: null };
 
     this._onChange = this._onChange.bind(this);
     this._onClick = this._onClick.bind(this);
@@ -271,6 +289,8 @@ export class U2Connectors extends HTMLElement {
       <div class="connectors__grid">${domainCards}</div>
       <div class="connectors__section-title">Google</div>
       <div class="connectors__grid">${renderGoogleCard(connectors, ctx)}</div>
+      <div class="connectors__section-title">Mail</div>
+      <div class="connectors__grid">${renderImapCard(ctx)}</div>
       <div class="connectors__section-title">Web &amp; notifications</div>
       <div class="connectors__grid">
         ${renderBraveCard(ctx)}
@@ -286,6 +306,10 @@ export class U2Connectors extends HTMLElement {
   }
 
   _onClick(e) {
+    if (e.target.closest('button[data-imap-disconnect]')) {
+      this._disconnectImap();
+      return;
+    }
     const syncBtn = e.target.closest('button[data-sync-domain]');
     if (syncBtn) {
       this._sync(syncBtn.dataset.syncDomain);
@@ -317,6 +341,9 @@ export class U2Connectors extends HTMLElement {
         break;
       case 'web-search-credentials':
         this._submitWebSearchCredentials(form);
+        break;
+      case 'imap-credentials':
+        this._submitImapCredentials(form);
         break;
       case 'notify-webhook-credentials':
         this._submitNotifyWebhookCredentials(form);
@@ -392,6 +419,23 @@ export class U2Connectors extends HTMLElement {
   async _submitWebSearchCredentials(form) {
     const apiKey = form.elements.apiKey.value.trim();
     await this._submitCredentialForm(form, 'webSearch', () => api.saveWebSearchCredentials({ apiKey }));
+  }
+
+  async _submitImapCredentials(form) {
+    const host = form.elements.host.value.trim();
+    const username = form.elements.username.value.trim();
+    const password = form.elements.password.value;
+    await this._submitCredentialForm(form, 'imap', () => api.saveImapCredentials({ host, username, password }));
+  }
+
+  async _disconnectImap() {
+    try {
+      await api.disconnectImap();
+      this._formMessages.imap = { text: 'Disconnected.', isError: false };
+    } catch (err) {
+      this._formMessages.imap = { text: err.message, isError: true };
+    }
+    await this._load();
   }
 
   async _submitNotifyWebhookCredentials(form) {

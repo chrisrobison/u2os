@@ -15,6 +15,7 @@ import * as mockWeb from './mock-web-search-provider.js';
 import * as mockNotifications from './mock-notifications-provider.js';
 import * as googleCalendar from './google-calendar-provider.js';
 import * as gmail from './gmail-provider.js';
+import * as imap from './imap-provider.js';
 import * as googleContacts from './google-contacts-provider.js';
 import * as braveSearch from './brave-search-provider.js';
 import * as webhookNotify from './webhook-notify-provider.js';
@@ -31,11 +32,12 @@ const MOCK_PROVIDERS = {
 
 // providerId -> module, for every REAL connector this phase implements.
 // Ids named in connectors-config's VALID_PROVIDER_IDS but absent here
-// (caldav, imap) simply have no module -- resolved as "always not
+// (caldav) simply have no module -- resolved as "always not
 // connected", falling back to mock, no special-casing needed.
 const REAL_PROVIDERS = {
   'google-calendar': googleCalendar,
   gmail,
+  imap,
   'google-contacts': googleContacts,
   'brave-search': braveSearch,
   webhook: webhookNotify,

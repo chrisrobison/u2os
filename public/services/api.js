@@ -290,6 +290,17 @@ export function saveWebSearchCredentials({ apiKey } = {}) {
   });
 }
 
+export function saveImapCredentials({ host, username, password } = {}) {
+  return request('/api/connectors/imap/credentials', {
+    method: 'POST', headers: JSON_HEADERS,
+    body: JSON.stringify({ host, port: 993, username, password }),
+  });
+}
+
+export function disconnectImap() {
+  return request('/api/connectors/imap/disconnect', { method: 'POST', headers: JSON_HEADERS });
+}
+
 export function saveNotifyWebhookCredentials({ webhookUrl, format } = {}) {
   return request('/api/connectors/notify-webhook/credentials', {
     method: 'POST',

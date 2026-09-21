@@ -8,10 +8,7 @@ import { getDataDir } from '../db/connection.js';
 
 const DOMAINS = ['calendar', 'email', 'contacts', 'web', 'notifications'];
 
-// Per docs/connectors.md's "Fast-follow" section, caldav/imap are accepted
-// as valid `active` values for calendar/email respectively even though their
-// provider modules are stub-only this phase (provider-registry.js falls back
-// to mock for them, same as any other not-connected real id).
+// CalDAV remains a stub. IMAP is a real, separately configured provider.
 const VALID_PROVIDER_IDS = {
   calendar: ['mock', 'google-calendar', 'caldav'],
   email: ['mock', 'gmail', 'imap'],

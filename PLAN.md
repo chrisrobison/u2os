@@ -164,7 +164,7 @@ Harden current adapters before expanding breadth.
 - Implement Google token revocation and clearer reauthorization/recovery flows.
 - Add Gmail MIME, attachment, thread, and real draft support.
 - Improve calendar category policy context without trusting model-authored labels.
-- Implement CalDAV and IMAP providers currently represented by manifests only.
+- Implement CalDAV and SMTP providers; IMAP inbox sync and reads are available, but live-account validation remains.
 - Define signed/installable third-party skill packaging, compatibility, permission review, enable/disable, and upgrade behavior.
 - Add outbound network permission enforcement rather than treating manifest permissions as documentation only.
 
@@ -247,4 +247,4 @@ U2OS reaches usable alpha when Milestones 1–3 are complete: a single owner can
 
 Milestones 4–8 deepen the product toward the broader personal digital-agent vision; they are not reasons to postpone the security boundary required for alpha use.
 
-**Status: usable alpha reached.** Milestones 1–3 are complete, with 385 Node tests and 65 Playwright scenarios running across Chromium, Firefox, and WebKit.
+**Status: usable alpha reached.** Milestones 1–3 are complete, with 388 Node tests and 66 Playwright scenarios running across Chromium, Firefox, and WebKit.
