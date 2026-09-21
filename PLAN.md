@@ -79,7 +79,7 @@ Turn the current UI from a largely backend-tested shell into a dependable client
 - [x] Make dashboards update in place from relevant events. (Visible morning and contextual dashboards debounce relevant SSE events and reload through their current server-side generator without navigation.)
 - [x] Surface offline, degraded connector, and queued-action states consistently. (`u2-connectors`, `u2-operations`, and `u2-diagnostics` expose connector health and durable queue states with owner-readable recovery information.)
 - [x] Complete keyboard navigation, focus management, semantic labels, contrast checks, and reduced-motion support. (The shell includes skip navigation, labeled regions, deterministic route focus, visible focus treatment, automated axe/contrast checks, and cross-browser keyboard coverage.)
-- [ ] Add error boundaries and actionable user-facing error messages for failed API operations. (Route and component-level errors are owner-readable; a consistent application-level boundary and SSE connection status remain.)
+- [x] Add error boundaries and actionable user-facing error messages for failed API operations. (Route/component failures are owner-readable, SSE state is visible, and unexpected client errors produce a privacy-safe shell notice with reload/dismiss recovery.)
 
 ### Acceptance criteria
 
@@ -246,3 +246,5 @@ Generalizes tools and connectors to physical and remote endpoints — cameras, m
 U2OS reaches usable alpha when Milestones 1–3 are complete: a single owner can securely access a persistent local instance, configure a real or local model, run the core approval workflow, reconnect from multiple browser clients, and recover cleanly from ordinary network interruptions with automated end-to-end coverage.
 
 Milestones 4–8 deepen the product toward the broader personal digital-agent vision; they are not reasons to postpone the security boundary required for alpha use.
+
+**Status: usable alpha reached.** Milestones 1–3 are complete, with 361 Node tests and 64 Playwright scenarios running across Chromium, Firefox, and WebKit.

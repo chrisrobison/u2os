@@ -35,6 +35,23 @@ body {
 
 .skip-link:focus { transform: translateY(0); }
 
+.shell-error {
+  position: fixed;
+  z-index: 900;
+  top: 56px;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-card);
+  border-bottom: 2px solid var(--accent-danger);
+  color: var(--text-primary);
+}
+.shell-error[hidden] { display: none; }
+.shell-error span { flex: 1; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
 }
