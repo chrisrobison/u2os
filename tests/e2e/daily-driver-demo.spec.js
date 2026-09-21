@@ -15,8 +15,9 @@ test('daily-driver story runs through the real browser, approval, explanation, a
     await page.locator('form button[type="submit"]').click();
     await expect(page.locator('u2-nav')).toBeVisible();
 
-    await page.locator('.agent-panel__input').fill(PROMPT);
-    await page.locator('.agent-panel__composer button[type="submit"]').click();
+    await expect(page.locator('u2-dashboard u2-email-summary')).toBeVisible();
+    await page.locator('[data-start-daily-review]').click();
+    await expect(page.locator('.chat-bubble.is-user').last()).toHaveText(PROMPT);
     await expect(page.locator('.chat-bubble.is-agent').last()).toContainText('northwindtalent.example');
 
     // The live dashboard now mirrors newly proposed actions in its own

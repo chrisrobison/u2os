@@ -17,7 +17,7 @@ npm run demo -- --reuse
 
 Choose another location or port with `--home /absolute/path` and `--port 4100`. U2OS never resets or deletes that location for you.
 
-Open <http://127.0.0.1:4000>, create the owner passphrase, and enter:
+Open <http://127.0.0.1:4000> and create the owner passphrase. The morning briefing shows today's schedule, priority tasks, important unread email, and anything awaiting approval. Select **Review my day** to submit:
 
 > What's going on today? Handle anything routine that doesn't need me and tell me what I need to pay attention to.
 

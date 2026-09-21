@@ -60,6 +60,7 @@ export function generateDashboard({ context, params = {} } = {}) {
 function buildMorningDashboard() {
   const todaysEvents = resolveDashboardSource('calendar.today');
   const priorityTasks = resolveDashboardSource('tasks.priority');
+  const importantEmails = resolveDashboardSource('email.important', { limit: 5 });
   const pendingActions = resolveDashboardSource('actions.pending');
   const recommendations = resolveDashboardSource('recommendations.open', { limit: 5 }).filter((recommendation) => {
     if (!recommendation.dashboard) return true;
@@ -74,6 +75,8 @@ function buildMorningDashboard() {
         'Shows calendar events scheduled for today.', sourceReferences('calendar.today', 'calendar_event', todaysEvents)),
       withProvenance({ type: 'task-list', source: 'tasks.priority', data: { tasks: priorityTasks } },
         'Shows the highest-priority open tasks.', sourceReferences('tasks.priority', 'task', priorityTasks)),
+      withProvenance({ type: 'email-summary', source: 'email.important', data: { emails: importantEmails } },
+        'Shows up to five unread inbox messages that may need attention.', sourceReferences('email.important', 'email', importantEmails)),
       withProvenance({ type: 'approval', source: 'actions.pending', data: { actions: pendingActions } },
         'Shows consequential actions waiting for owner approval.', sourceReferences('actions.pending', 'action', pendingActions)),
       ...recommendations.map((recommendation) => ({
