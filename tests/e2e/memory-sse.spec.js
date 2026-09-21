@@ -30,17 +30,18 @@ import { proposeMemoryCandidate } from '../../server/memory/candidate-store.js';
 // fresh candidate and only touches that candidate's own card/fact, so they
 // don't corrupt each other's assertions despite sharing DB state.
 //
-// The SSE tests (3-5) get their own dedicated server + page, serial among
-// themselves: test 4's forced reconnect and test 5's Last-Event-ID capture
+// The SSE tests (4-7) get their own dedicated server + page, serial among
+// themselves: the forced reconnect and Last-Event-ID assertions
 // are deliberately chained onto the SAME live EventsService instance/page
 // (not a reload) -- a page reload would construct a brand-new EventsService
 // with `_lastEventId` reset to null, which would make it impossible to
 // prove the *live* client recovers its own connection and correctly
 // remembers the last id it saw. Test 3 (live update) runs first in that
 // block specifically so tests 4/5 have a real "received before the drop"
-// event already in hand.
+// event already in hand. The final test proves client-side suppression even
+// if a misbehaving or changed server sends the same id twice.
 //
-// Test 6 (session expiry) needs its own dedicated server with a short
+// The session-expiry test needs its own dedicated server with a short
 // sessionIdleSeconds (mirrors auth.spec.js's 0.05 pattern), which per that
 // file's own rationale must never be applied to a server shared with any
 // other scenario.
@@ -208,7 +209,7 @@ test.describe.serial('memory candidate accept/reject flow (#17)', () => {
 });
 
 // ---------------------------------------------------------------------
-// 3, 4, 5: SSE live update, forced reconnect, and Last-Event-ID
+// SSE live update, forced reconnect, Last-Event-ID recovery, and client
 // recovery/dedup -- all against one shared page/EventsService instance
 // (see file header for why no reload happens between them).
 // ---------------------------------------------------------------------
@@ -300,6 +301,8 @@ test.describe.serial('SSE live update, reconnect, and recovery (#17)', () => {
     // which cannot reach an already-open streaming response).
     dedicated.handle.server.closeAllConnections();
 
+    await expect(page.locator('[data-connection-state]')).toHaveText('Reconnecting');
+
     // Wait for a reconnect request that carries the real last-received
     // event's id as Last-Event-ID -- budgets real time for the forced
     // failure's own backoff (starts at 1000ms, doubles to 2000ms after the
@@ -308,6 +311,7 @@ test.describe.serial('SSE live update, reconnect, and recovery (#17)', () => {
       (req) => req.url().includes('/api/events/stream') && req.headers()['last-event-id'] === String(beforeDropLastEvent.id),
       { timeout: 15000 }
     );
+    await expect(page.locator('[data-connection-state]')).toHaveText('Live');
 
     // Confirm the connection actually came back up and is live: a brand
     // new real event still arrives after the drop + backoff window,
@@ -347,6 +351,17 @@ test.describe.serial('SSE live update, reconnect, and recovery (#17)', () => {
     );
     expect(matches).toBe(1);
   });
+
+  test('the client suppresses a duplicate event id even if a server replays it', async () => {
+    const before = await page.evaluate(() => window.__u2Events.length);
+    await page.evaluate(({ id, type }) => {
+      const app = document.querySelector('u2-app');
+      const frame = `id: ${id}\nevent: ${type}\ndata: ${JSON.stringify({ id, type })}`;
+      app._events._dispatchFrame(frame);
+      app._events._dispatchFrame(frame);
+    }, beforeDropLastEvent);
+    await expect.poll(() => page.evaluate(() => window.__u2Events.length)).toBe(before);
+  });
 });
 
 // ---------------------------------------------------------------------
@@ -355,14 +370,18 @@ test.describe.serial('SSE live update, reconnect, and recovery (#17)', () => {
 // server with a short sessionIdleSeconds (see file header for why).
 // ---------------------------------------------------------------------
 
-test('an idle-expired session makes /api/events/stream 401 without an uncaught retry-loop exception', async ({ browser }) => {
+test('an idle-expired session stops SSE retries and returns the owner to login', async ({ browser }) => {
   const dedicated = await startDedicatedServer({ sessionIdleSeconds: 0.05 });
   await createOwner(dedicated.baseURL, PASSPHRASE);
   const context = await browser.newContext();
   const page = await context.newPage();
 
   const pageErrors = [];
+  let unauthorizedStreamResponses = 0;
   page.on('pageerror', (err) => pageErrors.push(err));
+  page.on('response', (res) => {
+    if (res.url().includes('/api/events/stream') && res.status() === 401) unauthorizedStreamResponses += 1;
+  });
 
   try {
     await page.goto(dedicated.baseURL);
@@ -386,16 +405,10 @@ test('an idle-expired session makes /api/events/stream 401 without an uncaught r
       { timeout: 15000 }
     );
     expect(firstUnauthorized.status()).toBe(401);
-
-    // events.js's retry loop is designed to log-and-retry forever (its own
-    // console.error + backoff, never a throw) -- confirm a SECOND 401
-    // arrives too (it kept looping, not stopped or hung), and that nothing
-    // escaped as an uncaught page exception the whole time.
-    const secondUnauthorized = await page.waitForResponse(
-      (res) => res.url().includes('/api/events/stream') && res.status() === 401,
-      { timeout: 15000 }
-    );
-    expect(secondUnauthorized.status()).toBe(401);
+    await expect(page.locator('.workspace__subtitle')).toHaveText('Your session expired. Log in again to reconnect.');
+    await expect(page.locator('button[type="submit"]')).toHaveText('Log in');
+    await page.waitForTimeout(1500);
+    expect(unauthorizedStreamResponses).toBe(1);
     expect(pageErrors).toEqual([]);
   } finally {
     await context.close();

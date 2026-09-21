@@ -19,6 +19,10 @@ export class EventsService {
     this._controller = null;
     this._retryDelay = 1000;
     this._lastEventId = null;
+    this._seenEventIds = new Set();
+    this._seenEventOrder = [];
+    this._state = null;
+    this._setState('connecting');
     this._run();
   }
 
@@ -31,16 +35,23 @@ export class EventsService {
           headers: { Accept: 'text/event-stream' },
           ...(this._lastEventId ? { headers: { Accept: 'text/event-stream', 'Last-Event-ID': this._lastEventId } } : {}),
         });
+        if (res.status === 401) {
+          this._setState('session-expired');
+          this._closed = true;
+          return;
+        }
         if (!res.ok || !res.body) {
           throw new Error(`SSE connect failed: ${res.status} ${res.statusText}`);
         }
         this._retryDelay = 1000;
+        this._setState('connected');
         await this._pump(res.body);
       } catch (err) {
         if (this._closed) return;
         console.error('[u2 events] stream error, will retry', err);
       }
       if (this._closed) return;
+      this._setState('reconnecting');
       await new Promise((r) => setTimeout(r, this._retryDelay));
       this._retryDelay = Math.min(this._retryDelay * 2, 15000);
     }
@@ -75,10 +86,26 @@ export class EventsService {
     try {
       const parsed = JSON.parse(data);
       if (id) this._lastEventId = id;
+      if (id && this._seenEventIds.has(id)) return;
+      if (id) this._rememberEventId(id);
       window.dispatchEvent(new CustomEvent('u2-event', { detail: parsed }));
     } catch (err) {
       console.error('[u2 events] failed to parse SSE frame', err, frame);
     }
+  }
+
+  _rememberEventId(id) {
+    this._seenEventIds.add(id);
+    this._seenEventOrder.push(id);
+    if (this._seenEventOrder.length > 512) {
+      this._seenEventIds.delete(this._seenEventOrder.shift());
+    }
+  }
+
+  _setState(state) {
+    if (this._state === state) return;
+    this._state = state;
+    window.dispatchEvent(new CustomEvent('u2-connection-state', { detail: { state } }));
   }
 
   close() {
