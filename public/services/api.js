@@ -57,6 +57,14 @@ export function getDiagnostics() {
   return request('/api/diagnostics');
 }
 
+export function createBugBundle() {
+  return request('/api/diagnostics/bug-bundle', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: '{}',
+  });
+}
+
 export function getCalendarEvents(range = 'upcoming') {
   return request(`/api/calendar/events${qs({ range })}`);
 }

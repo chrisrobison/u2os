@@ -32,6 +32,29 @@ export class U2Diagnostics extends HTMLElement {
       this.replaceChildren(header(), failure);
     }
   }
+
+  async downloadBundle(button) {
+    button.disabled = true;
+    const previous = button.textContent;
+    button.textContent = 'Preparing…';
+    try {
+      const bundle = await api.createBugBundle();
+      const blob = new Blob([`${JSON.stringify(bundle, null, 2)}\n`], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `u2os-debug-${new Date().toISOString().replaceAll(':', '-')}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      button.textContent = 'Downloaded';
+    } catch (error) {
+      button.textContent = 'Download failed';
+      button.title = error.message;
+    } finally {
+      button.disabled = false;
+      setTimeout(() => { if (button.isConnected) button.textContent = previous; }, 2000);
+    }
+  }
 }
 
 function header() {
@@ -43,7 +66,11 @@ function header() {
   const subtitle = document.createElement('p');
   subtitle.className = 'workspace__subtitle';
   subtitle.textContent = 'Local operational health. Secrets and private content are excluded.';
-  node.append(title, subtitle);
+  const download = document.createElement('button');
+  download.type = 'button';
+  download.textContent = 'Download sanitized bug bundle';
+  download.addEventListener('click', (event) => event.currentTarget.closest('u2-diagnostics')?.downloadBundle(event.currentTarget));
+  node.append(title, subtitle, download);
   return node;
 }
 

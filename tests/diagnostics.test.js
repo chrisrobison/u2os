@@ -76,10 +76,45 @@ test('diagnostics is owner-only while public health remains minimal and redacted
     const origin = `http://127.0.0.1:${handle.port}`;
     const unauthenticated = await unauthenticatedFetch(`${origin}/api/diagnostics`);
     assert.equal(unauthenticated.status, 401);
+    const unauthenticatedBundle = await unauthenticatedFetch(`${origin}/api/diagnostics/bug-bundle`, { method: 'POST' });
+    assert.equal(unauthenticatedBundle.status, 401);
     const health = await unauthenticatedFetch(`${origin}/api/health`);
     assert.equal(health.status, 200);
     const body = await health.json();
     assert.deepEqual(Object.keys(body).sort(), ['status', 'uptimeSeconds', 'version']);
     assert.equal(body.status, 'ok');
+  } finally { await cleanup(dir, handle); }
+});
+
+test('bug bundle contains triage metadata and structurally excludes private operation data', async () => {
+  const dir = tempHome();
+  let handle;
+  try {
+    handle = await startServer({ port: 0 });
+    const db = getDb();
+    const now = new Date().toISOString();
+    db.prepare("INSERT INTO agent_actions (id, requested_by, request_text, tool, arguments, reasoning_summary, result, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'failed', ?, ?)")
+      .run('PRIVATE-ACTION-ID', 'PRIVATE OWNER', 'PRIVATE REQUEST', 'email.send', '{"body":"PRIVATE EMAIL BODY"}', 'PRIVATE REASONING', 'PRIVATE RESULT', now, now);
+    db.prepare("INSERT INTO action_queue (id, action_id, correlation_id, tool, arguments, idempotency_key, status, attempt_count, next_attempt_at, last_error, error_class, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'dead_letter', 3, ?, ?, ?, ?, ?)")
+      .run('PRIVATE-QUEUE-ID', 'PRIVATE-ACTION-ID', 'PRIVATE-CORRELATION', 'email.send', '{"body":"PRIVATE EMAIL BODY"}', 'PRIVATE-IDEMPOTENCY', now, 'PRIVATE PROVIDER ERROR', 'authentication_required', now, now);
+
+    const response = await fetch(`http://127.0.0.1:${handle.port}/api/diagnostics/bug-bundle`, { method: 'POST', body: '{}' });
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-disposition'), /^attachment; filename="u2os-debug-/);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    const text = await response.text();
+    for (const forbidden of ['PRIVATE EMAIL BODY', 'PRIVATE PROVIDER ERROR', 'PRIVATE-IDEMPOTENCY', 'PRIVATE REQUEST', 'PRIVATE REASONING', 'PRIVATE RESULT', 'PRIVATE OWNER', 'PRIVATE-ACTION-ID', 'PRIVATE-QUEUE-ID', 'PRIVATE-CORRELATION']) {
+      assert.doesNotMatch(text, new RegExp(forbidden));
+    }
+    const bundle = JSON.parse(text);
+    assert.equal(bundle.bundleFormat, 'u2os-sanitized-debug-v1');
+    assert.equal(bundle.application.version, '0.1.0');
+    assert.equal(bundle.schema.strategy, 'additive-startup-migrations');
+    assert.deepEqual(bundle.schema.missingRequiredTables, []);
+    assert.deepEqual(bundle.failedOperations[0], {
+      tool: 'email.send', status: 'dead_letter', attemptCount: 3,
+      errorClass: 'authentication_required', createdAt: now, updatedAt: now,
+    });
+    assert.ok(bundle.exclusions.includes('credentials and tokens'));
   } finally { await cleanup(dir, handle); }
 });

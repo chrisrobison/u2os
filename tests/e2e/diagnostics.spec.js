@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import fs from 'node:fs';
 import { startDedicatedServer, stopDedicatedServer, createOwner } from './helpers.js';
 
 const PASSPHRASE = 'correct horse battery staple';
@@ -26,6 +27,15 @@ test('owner diagnostics is readable, redacted, responsive, and refreshes from li
     await expect(view).toContainText('mailunavailable · mock');
     await expect(view).not.toContainText('PRIVATE EMAIL BODY');
     await expect(view).not.toContainText('secret-idempotency-key');
+
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('button', { name: 'Download sanitized bug bundle' }).click(),
+    ]);
+    expect(download.suggestedFilename()).toMatch(/^u2os-debug-.+\.json$/);
+    const downloaded = JSON.parse(fs.readFileSync(await download.path(), 'utf8'));
+    expect(downloaded.bundleFormat).toBe('u2os-sanitized-debug-v1');
+    expect(downloaded.exclusions).toContain('credentials and tokens');
 
     await page.evaluate(() => window.dispatchEvent(new CustomEvent('u2-event', { detail: { type: 'agent.action.completed' } })));
     await expect(view).toContainText('Completed2');
