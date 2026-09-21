@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS entities (
   updated_at TEXT NOT NULL,
   -- Data-processing privacy policy (issue #2), same axis/default as
   -- facts.classification below: public | personal | private | sensitive.
-  classification TEXT NOT NULL DEFAULT 'personal'
+  classification TEXT NOT NULL DEFAULT 'personal',
+  deleted_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(type);
 
@@ -99,7 +100,9 @@ CREATE TABLE IF NOT EXISTS relationships (
   created_at TEXT NOT NULL,
   -- Data-processing privacy policy (issue #2), same axis/default as
   -- facts.classification above.
-  classification TEXT NOT NULL DEFAULT 'personal'
+  classification TEXT NOT NULL DEFAULT 'personal',
+  status TEXT NOT NULL DEFAULT 'active',
+  deleted_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_rel_from ON relationships(from_entity_id);
 CREATE INDEX IF NOT EXISTS idx_rel_to ON relationships(to_entity_id);

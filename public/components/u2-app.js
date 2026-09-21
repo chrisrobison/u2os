@@ -599,6 +599,8 @@ export class U2App extends HTMLElement {
         'beforeend',
         `
         ${this._header(entity.name, entity.type)}
+        <div class="fact-row__controls"><button type="button" class="btn-danger" data-delete-entity>Delete ${escapeHtml(entity.type)}</button></div>
+        <div class="fact-row__error" data-entity-delete-error role="alert" aria-live="polite"></div>
         ${
           attrEntries.length
             ? `<dl class="u2-approval__args">${attrEntries
@@ -614,13 +616,33 @@ export class U2App extends HTMLElement {
             ? relationships
                 .map((r) => {
                   const direction = r.from_entity_id === entity.id ? `${r.relation} → ${r.to_entity_id}` : `${r.from_entity_id} → ${r.relation}`;
-                  return `<div class="rel-row"><span class="mono">${escapeHtml(direction)}</span>${r.inferred ? ' <span class="mono">(inferred)</span>' : ''}</div>`;
+                  return `<div class="rel-row" data-relationship-id="${escapeHtml(r.id)}"><span class="mono">${escapeHtml(direction)}</span>${r.inferred ? ' <span class="mono">(inferred)</span>' : ''} <button type="button" class="btn-danger" data-delete-relationship>Delete relationship</button></div>`;
                 })
                 .join('')
             : `<div class="empty-state">No relationships recorded yet.</div>`
         }
       `
       );
+
+      wrap.querySelector('[data-delete-entity]').addEventListener('click', async () => {
+        const error = wrap.querySelector('[data-entity-delete-error]'); error.textContent = '';
+        try {
+          const preview = await api.getMemoryEntityDeletionPreview(id);
+          const { facts, relationships: relationCount, tasks, calendarEvents } = preview.counts;
+          const message = `Delete ${entity.name}? This hides the entity but retains audit history and linked records. Impact: ${facts} facts, ${relationCount} relationships, ${tasks} tasks, ${calendarEvents} calendar events.`;
+          if (!window.confirm(message)) return;
+          await api.deleteMemoryEntity(id, preview.token);
+          window.location.hash = '#/memory';
+        } catch (err) { error.textContent = err.message; }
+      });
+
+      for (const row of wrap.querySelectorAll('[data-relationship-id]')) {
+        row.querySelector('[data-delete-relationship]').addEventListener('click', async () => {
+          if (!window.confirm('Delete this relationship? Its audit history will be retained.')) return;
+          try { await api.deleteMemoryRelationship(row.dataset.relationshipId); await this._renderEntityDetail(id); }
+          catch (err) { wrap.querySelector('[data-entity-delete-error]').textContent = err.message; }
+        });
+      }
 
       for (const row of wrap.querySelectorAll('[data-fact-id]')) {
         const factId = row.dataset.factId;

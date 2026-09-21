@@ -1,7 +1,7 @@
 import { sendJson } from '../router.js';
-import { findEntities, getEntity } from '../../memory/entity-store.js';
+import { findEntities, getEntity, getEntityDeletionPreview, deleteEntity } from '../../memory/entity-store.js';
 import { getFacts, getFact, confirmFact, correctFact, reclassifyFact, deleteFact, getFactRevisions } from '../../memory/fact-store.js';
-import { getRelationships } from '../../memory/relationship-store.js';
+import { getRelationships, deleteRelationship } from '../../memory/relationship-store.js';
 import { listMemoryCandidates, acceptMemoryCandidate, rejectMemoryCandidate } from '../../memory/candidate-store.js';
 
 export function registerMemoryRoutes(router, { eventBus } = {}) {
@@ -34,6 +34,31 @@ export function registerMemoryRoutes(router, { eventBus } = {}) {
       facts: getFacts(entity.id, { includeInactive: true }),
       relationships: getRelationships(entity.id),
     });
+  });
+
+  router.get('/api/memory/entities/:id/deletion-preview', async (req, res) => {
+    const preview = getEntityDeletionPreview(req.params.id);
+    if (!preview) return sendJson(res, 404, { error: 'Not Found' });
+    sendJson(res, 200, preview);
+  });
+
+  router.delete('/api/memory/entities/:id', async (req, res) => {
+    try {
+      const result = deleteEntity(req.params.id, req.body?.previewToken);
+      if (!result) return sendJson(res, 404, { error: 'Not Found' });
+      eventBus?.publish({ type: 'memory.entity_deleted', source: 'user', actor: { type: 'user', id: req.owner.id }, subject: { type: 'entity', id: result.entity.id }, data: { type: result.entity.type, impactCounts: result.preview.counts }, metadata: { provenance: 'user:memory-management' } });
+      sendJson(res, 200, { deleted: true, id: result.entity.id });
+    } catch (error) {
+      if (error.code === 'STALE_PREVIEW') return sendJson(res, 409, { error: error.message });
+      throw error;
+    }
+  });
+
+  router.delete('/api/memory/relationships/:id', async (req, res) => {
+    const relationship = deleteRelationship(req.params.id);
+    if (!relationship) return sendJson(res, 404, { error: 'Not Found' });
+    eventBus?.publish({ type: 'memory.relationship_deleted', source: 'user', actor: { type: 'user', id: req.owner.id }, subject: { type: 'relationship', id: relationship.id }, data: { fromEntityId: relationship.from_entity_id, toEntityId: relationship.to_entity_id, relation: relationship.relation }, metadata: { provenance: 'user:memory-management' } });
+    sendJson(res, 200, { deleted: true, id: relationship.id });
   });
 
   router.post('/api/memory/facts/:id/confirm', async (req, res) => {

@@ -28,7 +28,7 @@ export class Router {
     if (req.session && WRITES.has(req.method) && (!sameOrigin(req, this.publicOrigin) || req.headers['x-u2os-csrf'] !== req.session.csrfToken)) return sendJson(res, 403, { error: 'CSRF validation failed' });
     const found = match.pattern.exec(pathname); req.params = {}; match.paramNames.forEach((n, i) => { req.params[n] = found[i + 1]; }); req.query = Object.fromEntries(url.searchParams.entries());
     try {
-      if (['POST', 'PUT', 'PATCH'].includes(req.method)) req.body = await readJsonBody(req, match.options.bodyLimit || this.bodyLimit);
+      if (WRITES.has(req.method)) req.body = await readJsonBody(req, match.options.bodyLimit || this.bodyLimit);
       await match.handler(req, res);
     } catch (err) {
       log.error('router', 'Request handler failed', { method: req.method, path: pathname, error: err?.message || String(err) });

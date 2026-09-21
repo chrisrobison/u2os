@@ -89,6 +89,8 @@ Emitted by the agent/policy/tool pipeline (internal, domain-independent):
 | `memory.fact_reclassified` | owner changed the data-processing classification through the dedicated fact endpoint |
 | `memory.fact_corrected` | owner created a replacement fact; the previous fact remains as `superseded` history |
 | `memory.fact_deleted` | owner removed a fact from active retrieval; the row remains as an audited soft-deleted record |
+| `memory.relationship_deleted` | owner removed a relationship from active graph reads; the row remains for audit history |
+| `memory.entity_deleted` | owner confirmed an impact preview and removed an entity from active reads; linked records remain stored |
 | `agent.context_restricted` | the data-processing privacy policy (server/policy/data-processing-policy.js) withheld one or more context items -- facts, people, commitments, or event-derived summaries -- from the context sent to a specific model provider for this request -- data(classification) x destination, separate from tool authorization. `data` includes `destination`, `providerId`, and an `omitted` list where each entry carries `type` (`fact`/`person`/`commitment`/`event`), `id`, `classification`, `destination`, `decision`, and `rule`, so the omission is auditable, never silent. |
 | `user.feedback` | user accepted/rejected/edited a suggestion post-hoc (Phase 7 hook, schema reserved now) |
 

@@ -87,6 +87,9 @@ export function getDb() {
   // it, so `classification` is added here as a distinct additional column.
   ensureColumn(db, 'entities', 'classification', "TEXT NOT NULL DEFAULT 'personal'");
   ensureColumn(db, 'relationships', 'classification', "TEXT NOT NULL DEFAULT 'personal'");
+  ensureColumn(db, 'entities', 'deleted_at', 'TEXT');
+  ensureColumn(db, 'relationships', 'status', "TEXT NOT NULL DEFAULT 'active'");
+  ensureColumn(db, 'relationships', 'deleted_at', 'TEXT');
   ensureColumn(db, 'calendar_events', 'classification', "TEXT NOT NULL DEFAULT 'personal'");
   ensureColumn(db, 'emails', 'classification', "TEXT NOT NULL DEFAULT 'personal'");
   ensureColumn(db, 'tasks', 'classification', "TEXT NOT NULL DEFAULT 'personal'");
