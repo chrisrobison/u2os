@@ -65,6 +65,8 @@ test('worker executes a queued action once and passes its durable idempotency ke
   assert.equal(outcome.status, 'executed');
   assert.equal(getQueuedActionByActionId(action.id).status, 'completed');
   assert.deepEqual(calls, [`delivery.send:corr_delivery:${action.id}`]);
+  const queueEvent = getDb().prepare("SELECT data FROM events WHERE type = 'agent.action.queue_updated' AND subject_id = ?").get(action.id);
+  assert.deepEqual(JSON.parse(queueEvent.data), { status: 'completed', attemptCount: 1, errorClass: null });
   await worker.processAction(action.id);
   assert.equal(calls.length, 1, 'a completed action must never execute again');
 }));

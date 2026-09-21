@@ -2,10 +2,15 @@ import { sendJson } from '../router.js';
 import { getAgentAction, listPendingActions } from '../../policy/policy-engine.js';
 import { recordFeedback } from '../../feedback/feedback-store.js';
 import { explainAction } from '../../agent/explain.js';
+import { listQueuedActions } from '../../agent/action-queue-store.js';
 
 export function registerActionRoutes(router, { agent, eventBus } = {}) {
   router.get('/api/actions/pending', async (_req, res) => {
     sendJson(res, 200, { actions: listPendingActions() });
+  });
+
+  router.get('/api/actions/operations', async (_req, res) => {
+    sendJson(res, 200, buildOperationsResponse());
   });
 
   router.get('/api/actions/:id', async (req, res) => {
@@ -52,6 +57,35 @@ export function registerActionRoutes(router, { agent, eventBus } = {}) {
       sendJson(res, 400, { error: err.message });
     }
   });
+}
+
+export function buildOperationsResponse() {
+  const pending = listPendingActions().slice(0, 100);
+  const waitingIds = new Set(pending.map((action) => action.id));
+  const queued = listQueuedActions().filter((item) => !waitingIds.has(item.action_id)).slice(-100).reverse().map((item) => ({
+    id: item.id,
+    actionId: item.action_id,
+    tool: item.tool,
+    status: item.status,
+    attemptCount: item.attempt_count,
+    nextAttemptAt: item.next_attempt_at,
+    errorClass: item.error_class,
+    createdAt: item.created_at,
+    updatedAt: item.updated_at,
+  }));
+  const waiting = pending.map((action) => ({
+    id: action.id,
+    actionId: action.id,
+    tool: action.tool,
+    status: 'waiting_approval',
+    attemptCount: 0,
+    createdAt: action.created_at,
+    updatedAt: action.updated_at,
+  }));
+  const items = [...waiting, ...queued];
+  const counts = {};
+  for (const item of items) counts[item.status] = (counts[item.status] || 0) + 1;
+  return { items, counts };
 }
 
 // Best-effort: a failure recording feedback must never surface as a failure

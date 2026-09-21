@@ -13,6 +13,7 @@ import './u2-connectors.js';
 import './u2-timeline.js';
 import './u2-voice.js';
 import './u2-devices.js';
+import './u2-operations.js';
 
 // Dashboard contexts the #/dashboards picker offers, per PROMPT.md section
 // 10's examples + docs/dashboards.md's Phase 2 contexts. 'before-meeting'
@@ -163,6 +164,9 @@ export class U2App extends HTMLElement {
         break;
       case 'activity':
         this._renderActivity();
+        break;
+      case 'operations':
+        this._renderOperations();
         break;
       case 'memory':
         if (sub) this._renderEntityDetail(sub);
@@ -413,6 +417,10 @@ export class U2App extends HTMLElement {
   _renderDevices() {
     // u2-devices (docs/devices.md Phase 6) -- same self-fetching pattern.
     this._setWorkspace('', document.createElement('u2-devices'));
+  }
+
+  _renderOperations() {
+    this._setWorkspace('', document.createElement('u2-operations'));
   }
 
   async _renderMemory() {

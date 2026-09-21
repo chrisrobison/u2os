@@ -72,7 +72,8 @@ export class ActionQueueWorker {
 
     const attempt = beginActionAttempt({ queueId: item.id, leaseOwner: this.workerId });
     if (action.status === 'executed') {
-      completeActionAttempt(attempt.id, { leaseOwner: this.workerId });
+      const completed = completeActionAttempt(attempt.id, { leaseOwner: this.workerId });
+      this._publishQueueStatus(completed);
       return this._currentOutcome(action.id);
     }
     const heartbeat = setInterval(() => {
@@ -94,16 +95,30 @@ export class ActionQueueWorker {
         errorClass = 'owner_attention_required';
       }
       const queue = failActionAttempt(attempt.id, { leaseOwner: this.workerId, error, errorClass });
+      this._publishQueueStatus(queue);
       return { id: action.id, status: queue.status, tool: action.tool, error: error.message, errorClass };
     }
     clearInterval(heartbeat);
-    completeActionAttempt(attempt.id, { leaseOwner: this.workerId });
+    const completed = completeActionAttempt(attempt.id, { leaseOwner: this.workerId });
+    this._publishQueueStatus(completed);
     return outcome;
   }
 
   _stop(item, status, message, errorClass, action = null) {
-    stopLeasedAction(item.id, { leaseOwner: this.workerId, status, error: message, errorClass });
+    const stopped = stopLeasedAction(item.id, { leaseOwner: this.workerId, status, error: message, errorClass });
+    this._publishQueueStatus(stopped);
     return { id: item.action_id, status, tool: action?.tool || item.tool, error: message, errorClass };
+  }
+
+  _publishQueueStatus(queue) {
+    this.eventBus.publish({
+      type: 'agent.action.queue_updated',
+      source: 'action-queue',
+      actor: { type: 'system', id: this.workerId },
+      subject: { type: 'agent_action', id: queue.action_id },
+      data: { status: queue.status, attemptCount: queue.attempt_count, errorClass: queue.error_class },
+      metadata: { correlationId: queue.correlation_id, provenance: 'action-queue:transition' },
+    });
   }
 
   _currentOutcome(actionId) {

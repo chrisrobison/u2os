@@ -154,6 +154,10 @@ export function getPendingActions() {
   return request('/api/actions/pending');
 }
 
+export function getActionOperations() {
+  return request('/api/actions/operations');
+}
+
 export function getAction(id) {
   return request(`/api/actions/${encodeURIComponent(id)}`);
 }
