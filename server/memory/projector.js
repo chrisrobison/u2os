@@ -10,7 +10,7 @@ import { recordRelationship } from './relationship-store.js';
 export function initProjector(eventBus) {
   eventBus.subscribe('calendar.event_changed', (event) => {
     try {
-      onCalendarEventChanged(event, eventBus);
+      applyCalendarEventProjection(event, eventBus);
     } catch (err) {
       console.error('[projector] failed to process calendar.event_changed', err);
     }
@@ -18,10 +18,11 @@ export function initProjector(eventBus) {
   return eventBus;
 }
 
-function onCalendarEventChanged(event, eventBus) {
+export function projectCalendarEventChanged(event) {
   const attendees = event.data?.after?.attendees ?? event.data?.attendees ?? [];
   const eventId = event.subject?.id ?? event.data?.eventId ?? null;
   const newStartAt = event.data?.after?.startAt ?? event.data?.after?.start_at ?? null;
+  const projections = [];
 
   for (const attendee of attendees) {
     const name = typeof attendee === 'string' ? attendee : attendee?.name;
@@ -29,7 +30,7 @@ function onCalendarEventChanged(event, eventBus) {
 
     const matches = findEntities({ type: 'Person', query: name });
     for (const person of matches) {
-      recordFact({
+      projections.push({
         entityId: person.id,
         key: 'last_meeting_change',
         value: { eventId, newStartAt },
@@ -37,13 +38,24 @@ function onCalendarEventChanged(event, eventBus) {
         inferred: true,
         confidence: 0.9,
         observedAt: event.timestamp,
+        provenance: { projector: 'calendar.event_changed', sourceEventId: event.id },
       });
+    }
+  }
+  return projections;
+}
 
+export function applyCalendarEventProjection(event, eventBus = null) {
+  const projections = projectCalendarEventChanged(event);
+  for (const projection of projections) {
+    recordFact(projection);
+
+    if (eventBus) {
       eventBus.publish({
         type: 'memory.fact_recorded',
         source: 'projector',
         actor: { type: 'system', id: 'memory-projector' },
-        subject: { type: 'entity', id: person.id },
+        subject: { type: 'entity', id: projection.entityId },
         data: { key: 'last_meeting_change' },
         metadata: {
           correlationId: event.correlationId,
@@ -53,6 +65,7 @@ function onCalendarEventChanged(event, eventBus) {
       });
     }
   }
+  return projections;
 }
 
 // Modest commitment detection. Phase 1 has no upstream event that represents

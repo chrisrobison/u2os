@@ -100,7 +100,7 @@ Finish the trusted UI primitive set and give the owner meaningful control over r
 - [x] Add memory correction, confirmation, deletion, and contradiction-resolution APIs and UI. (Deletion is an audited soft-delete, preserving history.)
 - [x] Add safe entity and relationship deletion with impact previews and audit events. (Deletion is audited and soft; entity deletion requires a current impact token and preserves linked records.)
 - [x] Distinguish explicit, imported, derived, and inferred facts visually. (Authority is derived deterministically from stored source/inference metadata and shown as labeled, non-color-only badges.)
-- Implement deterministic event replay for rebuilding derived projections, with dry-run support.
+- [x] Implement deterministic event replay for rebuilding derived projections, with dry-run support. (Replay is registry-bound, dry-run by default, atomic on apply, audited, and never republishes historical events to side-effecting subscribers.)
 - [x] Expand demo data to exercise every supported component and memory state.
 
 ### Acceptance criteria
@@ -247,4 +247,4 @@ U2OS reaches usable alpha when Milestones 1–3 are complete: a single owner can
 
 Milestones 4–8 deepen the product toward the broader personal digital-agent vision; they are not reasons to postpone the security boundary required for alpha use.
 
-**Status: usable alpha reached.** Milestones 1–3 are complete, with 367 Node tests and 65 Playwright scenarios running across Chromium, Firefox, and WebKit.
+**Status: usable alpha reached.** Milestones 1–3 are complete, with 368 Node tests and 65 Playwright scenarios running across Chromium, Firefox, and WebKit.
