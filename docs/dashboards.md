@@ -62,7 +62,9 @@ Every validated card also carries provenance. The dashboard renderer passes this
 
 Recommendation dashboards saved before this contract was introduced are upgraded when read with a candid compatibility reason and a reference to their recommendation record. U2OS does not fabricate missing historical source references.
 
-The morning dashboard also includes up to five open recommendations. Its outer schema carries only a recommendation ID. The trusted `<u2-recommendation>` component fetches the persisted record, offers Keep/Dismiss controls, renders an attached prepared dashboard only when that dashboard passed the same server-side validator, and exposes a `<u2-why>` source trail.
+The morning dashboard includes today's schedule, priority tasks, up to five important unread emails, pending approvals, and up to five open recommendations. A fixed, trusted **Review my day** control starts the daily-review agent workflow; it is application UI rather than schema-supplied behavior, so a generated dashboard cannot introduce executable controls. The agent handles routine work under the existing policy and still asks before consequential actions.
+
+Recommendation cards carry only a recommendation ID in the outer schema. The trusted `<u2-recommendation>` component fetches the persisted record, offers Keep/Dismiss controls, renders an attached prepared dashboard only when that dashboard passed the same server-side validator, and exposes a `<u2-why>` source trail.
 
 ## Server-side validation
 

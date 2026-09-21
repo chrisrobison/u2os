@@ -42,6 +42,16 @@ export class U2Agent extends HTMLElement {
     this._render();
   }
 
+  // Trusted workflow entry points can use the same composer lifecycle as a
+  // typed request without duplicating the agent API call. Returns false
+  // while another request is already in flight.
+  submitPrompt(text) {
+    const prompt = String(text || '').trim();
+    if (!prompt || !this._input || this._input.disabled) return false;
+    this._input.value = prompt;
+    return this._send();
+  }
+
   _render() {
     this.innerHTML = `
       <div class="agent-panel">

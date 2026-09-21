@@ -28,6 +28,7 @@ const DASHBOARD_CONTEXTS = [
 ];
 
 const THEME_KEY = 'u2-theme';
+const DAILY_REVIEW_PROMPT = "What's going on today? Handle anything routine that doesn't need me and tell me what I need to pay attention to.";
 
 function getStoredTheme() {
   try {
@@ -302,7 +303,38 @@ export class U2App extends HTMLElement {
       const dashboardEl = document.createElement('u2-dashboard');
       dashboardEl.refreshLoader = () => api.getDashboard();
       dashboardEl.schema = schema;
-      this._setWorkspace('', dashboardEl);
+
+      const wrap = document.createElement('div');
+      const start = document.createElement('section');
+      start.className = 'workflow-start';
+      start.setAttribute('aria-labelledby', 'daily-review-title');
+      start.innerHTML = `
+        <div>
+          <div class="workflow-start__title" id="daily-review-title">Ready for a closer look?</div>
+          <div class="workflow-start__description">U2OS can review today, handle routine work, and ask before anything consequential.</div>
+        </div>
+        <button type="button" class="btn btn-primary" data-start-daily-review>Review my day</button>
+      `;
+      const button = start.querySelector('[data-start-daily-review]');
+      button.addEventListener('click', async () => {
+        const agent = this.querySelector('u2-agent');
+        this.dataset.agentOpen = 'true';
+        button.disabled = true;
+        button.textContent = 'Reviewing…';
+        const request = agent?.submitPrompt(DAILY_REVIEW_PROMPT);
+        if (request === false || request == null) {
+          button.disabled = false;
+          button.textContent = 'Review my day';
+          return;
+        }
+        await request;
+        if (button.isConnected) {
+          button.disabled = false;
+          button.textContent = 'Review again';
+        }
+      });
+      wrap.append(start, dashboardEl);
+      this._setWorkspace('', wrap);
     } catch (err) {
       this._setWorkspace(this._header('Briefing'), this._error(err));
     }

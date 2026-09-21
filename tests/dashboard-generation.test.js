@@ -63,7 +63,11 @@ test('generateDashboard({context: "morning"}) returns a schema that passes valid
     const types = schema.components.map((c) => c.type);
     assert.ok(types.includes('schedule'));
     assert.ok(types.includes('task-list'));
+    assert.ok(types.includes('email-summary'));
     assert.ok(types.includes('approval'));
+    const email = schema.components.find((item) => item.type === 'email-summary');
+    assert.equal(email.source, 'email.important');
+    assert.ok(email.data.emails.length <= 5);
     assert.ok(schema.components.every((item) => item.provenance?.reason));
     assert.ok(schema.components.every((item) => item.provenance.references.length <= 10));
   } finally {
@@ -284,7 +288,7 @@ test('GET /api/dashboard/morning reflects calendar data resolved from the synchr
     assert.equal(schema.title, 'Morning Briefing');
     assert.equal(schema.layout, 'dashboard');
     const types = schema.components.map((c) => c.type);
-    assert.deepEqual(types, ['schedule', 'task-list', 'approval']);
+    assert.deepEqual(types, ['schedule', 'task-list', 'email-summary', 'approval']);
   } finally {
     await cleanupServer(dir, handle);
   }
