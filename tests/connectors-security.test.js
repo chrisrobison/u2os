@@ -10,6 +10,10 @@ import { closeAllForTests } from '../server/db/connection.js';
 import * as syncScheduler from '../server/integrations/sync-scheduler.js';
 import * as triggerEngine from '../server/triggers/trigger-engine.js';
 
+// Capture the native implementation before startServer installs the test-only
+// fetch wrapper that automatically authenticates requests to test servers.
+const unauthenticatedFetch = globalThis.fetch;
+
 function tempHome() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-connsec-test-'));
   process.env.U2OS_HOME = dir;
@@ -83,7 +87,7 @@ test('OAuth callback rejects an unknown/never-issued state instead of silently a
     handle = await startServer({ port: 0 });
     const port = handle.server.address().port;
 
-    const res = await fetch(
+    const res = await unauthenticatedFetch(
       `http://127.0.0.1:${port}/api/connectors/google/oauth/callback?code=some-code&state=never-issued-state-xyz`,
       { redirect: 'manual' }
     );
@@ -93,6 +97,33 @@ test('OAuth callback rejects an unknown/never-issued state instead of silently a
     assert.equal(res.status, 400);
     const body = await res.json();
     assert.match(body.error, /state/i);
+  } finally {
+    await cleanup(dir, handle);
+  }
+});
+
+test('only the state-protected OAuth callback is public among Google connector routes', async () => {
+  const dir = tempHome();
+  let handle;
+  try {
+    handle = await startServer({ port: 0 });
+    const origin = `http://127.0.0.1:${handle.server.address().port}`;
+
+    const callback = await unauthenticatedFetch(
+      `${origin}/api/connectors/google/oauth/callback?code=some-code&state=never-issued-state-xyz`,
+      { redirect: 'manual' }
+    );
+    assert.equal(callback.status, 400);
+    assert.match((await callback.json()).error, /state/i);
+
+    const start = await unauthenticatedFetch(`${origin}/api/connectors/google/oauth/start?service=calendar`, {
+      redirect: 'manual',
+    });
+    assert.equal(start.status, 401);
+    assert.equal((await start.json()).error, 'Authentication required');
+
+    const connectors = await unauthenticatedFetch(`${origin}/api/connectors`);
+    assert.equal(connectors.status, 401);
   } finally {
     await cleanup(dir, handle);
   }

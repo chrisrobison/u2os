@@ -22,7 +22,7 @@ export class Router {
     if (!match) return sendJson(res, paths.length ? 405 : 404, { error: paths.length ? 'Method Not Allowed' : 'Not Found' });
     if (this.publicOrigin && !validHost(req, this.publicOrigin)) return sendJson(res, 400, { error: 'Invalid Host' });
     req.session = this.auth?.authenticate(req) || null; if (req.session) req.owner = { id: req.session.ownerId };
-    if (this.auth && !PUBLIC.has(`${req.method} ${match.path}`) && !req.session) return sendJson(res, 401, { error: 'Authentication required' });
+    if (this.auth && !match.options.public && !PUBLIC.has(`${req.method} ${match.path}`) && !req.session) return sendJson(res, 401, { error: 'Authentication required' });
     const bucket = rateBucket(req.method, match.path);
     if (bucket && !this.limiter.take(`${bucket}:${req.session?.ownerId || req.socket?.remoteAddress || 'unknown'}`, bucket === 'login' ? 8 : 60, 60000)) return sendJson(res, 429, { error: 'Rate limit exceeded', code: 'RATE_LIMITED' });
     if (req.session && WRITES.has(req.method) && (!sameOrigin(req, this.publicOrigin) || req.headers['x-u2os-csrf'] !== req.session.csrfToken)) return sendJson(res, 403, { error: 'CSRF validation failed' });
