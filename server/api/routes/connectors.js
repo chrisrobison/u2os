@@ -121,7 +121,7 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
       res.writeHead(302, { Location: `/#/connectors?error=${encodeURIComponent('connect_failed')}` });
       res.end();
     }
-  });
+  }, { public: true });
 
   router.post('/api/connectors/google/disconnect', async (req, res) => {
     const service = req.query.service;
