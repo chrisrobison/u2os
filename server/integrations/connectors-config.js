@@ -17,12 +17,19 @@ const VALID_PROVIDER_IDS = {
   notifications: ['mock', 'webhook'],
 };
 
+// activeInstanceId: forward-compatible field for issue #163 (multiple
+// connection instances per connector). Nothing reads it yet in this PR --
+// server/integrations/connection-instances.js's migration is the only
+// writer so far, setting it to the migrated connection_instances row's id
+// for whichever domain(s) that connector was already active for. A later
+// PR in #163's sequence (provider routing) is what actually resolves a
+// domain's provider via this id instead of `active` alone.
 const DEFAULT_CONFIG = {
-  calendar: { active: 'mock' },
-  email: { active: 'mock' },
-  contacts: { active: 'mock' },
-  web: { active: 'mock' },
-  notifications: { active: 'mock' },
+  calendar: { active: 'mock', activeInstanceId: null },
+  email: { active: 'mock', activeInstanceId: null },
+  contacts: { active: 'mock', activeInstanceId: null },
+  web: { active: 'mock', activeInstanceId: null },
+  notifications: { active: 'mock', activeInstanceId: null },
 };
 
 export function connectorsConfigPath(dataDir = getDataDir()) {
@@ -50,7 +57,7 @@ export function loadConnectorsConfig(dataDir = getDataDir()) {
   // to 'mock' rather than crashing provider-registry.js.
   const config = {};
   for (const domain of DOMAINS) {
-    config[domain] = { active: 'mock', ...(loaded[domain] || {}) };
+    config[domain] = { active: 'mock', activeInstanceId: null, ...(loaded[domain] || {}) };
   }
   return config;
 }

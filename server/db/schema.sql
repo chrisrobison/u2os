@@ -383,3 +383,32 @@ CREATE TABLE IF NOT EXISTS devices (
 CREATE INDEX IF NOT EXISTS idx_devices_type ON devices(type);
 CREATE INDEX IF NOT EXISTS idx_devices_owner ON devices(owner);
 CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status);
+
+-- Multiple account instances per connector (issue #163, PR 1 of 5): a
+-- connector (e.g. 'google', 'imap') may have N separately configured,
+-- separately credentialed instances (e.g. two IMAP mailboxes), each with its
+-- own vault_key into server/security/vault.js's encrypted file storage
+-- (vault_key is an arbitrary string key, not necessarily connector_id --
+-- server/integrations/connection-instances.js writes it as
+-- '<connectorId>__<instanceId>'). `metadata` is a JSON text blob for
+-- NON-SECRET display/provenance data only (e.g. { migratedFrom:
+-- 'legacy-single-file' } for a row created by the one-time legacy
+-- *.enc.json migration) -- credentials themselves live only in the vault,
+-- never here. Later PRs in #163's sequence add API routes/OAuth/provider
+-- routing on top of this table; this PR only adds the table and the
+-- migration that populates it from any pre-existing single-account
+-- credential files.
+CREATE TABLE IF NOT EXISTS connection_instances (
+  id TEXT PRIMARY KEY,
+  connector_id TEXT NOT NULL,
+  label TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  vault_key TEXT NOT NULL UNIQUE,
+  metadata TEXT,
+  last_error TEXT,
+  last_sync_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_connection_instances_connector ON connection_instances(connector_id, deleted_at);
