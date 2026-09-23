@@ -12,6 +12,7 @@ import { createToolRegistry } from '../server/tools/register-all.js';
 import { MockModelProvider } from '../server/agent/mock-model-provider.js';
 import { Agent } from '../server/agent/agent.js';
 import { runSeed } from '../server/seed/seed.js';
+import { ensureInstallationMode } from '../server/seed/installation-mode.js';
 import { recordFeedback } from '../server/feedback/feedback-store.js';
 import { scoreForSuggestion, MAX_ADJUSTMENT } from '../server/feedback/prioritizer.js';
 import { policiesPath, ensureDefaultPolicies } from '../server/policy/policies-loader.js';
@@ -554,6 +555,7 @@ test('policies.yaml is byte-identical before and after a feedback-heavy scenario
   const dir = tempHome('u2os-policies-untouched-');
   let handle;
   try {
+    ensureInstallationMode('demo', dir);
     const file = policiesPath(dir);
     ensureDefaultPolicies(dir);
     const before = fs.readFileSync(file);

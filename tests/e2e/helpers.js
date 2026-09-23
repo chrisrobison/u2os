@@ -49,7 +49,7 @@ export async function startDedicatedServer(options = {}) {
   const savedHome = process.env.U2OS_HOME;
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-e2e-'));
   process.env.U2OS_HOME = dataDir;
-  const handle = await startServer({ port: 0, ...options });
+  const handle = await startServer({ port: 0, mode: 'demo', ...options });
   const baseURL = `http://127.0.0.1:${handle.port}`;
   return { handle, baseURL, _savedHome: savedHome, _dataDir: dataDir };
 }

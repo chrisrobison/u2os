@@ -16,7 +16,7 @@ export class AuthService {
     return Boolean(this.db.prepare('SELECT id FROM owners LIMIT 1').get());
   }
 
-  async setup(passphrase) {
+  async setup(passphrase, { ownerEntityId = null } = {}) {
     validatePassphrase(passphrase);
     if (this.hasOwner()) throw httpError(409, 'Owner setup is already complete');
     const salt = crypto.randomBytes(16);
@@ -26,7 +26,8 @@ export class AuthService {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       if (this.hasOwner()) throw httpError(409, 'Owner setup is already complete');
-      const entityId = this.createOwnerEntity();
+      const entityId = ownerEntityId || this.createOwnerEntity();
+      if (ownerEntityId && !this.isActivePerson(ownerEntityId)) throw httpError(400, 'Invalid owner entity');
       this.db.prepare('INSERT INTO owners (id, entity_id, passphrase_hash, salt, scrypt_params, created_at) VALUES (?,?,?,?,?,?)')
         .run(id, entityId, hash.toString('base64'), salt.toString('base64'), JSON.stringify(params), new Date().toISOString());
       this.db.exec('COMMIT');
@@ -61,12 +62,16 @@ export class AuthService {
   }
 
   linkOwnerEntity(entityId) {
-    if (typeof entityId !== 'string' || !this.db.prepare("SELECT id FROM entities WHERE id = ? AND type = 'Person' AND COALESCE(status, 'active') != 'deleted'").get(entityId)) {
+    if (!this.isActivePerson(entityId)) {
       throw httpError(400, 'Select an existing active Person entity');
     }
     if (!this.hasOwner()) throw httpError(409, 'Owner setup is required');
     this.db.prepare("UPDATE owners SET entity_id = ? WHERE id = 'owner'").run(entityId);
     return this.ownerEntity();
+  }
+
+  isActivePerson(entityId) {
+    return typeof entityId === 'string' && Boolean(this.db.prepare("SELECT id FROM entities WHERE id = ? AND type = 'Person' AND COALESCE(status, 'active') != 'deleted'").get(entityId));
   }
 
   async login(passphrase) {

@@ -57,7 +57,7 @@ test('GET /api/connectors never leaks a stored secret, access token, or client s
     writeEncryptedFile('web-search', { apiKey: 'FAKE_BRAVE_API_KEY_VALUE' }, dir);
     writeEncryptedFile('notify-webhook', { webhookUrl: 'https://ntfy.sh/FAKE_TOPIC_VALUE', format: 'ntfy' }, dir);
 
-    handle = await startServer({ port: 0 });
+    handle = await startServer({ port: 0, mode: 'personal' });
     const port = handle.server.address().port;
 
     const res = await fetch(`http://127.0.0.1:${port}/api/connectors`);
