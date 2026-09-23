@@ -8,6 +8,7 @@ import { readEncryptedFile, writeEncryptedFile } from '../../security/vault.js';
 import { validateSettings as validateImapSettings } from '../../integrations/imap-provider.js';
 import { validateSettings as validateSmtpSettings } from '../../integrations/smtp-transport.js';
 import { isConfigured as isSmtpConfigured } from '../../integrations/smtp-transport.js';
+import { getConnectorCatalog } from '../../integrations/connector-catalog.js';
 import {
   buildAuthUrl,
   exchangeCodeForTokens,
@@ -61,7 +62,7 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
         status: m.status || 'available',
       })),
     }));
-    sendJson(res, 200, { connectors: enriched, smtpConfigured: isSmtpConfigured() });
+    sendJson(res, 200, { connectors: enriched, smtpConfigured: isSmtpConfigured(), catalog: getConnectorCatalog() });
   });
 
   router.post('/api/connectors/google/credentials', async (req, res) => {

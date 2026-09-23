@@ -2,6 +2,7 @@ import { escapeHtml, humanizeKey, formatDateTime } from './util.js';
 import * as api from '../services/api.js';
 import './u2-card.js';
 import './u2-alert.js';
+import './u2-connector-setup.js';
 
 const DOMAIN_LABELS = {
   calendar: 'Calendar',
@@ -19,12 +20,6 @@ const SYNCABLE_DOMAINS = new Set(['calendar', 'email', 'contacts']);
 // One Google OAuth client covers all three services (docs/connectors.md's
 // OAuth2 flow section); each service has its own domain, provider id, and
 // independent connect/disconnect state.
-const GOOGLE_SERVICES = [
-  { service: 'calendar', domain: 'calendar', providerId: 'google-calendar', label: 'Calendar' },
-  { service: 'gmail', domain: 'email', providerId: 'gmail', label: 'Gmail' },
-  { service: 'contacts', domain: 'contacts', providerId: 'google-contacts', label: 'Contacts' },
-];
-
 function providerLabel(domain, providerId) {
   if (providerId === 'mock') return 'Mock';
   const manifest = (domain.manifests || []).find((m) => m.id === providerId);
@@ -85,132 +80,6 @@ function renderDomainCard(domain, ctx) {
   `;
 }
 
-function renderGoogleCard(connectors, ctx) {
-  const rows = GOOGLE_SERVICES.map(({ service, domain, providerId, label }) => {
-    const domainEntry = connectors.find((d) => d.domain === domain);
-    const connectedViaGoogle = !!domainEntry && (domainEntry.connectedProviders || []).includes(providerId);
-    const busy = ctx.busyKeys.has(`google:${service}`);
-    const action = connectedViaGoogle
-      ? `<button type="button" class="btn" data-google-disconnect="${service}" ${busy ? 'disabled' : ''}>${busy ? 'Disconnecting...' : 'Disconnect'}</button>`
-      : `<button type="button" class="btn btn-primary" data-google-connect="${service}">Connect</button>`;
-    return `
-      <div class="connector-google-row">
-        <span class="connector-google-row__status">
-          <span class="status-dot ${connectedViaGoogle ? 'is-connected' : 'is-disconnected'}"></span>
-          ${escapeHtml(label)}
-        </span>
-        ${action}
-      </div>
-    `;
-  }).join('');
-
-  const formMsg = ctx.formMessages.google;
-
-  return `
-    <u2-card title="Google">
-      <form data-form="google-credentials" class="connector-form" autocomplete="off">
-        <label class="connector-field">
-          <span>Client ID</span>
-          <input type="text" name="clientId" placeholder="Paste your OAuth client ID" autocomplete="off" required>
-        </label>
-        <label class="connector-field">
-          <span>Client secret</span>
-          <input type="password" name="clientSecret" placeholder="Paste your client secret" autocomplete="off" required>
-        </label>
-        <div class="connector-form__actions">
-          <button type="submit" class="btn btn-primary">Save</button>
-          <span class="connector-form__message${formMsg?.isError ? ' is-error' : ''}" data-message>${formMsg ? escapeHtml(formMsg.text) : ''}</span>
-        </div>
-      </form>
-      <div class="connector-google-services">
-        ${rows}
-      </div>
-    </u2-card>
-  `;
-}
-
-function renderBraveCard(ctx) {
-  const formMsg = ctx.formMessages.webSearch;
-  return `
-    <u2-card title="Brave Search">
-      <form data-form="web-search-credentials" class="connector-form" autocomplete="off">
-        <label class="connector-field">
-          <span>API key</span>
-          <input type="password" name="apiKey" placeholder="Paste your Brave Search API key" autocomplete="off" required>
-        </label>
-        <div class="connector-form__actions">
-          <button type="submit" class="btn btn-primary">Save</button>
-          <span class="connector-form__message${formMsg?.isError ? ' is-error' : ''}" data-message>${formMsg ? escapeHtml(formMsg.text) : ''}</span>
-        </div>
-      </form>
-    </u2-card>
-  `;
-}
-
-function renderImapCard(ctx) {
-  const formMsg = ctx.formMessages.imap;
-  return `
-    <u2-card title="IMAP inbox (read-only)">
-      <form data-form="imap-credentials" class="connector-form" autocomplete="off">
-        <label class="connector-field"><span>Mail host (TLS port 993)</span><input name="host" placeholder="imap.example.com" autocomplete="off" required></label>
-        <label class="connector-field"><span>Username</span><input name="username" autocomplete="off" required></label>
-        <label class="connector-field"><span>App password</span><input type="password" name="password" autocomplete="off" required></label>
-        <div class="connector-form__actions">
-          <button type="submit" class="btn btn-primary">Save</button>
-          <button type="button" class="btn" data-imap-disconnect>Disconnect</button>
-          <span class="connector-form__message${formMsg?.isError ? ' is-error' : ''}" data-message>${formMsg ? escapeHtml(formMsg.text) : ''}</span>
-        </div>
-      </form>
-    </u2-card>
-  `;
-}
-
-function renderSmtpCard(ctx) {
-  const formMsg = ctx.formMessages.smtp;
-  return `
-    <u2-card title="SMTP sending">
-      <div class="connector-status"><span class="status-dot ${ctx.smtpConfigured ? 'is-connected' : 'is-disconnected'}"></span><span>${ctx.smtpConfigured ? 'Configured for IMAP account' : 'Not configured'}</span></div>
-      <form data-form="smtp-credentials" class="connector-form" autocomplete="off">
-        <label class="connector-field"><span>Mail host</span><input name="host" placeholder="smtp.example.com" autocomplete="off" required></label>
-        <label class="connector-field"><span>Port</span><select name="port"><option value="465">465 (TLS)</option><option value="587">587 (STARTTLS required)</option></select></label>
-        <label class="connector-field"><span>Username</span><input name="username" autocomplete="off" required></label>
-        <label class="connector-field"><span>App password</span><input type="password" name="password" autocomplete="off" required></label>
-        <label class="connector-field"><span>From address</span><input type="email" name="from" autocomplete="off" required></label>
-        <div class="connector-form__actions">
-          <button type="submit" class="btn btn-primary">Save</button>
-          <button type="button" class="btn" data-smtp-disconnect>Disconnect</button>
-          <span class="connector-form__message${formMsg?.isError ? ' is-error' : ''}" data-message>${formMsg ? escapeHtml(formMsg.text) : ''}</span>
-        </div>
-      </form>
-    </u2-card>
-  `;
-}
-
-function renderNotifyCard(ctx) {
-  const formMsg = ctx.formMessages.notify;
-  return `
-    <u2-card title="Notifications webhook">
-      <form data-form="notify-webhook-credentials" class="connector-form" autocomplete="off">
-        <label class="connector-field">
-          <span>Webhook URL</span>
-          <input type="url" name="webhookUrl" placeholder="https://ntfy.sh/your-topic" autocomplete="off" required>
-        </label>
-        <label class="connector-field">
-          <span>Format</span>
-          <select name="format">
-            <option value="json">JSON</option>
-            <option value="ntfy">ntfy (ntfy.sh)</option>
-          </select>
-        </label>
-        <div class="connector-form__actions">
-          <button type="submit" class="btn btn-primary">Save</button>
-          <span class="connector-form__message${formMsg?.isError ? ' is-error' : ''}" data-message>${formMsg ? escapeHtml(formMsg.text) : ''}</span>
-        </div>
-      </form>
-    </u2-card>
-  `;
-}
-
 // Settings page for Phase 3's real connectors (docs/connectors.md). Fetches
 // its own data (GET /api/connectors) and owns all of its state -- the same
 // "self-fetching custom element" pattern u2-timeline uses in standalone
@@ -223,15 +92,14 @@ export class U2Connectors extends HTMLElement {
     super();
     this._connectors = null;
     this._smtpConfigured = false;
+    this._catalog = [];
     this._banner = null; // { variant, message } from the OAuth redirect, shown once
     this._busySyncDomains = new Set();
-    this._busyKeys = new Set(); // e.g. "google:calendar" while disconnecting
     this._domainMessages = {}; // domain -> { text, isError } (provider switch / sync result)
-    this._formMessages = { google: null, imap: null, smtp: null, webSearch: null, notify: null };
 
     this._onChange = this._onChange.bind(this);
     this._onClick = this._onClick.bind(this);
-    this._onSubmit = this._onSubmit.bind(this);
+    this._onCatalogAction = this._onCatalogAction.bind(this);
   }
 
   connectedCallback() {
@@ -240,7 +108,9 @@ export class U2Connectors extends HTMLElement {
     this._consumeQueryBanner();
     this.addEventListener('change', this._onChange);
     this.addEventListener('click', this._onClick);
-    this.addEventListener('submit', this._onSubmit);
+    this.addEventListener('connector-config-submit', this._onCatalogAction);
+    this.addEventListener('connector-service-action', this._onCatalogAction);
+    this.addEventListener('connector-disconnect', this._onCatalogAction);
     this._load();
   }
 
@@ -271,9 +141,10 @@ export class U2Connectors extends HTMLElement {
   async _load() {
     this.innerHTML = `<div class="empty-state">Loading connectors...</div>`;
     try {
-      const { connectors, smtpConfigured } = await api.getConnectors();
+      const { connectors, smtpConfigured, catalog } = await api.getConnectors();
       this._connectors = connectors;
       this._smtpConfigured = !!smtpConfigured;
+      this._catalog = catalog?.connectors || [];
       this._render();
     } catch (err) {
       this.innerHTML = `<div class="load-error">Couldn't load connectors: ${escapeHtml(err.message)}</div>`;
@@ -285,8 +156,6 @@ export class U2Connectors extends HTMLElement {
     const ctx = {
       busySyncDomains: this._busySyncDomains,
       domainMessages: this._domainMessages,
-      busyKeys: this._busyKeys,
-      formMessages: this._formMessages,
       smtpConfigured: this._smtpConfigured,
     };
 
@@ -311,16 +180,22 @@ export class U2Connectors extends HTMLElement {
         <span class="mono">docs/connectors.md</span>.
       </p>
       <div class="connectors__grid">${domainCards}</div>
-      <div class="connectors__section-title">Google</div>
-      <div class="connectors__grid">${renderGoogleCard(connectors, ctx)}</div>
-      <div class="connectors__section-title">Mail</div>
-      <div class="connectors__grid">${renderImapCard(ctx)}${renderSmtpCard(ctx)}</div>
-      <div class="connectors__section-title">Web &amp; notifications</div>
-      <div class="connectors__grid">
-        ${renderBraveCard(ctx)}
-        ${renderNotifyCard(ctx)}
-      </div>
+      <div class="connectors__section-title">Connector catalog</div>
+      <div class="connector-table" role="list">${this._catalog.map((definition) => this._renderCatalogRow(definition)).join('')}</div>
+      <u2-connector-setup></u2-connector-setup>
     `;
+  }
+
+  _renderCatalogRow(definition) {
+    const state = this._catalogState(definition);
+    return `<button class="connector-catalog-row" type="button" role="listitem" data-catalog-id="${escapeHtml(definition.id)}"><span class="status-dot ${state.connected ? 'is-connected' : 'is-disconnected'}"></span><span class="connector-catalog-row__main"><strong>${escapeHtml(definition.name)}</strong><small>${escapeHtml(definition.description || '')}</small></span><span class="connector-catalog-row__meta">${definition.status === 'available' ? (state.connected ? 'Connected' : 'Configure') : 'Planned'}</span></button>`;
+  }
+
+  _catalogState(definition) {
+    const connectedProviders = (this._connectors || []).flatMap((entry) => entry.connectedProviders || []);
+    if (definition.id === 'google') return { connected: definition.setup.services.some((service) => connectedProviders.includes(service.providerId)), connectedProviders };
+    if (definition.id === 'smtp') return { connected: this._smtpConfigured, connectedProviders };
+    return { connected: connectedProviders.includes(definition.id), connectedProviders };
   }
 
   _onChange(e) {
@@ -330,12 +205,10 @@ export class U2Connectors extends HTMLElement {
   }
 
   _onClick(e) {
-    if (e.target.closest('button[data-smtp-disconnect]')) {
-      this._disconnectSmtp();
-      return;
-    }
-    if (e.target.closest('button[data-imap-disconnect]')) {
-      this._disconnectImap();
+    const catalogRow = e.target.closest('[data-catalog-id]');
+    if (catalogRow) {
+      const definition = this._catalog.find((item) => item.id === catalogRow.dataset.catalogId);
+      this.querySelector('u2-connector-setup').open(definition, this._catalogState(definition));
       return;
     }
     const syncBtn = e.target.closest('button[data-sync-domain]');
@@ -344,43 +217,28 @@ export class U2Connectors extends HTMLElement {
       return;
     }
 
-    const connectBtn = e.target.closest('button[data-google-connect]');
-    if (connectBtn) {
-      // Full-page navigation, not a fetch -- the user needs to see and
-      // interact with Google's real consent screen.
-      window.location.href = `/api/connectors/google/oauth/start?service=${encodeURIComponent(connectBtn.dataset.googleConnect)}`;
-      return;
-    }
-
-    const disconnectBtn = e.target.closest('button[data-google-disconnect]');
-    if (disconnectBtn) {
-      this._disconnectGoogle(disconnectBtn.dataset.googleDisconnect);
-    }
   }
 
-  _onSubmit(e) {
-    const form = e.target.closest('form[data-form]');
-    if (!form) return;
-    e.preventDefault();
-
-    switch (form.dataset.form) {
-      case 'google-credentials':
-        this._submitGoogleCredentials(form);
-        break;
-      case 'web-search-credentials':
-        this._submitWebSearchCredentials(form);
-        break;
-      case 'imap-credentials':
-        this._submitImapCredentials(form);
-        break;
-      case 'smtp-credentials':
-        this._submitSmtpCredentials(form);
-        break;
-      case 'notify-webhook-credentials':
-        this._submitNotifyWebhookCredentials(form);
-        break;
-      default:
-        break;
+  async _onCatalogAction(event) {
+    event.stopPropagation();
+    const { connector } = event.detail;
+    try {
+      if (event.type === 'connector-config-submit') {
+        await api.saveConnectorConfig(connector.setup.credentialEndpoint, event.detail.values);
+        event.detail.form.reset();
+      } else if (event.type === 'connector-disconnect') {
+        await api.runConnectorAction(connector.setup.disconnectEndpoint);
+      } else if (event.detail.action === 'connect') {
+        window.location.href = `/api/connectors/google/oauth/start?service=${encodeURIComponent(event.detail.service)}`;
+        return;
+      } else {
+        await api.runConnectorAction(`/api/connectors/google/disconnect?service=${encodeURIComponent(event.detail.service)}`);
+      }
+      this.querySelector('u2-connector-setup').close();
+      await this._load();
+    } catch (err) {
+      const message = event.detail.form?.querySelector('[data-message]');
+      if (message) message.textContent = err.message;
     }
   }
 
@@ -424,101 +282,6 @@ export class U2Connectors extends HTMLElement {
     await this._load();
   }
 
-  async _disconnectGoogle(service) {
-    const key = `google:${service}`;
-    if (this._busyKeys.has(key)) return;
-    this._busyKeys.add(key);
-    this._render();
-
-    try {
-      await api.disconnectGoogleService(service);
-    } catch (err) {
-      this._formMessages.google = { text: err.message, isError: true };
-    } finally {
-      this._busyKeys.delete(key);
-    }
-
-    await this._load();
-  }
-
-  async _submitGoogleCredentials(form) {
-    const clientId = form.elements.clientId.value.trim();
-    const clientSecret = form.elements.clientSecret.value.trim();
-    await this._submitCredentialForm(form, 'google', () => api.saveGoogleCredentials({ clientId, clientSecret }));
-  }
-
-  async _submitWebSearchCredentials(form) {
-    const apiKey = form.elements.apiKey.value.trim();
-    await this._submitCredentialForm(form, 'webSearch', () => api.saveWebSearchCredentials({ apiKey }));
-  }
-
-  async _submitImapCredentials(form) {
-    const host = form.elements.host.value.trim();
-    const username = form.elements.username.value.trim();
-    const password = form.elements.password.value;
-    await this._submitCredentialForm(form, 'imap', () => api.saveImapCredentials({ host, username, password }));
-  }
-
-  async _disconnectImap() {
-    try {
-      await api.disconnectImap();
-      this._formMessages.imap = { text: 'Disconnected.', isError: false };
-    } catch (err) {
-      this._formMessages.imap = { text: err.message, isError: true };
-    }
-    await this._load();
-  }
-
-  async _submitSmtpCredentials(form) {
-    const host = form.elements.host.value.trim();
-    const port = Number(form.elements.port.value);
-    const username = form.elements.username.value.trim();
-    const password = form.elements.password.value;
-    const from = form.elements.from.value.trim();
-    await this._submitCredentialForm(form, 'smtp', () => api.saveSmtpCredentials({ host, port, username, password, from }));
-    await this._load();
-  }
-
-  async _disconnectSmtp() {
-    try {
-      await api.disconnectSmtp();
-      this._formMessages.smtp = { text: 'Disconnected.', isError: false };
-    } catch (err) {
-      this._formMessages.smtp = { text: err.message, isError: true };
-    }
-    await this._load();
-  }
-
-  async _submitNotifyWebhookCredentials(form) {
-    const webhookUrl = form.elements.webhookUrl.value.trim();
-    const format = form.elements.format.value;
-    await this._submitCredentialForm(form, 'notify', () => api.saveNotifyWebhookCredentials({ webhookUrl, format }));
-  }
-
-  // Shared submit lifecycle for the three write-only credential forms:
-  // disable Save while in flight, show a brief inline message after, and
-  // clear the form on success so secrets never linger in the input longer
-  // than the user's own typing.
-  async _submitCredentialForm(form, key, request) {
-    const btn = form.querySelector('button[type="submit"]');
-    const msgEl = form.querySelector('[data-message]');
-    btn.disabled = true;
-    msgEl.textContent = '';
-    msgEl.classList.remove('is-error');
-
-    try {
-      await request();
-      form.reset();
-      msgEl.textContent = 'Saved.';
-      this._formMessages[key] = { text: 'Saved.', isError: false };
-    } catch (err) {
-      msgEl.textContent = err.message;
-      msgEl.classList.add('is-error');
-      this._formMessages[key] = { text: err.message, isError: true };
-    } finally {
-      btn.disabled = false;
-    }
-  }
 }
 
 customElements.define('u2-connectors', U2Connectors);

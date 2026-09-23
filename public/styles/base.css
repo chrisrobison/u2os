@@ -1023,6 +1023,25 @@ u2-why { display: block; }
   font-size: var(--text-sm);
 }
 
+.connector-table { border: var(--border-width) solid var(--border-color); border-radius: var(--radius-md); overflow: hidden; }
+.connector-catalog-row { width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 0; border-bottom: var(--border-width) solid var(--border-color); background: var(--bg-surface); color: var(--text-primary); text-align: left; cursor: pointer; }
+.connector-catalog-row:last-child { border-bottom: 0; }
+.connector-catalog-row:hover, .connector-catalog-row:focus-visible { background: var(--bg-surface-hover); }
+.connector-catalog-row__main { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.connector-catalog-row__main small { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.connector-catalog-row__meta { color: var(--text-secondary); font-size: var(--text-sm); }
+.connector-dialog { width: min(600px, calc(100vw - 32px)); max-height: calc(100vh - 32px); border: var(--border-width) solid var(--border-color); border-radius: var(--radius-lg); background: var(--bg-surface); color: var(--text-primary); padding: var(--space-5); }
+.connector-dialog::backdrop { background: rgb(0 0 0 / 55%); }
+.connector-dialog__header { display: flex; justify-content: space-between; gap: var(--space-4); align-items: start; }
+.connector-dialog__header h2 { margin: 0 0 var(--space-1); }
+.connector-dialog__header p { margin: 0; color: var(--text-secondary); }
+.connector-capabilities { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-4) 0; }
+.connector-chip { padding: 2px var(--space-2); border-radius: 999px; background: var(--bg-input); color: var(--text-secondary); font-size: var(--text-xs); }
+.connector-services { margin-top: var(--space-4); border-top: var(--border-width) solid var(--border-color); }
+.connector-service { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); padding: var(--space-3) 0; border-bottom: var(--border-width) solid var(--border-color); }
+.connector-service > span { display: flex; align-items: center; gap: var(--space-2); }
+.connector-planned { padding: var(--space-3); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text-secondary); }
+
 /* ---------- responsive ---------- */
 
 @media (max-width: 1200px) {

@@ -4,6 +4,14 @@ Phase 1/2 shipped mock integrations behind a clean seam: `server/tools/*.js` (th
 
 This document is the contract for: the skill/connector manifest format, the provider interface, credential encryption, the OAuth2 flow, provider selection, and per-connector setup instructions for you (the owner) to actually connect a real account.
 
+## Catalog-driven setup UI
+
+`GET /api/connectors` returns a versioned `catalog` alongside runtime health. Each catalog definition declares display metadata, capabilities, availability, account cardinality, and a constrained setup schema. The browser renders those definitions with the reusable `<u2-connector-setup>` native-dialog component; definitions cannot inject HTML or JavaScript. Supported controls are standard text, password, email, URL, number, and select fields.
+
+The Connectors page is a compact catalog rather than a wall of provider-specific forms. Selecting a row opens the same keyboard-accessible setup dialog for Google OAuth, IMAP, SMTP, API-key, and webhook configuration. Planned definitions—including RSS/Atom, POP3, Discord, WhatsApp, iMessage, Slack, and Microsoft 365—are discoverable but explicitly unavailable until their adapters exist.
+
+Definitions declare `accountMode: "single" | "multiple"`. This is the forward-compatible contract for connection instances; current encrypted credential storage remains single-instance until the separate multi-account persistence migration is complete. A catalog entry is a connector type, not an account record.
+
 ## Principles carried over from PROMPT.md
 
 - **User owns credentials** (§27, §29): you supply your own Google OAuth client, your own Brave Search API key, your own webhook URL. U2OS never depends on a U2OS-operated cloud service for any of this.

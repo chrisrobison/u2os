@@ -53,6 +53,14 @@ export function getHealth() {
   return request('/api/health');
 }
 
+export function saveConnectorConfig(endpoint, values) {
+  return request(endpoint, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(values) });
+}
+
+export function runConnectorAction(endpoint) {
+  return request(endpoint, { method: 'POST', headers: JSON_HEADERS, body: '{}' });
+}
+
 export function getDiagnostics() {
   return request('/api/diagnostics');
 }

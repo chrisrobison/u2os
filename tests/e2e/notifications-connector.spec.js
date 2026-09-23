@@ -15,12 +15,12 @@ test('owner can configure and select real notification delivery without exposing
     await page.locator('form button[type="submit"]').click();
     await expect(page.locator('.workspace__title', { hasText: 'Connectors' })).toBeVisible();
 
-    const credentials = page.locator('form[data-form="notify-webhook-credentials"]');
+    await page.locator('[data-catalog-id="webhook"]').click();
+    const credentials = page.locator('u2-connector-setup form[data-connector-form]');
     await credentials.locator('input[name="webhookUrl"]').fill(WEBHOOK_URL);
     await credentials.locator('select[name="format"]').selectOption('ntfy');
     await credentials.locator('button[type="submit"]').click();
-    await expect(credentials.locator('[data-message]')).toHaveText('Saved.');
-    await expect(credentials.locator('input[name="webhookUrl"]')).toHaveValue('');
+    await expect(page.locator('u2-connector-setup dialog')).not.toBeVisible();
 
     const notifications = page.locator('u2-card[title="Notifications"]');
     await notifications.locator('select[data-provider-domain="notifications"]').selectOption('webhook');

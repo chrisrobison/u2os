@@ -357,16 +357,17 @@ test.describe.serial('responsive layout & accessibility baseline (#19)', () => {
   // 5. Dialog/action-prompt behavior.
   // ---------------------------------------------------------------------
 
-  test('no native <dialog>/role="dialog" modal exists anywhere in the shell (documented finding, not fabricated coverage)', async () => {
-    // grep -rn '<dialog\|role="dialog"' public/components/ -> no matches.
-    // Approval cards (<u2-approval>) render inline in the dashboard/agent
-    // transcript, not as a modal, so there's no real focus-trap to assert.
-    // This is a trip-wire: if a genuine modal dialog is ever introduced,
-    // this assertion should fail and prompt real focus-trap coverage to be
-    // added here instead of silently going stale.
-    await page.goto(`${dedicated.baseURL}/#/home`);
-    const dialogCount = await page.locator('dialog, [role="dialog"]').count();
-    expect(dialogCount).toBe(0);
+  test('connector setup uses a keyboard-dismissable native modal and restores focus', async () => {
+    await page.goto(`${dedicated.baseURL}/#/connectors`);
+    const trigger = page.locator('[data-catalog-id="google"]');
+    await trigger.focus();
+    await trigger.press('Enter');
+    const dialog = page.locator('u2-connector-setup dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('[data-close]')).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(dialog).not.toBeVisible();
+    await expect(trigger).toBeFocused();
   });
 
   // ---------------------------------------------------------------------
