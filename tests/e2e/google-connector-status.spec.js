@@ -27,6 +27,7 @@ test('Google connection dots reflect stored connections even when mock providers
             lastError: null,
           })),
           smtpConfigured: false,
+          catalog: { version: 1, connectors: [{ id: 'google', name: 'Google', description: 'Google services', status: 'available', capabilities: ['calendar', 'email', 'contacts'], setup: { type: 'oauth2', fields: [], services: [{ id: 'calendar', label: 'Calendar', providerId: 'google-calendar', domain: 'calendar' }, { id: 'gmail', label: 'Gmail', providerId: 'gmail', domain: 'email' }, { id: 'contacts', label: 'Contacts', providerId: 'google-contacts', domain: 'contacts' }] } }] },
         }),
       });
     });
@@ -35,10 +36,11 @@ test('Google connection dots reflect stored connections even when mock providers
     await page.locator('input[name="passphrase"]').fill(PASSPHRASE);
     await page.locator('form button[type="submit"]').click();
 
-    const google = page.locator('u2-card[title="Google"]');
-    const gmail = google.locator('.connector-google-row', { hasText: 'Gmail' });
-    const contacts = google.locator('.connector-google-row', { hasText: 'Contacts' });
-    const calendar = google.locator('.connector-google-row', { hasText: 'Calendar' });
+    await page.locator('[data-catalog-id="google"]').click();
+    const google = page.locator('u2-connector-setup dialog');
+    const gmail = google.locator('.connector-service', { hasText: 'Gmail' });
+    const contacts = google.locator('.connector-service', { hasText: 'Contacts' });
+    const calendar = google.locator('.connector-service', { hasText: 'Calendar' });
 
     await expect(gmail.locator('.status-dot')).toHaveClass(/is-connected/);
     await expect(gmail.locator('button')).toHaveText('Disconnect');

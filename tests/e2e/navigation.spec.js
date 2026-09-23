@@ -198,8 +198,9 @@ test.describe.serial('navigation shell (#15)', () => {
         for (const label of ['Calendar', 'Email', 'Contacts', 'Web Search', 'Notifications']) {
           await expect(page.locator(`.connectors__grid u2-card[title="${label}"]`)).toBeVisible();
         }
-        await expect(page.locator('u2-card[title="Google"]')).toBeVisible();
-        await expect(page.locator('u2-card[title="Brave Search"]')).toBeVisible();
+        await expect(page.locator('[data-catalog-id="google"]')).toBeVisible();
+        await expect(page.locator('[data-catalog-id="brave-search"]')).toBeVisible();
+        await expect(page.locator('[data-catalog-id="discord"]')).toContainText('Planned');
       },
     },
     {
