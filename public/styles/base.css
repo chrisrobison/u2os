@@ -1022,6 +1022,14 @@ u2-why { display: block; }
   gap: var(--space-2);
   font-size: var(--text-sm);
 }
+.connector-account { margin: var(--space-3) 0; padding: var(--space-3); border: var(--border-width) solid var(--border-color); border-radius: var(--radius-sm); }
+.connector-account__row, .connector-account__actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.connector-account__row { justify-content: space-between; }
+.connector-account__label { font-weight: 600; overflow-wrap: anywhere; }
+.connector-account-empty { padding: var(--space-3) 0; color: var(--text-secondary); }
+.connector-account-empty.is-error { color: var(--accent-danger); }
+.connector-account-rename { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.connector-account .connector-form { margin-top: var(--space-3); }
 
 .connector-table { border: var(--border-width) solid var(--border-color); border-radius: var(--radius-md); overflow: hidden; }
 .connector-catalog-row { width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 0; border-bottom: var(--border-width) solid var(--border-color); background: var(--bg-surface); color: var(--text-primary); text-align: left; cursor: pointer; }

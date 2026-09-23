@@ -290,42 +290,24 @@ export function saveGoogleCredentials({ clientId, clientSecret } = {}) {
   });
 }
 
-export function saveWebSearchCredentials({ apiKey } = {}) {
-  return request('/api/connectors/web-search/credentials', {
-    method: 'POST',
-    headers: JSON_HEADERS,
-    body: JSON.stringify({ apiKey }),
-  });
-}
+// issue #163 PR 5: saveWebSearchCredentials/saveImapCredentials/
+// disconnectImap/saveSmtpCredentials/disconnectSmtp/
+// saveNotifyWebhookCredentials wrapped the now-removed legacy single-account
+// credential routes -- every connector that can have more than one account
+// (imap, brave-search/web-search, webhook) is configured through the
+// connection-instance wrappers below instead; SMTP (which genuinely has no
+// multi-account concept -- see connector-catalog.js's smtp entry) keeps a
+// single-shot pair, just renamed to a non-legacy path.
 
-export function saveImapCredentials({ host, username, password } = {}) {
-  return request('/api/connectors/imap/credentials', {
-    method: 'POST', headers: JSON_HEADERS,
-    body: JSON.stringify({ host, port: 993, username, password }),
-  });
-}
-
-export function disconnectImap() {
-  return request('/api/connectors/imap/disconnect', { method: 'POST', headers: JSON_HEADERS });
-}
-
-export function saveSmtpCredentials({ host, port, username, password, from } = {}) {
-  return request('/api/connectors/smtp/credentials', {
+export function saveSmtpSettings({ host, port, username, password, from } = {}) {
+  return request('/api/connectors/smtp/settings', {
     method: 'POST', headers: JSON_HEADERS,
     body: JSON.stringify({ host, port, username, password, from }),
   });
 }
 
-export function disconnectSmtp() {
-  return request('/api/connectors/smtp/disconnect', { method: 'POST', headers: JSON_HEADERS });
-}
-
-export function saveNotifyWebhookCredentials({ webhookUrl, format } = {}) {
-  return request('/api/connectors/notify-webhook/credentials', {
-    method: 'POST',
-    headers: JSON_HEADERS,
-    body: JSON.stringify({ webhookUrl, format }),
-  });
+export function clearSmtpSettings() {
+  return request('/api/connectors/smtp/settings/clear', { method: 'POST', headers: JSON_HEADERS });
 }
 
 export function disconnectGoogleService(service) {
@@ -335,11 +317,53 @@ export function disconnectGoogleService(service) {
   });
 }
 
-export function setActiveProvider(domain, providerId) {
+// Instance-scoped counterpart of disconnectGoogleService(): disconnects one
+// specific google account's service, independent of whichever instance (if
+// any) is the domain's current active one -- see server/api/routes/
+// connectors.js's matching route comment.
+export function disconnectGoogleInstanceService(instanceId, service) {
+  return request(`/api/connectors/google/instances/${encodeURIComponent(instanceId)}/disconnect${qs({ service })}`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+  });
+}
+
+export function setActiveProvider(domain, providerId, { connectorId, instanceId } = {}) {
+  const body = connectorId && instanceId ? { providerId, connectorId, instanceId } : { providerId };
   return request(`/api/connectors/${encodeURIComponent(domain)}/active`, {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ providerId }),
+    body: JSON.stringify(body),
+  });
+}
+
+// Connection-instance CRUD (issue #163 PR 2/5): multiple accounts per
+// connector. Mirrors server/api/routes/connectors.js's
+// /api/connectors/:connectorId/instances routes.
+export function listConnectorInstances(connectorId) {
+  return request(`/api/connectors/${encodeURIComponent(connectorId)}/instances`);
+}
+
+export function createConnectorInstance(connectorId, data = {}) {
+  return request(`/api/connectors/${encodeURIComponent(connectorId)}/instances`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateConnectorInstance(connectorId, instanceId, data = {}) {
+  return request(`/api/connectors/${encodeURIComponent(connectorId)}/instances/${encodeURIComponent(instanceId)}`, {
+    method: 'PATCH',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteConnectorInstance(connectorId, instanceId) {
+  return request(`/api/connectors/${encodeURIComponent(connectorId)}/instances/${encodeURIComponent(instanceId)}`, {
+    method: 'DELETE',
+    headers: JSON_HEADERS,
   });
 }
 

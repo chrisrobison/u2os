@@ -8,6 +8,12 @@ export const CONNECTOR_CATALOG = [
     description: 'Calendar, Gmail, and Contacts through Google OAuth.',
     capabilities: ['calendar', 'email', 'contacts'],
     setup: {
+      // `credentialEndpoint`/`fields` here are the ONE shared OAuth client
+      // id/secret for the whole connector (Google issues one client for all
+      // of Calendar/Gmail/Contacts) -- unrelated to, and unaffected by,
+      // per-account instance CRUD (issue #163 PR 5): every google account
+      // instance is created label-only via POST .../google/instances and
+      // connected per-service via OAuth against that specific instance.
       type: 'oauth2', credentialEndpoint: '/api/connectors/google/credentials',
       fields: [field('clientId', 'OAuth client ID'), field('clientSecret', 'OAuth client secret', 'password')],
       services: [
@@ -20,22 +26,42 @@ export const CONNECTOR_CATALOG = [
   {
     id: 'imap', name: 'IMAP', category: 'Email', status: 'available', accountMode: 'multiple',
     description: 'Read and synchronize mail from any TLS IMAP server.', capabilities: ['email.read'],
-    setup: { type: 'credentials', credentialEndpoint: '/api/connectors/imap/credentials', disconnectEndpoint: '/api/connectors/imap/disconnect', fields: [field('host', 'Mail host', 'text', { placeholder: 'imap.example.com' }), field('username', 'Username'), field('password', 'App password', 'password')] },
+    // No credentialEndpoint/disconnectEndpoint: a 'multiple' accountMode
+    // connector's fields are rendered as the setup dialog's "add account"
+    // form (issue #163 PR 5) and POST straight to
+    // /api/connectors/imap/instances -- there is no single top-level
+    // credential submission for a connector that can have more than one
+    // account.
+    setup: { type: 'credentials', fields: [field('host', 'Mail host', 'text', { placeholder: 'imap.example.com' }), field('username', 'Username'), field('password', 'App password', 'password')] },
   },
   {
-    id: 'smtp', name: 'SMTP', category: 'Email', status: 'available', accountMode: 'multiple',
+    id: 'smtp', name: 'SMTP', category: 'Email', status: 'available', accountMode: 'single',
     description: 'Send mail through a standard SMTP submission server.', capabilities: ['email.send'],
-    setup: { type: 'credentials', credentialEndpoint: '/api/connectors/smtp/credentials', disconnectEndpoint: '/api/connectors/smtp/disconnect', fields: [field('host', 'Mail host', 'text', { placeholder: 'smtp.example.com' }), field('port', 'Port', 'select', { options: [{ value: 465, label: '465 (TLS)' }, { value: 587, label: '587 (STARTTLS)' }] }), field('username', 'Username'), field('password', 'App password', 'password'), field('from', 'From address', 'email')] },
+    // Deliberately accountMode: 'single' (issue #163 PR 5), NOT 'multiple'
+    // like the other credentialed connectors here: smtp-transport.js has no
+    // per-instance concept anywhere in this system (email.send reads a
+    // single bare 'smtp' vault file directly, never through
+    // connection-instances.js/provider-registry.js's instance resolution),
+    // so there is no real "second SMTP account" to manage. The setup dialog
+    // therefore keeps the single-form + Save/Disconnect UI other
+    // accountMode:'single' connectors use, backed by its own small,
+    // non-instance route pair below rather than the generic CRUD surface.
+    setup: { type: 'credentials', credentialEndpoint: '/api/connectors/smtp/settings', disconnectEndpoint: '/api/connectors/smtp/settings/clear', fields: [field('host', 'Mail host', 'text', { placeholder: 'smtp.example.com' }), field('port', 'Port', 'select', { options: [{ value: 465, label: '465 (TLS)' }, { value: 587, label: '587 (STARTTLS)' }] }), field('username', 'Username'), field('password', 'App password', 'password'), field('from', 'From address', 'email')] },
   },
   {
-    id: 'brave-search', name: 'Brave Search', category: 'Web', status: 'available', accountMode: 'single',
+    id: 'brave-search', name: 'Brave Search', category: 'Web', status: 'available', accountMode: 'multiple',
     description: 'Privacy-oriented web search.', capabilities: ['web.search'],
-    setup: { type: 'api_key', credentialEndpoint: '/api/connectors/web-search/credentials', fields: [field('apiKey', 'API key', 'password')] },
+    // accountMode: 'multiple' as of issue #163 PR 5 (was 'single'): the
+    // instance CRUD surface and provider-registry.js resolution already
+    // fully support more than one Brave Search API key (e.g. separate
+    // personal/higher-rate-limit keys) -- only the pre-PR-5 UI never
+    // exposed that. No credentialEndpoint: see the imap entry's comment.
+    setup: { type: 'api_key', fields: [field('apiKey', 'API key', 'password')] },
   },
   {
     id: 'webhook', name: 'Webhook notifications', category: 'Notifications', status: 'available', accountMode: 'multiple',
     description: 'Deliver notifications to JSON or ntfy webhooks.', capabilities: ['notifications.send'],
-    setup: { type: 'credentials', credentialEndpoint: '/api/connectors/notify-webhook/credentials', fields: [field('webhookUrl', 'Webhook URL', 'url'), field('format', 'Format', 'select', { options: [{ value: 'json', label: 'JSON' }, { value: 'ntfy', label: 'ntfy' }] })] },
+    setup: { type: 'credentials', fields: [field('webhookUrl', 'Webhook URL', 'url'), field('format', 'Format', 'select', { options: [{ value: 'json', label: 'JSON' }, { value: 'ntfy', label: 'ntfy' }] })] },
   },
   ...[
     ['rss-atom', 'RSS / Atom', 'News & feeds', 'Follow news sites, blogs, and any standard feed.', ['feed.read']],

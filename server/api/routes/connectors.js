@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { sendJson } from '../router.js';
-import { getHealth, resolveConnectedRealProvider, resolveInstanceForDomain } from '../../integrations/provider-registry.js';
+import { getHealth, resolveConnectedRealProvider, resolveInstanceForDomain, getRealProviderModule } from '../../integrations/provider-registry.js';
 import {
   setActiveProvider,
   validProviderIdsFor,
@@ -16,12 +16,11 @@ import { isConfigured as isSmtpConfigured } from '../../integrations/smtp-transp
 import { getConnectorCatalog, providerIdsForConnector } from '../../integrations/connector-catalog.js';
 import {
   listInstances,
+  listInstanceRows,
   findInstance,
   createConnectionInstance,
   updateConnectionInstance,
   deleteConnectionInstance,
-  ensureLegacyCredentialInstance,
-  clearLegacyCredentialInstance,
 } from '../../integrations/connection-instances.js';
 import {
   buildAuthUrl,
@@ -39,10 +38,16 @@ const GOOGLE_PROVIDER_TARGETS = {
   contacts: { domain: 'contacts', providerId: 'google-contacts' },
 };
 
-export function activateGoogleProvider(service, dataDir) {
+export function activateGoogleProvider(service, dataDir, instanceId) {
   const target = GOOGLE_PROVIDER_TARGETS[service];
   if (!target) throw new Error(`Unknown Google service: ${service}`);
-  setActiveProvider(target.domain, target.providerId, dataDir);
+  if (instanceId) {
+    const config = loadConnectorsConfig(dataDir);
+    config[target.domain] = { ...config[target.domain], active: target.providerId, activeInstanceId: instanceId };
+    saveConnectorsConfig(config, dataDir);
+  } else {
+    setActiveProvider(target.domain, target.providerId, dataDir);
+  }
   return target;
 }
 
@@ -69,25 +74,25 @@ function pruneExpiredStates() {
 // -----------------------------------------------------------------------
 
 // Per-connector credential validation/normalization for the instance CRUD
-// routes below, reusing the exact same validators (and, for imap/smtp, the
-// exact same friendly error text) as the single-shot credential routes
-// above -- so multi-instance create/update accepts and rejects exactly what
-// the old single-account routes always did. `google` is deliberately absent:
-// a google instance is OAuth-driven (PR 3 attaches tokens to its vault_key),
-// so it never takes credential fields through this CRUD surface.
+// routes below, reusing the exact same validators (and the exact same
+// friendly error text) the old single-shot credential routes used --
+// so multi-instance create/update accepts and rejects exactly what those
+// routes always did. `google` is deliberately absent: a google instance is
+// OAuth-driven (PR 3 attaches tokens to its vault_key), so it never takes
+// credential fields through this CRUD surface. `smtp` is ALSO deliberately
+// absent (issue #163 PR 5): smtp-transport.js has no per-instance routing
+// (see provider-registry.js's OPTIONS_ARITY comment) -- there is no "active
+// SMTP instance" concept anywhere in this system, so it would be actively
+// misleading to let a caller create a multi-account-looking smtp instance
+// row that email.send can never actually read from. SMTP configuration
+// instead has its own single-account, non-instance route pair below
+// (POST/clear /api/connectors/smtp/settings).
 const CREDENTIAL_VALIDATORS = {
   imap: (merged) => {
     try {
       return validateImapSettings(merged);
     } catch {
       throw new Error('Invalid IMAP settings; use a host, username, app password, and TLS port 993');
-    }
-  },
-  smtp: (merged) => {
-    try {
-      return validateSmtpSettings(merged);
-    } catch {
-      throw new Error('Invalid SMTP settings; use a host, port 465 or 587, username, app password, and From address');
     }
   },
   'brave-search': (merged) => {
@@ -100,14 +105,27 @@ const CREDENTIAL_VALIDATORS = {
   },
 };
 
-// The full set of connector ids the instance CRUD routes accept -- the four
+// The full set of connector ids the instance CRUD routes accept -- the
 // credentialed types above, plus google (label-only; see CREDENTIAL_VALIDATORS'
-// comment). Every other catalog id (including every 'planned' connector) is
+// comment). Every other catalog id (including smtp, and every 'planned'
+// connector) is
 // rejected with a 400 rather than silently creating an unusable row.
 const INSTANCE_CONNECTOR_IDS = new Set(['google', ...Object.keys(CREDENTIAL_VALIDATORS)]);
 
 function isNonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function googleClientCredentials(db) {
+  const shared = readEncryptedFile('google');
+  if (shared?.clientId && shared?.clientSecret) return shared;
+  // Upgraded installations may have moved the old combined file to the
+  // migrated instance vault before shared client configuration existed.
+  for (const instance of listInstanceRows(db, 'google')) {
+    const migrated = readEncryptedFile(instance.vault_key);
+    if (migrated?.clientId && migrated?.clientSecret) return migrated;
+  }
+  return shared || {};
 }
 
 /** Every request-body field except `label` is treated as a credential field
@@ -183,7 +201,7 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
     if (!findInstance(db, 'google', instanceId)) {
       return sendJson(res, 404, { error: 'Not Found' });
     }
-    const stored = readEncryptedFile('google');
+    const stored = googleClientCredentials(db);
     if (!stored?.clientId) {
       return sendJson(res, 400, { error: 'Google OAuth client credentials are not configured yet' });
     }
@@ -231,7 +249,7 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
       if (!instance) {
         throw new Error(`connection instance "${instanceId}" no longer exists`);
       }
-      const stored = readEncryptedFile('google');
+      const stored = googleClientCredentials(db);
       if (!stored?.clientId || !stored?.clientSecret) {
         throw new Error('Google OAuth client credentials are not configured');
       }
@@ -252,7 +270,8 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
       // route above), so the mirror write PR 3 left here as a stopgap is no
       // longer needed and has been removed.
       storeTokens(instance.vault_key, service, tokens);
-      activateGoogleProvider(service);
+      db.prepare('UPDATE connection_instances SET status = ?, updated_at = ? WHERE id = ?').run('connected', new Date().toISOString(), instanceId);
+      activateGoogleProvider(service, undefined, instanceId);
       reconcileSyncScheduler({ db, eventBus });
       res.writeHead(302, { Location: `/#/connectors?connected=${encodeURIComponent(service)}` });
       res.end();
@@ -269,18 +288,22 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
     if (!GOOGLE_SERVICES.includes(service)) {
       return sendJson(res, 400, { error: `service must be one of ${GOOGLE_SERVICES.join(', ')}` });
     }
-    // Legacy, pre-instance route, kept only because the setup dialog shipped
-    // in PR #161 (public/components/u2-connectors.js) still calls it -- to
-    // be removed once PR 5 migrates the frontend to per-instance disconnect
-    // (DELETE /api/connectors/google/instances/:instanceId).
+    // Domain-level disconnect: clears whichever instance is currently
+    // resolved as the domain's active instance for this service (falling
+    // back to the connector's sole connected instance when no explicit
+    // activeInstanceId is set -- see resolveInstanceForDomain()). Since PR 4,
+    // provider modules read tokens from a resolved connection instance's own
+    // vault_key, not the bare 'google' key -- so this route must resolve the
+    // SAME instance provider-registry.js would resolve for this service's
+    // domain and clear tokens there (a caught regression: clearing only the
+    // legacy 'google' key silently disconnected nothing a provider actually
+    // reads, while still reporting success). The legacy key is also cleared
+    // for good measure (harmless if already empty).
     //
-    // Since PR 4, provider modules read tokens from a resolved connection
-    // instance's own vault_key, not the bare 'google' key -- so this route
-    // must resolve the SAME instance provider-registry.js would resolve for
-    // this service's domain and clear tokens there (a caught regression:
-    // clearing only the legacy 'google' key silently disconnected nothing a
-    // provider actually reads, while still reporting success). The legacy
-    // key is also cleared for good measure (harmless if already empty).
+    // For disconnecting one SPECIFIC google account's service in a
+    // multi-account world (the setup dialog's per-account-row action, which
+    // may not be the domain's currently active instance), see the
+    // instance-scoped route below instead.
     const target = GOOGLE_PROVIDER_TARGETS[service];
     const config = loadConnectorsConfig();
     const instance = resolveInstanceForDomain(target.providerId, config[target.domain]?.activeInstanceId);
@@ -290,53 +313,43 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
     sendJson(res, 200, { disconnected: service });
   });
 
-  // --- Legacy single-account credential routes -----------------------
-  // issue #163's approved plan calls for removing these entirely in this
-  // PR, with no deprecated aliases (pre-1.0, no external consumers). They
-  // are deliberately KEPT here, additively, alongside the new
-  // /api/connectors/:connectorId/instances routes below: the schema-driven
-  // setup dialog shipped in PR #161 (public/components/u2-connectors.js,
-  // public/components/u2-connector-setup.js) POSTs straight to each
-  // catalog entry's `setup.credentialEndpoint`, which is still one of
-  // these exact paths (see connector-catalog.js) -- and the frontend isn't
-  // migrated to the instance endpoints until PR 5 of this sequence.
-  // Removing them now would 404 the only working "connect a
-  // credentialed connector" UI flow that exists today, for the two PRs in
-  // between. Flagged explicitly in this PR's report; PR 5 should delete
-  // this whole block once the frontend moves to the instance routes.
-  router.post('/api/connectors/web-search/credentials', async (req, res) => {
-    const { apiKey } = req.body || {};
-    if (!apiKey) return sendJson(res, 400, { error: 'apiKey is required' });
-    // issue #163 PR 4 regression fix: writing straight to the bare
-    // 'web-search' file (as this route did before) configures credentials
-    // nothing reads anymore -- brave-search-provider.js now resolves its
-    // vault key through a connection_instances row. See
-    // ensureLegacyCredentialInstance()'s doc comment.
-    ensureLegacyCredentialInstance(db, { connectorId: 'brave-search', plaintext: { apiKey }, vaultKeyOverride: 'web-search' });
-    sendJson(res, 200, { configured: true });
-  });
-
-  router.post('/api/connectors/imap/credentials', async (req, res) => {
-    try {
-      const settings = validateImapSettings(req.body);
-      // See ensureLegacyCredentialInstance()'s doc comment: reuses (or
-      // creates) the live connection_instances row backing 'imap' so
-      // imap-provider.js's instance-resolved reads actually find this.
-      ensureLegacyCredentialInstance(db, { connectorId: 'imap', plaintext: settings });
-      reconcileSyncScheduler({ db, eventBus });
-      sendJson(res, 200, { configured: true });
-    } catch {
-      sendJson(res, 400, { error: 'Invalid IMAP settings; use a host, username, app password, and TLS port 993' });
+  // Instance-scoped counterpart to the route above (issue #163 PR 5): the
+  // multi-account setup dialog shows every google account's per-service
+  // connect/disconnect state independently, so disconnecting one account's
+  // Gmail must never depend on -- or accidentally touch -- whichever
+  // instance happens to be the email domain's current active one. Clears
+  // tokens straight at this instance's own vault_key.
+  router.post('/api/connectors/google/instances/:instanceId/disconnect', async (req, res) => {
+    const { instanceId } = req.params;
+    const service = req.query.service;
+    if (!GOOGLE_SERVICES.includes(service)) {
+      return sendJson(res, 400, { error: `service must be one of ${GOOGLE_SERVICES.join(', ')}` });
     }
-  });
-
-  router.post('/api/connectors/imap/disconnect', async (_req, res) => {
-    clearLegacyCredentialInstance(db, { connectorId: 'imap' });
+    const instance = findInstance(db, 'google', instanceId);
+    if (!instance) return sendJson(res, 404, { error: 'Not Found' });
+    clearTokens(instance.vault_key, service);
+    const stillConnected = GOOGLE_SERVICES.some((candidate) => {
+      const mod = getRealProviderModule(GOOGLE_PROVIDER_TARGETS[candidate].providerId);
+      return mod?.isConnected?.(instance.vault_key);
+    });
+    if (!stillConnected) db.prepare('UPDATE connection_instances SET status = ?, updated_at = ? WHERE id = ?').run('pending', new Date().toISOString(), instanceId);
+    const target = GOOGLE_PROVIDER_TARGETS[service];
+    const config = loadConnectorsConfig();
+    if (config[target.domain]?.activeInstanceId === instanceId) {
+      config[target.domain] = { ...config[target.domain], active: 'mock', activeInstanceId: null };
+      saveConnectorsConfig(config);
+    }
     reconcileSyncScheduler({ db, eventBus });
-    sendJson(res, 200, { disconnected: 'imap' });
+    sendJson(res, 200, { disconnected: service });
   });
 
-  router.post('/api/connectors/smtp/credentials', async (req, res) => {
+  // --- SMTP settings (issue #163 PR 5) --------------------------------
+  // Deliberately NOT part of the instance CRUD surface below: smtp-transport.js
+  // has no per-instance routing (see CREDENTIAL_VALIDATORS' comment above) --
+  // there is exactly one SMTP configuration for the whole server, same as
+  // before this issue, just under a route name that isn't shared with the
+  // now-removed legacy single-account credential routes.
+  router.post('/api/connectors/smtp/settings', async (req, res) => {
     try {
       const settings = validateSmtpSettings(req.body);
       writeEncryptedFile('smtp', settings);
@@ -346,35 +359,39 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
     }
   });
 
-  router.post('/api/connectors/smtp/disconnect', async (_req, res) => {
+  router.post('/api/connectors/smtp/settings/clear', async (_req, res) => {
     const existing = readEncryptedFile('smtp');
     if (existing) writeEncryptedFile('smtp', {});
     sendJson(res, 200, { disconnected: 'smtp' });
-  });
-
-  router.post('/api/connectors/notify-webhook/credentials', async (req, res) => {
-    const { webhookUrl, format } = req.body || {};
-    if (!webhookUrl) return sendJson(res, 400, { error: 'webhookUrl is required' });
-    // See ensureLegacyCredentialInstance()'s doc comment: same regression
-    // fix as imap/web-search above -- webhook-notify-provider.js resolves
-    // its vault key through a connection_instances row since PR 4.
-    ensureLegacyCredentialInstance(db, {
-      connectorId: 'webhook',
-      plaintext: { webhookUrl, format: format === 'ntfy' ? 'ntfy' : 'json' },
-      vaultKeyOverride: 'notify-webhook',
-    });
-    reconcileSyncScheduler({ db, eventBus });
-    sendJson(res, 200, { configured: true });
   });
 
   // --- Connection instances: multiple accounts per connector (#163 PR 2) --
 
   // GET never touches the vault -- listInstances() is a pure
   // connection_instances read, so it is structurally impossible for a
-  // secret to leak from this route.
+  // secret to leak from this route. For 'google' specifically, this also
+  // enriches each instance with a `services` map ({calendar, gmail,
+  // contacts} -> boolean) so the multi-account setup dialog (issue #163 PR 5)
+  // can render each account's per-service connect/disconnect state
+  // independently -- computed via each real provider module's isConnected()
+  // (a boolean-only check against the instance's own vault_key), never by
+  // reading or returning any decrypted token value.
   router.get('/api/connectors/:connectorId/instances', async (req, res) => {
     const { connectorId } = req.params;
-    sendJson(res, 200, { instances: listInstances(db, connectorId) });
+    const instances = listInstances(db, connectorId);
+    if (connectorId === 'google') {
+      const rowsById = new Map(listInstanceRows(db, connectorId).map((row) => [row.id, row]));
+      for (const instance of instances) {
+        const row = rowsById.get(instance.id);
+        instance.services = {};
+        for (const service of GOOGLE_SERVICES) {
+          const providerId = GOOGLE_PROVIDER_TARGETS[service].providerId;
+          const mod = getRealProviderModule(providerId);
+          instance.services[service] = Boolean(row && mod?.isConnected?.(row.vault_key));
+        }
+      }
+    }
+    sendJson(res, 200, { instances });
   });
 
   router.post('/api/connectors/:connectorId/instances', async (req, res) => {
@@ -489,6 +506,10 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
       if (!instance) {
         return sendJson(res, 400, { error: `No connected instance "${instanceId}" for connector "${connectorId}"` });
       }
+      const real = getRealProviderModule(providerId);
+      if (!real?.isConnected?.(instance.vault_key)) {
+        return sendJson(res, 400, { error: `Account "${instance.label}" is disconnected for "${providerId}"` });
+      }
       const config = loadConnectorsConfig();
       config[domain] = { ...config[domain], active: providerId, activeInstanceId: instanceId };
       saveConnectorsConfig(config);
@@ -497,9 +518,19 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
     }
 
     try {
-      setActiveProvider(domain, providerId);
+      const validIds = validProviderIdsFor(domain);
+      if (!validIds.includes(providerId)) throw new Error(`Unknown provider "${providerId}" for domain "${domain}"`);
+      let activeInstanceId = null;
+      if (providerId !== 'mock') {
+        const instance = resolveInstanceForDomain(providerId, null);
+        if (!instance) throw new Error(`Choose a connected account for "${providerId}" explicitly`);
+        activeInstanceId = instance.id;
+      }
+      const config = loadConnectorsConfig();
+      config[domain] = { ...config[domain], active: providerId, activeInstanceId };
+      saveConnectorsConfig(config);
       reconcileSyncScheduler({ db, eventBus });
-      sendJson(res, 200, { domain, active: providerId });
+      sendJson(res, 200, { domain, active: providerId, activeInstanceId });
     } catch (err) {
       sendJson(res, 400, { error: err.message, validProviders: validProviderIdsFor(domain) });
     }

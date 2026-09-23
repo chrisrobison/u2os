@@ -45,6 +45,7 @@ function renderDomainCard(domain, ctx) {
   const label = DOMAIN_LABELS[domain.domain] || humanizeKey(domain.domain);
   const activeLabel = providerLabel(domain, domain.active);
   const dotClass = domain.connected ? 'is-connected' : 'is-disconnected';
+  const accountLabel = domain.activeInstanceId ? ctx.instanceLabels[domain.activeInstanceId] : null;
 
   const metaLines = [];
   if (domain.lastSyncAt) {
@@ -62,7 +63,7 @@ function renderDomainCard(domain, ctx) {
     <u2-card title="${escapeHtml(label)}">
       <div class="connector-status">
         <span class="status-dot ${dotClass}"></span>
-        <span>${escapeHtml(activeLabel)}</span>
+        <span>${escapeHtml(activeLabel)}${accountLabel ? ` · ${escapeHtml(accountLabel)}` : ''}</span>
       </div>
       ${metaLines.join('')}
       <div class="connector-controls">
@@ -93,6 +94,7 @@ export class U2Connectors extends HTMLElement {
     this._connectors = null;
     this._smtpConfigured = false;
     this._catalog = [];
+    this._instanceLabels = {};
     this._banner = null; // { variant, message } from the OAuth redirect, shown once
     this._busySyncDomains = new Set();
     this._domainMessages = {}; // domain -> { text, isError } (provider switch / sync result)
@@ -111,6 +113,11 @@ export class U2Connectors extends HTMLElement {
     this.addEventListener('connector-config-submit', this._onCatalogAction);
     this.addEventListener('connector-service-action', this._onCatalogAction);
     this.addEventListener('connector-disconnect', this._onCatalogAction);
+    this.addEventListener('connector-instances-changed', () => {
+      this._refreshStatus().catch((err) => {
+        this._banner = { variant: 'warning', message: `Couldn't refresh connector status: ${err.message}` };
+      });
+    });
     this._load();
   }
 
@@ -145,10 +152,37 @@ export class U2Connectors extends HTMLElement {
       this._connectors = connectors;
       this._smtpConfigured = !!smtpConfigured;
       this._catalog = catalog?.connectors || [];
+      await this._loadInstanceLabels();
       this._render();
     } catch (err) {
       this.innerHTML = `<div class="load-error">Couldn't load connectors: ${escapeHtml(err.message)}</div>`;
     }
+  }
+
+  async _loadInstanceLabels() {
+    const definitions = this._catalog.filter((entry) => entry.status === 'available' && entry.accountMode === 'multiple');
+    const lists = await Promise.all(definitions.map(async (entry) => {
+      try { return (await api.listConnectorInstances(entry.id)).instances || []; }
+      catch { return []; }
+    }));
+    this._instanceLabels = Object.fromEntries(lists.flat().map((entry) => [entry.id, entry.label]));
+  }
+
+  async _refreshStatus() {
+    const { connectors, smtpConfigured, catalog } = await api.getConnectors();
+    this._connectors = connectors;
+    this._smtpConfigured = !!smtpConfigured;
+    this._catalog = catalog?.connectors || [];
+    await this._loadInstanceLabels();
+    for (const domain of connectors) {
+      const card = this.querySelector(`u2-card[title="${DOMAIN_LABELS[domain.domain]}"]`);
+      if (card) card.outerHTML = renderDomainCard(domain, { busySyncDomains: this._busySyncDomains, domainMessages: this._domainMessages, instanceLabels: this._instanceLabels });
+    }
+    for (const definition of this._catalog) {
+      const row = this.querySelector(`[data-catalog-id="${definition.id}"]`);
+      if (row) row.outerHTML = this._renderCatalogRow(definition);
+    }
+    this.querySelector('u2-connector-setup')?.setDomains(connectors);
   }
 
   _render() {
@@ -157,6 +191,7 @@ export class U2Connectors extends HTMLElement {
       busySyncDomains: this._busySyncDomains,
       domainMessages: this._domainMessages,
       smtpConfigured: this._smtpConfigured,
+      instanceLabels: this._instanceLabels,
     };
 
     const bannerHtml = this._banner
@@ -208,7 +243,7 @@ export class U2Connectors extends HTMLElement {
     const catalogRow = e.target.closest('[data-catalog-id]');
     if (catalogRow) {
       const definition = this._catalog.find((item) => item.id === catalogRow.dataset.catalogId);
-      this.querySelector('u2-connector-setup').open(definition, this._catalogState(definition));
+      this.querySelector('u2-connector-setup').open(definition, { ...this._catalogState(definition), domains: this._connectors });
       return;
     }
     const syncBtn = e.target.closest('button[data-sync-domain]');
@@ -249,7 +284,16 @@ export class U2Connectors extends HTMLElement {
 
     selectEl.disabled = true;
     try {
-      await api.setActiveProvider(domain, providerId);
+      if (providerId !== 'mock') {
+        const connectorId = this._catalog.find((entry) => entry.id === providerId || entry.setup?.services?.some((service) => service.providerId === providerId))?.id;
+        const instances = (await api.listConnectorInstances(connectorId)).instances || [];
+        const service = this._catalog.find((entry) => entry.id === connectorId)?.setup?.services?.find((entry) => entry.providerId === providerId);
+        const eligible = instances.filter((instance) => service ? instance.services?.[service.id] : instance.status === 'connected');
+        if (eligible.length !== 1) throw new Error(eligible.length ? 'Choose a named account in the connector setup dialog.' : 'Connect an account in the connector setup dialog first.');
+        await api.setActiveProvider(domain, providerId, { connectorId, instanceId: eligible[0].id });
+      } else {
+        await api.setActiveProvider(domain, providerId);
+      }
       this._domainMessages[domain] = null;
       await this._load();
     } catch (err) {

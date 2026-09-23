@@ -90,14 +90,19 @@ test('each of the 5 legacy connector types is migrated into exactly one row, vau
     assert.equal(rows(db, 'brave-search')[0].label, 'Brave Search (migrated)');
     assert.equal(rows(db, 'webhook')[0].label, 'Webhook notifications (migrated)');
 
-    // Legacy files must be gone post-migration.
-    for (const legacyName of ['google', 'imap', 'smtp', 'web-search', 'notify-webhook']) {
+    // Google keeps a shared client-only file for newly connected accounts.
+    assert.deepEqual(readEncryptedFile('google', dir), { clientId: google.clientId, clientSecret: google.clientSecret });
+    assert.deepEqual(readEncryptedFile('smtp', dir), smtp);
+    // Other legacy files are removed after their instance copies are verified.
+    for (const legacyName of ['imap', 'web-search', 'notify-webhook']) {
       assert.equal(
         fs.existsSync(path.join(dir, 'credentials', `${legacyName}.enc.json`)),
         false,
         `legacy file ${legacyName}.enc.json should be deleted after successful migration`
       );
     }
+    ensureConnectionInstancesMigrated({ db, dataDir: dir });
+    assert.deepEqual(readEncryptedFile('google', dir), { clientId: google.clientId, clientSecret: google.clientSecret });
   } finally {
     cleanup(dir);
   }

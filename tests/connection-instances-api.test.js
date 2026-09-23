@@ -329,3 +329,30 @@ test('POST /api/connectors/:domain/active rejects a {connectorId, instanceId} pa
     await cleanup(dir, handle);
   }
 });
+
+test('bare provider selection cannot guess between two accounts or retain a stale instance', async () => {
+  const dir = tempHome();
+  let handle;
+  try {
+    handle = await startServer({ port: 0 });
+    const port = handle.server.address().port;
+    const first = await post(port, '/api/connectors/imap/instances', { label: 'First', host: 'mail.example.test', username: 'first', password: TEST_VALUE_A });
+    assert.equal(first.status, 201);
+    const unique = await post(port, '/api/connectors/email/active', { providerId: 'imap' });
+    assert.equal(unique.status, 200);
+    assert.equal(unique.body.activeInstanceId, first.body.id);
+
+    const second = await post(port, '/api/connectors/imap/instances', { label: 'Second', host: 'mail.example.test', username: 'second', password: TEST_VALUE_B });
+    assert.equal(second.status, 201);
+    const ambiguous = await post(port, '/api/connectors/email/active', { providerId: 'imap' });
+    assert.equal(ambiguous.status, 400);
+    assert.match(ambiguous.body.error, /Choose a connected account/);
+    assert.equal(loadConnectorsConfig().email.activeInstanceId, first.body.id);
+
+    const mock = await post(port, '/api/connectors/email/active', { providerId: 'mock' });
+    assert.equal(mock.status, 200);
+    assert.equal(loadConnectorsConfig().email.activeInstanceId, null);
+  } finally {
+    await cleanup(dir, handle);
+  }
+});

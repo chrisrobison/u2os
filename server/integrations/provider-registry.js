@@ -259,6 +259,12 @@ export function getHealth({ dataDir } = {}) {
     return {
       domain,
       active: activeId,
+      // issue #163 PR 5: exposed so the frontend's per-domain instance
+      // selector (public/components/u2-connectors.js) knows which instance
+      // is currently selected, without re-deriving connectors.yaml's shape
+      // itself. Never a secret -- just the same instance id already
+      // returned in full by GET /api/connectors/:connectorId/instances.
+      activeInstanceId: config[domain]?.activeInstanceId || null,
       connected,
       connectedProviders,
       availableProviders: validProviderIdsFor(domain),
