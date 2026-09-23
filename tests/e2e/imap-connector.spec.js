@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { startDedicatedServer, stopDedicatedServer, createOwner } from './helpers.js';
+import { getDb } from '../../server/db/connection.js';
+import { recordSyncError, recordSyncSuccess } from '../../server/integrations/provider-registry.js';
 
 const PASSPHRASE = 'correct horse battery staple';
 
@@ -131,6 +133,17 @@ test('two IMAP accounts can be selected and one removed without changing the oth
     await reconnect.locator('[name="password"]').fill('ROTATED_TEST_VALUE');
     await reconnect.locator('button[type="submit"]').click();
     await expect(work.locator('[data-reconnect-form]')).toHaveCount(0);
+
+    const listed = (await (await page.request.get(`${dedicated.baseURL}/api/connectors/imap/instances`)).json()).instances;
+    recordSyncError('email', listed.find((row) => row.label === 'Personal').id, new Error('private fixture value'), { db: getDb() });
+    recordSyncSuccess('email', listed.find((row) => row.label === 'Work').id, { db: getDb() });
+    await page.reload();
+    await expect(page.locator('.workspace__title', { hasText: 'Connectors' })).toBeVisible();
+    await page.locator('[data-catalog-id="imap"]').click();
+    await expect(personal).toContainText('Sync failed; check account credentials');
+    await expect(work).toContainText('email last synced');
+    await expect(page.locator('u2-card[title="Email"]')).toContainText('Last synced');
+    await expect(page.locator('u2-card[title="Email"]')).not.toContainText('Sync failed');
 
     page.on('dialog', (nativeDialog) => nativeDialog.accept());
     await personal.locator('[data-remove-instance]').click();

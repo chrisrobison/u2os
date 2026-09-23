@@ -90,12 +90,6 @@ const OPTIONS_ARITY = {
 // rather than spamming on every call.
 const warnedOnce = new Set();
 
-// In-memory health tracking: domain -> { lastSyncAt, lastError }. Populated
-// by sync-scheduler.js (recordSyncSuccess/recordSyncError) and by provider
-// call failures elsewhere. Deliberately NOT reset by getProvider() itself --
-// only sync outcomes and explicit resets touch it.
-const syncHealth = {};
-
 /** Whether `instance` (a raw connection_instances row) is actually
  * connected for `providerId`'s specific service -- e.g. a 'google' instance
  * may have calendar tokens but no gmail tokens, so this is per-providerId,
@@ -159,7 +153,7 @@ function withInjectedOptions(fn, extra, arity) {
  * belongs at. Non-bound properties (the `id` string, `isConnected`,
  * `validateSettings`, etc.) pass through unchanged. */
 function bindProviderToInstance(providerId, real, instance, dataDir) {
-  const bound = { ...real };
+  const bound = { ...real, connectionInstanceId: instance.id };
   for (const [name, arity] of Object.entries(OPTIONS_ARITY[providerId] || {})) {
     if (typeof real[name] === 'function') {
       bound[name] = withInjectedOptions(real[name].bind(real), { dataDir, instance }, arity);
@@ -278,11 +272,12 @@ export function getHealth({ dataDir } = {}) {
     // Mock is always available -- it never depends on external credentials,
     // so it is reported as connected. A real active provider is "connected"
     // only if the domain's resolved connection instance is itself connected.
+    const instance = activeId === 'mock' ? null : resolveInstanceForDomain(activeId, config[domain]?.activeInstanceId, dataDir);
     const connected =
       activeId === 'mock'
         ? true
-        : isProviderInstanceConnected(activeId, resolveInstanceForDomain(activeId, config[domain]?.activeInstanceId, dataDir), dataDir);
-    const h = syncHealth[domain] || {};
+        : isProviderInstanceConnected(activeId, instance, dataDir);
+    const h = connected && instance ? getSyncState(getDb(), instance.id, domain) : null;
     return {
       domain,
       active: activeId,
@@ -295,28 +290,52 @@ export function getHealth({ dataDir } = {}) {
       connected,
       connectedProviders,
       availableProviders: validProviderIdsFor(domain),
-      lastSyncAt: h.lastSyncAt || null,
-      lastError: h.lastError || null,
+      lastSyncAt: h?.lastSyncAt || null,
+      lastError: h?.lastError || null,
     };
   });
 }
 
-export function recordSyncSuccess(domain) {
-  syncHealth[domain] = { ...syncHealth[domain], lastSyncAt: new Date().toISOString(), lastError: null };
+export function getSyncState(db, instanceId, domain) {
+  const row = db.prepare('SELECT last_sync_at, last_error FROM connection_sync_state WHERE instance_id = ? AND domain = ?').get(instanceId, domain);
+  return row ? { lastSyncAt: row.last_sync_at, lastError: row.last_error } : null;
 }
 
-export function recordSyncError(domain, err) {
-  // SECURITY: never store/log a decrypted credential or token here -- only
-  // the error message, which provider modules keep secret-free (they throw
-  // "<provider>: <operation> failed" style errors, never including token
-  // values).
-  syncHealth[domain] = { ...syncHealth[domain], lastError: err?.message || String(err) };
+export function recordSyncSuccess(domain, instanceId, { db = getDb() } = {}) {
+  const now = new Date().toISOString();
+  db.prepare(`INSERT INTO connection_sync_state (instance_id, domain, last_sync_at, last_error, updated_at)
+    VALUES (?, ?, ?, NULL, ?)
+    ON CONFLICT(instance_id, domain) DO UPDATE SET last_sync_at = excluded.last_sync_at, last_error = NULL, updated_at = excluded.updated_at`)
+    .run(instanceId, domain, now, now);
 }
 
-/** Test-only helper: clears warn-once and health state between test runs. */
+export function safeSyncError(err) {
+  const message = err?.message || '';
+  const providerStatus = /^(gmail|google-calendar|google-contacts): (?:syncChanges|searchContacts) failed \(status ([1-5][0-9]{2})\)$/.exec(message);
+  if (providerStatus) {
+    const [, provider, status] = providerStatus;
+    if (status === '401' || status === '403') return `${provider}: authorization failed (status ${status}); reconnect this account`;
+    if (status === '429') return `${provider}: rate limited (status 429); retry later`;
+    if (status.startsWith('5')) return `${provider}: unavailable (status ${status}); retry later`;
+    return `${provider}: sync failed (status ${status}); check account access`;
+  }
+  if (message === 'imap: inbox sync failed; check host, TLS, credentials, and mailbox access') return message;
+  return 'Sync failed; check account credentials and provider availability, then retry';
+}
+
+export function recordSyncError(domain, instanceId, err, { db = getDb() } = {}) {
+  const now = new Date().toISOString();
+  const message = safeSyncError(err);
+  db.prepare(`INSERT INTO connection_sync_state (instance_id, domain, last_sync_at, last_error, updated_at)
+    VALUES (?, ?, NULL, ?, ?)
+    ON CONFLICT(instance_id, domain) DO UPDATE SET last_error = excluded.last_error, updated_at = excluded.updated_at`)
+    .run(instanceId, domain, message, now);
+  return message;
+}
+
+/** Test-only helper: clears warn-once state; persisted health belongs to each test DB. */
 export function resetForTests() {
   warnedOnce.clear();
-  for (const key of Object.keys(syncHealth)) delete syncHealth[key];
 }
 
 export function getRealProviderModule(providerId) {

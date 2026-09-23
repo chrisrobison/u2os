@@ -1,4 +1,4 @@
-import { escapeHtml } from './util.js';
+import { escapeHtml, formatDateTime } from './util.js';
 import * as api from '../services/api.js';
 
 function renderField(field) {
@@ -192,7 +192,10 @@ export class U2ConnectorSetup extends HTMLElement {
         ${this._definition.id === 'google' ? '' : `<button class="btn" type="button" data-reconnect-instance="${escapeHtml(instance.id)}" ${busy ? 'disabled' : ''}>Update credentials</button>`}
         <button class="btn btn-danger" type="button" data-remove-instance="${escapeHtml(instance.id)}" ${busy ? 'disabled' : ''}>Remove</button>
       </div>`;
-    const errorLine = instance.lastError ? `<div class="connector-meta is-error">${escapeHtml(instance.lastError)}</div>` : '';
+    const syncLines = Object.entries(instance.sync || {}).map(([domain, state]) => `
+      ${state.lastSyncAt ? `<div class="connector-meta">${escapeHtml(domain)} last synced ${escapeHtml(formatDateTime(state.lastSyncAt))}</div>` : ''}
+      ${state.lastError ? `<div class="connector-meta is-error">${escapeHtml(domain)}: ${escapeHtml(state.lastError)}</div>` : ''}`,
+    ).join('');
     const services = this._definition.id === 'google' ? this._renderGoogleServices(instance) : this._renderAccountRouting(instance);
     const sender = this._definition.id === 'imap' ? this._renderSmtpPair(instance) : '';
 
@@ -202,7 +205,7 @@ export class U2ConnectorSetup extends HTMLElement {
         ${labelHtml}
         ${actions}
       </div>
-      ${errorLine}
+      ${syncLines}
       ${this._reconnectingId === instance.id ? `<form class="connector-form" data-reconnect-form="${escapeHtml(instance.id)}">${(this._definition.setup.fields || []).map(renderField).join('')}<div class="connector-form__actions"><button class="btn btn-primary" type="submit">Save credentials</button><button class="btn" type="button" data-cancel-reconnect>Cancel</button></div></form>` : ''}
       ${services}
       ${sender}
