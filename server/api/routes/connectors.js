@@ -20,6 +20,8 @@ import {
   createConnectionInstance,
   updateConnectionInstance,
   deleteConnectionInstance,
+  ensureLegacyCredentialInstance,
+  clearLegacyCredentialInstance,
 } from '../../integrations/connection-instances.js';
 import {
   buildAuthUrl,
@@ -305,14 +307,22 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
   router.post('/api/connectors/web-search/credentials', async (req, res) => {
     const { apiKey } = req.body || {};
     if (!apiKey) return sendJson(res, 400, { error: 'apiKey is required' });
-    writeEncryptedFile('web-search', { apiKey });
+    // issue #163 PR 4 regression fix: writing straight to the bare
+    // 'web-search' file (as this route did before) configures credentials
+    // nothing reads anymore -- brave-search-provider.js now resolves its
+    // vault key through a connection_instances row. See
+    // ensureLegacyCredentialInstance()'s doc comment.
+    ensureLegacyCredentialInstance(db, { connectorId: 'brave-search', plaintext: { apiKey }, vaultKeyOverride: 'web-search' });
     sendJson(res, 200, { configured: true });
   });
 
   router.post('/api/connectors/imap/credentials', async (req, res) => {
     try {
       const settings = validateImapSettings(req.body);
-      writeEncryptedFile('imap', settings);
+      // See ensureLegacyCredentialInstance()'s doc comment: reuses (or
+      // creates) the live connection_instances row backing 'imap' so
+      // imap-provider.js's instance-resolved reads actually find this.
+      ensureLegacyCredentialInstance(db, { connectorId: 'imap', plaintext: settings });
       reconcileSyncScheduler({ db, eventBus });
       sendJson(res, 200, { configured: true });
     } catch {
@@ -321,8 +331,7 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
   });
 
   router.post('/api/connectors/imap/disconnect', async (_req, res) => {
-    const existing = readEncryptedFile('imap');
-    if (existing) writeEncryptedFile('imap', {});
+    clearLegacyCredentialInstance(db, { connectorId: 'imap' });
     reconcileSyncScheduler({ db, eventBus });
     sendJson(res, 200, { disconnected: 'imap' });
   });
@@ -346,7 +355,15 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
   router.post('/api/connectors/notify-webhook/credentials', async (req, res) => {
     const { webhookUrl, format } = req.body || {};
     if (!webhookUrl) return sendJson(res, 400, { error: 'webhookUrl is required' });
-    writeEncryptedFile('notify-webhook', { webhookUrl, format: format === 'ntfy' ? 'ntfy' : 'json' });
+    // See ensureLegacyCredentialInstance()'s doc comment: same regression
+    // fix as imap/web-search above -- webhook-notify-provider.js resolves
+    // its vault key through a connection_instances row since PR 4.
+    ensureLegacyCredentialInstance(db, {
+      connectorId: 'webhook',
+      plaintext: { webhookUrl, format: format === 'ntfy' ? 'ntfy' : 'json' },
+      vaultKeyOverride: 'notify-webhook',
+    });
+    reconcileSyncScheduler({ db, eventBus });
     sendJson(res, 200, { configured: true });
   });
 
