@@ -82,6 +82,14 @@ test('invented identifier in a continuation is rejected before the tool runs', w
   assert.equal(getDb().prepare("SELECT status FROM agent_runs ORDER BY created_at DESC LIMIT 1").get().status, 'failed');
 }));
 
+test('orchestrator validates an untrusted provider plan before any policy or tool effect', withHome(async () => {
+  const { agent, calls } = fixture(() => ({ reasoning_summary: 'unused', actions: [] }));
+  agent.planner.modelProvider.plan = async () => ({ reasoning_summary: 'Invented tool', actions: [{ tool: 'shell.exec', arguments: {} }] });
+  await assert.rejects(agent.handleMessage({ text: 'Research' }), /Unknown tool/);
+  assert.equal(calls.length, 0);
+  assert.equal(getDb().prepare('SELECT COUNT(*) AS n FROM agent_actions').get().n, 0);
+}));
+
 test('remote planner cannot act on withheld private observations', withHome(async () => {
   const { agent, calls } = fixture((call) => call === 1
     ? { reasoning_summary: 'Search', continue: true, actions: [firstRound.actions[0]] }

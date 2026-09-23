@@ -33,6 +33,9 @@ test('bounded continuation and explicit prior-result references validate without
   assert.throws(() => validatePlan({ reasoning_summary: '', actions: [
     { tool: 'email.read', arguments: { id: 'x' }, resultRefs: { id: { stepIndex: 0, itemIndex: 0, path: '__proto__' } } },
   ] }, registry), /invalid reference/);
+  assert.throws(() => validatePlan({ reasoning_summary: '', actions: [
+    { tool: 'email.read', arguments: { id: 'x' }, resultRefs: JSON.parse('{"__proto__":{"stepIndex":0,"itemIndex":0,"path":"id"}}') },
+  ] }, registry), /invalid reference/);
 });
 
 test('rejects an unrecognized top-level plan field (never silently trusted)', () => {

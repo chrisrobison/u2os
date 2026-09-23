@@ -120,11 +120,12 @@ function validateAction(action, index, toolRegistry) {
 function validateResultRefs(refs, args, toolName) {
   if (!plainObject(refs) || Object.keys(refs).length > 8) throw new Error(`Model action ${toolName}.resultRefs must be a bounded object`);
   for (const [argument, ref] of Object.entries(refs)) {
-    if (!(argument in args) || !plainObject(ref) || Object.keys(ref).some((key) => !['stepIndex', 'itemIndex', 'path'].includes(key))) {
+    if (!Object.hasOwn(args, argument) || ['__proto__', 'prototype', 'constructor'].includes(argument) ||
+        !plainObject(ref) || Object.keys(ref).some((key) => !['stepIndex', 'itemIndex', 'path'].includes(key))) {
       throw new Error(`Model action ${toolName}.resultRefs contains an invalid reference`);
     }
     if (!Number.isInteger(ref.stepIndex) || ref.stepIndex < 0 || !Number.isInteger(ref.itemIndex) || ref.itemIndex < 0 ||
-        typeof ref.path !== 'string' || !/^[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*|\.[0-9]+){0,2}$/.test(ref.path) ||
+        typeof ref.path !== 'string' || ref.path.length > 128 || !/^[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*|\.[0-9]+){0,2}$/.test(ref.path) ||
         ref.path.split('.').some((part) => ['__proto__', 'prototype', 'constructor'].includes(part))) {
       throw new Error(`Model action ${toolName}.resultRefs contains an invalid reference`);
     }

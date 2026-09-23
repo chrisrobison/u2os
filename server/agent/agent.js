@@ -16,6 +16,7 @@ import { captureAccountBinding } from '../integrations/provider-registry.js';
 import { accountDomainForAction, assertCalendarTarget, captureSmtpIdentity } from './account-binding.js';
 import * as defaultRunStore from './run-store.js';
 import { resolveActionReferences } from './result-references.js';
+import { validatePlan } from './plan-validator.js';
 
 const MAX_MODEL_CALLS_PER_MESSAGE = 3;
 
@@ -112,7 +113,7 @@ export class Agent {
         stopReason = 'Continuation stopped at the model-call limit. The objective is not verified.';
         break;
       }
-      plan = await this.planner.plan({ ...planContext, observations, onModelCall: () => this.runStore.beginModelCall(runId, MAX_MODEL_CALLS_PER_MESSAGE) }, text);
+      plan = validatePlan(await this.planner.plan({ ...planContext, observations, onModelCall: () => this.runStore.beginModelCall(runId, MAX_MODEL_CALLS_PER_MESSAGE) }, text), this.toolRegistry);
       if (round > 0 && observations.length && !(this.planner.lastAllowedObservations || []).some((observation) => observation.items.length)) {
         stopReason = 'Continuation stopped: the configured model cannot receive the required observations under the current privacy policy. The objective is not verified.';
         plan = acceptedPlan;
