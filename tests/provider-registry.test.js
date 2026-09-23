@@ -3,15 +3,18 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { getProvider, getHealth, resolveConnectedRealProvider } from '../server/integrations/provider-registry.js';
+import { getProvider, getHealth, resolveConnectedRealProvider, captureAccountBinding, getProviderForBinding } from '../server/integrations/provider-registry.js';
 import { setActiveProvider } from '../server/integrations/connectors-config.js';
 import { getDb, closeAllForTests } from '../server/db/connection.js';
 import { createConnectionInstance } from '../server/integrations/connection-instances.js';
 import { storeTokens } from '../server/integrations/oauth/google-oauth.js';
+import { ensureInstallationMode } from '../server/seed/installation-mode.js';
+import { EmailSearchTool } from '../server/tools/email-tools.js';
 
 function tempHome() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-registry-test-'));
   process.env.U2OS_HOME = dir;
+  ensureInstallationMode('demo', dir);
   return dir;
 }
 
@@ -95,4 +98,22 @@ test('unknown domain throws rather than silently returning undefined', () => {
   } finally {
     cleanup(dir);
   }
+});
+
+test('personal mode never resolves an unconfigured or disconnected service to mock', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-personal-registry-'));
+  process.env.U2OS_HOME = dir;
+  try {
+    ensureInstallationMode('personal', dir);
+    for (const domain of ['calendar', 'email', 'contacts', 'web', 'notifications']) {
+      assert.throws(() => getProvider(domain), { code: 'SERVICE_UNAVAILABLE' });
+      assert.equal(getHealth().find((entry) => entry.domain === domain).connected, false);
+    }
+    assert.throws(() => captureAccountBinding('email'), { code: 'SERVICE_UNAVAILABLE' });
+    await assert.rejects(new EmailSearchTool().execute({ query: 'anything' }), { code: 'SERVICE_UNAVAILABLE' });
+    assert.throws(() => getProviderForBinding('email', { domain: 'email', providerId: 'mock', connectorId: null, instanceId: null }), { code: 'SERVICE_UNAVAILABLE' });
+    setActiveProvider('calendar', 'google-calendar');
+    assert.throws(() => getProvider('calendar'), /disconnected/);
+    assert.equal(getHealth().find((entry) => entry.domain === 'calendar').active, 'google-calendar');
+  } finally { cleanup(dir); }
 });

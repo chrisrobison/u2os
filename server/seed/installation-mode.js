@@ -6,15 +6,22 @@ export function installationModePath(dataDir = getDataDir()) {
   return path.join(dataDir, 'config', 'installation.json');
 }
 
+export function readInstallationMode(dataDir = getDataDir()) {
+  const file = installationModePath(dataDir);
+  if (!fs.existsSync(file)) return 'personal';
+  const mode = JSON.parse(fs.readFileSync(file, 'utf8')).mode;
+  if (mode !== 'personal' && mode !== 'demo') throw new Error('Invalid persisted installation mode');
+  return mode;
+}
+
 /** A demo choice is permanent for this home; unmarked legacy homes are personal. */
 export function ensureInstallationMode(requestedMode = null, dataDir = getDataDir()) {
   if (requestedMode !== null && requestedMode !== 'personal' && requestedMode !== 'demo') throw new Error('Invalid installation mode');
   const file = installationModePath(dataDir);
   if (fs.existsSync(file)) {
-    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (!['personal', 'demo'].includes(saved.mode)) throw new Error('Invalid persisted installation mode');
-    if (requestedMode && requestedMode !== saved.mode) throw new Error(`This data home is already ${saved.mode}; use a separate home for ${requestedMode}`);
-    return saved.mode;
+    const savedMode = readInstallationMode(dataDir);
+    if (requestedMode && requestedMode !== savedMode) throw new Error(`This data home is already ${savedMode}; use a separate home for ${requestedMode}`);
+    return savedMode;
   }
   const hadData = fs.existsSync(dataDir) && fs.readdirSync(dataDir).some((name) => {
     if (name !== 'config') return true;

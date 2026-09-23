@@ -18,7 +18,7 @@ The domain card shows the selected account label. With exactly one connected ins
 
 - **User owns credentials** (§27, §29): you supply your own Google OAuth client, your own Brave Search API key, your own webhook URL. U2OS never depends on a U2OS-operated cloud service for any of this.
 - **Encrypted credentials, least privilege, explicit scopes** (§17): every stored secret is encrypted at rest (see below); each connector declares exactly the OAuth scopes it needs and nothing more.
-- **No mandatory vendor lock-in** (§30): mock providers remain fully functional forever; nothing in Phase 1/2 breaks if you never connect anything real.
+- **No mandatory vendor lock-in** (§30): mock providers remain available in isolated demo mode; a personal home with no real account reports the service as unavailable.
 - **Fail toward safety, not silent breakage**: if a domain is configured to use a real connector that isn't actually connected (not yet authorized, token revoked, network error), the provider registry falls back to the mock provider for reads and surfaces a health warning — it does not throw a 500 into the user's face for a routine "not connected yet" state.
 
 ## Directory layout additions
@@ -35,7 +35,7 @@ skills/
 
 server/security/vault.js             credential encryption (AES-256-GCM, local master key)
 server/integrations/oauth/google-oauth.js   generic Google OAuth2 client (auth URL, code exchange, refresh)
-server/integrations/provider-registry.js    getProvider(domain) -> active provider module, with mock fallback + health tracking
+server/integrations/provider-registry.js    getProvider(domain) -> active provider module, with demo-only mock fallback + health tracking
 server/integrations/connectors-config.js    loads/writes ~/.u2os/config/connectors.yaml
 server/integrations/sync-scheduler.js       interval-based polling sync for connected real providers
 server/integrations/google-calendar-provider.js
@@ -122,7 +122,9 @@ The durable action worker supplies a stable U2OS idempotency key to every tool c
 getProvider(domain) // domain: 'calendar' | 'email' | 'contacts' | 'web' | 'notifications'
 ```
 
-Resolution: read `connectors.yaml[domain].active`. If `'mock'` (or missing/invalid) → the mock provider. If it names a real connector → check that connector's stored credentials/tokens exist and are valid (per `server/security/vault.js` + the OAuth token's presence — not necessarily a live network check on every call, that's too slow). If configured-but-not-connected → **log a health warning once (not per-call)** and fall back to the mock provider for that call, so the app degrades gracefully instead of erroring. Persist sync health (`lastSyncAt`, `lastError`) per instance and domain; expose only the selected connected account's state alongside `connected` in `GET /api/connectors`.
+Resolution: read `connectors.yaml[domain].active`. In explicit demo mode, `'mock'` resolves to a fixture provider and a disconnected real service may use that demo fallback. In personal mode, `'mock'`, unimplemented providers, and disconnected real accounts produce an actionable `SERVICE_UNAVAILABLE` error, never fabricated results. Credential presence is checked locally (not a live network probe on every call). Persist sync health (`lastSyncAt`, `lastError`) per instance and domain; expose only the selected connected account's state alongside `connected` in `GET /api/connectors`.
+
+The Mail and Calendar pages read locally stored records, not a live provider response. Their API responses include `cache.source`, the selected provider's connected state, and last sync time (or null when unknown). The UI labels these records as demo fixtures or local cache and warns that personal cache may include other accounts; account-scoped retrieval remains future work.
 
 ## Credential encryption (`server/security/vault.js`)
 
@@ -170,7 +172,7 @@ REST v3, via native `fetch` (no `googleapis` SDK dependency):
 - Create or update a named `brave-search` instance through `/api/connectors/brave-search/instances`.
 - `GET https://api.search.brave.com/res/v1/web/search?q=<query>` with header `X-Subscription-Token: <apiKey>`.
 - Map top results → `{ title, url, snippet }[]`, same shape `web.search`'s mock already returns, so `server/tools/web-tools.js` doesn't change its return contract at all.
-- If not configured, `provider-registry` resolves `'web'` to the mock provider automatically (this is just the normal fallback path, not a special case) — the mock's canned results stay clearly labeled as mock in their response.
+- If not configured in personal mode, web search reports unavailable. In explicit demo mode the mock's canned results stay labeled as mock in their response.
 
 ## Notifications provider — generic webhook (ntfy.sh-compatible)
 

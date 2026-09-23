@@ -103,6 +103,11 @@ export class U2ConnectorSetup extends HTMLElement {
 
   _render() {
     const dialog = this.querySelector('dialog');
+    // A parent status refresh may arrive while the owner is choosing an SMTP
+    // sender. Preserve unsaved choices across that otherwise harmless render.
+    const pendingSenders = new Map([...dialog.querySelectorAll('[data-smtp-pair-form]')]
+      .filter((form) => form.elements.namedItem('smtpInstanceId')?.value !== form.dataset.currentSmtp)
+      .map((form) => [form.dataset.smtpPairForm, form.elements.namedItem('smtpInstanceId').value]));
     const restoreCloseFocus = dialog?.open && document.activeElement?.matches?.('[data-close]');
     const d = this._definition;
     const setup = d.setup || {};
@@ -124,6 +129,12 @@ export class U2ConnectorSetup extends HTMLElement {
       <div class="connector-capabilities">${capabilities}</div>
       ${mainHtml}
     `;
+    for (const form of dialog.querySelectorAll('[data-smtp-pair-form]')) {
+      const pending = pendingSenders.get(form.dataset.smtpPairForm);
+      if (pending !== undefined && [...form.elements.namedItem('smtpInstanceId').options].some((option) => option.value === pending)) {
+        form.elements.namedItem('smtpInstanceId').value = pending;
+      }
+    }
     if (restoreCloseFocus) dialog.querySelector('[data-close]')?.focus();
   }
 
@@ -215,7 +226,7 @@ export class U2ConnectorSetup extends HTMLElement {
   _renderSmtpPair(instance) {
     const options = this._smtpInstances.map((row) => `<option value="${escapeHtml(row.id)}" ${instance.smtpInstanceId === row.id ? 'selected' : ''}>${escapeHtml(row.label)}</option>`).join('');
     const unavailable = instance.smtpInstanceId && !this._smtpInstances.some((row) => row.id === instance.smtpInstanceId);
-    return `<form class="connector-account-sender" data-smtp-pair-form="${escapeHtml(instance.id)}">
+    return `<form class="connector-account-sender" data-smtp-pair-form="${escapeHtml(instance.id)}" data-current-smtp="${escapeHtml(instance.smtpInstanceId || '')}">
       <label class="connector-field"><span>SMTP sender for this inbox</span><select name="smtpInstanceId">
         <option value="" ${!instance.smtpInstanceId ? 'selected' : ''}>None — sending unavailable</option>
         ${unavailable ? '<option value="unavailable" selected>Previous sender unavailable</option>' : ''}

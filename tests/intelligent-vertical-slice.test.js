@@ -29,12 +29,14 @@ import { createToolRegistry } from '../server/tools/register-all.js';
 import { OpenAICompatibleProvider } from '../server/agent/openai-compatible-provider.js';
 import { Agent } from '../server/agent/agent.js';
 import { runSeed } from '../server/seed/seed.js';
+import { ensureInstallationMode } from '../server/seed/installation-mode.js';
 import { findEntities } from '../server/memory/entity-store.js';
 import { acceptMemoryCandidate, listMemoryCandidates } from '../server/memory/candidate-store.js';
 
 function tempHome() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-intelligent-slice-'));
   process.env.U2OS_HOME = dir;
+  ensureInstallationMode('demo', dir);
   return dir;
 }
 function cleanup(dir) {

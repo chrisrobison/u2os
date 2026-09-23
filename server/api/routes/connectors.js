@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { readInstallationMode } from '../../seed/installation-mode.js';
 import { sendJson } from '../router.js';
 import { getHealth, resolveConnectedRealProvider, resolveInstanceForDomain, getRealProviderModule } from '../../integrations/provider-registry.js';
 import {
@@ -488,6 +489,9 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
   router.post('/api/connectors/:domain/active', async (req, res) => {
     const { domain } = req.params;
     const { providerId, connectorId, instanceId } = req.body || {};
+    if (providerId === 'mock' && readInstallationMode() !== 'demo') {
+      return sendJson(res, 400, { error: 'Mock providers are available only in an isolated demo home; connect a real account' });
+    }
 
     if (connectorId !== undefined || instanceId !== undefined) {
       // Instance-aware path (#163 PR 2): sets `active` and

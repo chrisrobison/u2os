@@ -482,10 +482,10 @@ export class U2App extends HTMLElement {
     this._setWorkspace(this._header('Mail'), wrap);
 
     try {
-      const { emails } = await api.getEmails(folder);
+      const { emails, cache } = await api.getEmails(folder);
       const el = document.createElement('u2-email-summary');
       el.emails = emails;
-      body.replaceWith(el);
+      body.replaceWith(cacheNote(cache), el);
     } catch (err) {
       body.replaceWith(this._error(err));
     }
@@ -494,10 +494,12 @@ export class U2App extends HTMLElement {
   async _renderCalendar() {
     this._setWorkspace(this._header('Calendar', 'Upcoming events'), this._loading('Loading calendar...'));
     try {
-      const { events } = await api.getCalendarEvents('upcoming');
+      const { events, cache } = await api.getCalendarEvents('upcoming');
       const el = document.createElement('u2-schedule');
       el.events = events;
-      this._setWorkspace(this._header('Calendar', 'Upcoming events'), el);
+      const content = document.createElement('div');
+      content.append(cacheNote(cache), el);
+      this._setWorkspace(this._header('Calendar', 'Upcoming events'), content);
     } catch (err) {
       this._setWorkspace(this._header('Calendar'), this._error(err));
     }
@@ -602,6 +604,11 @@ export class U2App extends HTMLElement {
   }
 
   async _renderEntityDetail(id) {
+    this._memoryDrafts ||= new Map();
+    for (const row of this._workspace?.querySelectorAll('.fact-row[data-fact-id]') || []) {
+      const input = row.querySelector('[data-correct] input[name="value"]');
+      if (input && input.value !== input.defaultValue) this._memoryDrafts.set(row.dataset.factId, input.value);
+    }
     this._setWorkspace('', this._loading('Loading...'));
     try {
       const { entity, facts, relationships } = await api.getMemoryEntity(id);
@@ -670,6 +677,13 @@ export class U2App extends HTMLElement {
         }
       `
       );
+      const currentIds = new Set();
+      for (const row of wrap.querySelectorAll('.fact-row--current[data-fact-id]')) {
+        currentIds.add(row.dataset.factId);
+        const draft = this._memoryDrafts.get(row.dataset.factId);
+        if (draft !== undefined) row.querySelector('[data-correct] input[name="value"]').value = draft;
+      }
+      for (const draftId of this._memoryDrafts.keys()) if (!currentIds.has(draftId)) this._memoryDrafts.delete(draftId);
 
       wrap.querySelector('[data-delete-entity]').addEventListener('click', async () => {
         const error = wrap.querySelector('[data-entity-delete-error]'); error.textContent = '';
@@ -723,6 +737,18 @@ export class U2App extends HTMLElement {
     div.textContent = `Nothing here for ${hash}.`;
     this._setWorkspace(this._header('Not found'), div);
   }
+}
+
+function cacheNote(cache) {
+  const note = document.createElement('p');
+  note.className = 'connector-meta';
+  if (cache?.source === 'demo-fixture') {
+    note.textContent = 'Demo fixture data — not a connected personal service.';
+  } else {
+    const freshness = cache?.lastSyncAt ? `Selected account last synced ${new Date(cache.lastSyncAt).toLocaleString()}.` : 'Last sync unknown.';
+    note.textContent = `Local cached records; may include other accounts. ${cache?.connected ? '' : 'No connected service is selected. '}${freshness}`;
+  }
+  return note;
 }
 
 customElements.define('u2-app', U2App);

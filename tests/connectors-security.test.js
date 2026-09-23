@@ -64,6 +64,18 @@ test('GET /api/connectors never leaks a stored secret, access token, or client s
     const bodyText = await res.text();
 
     assert.equal(res.status, 200);
+    const domains = JSON.parse(bodyText).connectors;
+    assert.equal(domains.find((entry) => entry.domain === 'email').connected, false);
+    const mockSelection = await fetch(`http://127.0.0.1:${port}/api/connectors/email/active`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ providerId: 'mock' }) });
+    assert.equal(mockSelection.status, 400);
+    const mail = await (await fetch(`http://127.0.0.1:${port}/api/email`)).json();
+    const calendar = await (await fetch(`http://127.0.0.1:${port}/api/calendar/events`)).json();
+    assert.deepEqual(mail.emails, []);
+    assert.deepEqual(calendar.events, []);
+    assert.equal(mail.cache.source, 'local-cache');
+    assert.equal(mail.cache.connected, false);
+    assert.equal(calendar.cache.source, 'local-cache');
+    assert.equal(calendar.cache.lastSyncAt, null);
     for (const secret of [
       'FAKE_CLIENT_SECRET_VALUE',
       'FAKE_ACCESS_TOKEN_VALUE',

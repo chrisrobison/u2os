@@ -13,6 +13,7 @@ import { MockModelProvider } from '../server/agent/mock-model-provider.js';
 import { Agent } from '../server/agent/agent.js';
 import { explainAction } from '../server/agent/explain.js';
 import { runSeed } from '../server/seed/seed.js';
+import { ensureInstallationMode } from '../server/seed/installation-mode.js';
 import { acceptMemoryCandidate, listMemoryCandidates } from '../server/memory/candidate-store.js';
 import { findEntities } from '../server/memory/entity-store.js';
 import { assertDemoHomeAvailable, parseDemoArgs } from '../server/seed/demo.js';
@@ -38,6 +39,7 @@ function buildAgent() {
 test('daily-driver demo completes approval and memory flow, then recalls accepted memory after a real database restart', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-daily-demo-'));
   process.env.U2OS_HOME = home;
+  ensureInstallationMode('demo', home);
   try {
     const dayOne = buildAgent();
     const briefing = await dayOne.agent.handleMessage({

@@ -1,6 +1,6 @@
-// Resolves, per domain, either the mock provider or a connected real
-// provider, with graceful fallback to mock when a configured real connector
-// isn't actually connected yet. Per docs/connectors.md's
+// Resolves, per domain, either a connected real provider or (only in an
+// explicit demo home) a mock provider. Personal mode never substitutes mock
+// results for an unconfigured or disconnected real connector. Per docs/connectors.md's
 // "server/integrations/provider-registry.js" section.
 //
 // The registry statically imports every provider module up front (the set
@@ -33,6 +33,7 @@ import { connectorIdForProviderId } from './connector-catalog.js';
 import { findInstance, listInstanceRows } from './connection-instances.js';
 import { getDb } from '../db/connection.js';
 import { log } from '../logging/logger.js';
+import { readInstallationMode } from '../seed/installation-mode.js';
 
 const MOCK_PROVIDERS = {
   calendar: mockCalendar,
@@ -44,8 +45,7 @@ const MOCK_PROVIDERS = {
 
 // providerId -> module, for every REAL connector this phase implements.
 // Ids named in connectors-config's VALID_PROVIDER_IDS but absent here
-// (caldav) simply have no module -- resolved as "always not
-// connected", falling back to mock, no special-casing needed.
+// (caldav) simply have no module -- resolved as unavailable.
 const REAL_PROVIDERS = {
   'google-calendar': googleCalendar,
   gmail,
@@ -162,13 +162,13 @@ function bindProviderToInstance(providerId, real, instance, dataDir) {
   return bound;
 }
 
-function warnNotConnectedOnce(domain, activeId) {
+function warnNotConnectedOnce(domain, activeId, dataDir) {
   const warnKey = `${domain}:${activeId}`;
   if (warnedOnce.has(warnKey)) return;
   warnedOnce.add(warnKey);
   log.warn(
     'provider-registry',
-    `domain "${domain}" is configured for "${activeId}" but that connector is not connected yet -- falling back to mock.`,
+    `domain "${domain}" is configured for "${activeId}" but that connector is not connected yet${readInstallationMode(dataDir) === 'demo' ? ' -- using demo mock' : ''}.`,
     { domain, activeId }
   );
 }
@@ -186,15 +186,20 @@ export function getProvider(domain, { dataDir } = {}) {
 
   const config = loadConnectorsConfig(dataDir);
   const activeId = config[domain]?.active || 'mock';
+  const demo = readInstallationMode(dataDir) === 'demo';
 
-  if (activeId === 'mock') return mockProvider;
+  if (activeId === 'mock') {
+    if (!demo) throw unavailable(domain, 'No real service is selected');
+    return mockProvider;
+  }
 
   const real = REAL_PROVIDERS[activeId];
-  if (!real) return mockProvider; // e.g. 'caldav': no module implemented yet
+  if (!real) throw unavailable(domain, `${activeId} is not implemented`);
 
   const instance = resolveInstanceForDomain(activeId, config[domain]?.activeInstanceId, dataDir);
   if (!instance || !isProviderInstanceConnected(activeId, instance, dataDir)) {
-    warnNotConnectedOnce(domain, activeId);
+    warnNotConnectedOnce(domain, activeId, dataDir);
+    if (!demo) throw unavailable(domain, `${activeId} is disconnected`);
     return mockProvider;
   }
   return bindProviderToInstance(activeId, real, instance, dataDir);
@@ -205,7 +210,10 @@ export function getProvider(domain, { dataDir } = {}) {
 export function captureAccountBinding(domain, { dataDir } = {}) {
   const config = loadConnectorsConfig(dataDir);
   const providerId = config[domain]?.active || 'mock';
-  if (providerId === 'mock') return { domain, providerId, connectorId: null, instanceId: null, label: 'Mock' };
+  if (providerId === 'mock') {
+    if (readInstallationMode(dataDir) !== 'demo') throw unavailable(domain, 'No real service is selected');
+    return { domain, providerId, connectorId: null, instanceId: null, label: 'Mock' };
+  }
   const connectorId = connectorIdForProviderId(providerId);
   const instance = resolveInstanceForDomain(providerId, config[domain]?.activeInstanceId, dataDir);
   if (!connectorId || !isProviderInstanceConnected(providerId, instance, dataDir)) {
@@ -219,7 +227,10 @@ export function captureAccountBinding(domain, { dataDir } = {}) {
  * before any provider call. */
 export function getProviderForBinding(domain, binding, { dataDir } = {}) {
   if (!binding || binding.domain !== domain) throw new Error(`Account binding is missing for ${domain}; owner review required`);
-  if (binding.providerId === 'mock' && binding.instanceId === null && binding.connectorId === null) return MOCK_PROVIDERS[domain];
+  if (binding.providerId === 'mock' && binding.instanceId === null && binding.connectorId === null) {
+    if (readInstallationMode(dataDir) !== 'demo') throw unavailable(domain, 'Demo account binding is unavailable in personal mode');
+    return MOCK_PROVIDERS[domain];
+  }
   if (!validProviderIdsFor(domain).includes(binding.providerId) || connectorIdForProviderId(binding.providerId) !== binding.connectorId) {
     throw new Error(`Account binding is invalid for ${domain}; owner review required`);
   }
@@ -264,20 +275,20 @@ function isAnyInstanceConnected(providerId, dataDir) {
  * includes decrypted secrets -- only booleans and non-secret metadata. */
 export function getHealth({ dataDir } = {}) {
   const config = loadConnectorsConfig(dataDir);
+  const demo = readInstallationMode(dataDir) === 'demo';
   return DOMAINS.map((domain) => {
     const activeId = config[domain]?.active || 'mock';
     const connectedProviders = validProviderIdsFor(domain).filter(
       (providerId) => providerId !== 'mock' && isAnyInstanceConnected(providerId, dataDir)
     );
-    // Mock is always available -- it never depends on external credentials,
-    // so it is reported as connected. A real active provider is "connected"
+    // Mock is available only in demo mode. A real active provider is "connected"
     // only if the domain's resolved connection instance is itself connected.
     const instance = activeId === 'mock' ? null : resolveInstanceForDomain(activeId, config[domain]?.activeInstanceId, dataDir);
     const connected =
       activeId === 'mock'
-        ? true
+        ? demo
         : isProviderInstanceConnected(activeId, instance, dataDir);
-    const h = connected && instance ? getSyncState(getDb(), instance.id, domain) : null;
+    const h = instance ? getSyncState(getDb(), instance.id, domain) : null;
     return {
       domain,
       active: activeId,
@@ -288,12 +299,20 @@ export function getHealth({ dataDir } = {}) {
       // returned in full by GET /api/connectors/:connectorId/instances.
       activeInstanceId: config[domain]?.activeInstanceId || null,
       connected,
+      mode: demo ? 'demo' : 'personal',
       connectedProviders,
       availableProviders: validProviderIdsFor(domain),
       lastSyncAt: h?.lastSyncAt || null,
       lastError: h?.lastError || null,
     };
   });
+}
+
+function unavailable(domain, reason) {
+  const error = new Error(`${domain} unavailable: ${reason}; connect or select a real account`);
+  error.code = 'SERVICE_UNAVAILABLE';
+  error.status = 503;
+  return error;
 }
 
 export function getSyncState(db, instanceId, domain) {
