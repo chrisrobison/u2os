@@ -95,6 +95,18 @@ export class Agent {
     const pendingActionIds = [];
 
     for (const proposed of proposedActions) {
+      const unmet = (proposed.dependsOn || []).filter((dependency) => results[dependency]?.status !== 'executed');
+      if (unmet.length) {
+        results.push({
+          status: 'skipped',
+          tool: proposed.tool,
+          arguments: proposed.arguments || {},
+          dependsOn: proposed.dependsOn,
+          unmetDependencies: unmet.map((dependency) => ({ index: dependency, status: results[dependency]?.status || 'unknown', actionId: results[dependency]?.id || null })),
+          reason: 'Prerequisite action did not complete successfully; no attempt was made',
+        });
+        continue;
+      }
       const outcome = await this.evaluateAndMaybeExecute({
         tool: proposed.tool,
         arguments: proposed.arguments || {},
@@ -137,12 +149,16 @@ export class Agent {
       }
     }
 
+    const skippedCount = results.filter((result) => result.status === 'skipped').length;
+    const incompleteResponse = skippedCount
+      ? `${skippedCount} dependent action${skippedCount === 1 ? ' was' : 's were'} not attempted because prerequisites did not complete. Review action statuses before continuing.`
+      : null;
     return {
       correlationId,
       reasoning_summary: plan.reasoning_summary,
       actions: results,
       pendingActionIds,
-      ...(plan.response !== undefined ? { response: plan.response } : {}),
+      ...(incompleteResponse ? { response: incompleteResponse } : plan.response !== undefined ? { response: plan.response } : {}),
       ...(plan.memoryCandidates !== undefined ? { memoryCandidates: plan.memoryCandidates } : {}),
     };
   }
