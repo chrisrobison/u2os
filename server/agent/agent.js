@@ -14,6 +14,7 @@ import { registerBuiltinEvaluators } from './proactive/builtin-evaluators.js';
 import { proposeMemoryCandidate } from '../memory/candidate-store.js';
 import { captureAccountBinding } from '../integrations/provider-registry.js';
 import { accountDomainForAction, assertCalendarTarget, captureSmtpIdentity } from './account-binding.js';
+import * as defaultRunStore from './run-store.js';
 
 /**
  * Agent: the orchestrator. It does not itself plan, evaluate policy,
@@ -32,13 +33,14 @@ import { accountDomainForAction, assertCalendarTarget, captureSmtpIdentity } fro
  * action must pass through, regardless of which service proposed it.
  */
 export class Agent {
-  constructor({ modelProvider, modelRouter, policyEngine, toolRegistry, eventBus, ownerEntityId = null, evaluatorRegistry, embeddingProvider = null, dataProcessingPolicy } = {}) {
+  constructor({ modelProvider, modelRouter, policyEngine, toolRegistry, eventBus, ownerEntityId = null, evaluatorRegistry, embeddingProvider = null, dataProcessingPolicy, runStore = defaultRunStore } = {}) {
     this.modelProvider = modelProvider;
     this.modelRouter = modelRouter;
     this.policyEngine = policyEngine;
     this.toolRegistry = toolRegistry;
     this.eventBus = eventBus;
     this.ownerEntityId = ownerEntityId;
+    this.runStore = runStore;
 
     this.contextAssembler = new ContextAssembler({ toolRegistry, eventBus, ownerEntityId, embeddingProvider, dataProcessingPolicy });
     this.planner = new Planner({ modelProvider, modelRouter, role: 'planner', dataProcessingPolicy });
@@ -73,6 +75,16 @@ export class Agent {
   async handleMessage({ text, actorId = 'user', voice } = {}) {
     const correlationId = newId('corr');
     const actor = { type: 'user', id: actorId };
+    const runId = this.runStore.createRun({ correlationId, actorId, objective: text });
+    try {
+      return await this._handleRunMessage({ text, actorId, voice, correlationId, actor, runId });
+    } catch (error) {
+      this.runStore.failRun(runId);
+      throw error;
+    }
+  }
+
+  async _handleRunMessage({ text, actorId, voice, correlationId, actor, runId }) {
     const planContext = await this.contextAssembler.assemble({ correlationId, actor, objective: text });
 
     this.eventBus.publish({
@@ -84,6 +96,7 @@ export class Agent {
     });
 
     const plan = await this.planner.plan(planContext, text);
+    this.runStore.recordRunPlan(runId, plan);
     // Explainability (PLAN.md Phase 9): the retrieved-memory-item ids that
     // actually reached the provider which produced THIS plan (after
     // data-processing filtering) -- attached to every action's audit row
@@ -94,7 +107,7 @@ export class Agent {
     const results = [];
     const pendingActionIds = [];
 
-    for (const proposed of proposedActions) {
+    for (const [index, proposed] of proposedActions.entries()) {
       const unmet = (proposed.dependsOn || []).filter((dependency) => results[dependency]?.status !== 'executed');
       if (unmet.length) {
         results.push({
@@ -105,9 +118,12 @@ export class Agent {
           unmetDependencies: unmet.map((dependency) => ({ index: dependency, status: results[dependency]?.status || 'unknown', actionId: results[dependency]?.id || null })),
           reason: 'Prerequisite action did not complete successfully; no attempt was made',
         });
+        this.runStore.recordRunStepOutcome(runId, index, 'skipped');
         continue;
       }
+      const actionId = this.runStore.beginRunStep(runId, index);
       const outcome = await this.evaluateAndMaybeExecute({
+        actionId,
         tool: proposed.tool,
         arguments: proposed.arguments || {},
         requestedBy: actorId,
@@ -119,6 +135,7 @@ export class Agent {
         contextProvenance,
       });
       results.push(outcome);
+      this.runStore.recordRunStepOutcome(runId, index, outcome.status);
       if (outcome.status === 'pending') pendingActionIds.push(outcome.id);
     }
 
@@ -153,7 +170,10 @@ export class Agent {
     const incompleteResponse = skippedCount
       ? `${skippedCount} dependent action${skippedCount === 1 ? ' was' : 's were'} not attempted because prerequisites did not complete. Review action statuses before continuing.`
       : null;
+    const response = incompleteResponse || plan.response;
+    this.runStore.finishRun(runId, response);
     return {
+      runId,
       correlationId,
       reasoning_summary: plan.reasoning_summary,
       actions: results,
@@ -169,7 +189,7 @@ export class Agent {
    * of calling a tool directly -- "policy gates everything consequential"
    * applies regardless of which HTTP route triggered it.
    */
-  async evaluateAndMaybeExecute({ tool: toolName, arguments: args, requestedBy, requestText, reasoningSummary, correlationId, actor, voice, contextProvenance }) {
+  async evaluateAndMaybeExecute({ actionId, tool: toolName, arguments: args, requestedBy, requestText, reasoningSummary, correlationId, actor, voice, contextProvenance }) {
     const tool = this.actionEvaluator.resolve(toolName);
     const rawEvaluation = this.actionEvaluator.evaluate({ tool, arguments: args });
     const accountDomain = accountDomainForAction(toolName);
@@ -194,6 +214,7 @@ export class Agent {
       : voiceEvaluation;
 
     const auditRow = this.approvalManager.recordDecision({
+      id: actionId,
       tool,
       arguments: args,
       requestedBy,

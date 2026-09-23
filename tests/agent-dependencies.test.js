@@ -8,7 +8,11 @@ const registry = createToolRegistry();
 
 function makeAgent(statuses, actions) {
   const calls = [];
-  const agent = new Agent({ modelProvider: { id: 'fixture' }, toolRegistry: registry, eventBus: { publish() {} } });
+  const runStore = {
+    createRun: () => 'run_fixture', recordRunPlan() {}, beginRunStep: (_, index) => `act_${index}`,
+    recordRunStepOutcome() {}, finishRun() {}, failRun() {},
+  };
+  const agent = new Agent({ modelProvider: { id: 'fixture' }, toolRegistry: registry, eventBus: { publish() {} }, runStore });
   agent.contextAssembler.assemble = async () => ({});
   agent.planner.plan = async () => validatePlan({
     reasoning_summary: 'Fixture plan',

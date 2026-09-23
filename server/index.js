@@ -8,6 +8,7 @@ import { DataProcessingPolicy } from './policy/data-processing-policy.js';
 import { createToolRegistry } from './tools/register-all.js';
 import { createModelRouter } from './agent/provider-config.js';
 import { Agent } from './agent/agent.js';
+import { reconcileInterruptedRuns } from './agent/run-store.js';
 import { Router } from './api/router.js';
 import { serveStatic } from './api/static.js';
 import { runSeed } from './seed/seed.js';
@@ -61,6 +62,7 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   // that generic loop.
   generateOrLoadMasterKey(dataDir);
   const db = getDb();
+  reconcileInterruptedRuns();
   const dbPath = getDbPath();
   const config = readConfig(dataDir);
   const resolvedPort = port ?? (process.env.PORT !== undefined ? Number(process.env.PORT) : Number(config.port ?? 4000));

@@ -29,6 +29,8 @@ The deterministic `MockModelProvider` is available in isolated demo homes; perso
 
 The event bus persists events before delivering them to memory projections and SSE. Memory uses entities, facts, and relationships with confidence and provenance. Connectors sit behind provider interfaces and implemented real adapters use the encrypted vault. Triggers and synchronization run in the server, not the browser. The browser uses same-origin REST/SSE and trusted Web Components.
 
+`agent_runs` and `agent_run_steps` record each chat/voice request's one-pass plan and linked action IDs. A step receives its stable action ID before policy evaluation or queueing, so after a crash the run can reconcile against `agent_actions` and `action_queue` without replaying the tool. Startup marks steps that never acquired an audit row as interrupted; action outcomes remain authoritative in the existing audit/queue tables. Authenticated `GET /api/agent/runs` and `GET /api/agent/runs/:id` expose status metadata only, omitting the stored objective, arguments, model response, and tool results. `objectiveStatus: unverified` deliberately distinguishes a finished one-pass run from proven completion of the user's objective. Approval or queue completion updates the reported status on the next read; it does not yet trigger model continuation or retry skipped work.
+
 ## Agent decomposition
 
 `server/agent/agent.js` is an orchestrator, not a monolith: it composes focused services rather than implementing planning, policy, execution, and approval state inline.

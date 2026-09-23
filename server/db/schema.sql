@@ -194,6 +194,36 @@ CREATE TABLE IF NOT EXISTS agent_actions (
   updated_at TEXT NOT NULL
 );
 
+-- Objective/run progress is distinct from the authorization audit above and
+-- from durable action delivery below. No run row is itself an execution claim.
+CREATE TABLE IF NOT EXISTS agent_runs (
+  id TEXT PRIMARY KEY,
+  correlation_id TEXT NOT NULL UNIQUE,
+  actor_id TEXT NOT NULL,
+  objective TEXT NOT NULL,
+  status TEXT NOT NULL,
+  objective_status TEXT NOT NULL DEFAULT 'unverified',
+  reasoning_summary TEXT,
+  response TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_created ON agent_runs(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS agent_run_steps (
+  run_id TEXT NOT NULL REFERENCES agent_runs(id),
+  step_index INTEGER NOT NULL,
+  tool TEXT NOT NULL,
+  arguments TEXT NOT NULL,
+  depends_on TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'planned',
+  action_id TEXT UNIQUE,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (run_id, step_index)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_run_steps_action ON agent_run_steps(action_id);
+
 -- Durable execution state is intentionally separate from agent_actions:
 -- agent_actions remains the immutable-ish authorization/audit record, while
 -- this table owns operational delivery state, leases, and retry scheduling.
