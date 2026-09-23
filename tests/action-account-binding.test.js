@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { startServer } from './helpers/authed-server.js';
 import { getDb, closeAllForTests } from '../server/db/connection.js';
-import { createConnectionInstance, deleteConnectionInstance, findInstance, updateConnectionInstance } from '../server/integrations/connection-instances.js';
+import { createConnectionInstance, deleteConnectionInstance, findInstance, updateConnectionInstance, associateSmtpInstance } from '../server/integrations/connection-instances.js';
 import { storeTokens } from '../server/integrations/oauth/google-oauth.js';
 import { loadConnectorsConfig, saveConnectorsConfig } from '../server/integrations/connectors-config.js';
 import { getAgentAction, updateAgentAction } from '../server/policy/policy-engine.js';
@@ -14,7 +14,6 @@ import * as syncScheduler from '../server/integrations/sync-scheduler.js';
 import * as triggerEngine from '../server/triggers/trigger-engine.js';
 import { assertCalendarTarget } from '../server/agent/account-binding.js';
 import { getProviderForBinding } from '../server/integrations/provider-registry.js';
-import { writeEncryptedFile } from '../server/security/vault.js';
 
 async function withAccounts(run) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-account-binding-'));
@@ -150,20 +149,40 @@ test('queued payload changes stop before an approved send is attempted', async (
   });
 });
 
-test('an IMAP send records the global SMTP sender and blocks if that sender changes', async () => {
+test('an IMAP send records its SMTP instance and blocks if that sender changes', async () => {
   await withAccounts(async ({ handle, db, dir }) => {
     const imap = createConnectionInstance(db, { connectorId: 'imap', label: 'Inbox', status: 'connected', credentials: { host: 'imap.example.test', port: 993, username: 'owner@example.test', password: 'fixture' }, dataDir: dir });
     const config = loadConnectorsConfig(dir);
     config.email = { active: 'imap', activeInstanceId: imap.id };
     saveConnectorsConfig(config, dir);
     const smtp = { host: 'smtp.example.test', port: 587, username: 'owner@example.test', password: 'fixture', from: 'owner@example.test' };
-    writeEncryptedFile('smtp', smtp, dir);
+    const sender = createConnectionInstance(db, { connectorId: 'smtp', label: 'Sender', status: 'connected', credentials: smtp, dataDir: dir });
+    associateSmtpInstance(db, { imapRow: findInstance(db, 'imap', imap.id), smtpInstanceId: sender.id });
     const proposal = await proposeSend(handle.agent);
     assert.equal(proposal.status, 'pending');
     assert.equal(proposal.accountBinding.smtpIdentity.from, 'owner@example.test');
-    writeEncryptedFile('smtp', { ...smtp, from: 'other@example.test' }, dir);
+    updateConnectionInstance(db, { row: findInstance(db, 'smtp', sender.id), credentials: { ...smtp, from: 'other@example.test' }, dataDir: dir });
     const outcome = await handle.agent.approveAction(proposal.id, 'owner');
     assert.equal(outcome.status, 'blocked');
     assert.match(outcome.reason, /SMTP sender identity changed/);
+  });
+});
+
+test('switching an IMAP sender after approval blocks rather than using the new SMTP account', async () => {
+  await withAccounts(async ({ handle, db, dir }) => {
+    const imap = createConnectionInstance(db, { connectorId: 'imap', label: 'Inbox', status: 'connected', credentials: { host: 'imap.example.test', port: 993, username: 'owner@example.test', password: 'fixture' }, dataDir: dir });
+    const first = createConnectionInstance(db, { connectorId: 'smtp', label: 'First sender', status: 'connected', credentials: { host: 'smtp.example.test', port: 587, username: 'first@example.test', password: 'fixture', from: 'first@example.test' }, dataDir: dir });
+    const second = createConnectionInstance(db, { connectorId: 'smtp', label: 'Second sender', status: 'connected', credentials: { host: 'smtp.example.test', port: 587, username: 'second@example.test', password: 'fixture', from: 'second@example.test' }, dataDir: dir });
+    associateSmtpInstance(db, { imapRow: findInstance(db, 'imap', imap.id), smtpInstanceId: first.id });
+    const config = loadConnectorsConfig(dir);
+    config.email = { active: 'imap', activeInstanceId: imap.id };
+    saveConnectorsConfig(config, dir);
+    const proposal = await proposeSend(handle.agent);
+    assert.equal(proposal.status, 'pending');
+    assert.equal(proposal.accountBinding.smtpIdentity.instanceId, first.id);
+    associateSmtpInstance(db, { imapRow: findInstance(db, 'imap', imap.id), smtpInstanceId: second.id });
+    const outcome = await handle.agent.approveAction(proposal.id, 'owner');
+    assert.equal(outcome.status, 'blocked');
+    assert.match(outcome.reason, /reconnected or changed|sender identity changed/);
   });
 });

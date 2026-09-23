@@ -102,7 +102,7 @@ test('IMAP-selected email.send never silently falls back to mock delivery', asyn
     setActiveProvider('email', 'imap', dir);
     assert.throws(() => captureAccountBinding('email'), /No connected account/);
     createImapInstance(getDb(), { host: 'mail.example.com', port: 993, username: 'owner', password: 'secret' });
-    await assert.rejects(new EmailSendTool().execute({ to: 'a@example.com', subject: 'x', body: 'x' }, { accountBinding: captureAccountBinding('email') }), /smtp: credentials/);
+    await assert.rejects(new EmailSendTool().execute({ to: 'a@example.com', subject: 'x', body: 'x' }, { accountBinding: captureAccountBinding('email') }), /SMTP account binding is missing/);
     assert.equal(getDb().prepare("SELECT count(*) AS n FROM emails WHERE folder = 'sent'").get().n, 0);
   } finally { cleanup(dir); }
 });

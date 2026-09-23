@@ -107,7 +107,7 @@ export class U2Approval extends HTMLElement {
       <div class="u2-approval__title">U2OS wants to ${escapeHtml(humanizeTool(a.tool))}</div>
       ${renderArgs(a.tool, a.arguments)}
       ${a.accountBinding ? `<div class="u2-approval__policy">Account: ${escapeHtml(a.accountBinding.label)} (${escapeHtml(a.accountBinding.providerId)})</div>` : ''}
-      ${a.accountBinding?.smtpIdentity ? `<div class="u2-approval__policy">SMTP sender: ${escapeHtml(a.accountBinding.smtpIdentity.from)} (global transport)</div>` : ''}
+      ${a.accountBinding?.smtpIdentity ? `<div class="u2-approval__policy">SMTP sender: ${escapeHtml(a.accountBinding.smtpIdentity.label)} (${escapeHtml(a.accountBinding.smtpIdentity.from)})</div>` : ''}
       ${a.reason ? `<div class="u2-approval__reason">${escapeHtml(a.reason)}</div>` : ''}
       ${policyLine ? `<div class="u2-approval__policy">${policyLine}</div>` : ''}
       ${a.id ? `<u2-why action-id="${escapeHtml(a.id)}"></u2-why>` : ''}

@@ -17,13 +17,13 @@ function statusDotClass(status) {
 }
 
 // issue #163 PR 5: multiple named accounts per connector. For a catalog
-// entry with accountMode: 'multiple' (google, imap, webhook, brave-search),
+// entry with accountMode: 'multiple' (google, imap, smtp, webhook, brave-search),
 // this dialog fetches and manages its OWN "Accounts" list (GET/POST/PATCH/
 // DELETE /api/connectors/:connectorId/instances) -- the parent
 // (u2-connectors.js) only ever needs to know that something changed, via the
 // bubbling `connector-instances-changed` event, so it can refresh its own
 // unrelated top-level state (domain cards, catalog dots). A connector with
-// accountMode: 'single' (smtp, and any unavailable/planned entry) keeps the
+// accountMode: 'single' (unavailable/planned entries) keeps the
 // original single-credential-form UI, driven by the same
 // `connector-config-submit`/`connector-disconnect` events this component has
 // always dispatched -- the parent still owns those requests.
@@ -45,6 +45,7 @@ export class U2ConnectorSetup extends HTMLElement {
 
   _resetInstanceState() {
     this._instances = null;
+    this._smtpInstances = [];
     this._instancesLoading = false;
     this._instancesError = null;
     this._showAddForm = false;
@@ -83,6 +84,10 @@ export class U2ConnectorSetup extends HTMLElement {
     try {
       const { instances } = await api.listConnectorInstances(this._definition.id);
       this._instances = instances;
+      if (this._definition.id === 'imap') {
+        const smtp = await api.listConnectorInstances('smtp');
+        this._smtpInstances = smtp.instances.filter((row) => row.status === 'connected');
+      }
     } catch (err) {
       this._instancesError = err.message;
       this._instances ||= [];
@@ -189,6 +194,7 @@ export class U2ConnectorSetup extends HTMLElement {
       </div>`;
     const errorLine = instance.lastError ? `<div class="connector-meta is-error">${escapeHtml(instance.lastError)}</div>` : '';
     const services = this._definition.id === 'google' ? this._renderGoogleServices(instance) : this._renderAccountRouting(instance);
+    const sender = this._definition.id === 'imap' ? this._renderSmtpPair(instance) : '';
 
     return `<div class="connector-account" data-instance-id="${escapeHtml(instance.id)}">
       <div class="connector-account__row">
@@ -199,7 +205,20 @@ export class U2ConnectorSetup extends HTMLElement {
       ${errorLine}
       ${this._reconnectingId === instance.id ? `<form class="connector-form" data-reconnect-form="${escapeHtml(instance.id)}">${(this._definition.setup.fields || []).map(renderField).join('')}<div class="connector-form__actions"><button class="btn btn-primary" type="submit">Save credentials</button><button class="btn" type="button" data-cancel-reconnect>Cancel</button></div></form>` : ''}
       ${services}
+      ${sender}
     </div>`;
+  }
+
+  _renderSmtpPair(instance) {
+    const options = this._smtpInstances.map((row) => `<option value="${escapeHtml(row.id)}" ${instance.smtpInstanceId === row.id ? 'selected' : ''}>${escapeHtml(row.label)}</option>`).join('');
+    const unavailable = instance.smtpInstanceId && !this._smtpInstances.some((row) => row.id === instance.smtpInstanceId);
+    return `<form class="connector-account-sender" data-smtp-pair-form="${escapeHtml(instance.id)}">
+      <label class="connector-field"><span>SMTP sender for this inbox</span><select name="smtpInstanceId">
+        <option value="" ${!instance.smtpInstanceId ? 'selected' : ''}>None — sending unavailable</option>
+        ${unavailable ? '<option value="unavailable" selected>Previous sender unavailable</option>' : ''}
+        ${options}</select></label>
+      <button class="btn" type="submit">Save sender</button>
+    </form>`;
   }
 
   _renderGoogleServices(instance) {
@@ -313,6 +332,28 @@ export class U2ConnectorSetup extends HTMLElement {
     if (reconnectForm) {
       event.preventDefault();
       this._submitReconnect(reconnectForm);
+      return;
+    }
+    const pairForm = event.target.closest('[data-smtp-pair-form]');
+    if (pairForm) {
+      event.preventDefault();
+      this._submitSmtpPair(pairForm);
+    }
+  }
+
+  async _submitSmtpPair(form) {
+    const instanceId = form.dataset.smtpPairForm;
+    const value = new FormData(form).get('smtpInstanceId');
+    this._busyIds.add(instanceId);
+    try {
+      await api.associateImapSmtp(instanceId, value || null);
+      await this._loadInstances();
+      this._notifyChanged();
+    } catch (err) {
+      this._instancesError = err.message;
+    } finally {
+      this._busyIds.delete(instanceId);
+      this._render();
     }
   }
 

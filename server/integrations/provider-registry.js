@@ -63,14 +63,8 @@ const REAL_PROVIDERS = {
 // be an object (e.g. gmail.sendEmail's `{to, subject, body}`) never gets
 // mistaken for a trailing options object -- see withInjectedOptions() below.
 //
-// imap's `sendEmail` is deliberately absent: it delegates straight to
-// smtp-transport.js, which has no connection-instance routing of its own.
-// There is no "active SMTP instance" concept in connectors.yaml (SMTP was
-// never a selectable provider id for any domain -- see
-// connection-instances.js's matchingDomains() comment), so nothing resolves
-// a specific SMTP account to thread through here; smtp-transport.js still
-// reads its single legacy 'smtp' vault key exactly as before this PR. This
-// is a pre-existing gap outside issue #163's scope, not a regression.
+// IMAP sendEmail receives the selected inbox instance here; its approved
+// SMTP identity is passed separately by the consequential tool.
 // Each method name maps to its ARITY: how many positional "data" arguments
 // it takes BEFORE the trailing options object (0 for a method like
 // syncChanges({db, eventBus, ...}) whose single argument already IS the
@@ -87,7 +81,7 @@ const OPTIONS_ARITY = {
   'google-calendar': { listEvents: 1, getEvent: 1, createEvent: 1, rescheduleEvent: 2, syncChanges: 0 },
   gmail: { listEmails: 1, getEmail: 1, sendEmail: 1, syncChanges: 0 },
   'google-contacts': { searchContacts: 1, syncChanges: 0 },
-  imap: { syncChanges: 0, listEmails: 1, getEmail: 1 },
+  imap: { syncChanges: 0, listEmails: 1, getEmail: 1, sendEmail: 1 },
   'brave-search': { search: 1 },
   webhook: { send: 1 },
 };

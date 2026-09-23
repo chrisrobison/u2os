@@ -12,7 +12,6 @@ import { manifestsByDomain } from '../../integrations/skill-manifests.js';
 import { readEncryptedFile, writeEncryptedFile } from '../../security/vault.js';
 import { validateSettings as validateImapSettings } from '../../integrations/imap-provider.js';
 import { validateSettings as validateSmtpSettings } from '../../integrations/smtp-transport.js';
-import { isConfigured as isSmtpConfigured } from '../../integrations/smtp-transport.js';
 import { getConnectorCatalog, providerIdsForConnector } from '../../integrations/connector-catalog.js';
 import {
   listInstances,
@@ -21,6 +20,7 @@ import {
   createConnectionInstance,
   updateConnectionInstance,
   deleteConnectionInstance,
+  associateSmtpInstance,
 } from '../../integrations/connection-instances.js';
 import {
   buildAuthUrl,
@@ -79,14 +79,7 @@ function pruneExpiredStates() {
 // so multi-instance create/update accepts and rejects exactly what those
 // routes always did. `google` is deliberately absent: a google instance is
 // OAuth-driven (PR 3 attaches tokens to its vault_key), so it never takes
-// credential fields through this CRUD surface. `smtp` is ALSO deliberately
-// absent (issue #163 PR 5): smtp-transport.js has no per-instance routing
-// (see provider-registry.js's OPTIONS_ARITY comment) -- there is no "active
-// SMTP instance" concept anywhere in this system, so it would be actively
-// misleading to let a caller create a multi-account-looking smtp instance
-// row that email.send can never actually read from. SMTP configuration
-// instead has its own single-account, non-instance route pair below
-// (POST/clear /api/connectors/smtp/settings).
+// credential fields through this CRUD surface.
 const CREDENTIAL_VALIDATORS = {
   imap: (merged) => {
     try {
@@ -94,6 +87,10 @@ const CREDENTIAL_VALIDATORS = {
     } catch {
       throw new Error('Invalid IMAP settings; use a host, username, app password, and TLS port 993');
     }
+  },
+  smtp: (merged) => {
+    try { return validateSmtpSettings(merged); }
+    catch { throw new Error('Invalid SMTP settings; use a host, port 465 or 587, username, app password, and From address'); }
   },
   'brave-search': (merged) => {
     if (!merged.apiKey) throw new Error('apiKey is required');
@@ -172,7 +169,11 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
         status: m.status || 'available',
       })),
     }));
-    sendJson(res, 200, { connectors: enriched, smtpConfigured: isSmtpConfigured(), catalog: getConnectorCatalog() });
+    const smtpConfigured = listInstanceRows(db, 'smtp').some((row) => {
+      try { return row.status === 'connected' && Boolean(validateSmtpSettings(readEncryptedFile(row.vault_key))); }
+      catch { return false; }
+    });
+    sendJson(res, 200, { connectors: enriched, smtpConfigured, catalog: getConnectorCatalog() });
   });
 
   router.post('/api/connectors/google/credentials', async (req, res) => {
@@ -347,26 +348,13 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
     sendJson(res, 200, { disconnected: service });
   });
 
-  // --- SMTP settings (issue #163 PR 5) --------------------------------
-  // Deliberately NOT part of the instance CRUD surface below: smtp-transport.js
-  // has no per-instance routing (see CREDENTIAL_VALIDATORS' comment above) --
-  // there is exactly one SMTP configuration for the whole server, same as
-  // before this issue, just under a route name that isn't shared with the
-  // now-removed legacy single-account credential routes.
-  router.post('/api/connectors/smtp/settings', async (req, res) => {
-    try {
-      const settings = validateSmtpSettings(req.body);
-      writeEncryptedFile('smtp', settings);
-      sendJson(res, 200, { configured: true });
-    } catch {
-      sendJson(res, 400, { error: 'Invalid SMTP settings; use a host, port 465 or 587, username, app password, and From address' });
-    }
+  // The former global SMTP endpoint must not create a sender invisible to
+  // instance pairing. Give old clients an actionable migration error.
+  router.post('/api/connectors/smtp/settings', async (_req, res) => {
+    sendJson(res, 410, { error: 'Create or update a named SMTP account in Connectors' });
   });
-
   router.post('/api/connectors/smtp/settings/clear', async (_req, res) => {
-    const existing = readEncryptedFile('smtp');
-    if (existing) writeEncryptedFile('smtp', {});
-    sendJson(res, 200, { disconnected: 'smtp' });
+    sendJson(res, 410, { error: 'Remove the intended named SMTP account in Connectors' });
   });
 
   // --- Connection instances: multiple accounts per connector (#163 PR 2) --
@@ -466,6 +454,18 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
     } catch (err) {
       sendJson(res, 400, { error: err.message });
     }
+  });
+
+  router.patch('/api/connectors/imap/instances/:instanceId/smtp', async (req, res) => {
+    const imap = findInstance(db, 'imap', req.params.instanceId);
+    if (!imap) return sendJson(res, 404, { error: 'IMAP account not found' });
+    const smtpInstanceId = req.body?.smtpInstanceId;
+    const smtp = typeof smtpInstanceId === 'string' ? findInstance(db, 'smtp', smtpInstanceId) : null;
+    if (smtpInstanceId !== null && (!smtp || smtp.status !== 'connected')) {
+      return sendJson(res, 400, { error: 'Select a connected SMTP account or clear the association' });
+    }
+    const updated = associateSmtpInstance(db, { imapRow: imap, smtpInstanceId });
+    sendJson(res, 200, updated);
   });
 
   router.delete('/api/connectors/:connectorId/instances/:instanceId', async (req, res) => {

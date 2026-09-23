@@ -157,7 +157,7 @@ export class Agent {
     if (accountDomain) {
       try {
         accountBinding = captureAccountBinding(accountDomain);
-        if (toolName === 'email.send' && accountBinding.providerId === 'imap') accountBinding.smtpIdentity = captureSmtpIdentity();
+        if (toolName === 'email.send' && accountBinding.providerId === 'imap') accountBinding.smtpIdentity = captureSmtpIdentity(accountBinding);
         if (toolName === 'calendar.reschedule') assertCalendarTarget(accountBinding, args?.eventId);
       }
       catch (err) { bindingError = err.message; }

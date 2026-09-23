@@ -35,18 +35,9 @@ export const CONNECTOR_CATALOG = [
     setup: { type: 'credentials', fields: [field('host', 'Mail host', 'text', { placeholder: 'imap.example.com' }), field('username', 'Username'), field('password', 'App password', 'password')] },
   },
   {
-    id: 'smtp', name: 'SMTP', category: 'Email', status: 'available', accountMode: 'single',
+    id: 'smtp', name: 'SMTP', category: 'Email', status: 'available', accountMode: 'multiple',
     description: 'Send mail through a standard SMTP submission server.', capabilities: ['email.send'],
-    // Deliberately accountMode: 'single' (issue #163 PR 5), NOT 'multiple'
-    // like the other credentialed connectors here: smtp-transport.js has no
-    // per-instance concept anywhere in this system (email.send reads a
-    // single bare 'smtp' vault file directly, never through
-    // connection-instances.js/provider-registry.js's instance resolution),
-    // so there is no real "second SMTP account" to manage. The setup dialog
-    // therefore keeps the single-form + Save/Disconnect UI other
-    // accountMode:'single' connectors use, backed by its own small,
-    // non-instance route pair below rather than the generic CRUD surface.
-    setup: { type: 'credentials', credentialEndpoint: '/api/connectors/smtp/settings', disconnectEndpoint: '/api/connectors/smtp/settings/clear', fields: [field('host', 'Mail host', 'text', { placeholder: 'smtp.example.com' }), field('port', 'Port', 'select', { options: [{ value: 465, label: '465 (TLS)' }, { value: 587, label: '587 (STARTTLS)' }] }), field('username', 'Username'), field('password', 'App password', 'password'), field('from', 'From address', 'email')] },
+    setup: { type: 'credentials', fields: [field('host', 'Mail host', 'text', { placeholder: 'smtp.example.com' }), field('port', 'Port', 'select', { options: [{ value: 465, label: '465 (TLS)' }, { value: 587, label: '587 (STARTTLS)' }] }), field('username', 'Username'), field('password', 'App password', 'password'), field('from', 'From address', 'email')] },
   },
   {
     id: 'brave-search', name: 'Brave Search', category: 'Web', status: 'available', accountMode: 'multiple',
