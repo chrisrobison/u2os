@@ -12,6 +12,7 @@ import { Router } from './api/router.js';
 import { serveStatic } from './api/static.js';
 import { runSeed } from './seed/seed.js';
 import { ensureDefaultConnectorsConfig } from './integrations/connectors-config.js';
+import { ensureConnectionInstancesMigrated } from './integrations/connection-instances.js';
 import { startAll as startSyncScheduler, stopAll as stopSyncScheduler } from './integrations/sync-scheduler.js';
 import * as triggerEngine from './triggers/trigger-engine.js';
 import { startMdns } from './discovery/mdns.js';
@@ -146,6 +147,13 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   // provider -- with zero connectors configured this starts zero timers and
   // changes no other startup behavior.
   ensureDefaultConnectorsConfig(dataDir);
+  // Issue #163 (PR 1 of 5): one-time, idempotent promotion of any
+  // pre-existing legacy single-account credential file into the new
+  // connection_instances table -- safe to run on every boot (skips
+  // connectors already migrated). See
+  // server/integrations/connection-instances.js's header for the full
+  // migration contract.
+  ensureConnectionInstancesMigrated({ db, dataDir });
   startSyncScheduler({ db, eventBus, dataDir });
 
   const agent = new Agent({ modelRouter, policyEngine, toolRegistry, eventBus, ownerEntityId, embeddingProvider, dataProcessingPolicy });

@@ -132,3 +132,14 @@ export function writeEncryptedFile(connectorId, plainObject, dataDir = getDataDi
   fs.writeFileSync(filePath, JSON.stringify(encoded), { mode: 0o600 });
   return plainObject;
 }
+
+/** Deletes ~/.u2os/credentials/<connectorId>.enc.json if it exists. A no-op
+ * (not an error) if the file is already absent -- callers that want to
+ * confirm something was actually deleted should check existence themselves
+ * first. Used by server/integrations/connection-instances.js to remove a
+ * legacy single-account credential file only AFTER its contents have been
+ * durably migrated to a new per-instance vault key elsewhere. */
+export function deleteEncryptedFile(connectorId, dataDir = getDataDir()) {
+  const filePath = encryptedFilePath(connectorId, dataDir);
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+}
