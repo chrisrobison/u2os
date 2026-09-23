@@ -7,13 +7,16 @@ import { readEncryptedFile } from '../security/vault.js';
 
 export const id = 'webhook';
 
-export function isConnected(dataDir) {
-  const stored = readEncryptedFile('notify-webhook', dataDir);
+/** `vaultKey` identifies which `webhook` connection instance to check (issue
+ * #163 PR 4) -- required, no default, so a caller can never silently check
+ * the wrong account. */
+export function isConnected(vaultKey, dataDir) {
+  const stored = readEncryptedFile(vaultKey, dataDir);
   return !!stored?.webhookUrl;
 }
 
-export async function send({ title, body, priority = 'normal' }, { fetchImpl = globalThis.fetch, dataDir, timeoutMs = 10_000, signal } = {}) {
-  const stored = readEncryptedFile('notify-webhook', dataDir);
+export async function send({ title, body, priority = 'normal' }, { fetchImpl = globalThis.fetch, dataDir, instance, timeoutMs = 10_000, signal } = {}) {
+  const stored = readEncryptedFile(instance?.vault_key, dataDir);
   if (!stored?.webhookUrl) {
     throw new Error('webhook-notify: not connected');
   }

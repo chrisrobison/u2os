@@ -25,15 +25,23 @@ function neverCalledFetch() {
   };
 }
 
+// issue #163 PR 4: gmail-provider.js is instance-aware -- every call needs a
+// resolved connection instance (`.vault_key` for token storage, `.id`/
+// `.metadata` for the local-id scoping rule in connector-instance-ids.js).
+// These tests call sendEmail() directly (bypassing provider-registry.js's
+// resolution), so they construct a minimal, non-grandfathered instance
+// object themselves -- the same raw shape findInstance() would return.
+const TEST_INSTANCE = { id: 'conn_test_gmail', vault_key: 'google__conn_test_gmail', metadata: JSON.stringify({}) };
+
 test('sendEmail rejects a CRLF-injected header in "to" before ever calling fetch', async () => {
   const dir = tempHome();
   try {
-    storeTokens('google', 'gmail', { access_token: 'AT', refresh_token: 'RT', expires_in: 3600 }, dir);
+    storeTokens(TEST_INSTANCE.vault_key, 'gmail', { access_token: 'AT', refresh_token: 'RT', expires_in: 3600 }, dir);
     await assert.rejects(
       () =>
         sendEmail(
           { to: 'victim@example.com\r\nBcc: attacker@evil.example', subject: 'hello', body: 'hi' },
-          { fetchImpl: neverCalledFetch(), dataDir: dir }
+          { fetchImpl: neverCalledFetch(), dataDir: dir, instance: TEST_INSTANCE }
         ),
       /line breaks/
     );
@@ -45,12 +53,12 @@ test('sendEmail rejects a CRLF-injected header in "to" before ever calling fetch
 test('sendEmail rejects a CRLF-injected header in "subject" before ever calling fetch', async () => {
   const dir = tempHome();
   try {
-    storeTokens('google', 'gmail', { access_token: 'AT', refresh_token: 'RT', expires_in: 3600 }, dir);
+    storeTokens(TEST_INSTANCE.vault_key, 'gmail', { access_token: 'AT', refresh_token: 'RT', expires_in: 3600 }, dir);
     await assert.rejects(
       () =>
         sendEmail(
           { to: 'victim@example.com', subject: 'hello\r\nBcc: attacker@evil.example', body: 'hi' },
-          { fetchImpl: neverCalledFetch(), dataDir: dir }
+          { fetchImpl: neverCalledFetch(), dataDir: dir, instance: TEST_INSTANCE }
         ),
       /line breaks/
     );
@@ -62,7 +70,7 @@ test('sendEmail rejects a CRLF-injected header in "subject" before ever calling 
 test('sendEmail still sends normally when to/subject are clean', async () => {
   const dir = tempHome();
   try {
-    storeTokens('google', 'gmail', { access_token: 'AT', refresh_token: 'RT', expires_in: 3600 }, dir);
+    storeTokens(TEST_INSTANCE.vault_key, 'gmail', { access_token: 'AT', refresh_token: 'RT', expires_in: 3600 }, dir);
     const fetchImpl = async () => ({
       ok: true,
       status: 200,
@@ -71,10 +79,12 @@ test('sendEmail still sends normally when to/subject are clean', async () => {
 
     const result = await sendEmail(
       { to: 'friend@example.com', subject: 'A normal subject', body: 'Hello!' },
-      { fetchImpl, dataDir: dir }
+      { fetchImpl, dataDir: dir, instance: TEST_INSTANCE }
     );
     assert.equal(result.subject, 'A normal subject');
     assert.equal(result.folder, 'sent');
+    // Non-grandfathered instance -> instance-scoped local id.
+    assert.equal(result.id, `gmail_${TEST_INSTANCE.id}_msg123`);
   } finally {
     cleanup(dir);
   }

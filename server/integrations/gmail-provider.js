@@ -4,33 +4,30 @@
 import { getDb } from '../db/connection.js';
 import { newId } from '../db/ids.js';
 import { hasTokens, getValidAccessToken } from './oauth/google-oauth.js';
+import { scopedLocalId, unscopedUpstreamId } from './connector-instance-ids.js';
 
 export const id = 'gmail';
 
 const API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me';
 const ID_PREFIX = 'gmail_';
 
-// Hardcodes the legacy 'google' vault key rather than resolving a specific
-// connection instance -- full multi-instance-aware provider routing is
-// issue #163 PR 4's job, not this one's. This keeps working unchanged for
-// the single pre-migration `google` account any given installation has,
-// exactly as before PR 3's google-oauth.js vaultKey change.
-const LEGACY_VAULT_KEY = 'google';
-
-export function isConnected(dataDir) {
-  return hasTokens(LEGACY_VAULT_KEY, 'gmail', dataDir);
+/** `vaultKey` identifies which `google` connection instance to check (issue
+ * #163 PR 4) -- required, no default, so a caller can never silently check
+ * the wrong account. */
+export function isConnected(vaultKey, dataDir) {
+  return hasTokens(vaultKey, 'gmail', dataDir);
 }
 
-function toLocalId(messageId) {
-  return `${ID_PREFIX}${messageId}`;
+function toLocalId(messageId, instance) {
+  return scopedLocalId(ID_PREFIX, instance, messageId);
 }
 
-function toGmailId(localId) {
-  return localId.startsWith(ID_PREFIX) ? localId.slice(ID_PREFIX.length) : localId;
+function toGmailId(localId, instance) {
+  return unscopedUpstreamId(ID_PREFIX, instance, localId);
 }
 
-async function authHeaders(fetchImpl, dataDir) {
-  const token = await getValidAccessToken(LEGACY_VAULT_KEY, 'gmail', { dataDir, fetchImpl });
+async function authHeaders(fetchImpl, dataDir, instance) {
+  const token = await getValidAccessToken(instance.vault_key, 'gmail', { dataDir, fetchImpl });
   return { Authorization: `Bearer ${token}` };
 }
 
@@ -57,14 +54,14 @@ function extractBody(payload) {
   return '';
 }
 
-function mapGmailMessage(msg) {
+function mapGmailMessage(msg, instance) {
   const payload = msg.payload || {};
   const from = headerValue(payload, 'From') || '';
   const to = headerValue(payload, 'To') || '';
   const subject = headerValue(payload, 'Subject') || '';
   const folder = (msg.labelIds || []).includes('INBOX') ? 'inbox' : (msg.labelIds || []).includes('SENT') ? 'sent' : 'other';
   return {
-    id: toLocalId(msg.id),
+    id: toLocalId(msg.id, instance),
     thread_id: msg.threadId || null,
     from_addr: from,
     to_addr: to ? [to] : [],
@@ -99,8 +96,8 @@ function getRowById(localId) {
   return row ? { ...row, to_addr: JSON.parse(row.to_addr || '[]'), is_read: !!row.is_read } : null;
 }
 
-export async function listEmails({ folder } = {}, { fetchImpl = globalThis.fetch, dataDir } = {}) {
-  const headers = await authHeaders(fetchImpl, dataDir);
+export async function listEmails({ folder } = {}, { fetchImpl = globalThis.fetch, dataDir, instance } = {}) {
+  const headers = await authHeaders(fetchImpl, dataDir, instance);
   const url = new URL(`${API_BASE}/messages`);
   if (folder) url.searchParams.set('q', `in:${folder}`);
   const listRes = await fetchImpl(url.toString(), { headers });
@@ -111,18 +108,18 @@ export async function listEmails({ folder } = {}, { fetchImpl = globalThis.fetch
     const msgRes = await fetchImpl(`${API_BASE}/messages/${ref.id}?format=metadata`, { headers });
     if (!msgRes.ok) continue;
     const msg = await msgRes.json();
-    rows.push(upsertRow(mapGmailMessage(msg)));
+    rows.push(upsertRow(mapGmailMessage(msg, instance)));
   }
   return rows;
 }
 
-export async function getEmail(localId, { fetchImpl = globalThis.fetch, dataDir } = {}) {
-  const headers = await authHeaders(fetchImpl, dataDir);
-  const res = await fetchImpl(`${API_BASE}/messages/${encodeURIComponent(toGmailId(localId))}?format=full`, { headers });
+export async function getEmail(localId, { fetchImpl = globalThis.fetch, dataDir, instance } = {}) {
+  const headers = await authHeaders(fetchImpl, dataDir, instance);
+  const res = await fetchImpl(`${API_BASE}/messages/${encodeURIComponent(toGmailId(localId, instance))}?format=full`, { headers });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`gmail: getEmail failed (status ${res.status})`);
   const msg = await res.json();
-  return upsertRow(mapGmailMessage(msg));
+  return upsertRow(mapGmailMessage(msg, instance));
 }
 
 // SECURITY: `to` and `subject` become raw RFC 2822 header lines below. A CR
@@ -147,15 +144,15 @@ function buildRawMessage({ to, subject, body }) {
   return Buffer.from(message, 'utf8').toString('base64url');
 }
 
-export async function sendEmail({ to, subject, body }, { fetchImpl = globalThis.fetch, dataDir } = {}) {
-  const headers = { ...(await authHeaders(fetchImpl, dataDir)), 'Content-Type': 'application/json' };
+export async function sendEmail({ to, subject, body }, { fetchImpl = globalThis.fetch, dataDir, instance } = {}) {
+  const headers = { ...(await authHeaders(fetchImpl, dataDir, instance)), 'Content-Type': 'application/json' };
   const raw = buildRawMessage({ to, subject, body });
   const res = await fetchImpl(`${API_BASE}/messages/send`, { method: 'POST', headers, body: JSON.stringify({ raw }) });
   if (!res.ok) throw new Error(`gmail: sendEmail failed (status ${res.status})`);
   const sent = await res.json();
   const now = new Date().toISOString();
   const row = {
-    id: toLocalId(sent.id || newId('gmail')),
+    id: toLocalId(sent.id || newId('gmail'), instance),
     thread_id: sent.threadId || null,
     from_addr: 'me',
     to_addr: Array.isArray(to) ? to : [to],
@@ -170,8 +167,8 @@ export async function sendEmail({ to, subject, body }, { fetchImpl = globalThis.
 
 /** Polled by sync-scheduler.js: fetch recent inbox messages, upsert, publish
  * email.received for any local id not previously seen. */
-export async function syncChanges({ db, eventBus, correlationId, fetchImpl = globalThis.fetch, dataDir } = {}) {
-  const headers = await authHeaders(fetchImpl, dataDir);
+export async function syncChanges({ db, eventBus, correlationId, fetchImpl = globalThis.fetch, dataDir, instance } = {}) {
+  const headers = await authHeaders(fetchImpl, dataDir, instance);
   const url = new URL(`${API_BASE}/messages`);
   url.searchParams.set('q', 'in:inbox newer_than:1d');
   const listRes = await fetchImpl(url.toString(), { headers });
@@ -180,13 +177,13 @@ export async function syncChanges({ db, eventBus, correlationId, fetchImpl = glo
   let count = 0;
   const database = db || getDb();
   for (const ref of listJson.messages || []) {
-    const localId = toLocalId(ref.id);
+    const localId = toLocalId(ref.id, instance);
     const existing = database.prepare('SELECT * FROM emails WHERE id = ?').get(localId);
     if (existing) continue;
     const msgRes = await fetchImpl(`${API_BASE}/messages/${ref.id}?format=full`, { headers });
     if (!msgRes.ok) continue;
     const msg = await msgRes.json();
-    const after = upsertRow(mapGmailMessage(msg));
+    const after = upsertRow(mapGmailMessage(msg, instance));
     eventBus?.publish({
       type: 'email.received',
       source: id,

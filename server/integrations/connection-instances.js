@@ -323,6 +323,23 @@ export function listInstances(db, connectorId) {
   return rows.map(toInstanceApiShape);
 }
 
+/** Internal-only counterpart to listInstances(): returns RAW (secret-key-
+ * bearing) rows -- includes vault_key and metadata -- for connector-internal
+ * callers that need them. Added for issue #163 PR 4's provider-registry.js,
+ * which needs a connector's live instance rows to resolve a domain's
+ * connected instance (including the "exactly one connected instance"
+ * fallback when a domain has no explicit activeInstanceId yet) and to check
+ * server/integrations/connector-instance-ids.js's grandfathered/
+ * non-grandfathered id-prefix rule. NEVER call this from an HTTP route
+ * handler -- toInstanceApiShape() (used by listInstances() above) is what
+ * keeps a vault_key out of every API response, and this function
+ * deliberately bypasses it. */
+export function listInstanceRows(db, connectorId) {
+  return db
+    .prepare('SELECT * FROM connection_instances WHERE connector_id = ? AND deleted_at IS NULL ORDER BY created_at ASC')
+    .all(connectorId);
+}
+
 /** Finds the raw (non-API-shaped) DB row for a single instance, scoped to
  * both instanceId AND connectorId AND "not soft-deleted" in one query --
  * this is what makes a mismatched {connectorId, instanceId} pair (or a
@@ -400,4 +417,81 @@ export function deleteConnectionInstance(db, { row, dataDir } = {}) {
   const now = new Date().toISOString();
   db.prepare('UPDATE connection_instances SET deleted_at = ?, updated_at = ? WHERE id = ?').run(now, now, row.id);
   return toInstanceApiShape({ ...row, updated_at: now });
+}
+
+function liveInstanceForConnector(db, connectorId) {
+  return db
+    .prepare('SELECT * FROM connection_instances WHERE connector_id = ? AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 1')
+    .get(connectorId);
+}
+
+/**
+ * Legacy-route compatibility shim (issue #163 PR 4; server/api/routes/
+ * connectors.js's "Legacy single-account credential routes" block, kept
+ * only because the pre-PR-5 frontend still POSTs to them -- see that
+ * block's own comment). Before PR 4, every real provider module read
+ * credentials from a bare `<connectorId>.enc.json` vault file directly;
+ * since PR 4, every real provider module resolves credentials through a
+ * connection_instances row instead, so a legacy route writing straight to
+ * the bare key (with no row backing it) would silently configure
+ * credentials nothing can ever find -- exactly the imap/webhook e2e
+ * regression review caught after the routing PR shipped.
+ *
+ * This bridges the two: reuse whatever live instance already exists for
+ * `connectorId` (writing into ITS real vault_key, whatever that already is
+ * -- a bare legacy key from a prior call to this same shim, or an
+ * already-migrated instance-scoped key from PR 1's boot-time migration), or
+ * create one for the first time. A freshly-created row uses
+ * `vaultKeyOverride` (falling back to the bare `connectorId`) as its vault
+ * key -- matching whatever filename the connector's provider module has
+ * historically written to -- and is tagged the same
+ * `migratedFrom: 'legacy-single-file'` way PR 1's real migration tags a
+ * carried-forward single account: functionally, this IS that same
+ * grandfathered single-account case, just triggered by a live API call
+ * instead of a boot-time file scan, and it must generate the same
+ * unprefixed local ids (see connector-instance-ids.js) for exactly the same
+ * reason. Returns the resulting raw row.
+ */
+export function ensureLegacyCredentialInstance(db, { connectorId, plaintext, vaultKeyOverride, dataDir } = {}) {
+  const now = new Date().toISOString();
+  const existing = liveInstanceForConnector(db, connectorId);
+  if (existing) {
+    writeEncryptedFile(existing.vault_key, plaintext, dataDir);
+    db.prepare('UPDATE connection_instances SET status = ?, updated_at = ? WHERE id = ?').run('connected', now, existing.id);
+    return { ...existing, status: 'connected', updated_at: now };
+  }
+
+  const instanceId = newId('conn');
+  const vaultKey = vaultKeyOverride || connectorId;
+  writeEncryptedFile(vaultKey, plaintext, dataDir);
+  const label = buildLabel(connectorId, plaintext);
+  const metadata = JSON.stringify({ migratedFrom: MIGRATION_TAG });
+  db.prepare(
+    `INSERT INTO connection_instances (id, connector_id, label, status, vault_key, metadata, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(instanceId, connectorId, label, 'connected', vaultKey, metadata, now, now);
+
+  const config = loadConnectorsConfig(dataDir);
+  const domains = matchingDomains(connectorId, config);
+  if (domains.length) {
+    for (const domain of domains) config[domain] = { ...config[domain], activeInstanceId: instanceId };
+    saveConnectorsConfig(config, dataDir);
+  }
+  return { id: instanceId, connector_id: connectorId, label, status: 'connected', vault_key: vaultKey, metadata, created_at: now, updated_at: now };
+}
+
+/**
+ * The disconnect counterpart to ensureLegacyCredentialInstance(): clears
+ * whichever live instance already exists for `connectorId` at its REAL
+ * vault_key (not necessarily the bare connectorId), so a legacy disconnect
+ * route actually clears what a provider module reads. A no-op if no live
+ * instance exists yet.
+ */
+export function clearLegacyCredentialInstance(db, { connectorId, dataDir } = {}) {
+  const existing = liveInstanceForConnector(db, connectorId);
+  if (!existing) return null;
+  writeEncryptedFile(existing.vault_key, {}, dataDir);
+  const now = new Date().toISOString();
+  db.prepare('UPDATE connection_instances SET status = ?, updated_at = ? WHERE id = ?').run('pending', now, existing.id);
+  return { ...existing, status: 'pending', updated_at: now };
 }

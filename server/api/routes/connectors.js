@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { sendJson } from '../router.js';
-import { getHealth, resolveConnectedRealProvider } from '../../integrations/provider-registry.js';
+import { getHealth, resolveConnectedRealProvider, resolveInstanceForDomain } from '../../integrations/provider-registry.js';
 import {
   setActiveProvider,
   validProviderIdsFor,
@@ -20,6 +20,8 @@ import {
   createConnectionInstance,
   updateConnectionInstance,
   deleteConnectionInstance,
+  ensureLegacyCredentialInstance,
+  clearLegacyCredentialInstance,
 } from '../../integrations/connection-instances.js';
 import {
   buildAuthUrl,
@@ -240,21 +242,16 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
         redirectUri,
         code,
       });
+      // issue #163 PR 4: gmail-provider.js/google-calendar-provider.js/
+      // google-contacts-provider.js are now instance-aware -- tokens live
+      // ONLY at instance.vault_key, resolved per domain by
+      // provider-registry.js's getProvider()/resolveConnectedRealProvider().
+      // The bare 'google' vault key is no longer read by any provider
+      // module for tokens (it still stores the shared OAuth client id/
+      // secret, which is not per-instance -- see the /google/credentials
+      // route above), so the mirror write PR 3 left here as a stopgap is no
+      // longer needed and has been removed.
       storeTokens(instance.vault_key, service, tokens);
-      // STOPGAP until issue #163 PR 4 makes gmail-provider.js/
-      // google-calendar-provider.js/google-contacts-provider.js
-      // instance-aware: those three modules (and the /disconnect route
-      // below) still hardcode reading the bare 'google' vault key
-      // (LEGACY_VAULT_KEY), which nothing wrote to as of this PR since
-      // tokens now live at instance.vault_key. Without this mirror write,
-      // completing OAuth would report success but leave every provider's
-      // isConnected()/authHeaders() unable to find the tokens it just
-      // stored -- a regression versus main, not merely PR 1's pre-existing
-      // migration gap. Mirroring keeps the legacy single-account read path
-      // working exactly as it did before this PR, for any installation
-      // that has exactly one google instance (the common case pre-PR 4).
-      // Remove this mirror write once PR 4 lands.
-      storeTokens('google', service, tokens);
       activateGoogleProvider(service);
       reconcileSyncScheduler({ db, eventBus });
       res.writeHead(302, { Location: `/#/connectors?connected=${encodeURIComponent(service)}` });
@@ -272,13 +269,22 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
     if (!GOOGLE_SERVICES.includes(service)) {
       return sendJson(res, 400, { error: `service must be one of ${GOOGLE_SERVICES.join(', ')}` });
     }
-    // Legacy, pre-instance route -- like the provider modules' isConnected/
-    // authHeaders (see their LEGACY_VAULT_KEY comments), this still targets
-    // the bare 'google' vault key rather than a specific connection
-    // instance. Making this instance-aware is issue #163 PR 4/5's job
-    // (instances already have their own disconnect path via DELETE
-    // /api/connectors/google/instances/:instanceId, which removes that
-    // instance's own vault file directly).
+    // Legacy, pre-instance route, kept only because the setup dialog shipped
+    // in PR #161 (public/components/u2-connectors.js) still calls it -- to
+    // be removed once PR 5 migrates the frontend to per-instance disconnect
+    // (DELETE /api/connectors/google/instances/:instanceId).
+    //
+    // Since PR 4, provider modules read tokens from a resolved connection
+    // instance's own vault_key, not the bare 'google' key -- so this route
+    // must resolve the SAME instance provider-registry.js would resolve for
+    // this service's domain and clear tokens there (a caught regression:
+    // clearing only the legacy 'google' key silently disconnected nothing a
+    // provider actually reads, while still reporting success). The legacy
+    // key is also cleared for good measure (harmless if already empty).
+    const target = GOOGLE_PROVIDER_TARGETS[service];
+    const config = loadConnectorsConfig();
+    const instance = resolveInstanceForDomain(target.providerId, config[target.domain]?.activeInstanceId);
+    if (instance) clearTokens(instance.vault_key, service);
     clearTokens('google', service);
     reconcileSyncScheduler({ db, eventBus });
     sendJson(res, 200, { disconnected: service });
@@ -301,14 +307,22 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
   router.post('/api/connectors/web-search/credentials', async (req, res) => {
     const { apiKey } = req.body || {};
     if (!apiKey) return sendJson(res, 400, { error: 'apiKey is required' });
-    writeEncryptedFile('web-search', { apiKey });
+    // issue #163 PR 4 regression fix: writing straight to the bare
+    // 'web-search' file (as this route did before) configures credentials
+    // nothing reads anymore -- brave-search-provider.js now resolves its
+    // vault key through a connection_instances row. See
+    // ensureLegacyCredentialInstance()'s doc comment.
+    ensureLegacyCredentialInstance(db, { connectorId: 'brave-search', plaintext: { apiKey }, vaultKeyOverride: 'web-search' });
     sendJson(res, 200, { configured: true });
   });
 
   router.post('/api/connectors/imap/credentials', async (req, res) => {
     try {
       const settings = validateImapSettings(req.body);
-      writeEncryptedFile('imap', settings);
+      // See ensureLegacyCredentialInstance()'s doc comment: reuses (or
+      // creates) the live connection_instances row backing 'imap' so
+      // imap-provider.js's instance-resolved reads actually find this.
+      ensureLegacyCredentialInstance(db, { connectorId: 'imap', plaintext: settings });
       reconcileSyncScheduler({ db, eventBus });
       sendJson(res, 200, { configured: true });
     } catch {
@@ -317,8 +331,7 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
   });
 
   router.post('/api/connectors/imap/disconnect', async (_req, res) => {
-    const existing = readEncryptedFile('imap');
-    if (existing) writeEncryptedFile('imap', {});
+    clearLegacyCredentialInstance(db, { connectorId: 'imap' });
     reconcileSyncScheduler({ db, eventBus });
     sendJson(res, 200, { disconnected: 'imap' });
   });
@@ -342,7 +355,15 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
   router.post('/api/connectors/notify-webhook/credentials', async (req, res) => {
     const { webhookUrl, format } = req.body || {};
     if (!webhookUrl) return sendJson(res, 400, { error: 'webhookUrl is required' });
-    writeEncryptedFile('notify-webhook', { webhookUrl, format: format === 'ntfy' ? 'ntfy' : 'json' });
+    // See ensureLegacyCredentialInstance()'s doc comment: same regression
+    // fix as imap/web-search above -- webhook-notify-provider.js resolves
+    // its vault key through a connection_instances row since PR 4.
+    ensureLegacyCredentialInstance(db, {
+      connectorId: 'webhook',
+      plaintext: { webhookUrl, format: format === 'ntfy' ? 'ntfy' : 'json' },
+      vaultKeyOverride: 'notify-webhook',
+    });
+    reconcileSyncScheduler({ db, eventBus });
     sendJson(res, 200, { configured: true });
   });
 
