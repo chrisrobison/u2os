@@ -21,7 +21,7 @@ function opts(auth, extra = {}) { return { ...extra, headers: { ...(extra.header
 test('HTTP auth boundary, owner setup, CSRF, actor identity, limits, headers, and audit rejection', async () => {
   const dir = home(); let handle;
   try {
-    handle = await startServer({ port: 0 }); const origin = base(handle);
+    handle = await startServer({ port: 0, mode: 'demo' }); const origin = base(handle);
     assert.equal(handle.server.address().address, '127.0.0.1');
     for (const route of ['/api/events', '/api/memory/entities', '/api/export', '/api/actions/pending']) assert.equal((await fetch(origin + route)).status, 401);
     for (const [route, body] of [['/api/actions/nope/approve', {}], ['/api/triggers', {}], ['/api/connectors/google/credentials', {}], ['/api/voice/enrollment', { vector: [1] }]]) {

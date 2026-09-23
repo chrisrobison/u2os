@@ -1,6 +1,6 @@
 // Idempotent demo data seeding. Skips entirely if the entities table already
-// has rows. Runs automatically from server/index.js on first boot, and is
-// also runnable standalone via `npm run seed`.
+// has rows. Runs on explicit demo-mode startup, and is also callable by
+// isolated test fixtures. The CLI refuses to seed a personal home.
 import fs from 'node:fs';
 import path from 'node:path';
 import { getDb, getDataDir } from '../db/connection.js';
@@ -12,6 +12,7 @@ import * as calendarProvider from '../integrations/mock-calendar-provider.js';
 import * as emailProvider from '../integrations/mock-email-provider.js';
 import * as tasksProvider from '../integrations/mock-tasks-provider.js';
 import { createTrigger } from '../triggers/trigger-engine.js';
+import { ensureInstallationMode } from './installation-mode.js';
 
 export function runSeed({ eventBus } = {}) {
   ensureDefaultPolicies();
@@ -20,8 +21,8 @@ export function runSeed({ eventBus } = {}) {
   const db = getDb();
   const existing = db.prepare('SELECT COUNT(*) AS n FROM entities').get();
   if (existing.n > 0) {
-    const chris = db.prepare("SELECT id FROM entities WHERE type = 'Person' AND name = 'Chris' LIMIT 1").get();
-    return chris ? chris.id : null;
+    const demoOwner = db.prepare("SELECT id FROM entities WHERE type = 'Person' AND json_extract(attributes, '$.role') = 'owner' ORDER BY created_at LIMIT 1").get();
+    return demoOwner?.id || null;
   }
 
   console.log('[seed] no existing data found, seeding demo data...');
@@ -226,6 +227,7 @@ function ensureConfigFile() {
 
 const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
 if (isMain) {
+  if (ensureInstallationMode() !== 'demo') throw new Error('Refusing to seed a personal home; use npm run demo with an isolated home');
   runSeed({});
   console.log('Seed complete.');
 }

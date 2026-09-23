@@ -17,7 +17,7 @@ export default async function globalSetup() {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-e2e-'));
   process.env.U2OS_HOME = dataDir;
 
-  const handle = await startServer({ port: 0 });
+  const handle = await startServer({ port: 0, mode: 'demo' });
   const baseURL = `http://127.0.0.1:${handle.port}`;
   fs.writeFileSync(STATE_FILE, JSON.stringify({ baseURL }));
 

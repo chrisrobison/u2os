@@ -29,7 +29,7 @@ export async function startDemo(argv = process.argv.slice(2)) {
   assertDemoHomeAvailable(options.home, options);
   process.env.U2OS_HOME = options.home;
   const { startServer } = await import('../index.js');
-  const handle = await startServer({ port: options.port, bind: '127.0.0.1' });
+  const handle = await startServer({ port: options.port, bind: '127.0.0.1', mode: 'demo' });
   console.log(`[demo] U2OS demo is ready at http://127.0.0.1:${handle.port}`);
   console.log(`[demo] Data home: ${options.home}`);
   console.log('[demo] Open the URL, create the owner passphrase if needed, then use the daily-driver prompt from docs/demo.md.');

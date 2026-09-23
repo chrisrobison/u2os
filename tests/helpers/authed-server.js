@@ -5,7 +5,7 @@ const nativeFetch = globalThis.fetch;
 let installed = false;
 
 export async function startServer(options = {}) {
-  const handle = await startRealServer(options);
+  const handle = await startRealServer({ mode: 'demo', ...options });
   const origin = `http://127.0.0.1:${handle.port}`;
   const setup = await nativeFetch(`${origin}/api/auth/setup`, {
     method: 'POST',

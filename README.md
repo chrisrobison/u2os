@@ -110,9 +110,9 @@ For headless/container initialization, `npm run setup-owner` creates the same ow
 
 On first start, U2OS creates its local data directory at `~/.u2os/`. Set `U2OS_HOME` to use another location. The directory contains configuration, policies, the SQLite database, encrypted connector credentials, and cache data. Real user data is not stored in the repository.
 
-The first run also seeds demo people, projects, calendar events, email, tasks, commitments, and activity so the interface is immediately usable. Mock providers remain the default until real connectors are configured from the Connectors page.
+Personal startup does not seed fictional people, messages, meetings, tasks, or triggers. Personal owner setup creates only a structural `Owner` entity; explicit demo setup links to the seeded demo owner. A small `config/installation.json` records whether the home is personal or demo. Existing unmarked homes are treated as personal without deleting or classifying their records. Mock provider selection and fallback are still possible in personal mode pending [#186](https://github.com/chrisrobison/u2os/issues/186); do not mistake mock responses for connected personal accounts.
 
-For an isolated, deterministic five-minute walkthrough, run `npm run demo` and follow [docs/demo.md](docs/demo.md). It uses a separate `~/.u2os-demo` data home and refuses to overwrite an existing demo database without explicit `--reuse`.
+For an isolated, deterministic five-minute walkthrough, run `npm run demo` and follow [docs/demo.md](docs/demo.md). It uses a separate `~/.u2os-demo` data home, refuses to overwrite an existing demo database without explicit `--reuse`, and will not convert an existing personal home into demo mode.
 
 For development with automatic server restarts:
 

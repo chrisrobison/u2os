@@ -9,13 +9,15 @@ npm install
 npm run demo
 ```
 
-The command binds to loopback and uses `~/.u2os-demo`, keeping the demo separate from `~/.u2os`. It refuses an existing demo database unless reuse is explicit:
+The command binds to loopback and uses `~/.u2os-demo`, keeping the demo separate from `~/.u2os`. This home is persistently marked as demo; ordinary personal startup never seeds its fixtures. It refuses an existing demo database unless reuse is explicit:
 
 ```sh
 npm run demo -- --reuse
 ```
 
 Choose another location or port with `--home /absolute/path` and `--port 4100`. U2OS never resets or deletes that location for you.
+
+`--reuse` applies to homes already marked as demo. An older unmarked home is treated as personal, even if it contains sample records, and cannot be silently converted. Review/export its records before choosing a new isolated demo home.
 
 Open <http://127.0.0.1:4000> and create the owner passphrase. The morning briefing shows today's schedule, priority tasks, important unread email, and anything awaiting approval. Select **Review my day** to submit:
 

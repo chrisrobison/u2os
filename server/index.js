@@ -11,6 +11,7 @@ import { Agent } from './agent/agent.js';
 import { Router } from './api/router.js';
 import { serveStatic } from './api/static.js';
 import { runSeed } from './seed/seed.js';
+import { ensureInstallationMode } from './seed/installation-mode.js';
 import { ensureDefaultConnectorsConfig } from './integrations/connectors-config.js';
 import { ensureConnectionInstancesMigrated } from './integrations/connection-instances.js';
 import { startAll as startSyncScheduler, stopAll as stopSyncScheduler } from './integrations/sync-scheduler.js';
@@ -50,8 +51,9 @@ import { registerModelRoutes } from './api/routes/model.js';
 import { registerDeviceRoutes } from './api/routes/devices.js';
 import { registerDiagnosticsRoutes } from './api/routes/diagnostics.js';
 
-export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsoluteSeconds } = {}) {
+export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsoluteSeconds, mode = null } = {}) {
 
+  const installationMode = ensureInstallationMode(mode);
   const dataDir = ensureDataDirs();
   // SECURITY: create the credentials/ dir + master key now, at 0700, rather
   // than lazily on first credential save -- see the comment on SUBDIRS in
@@ -139,7 +141,7 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
     }
   }
 
-  runSeed({ eventBus });
+  const demoOwnerEntityId = installationMode === 'demo' ? runSeed({ eventBus }) : null;
   const ownerEntityId = auth.ensureOwnerEntityLink()?.id || null;
 
   // Phase 3: connectors.yaml is written with all-mock defaults on first run
@@ -176,7 +178,7 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
 
   const router = new Router({ auth, publicOrigin });
   const startTime = Date.now();
-  registerAuthRoutes(router, { auth, agent });
+  registerAuthRoutes(router, { auth, agent, demoOwnerEntityId });
   registerModelRoutes(router);
   registerHealthRoutes(router, { dataDir, dbPath, startTime });
   registerAgentRoutes(router, { agent });
