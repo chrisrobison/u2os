@@ -23,6 +23,21 @@ test('a well-formed plan with reason and dependsOn on its actions validates and 
   assert.equal(plan.actions[0].reason, 'Kick off the sequence');
 });
 
+test('bounded continuation and explicit prior-result references validate without inventing argument values', () => {
+  const plan = validatePlan({ reasoning_summary: 'Read then continue', continue: true, actions: [
+    { tool: 'email.read', arguments: { id: 'placeholder' }, resultRefs: { id: { stepIndex: 0, itemIndex: 0, path: 'id' } } },
+  ] }, registry);
+  assert.equal(plan.continue, true);
+  assert.equal(plan.actions[0].resultRefs.id.path, 'id');
+  assert.throws(() => validatePlan({ reasoning_summary: '', continue: 'yes', actions: [] }, registry), /continue must be boolean/);
+  assert.throws(() => validatePlan({ reasoning_summary: '', actions: [
+    { tool: 'email.read', arguments: { id: 'x' }, resultRefs: { id: { stepIndex: 0, itemIndex: 0, path: '__proto__' } } },
+  ] }, registry), /invalid reference/);
+  assert.throws(() => validatePlan({ reasoning_summary: '', actions: [
+    { tool: 'email.read', arguments: { id: 'x' }, resultRefs: JSON.parse('{"__proto__":{"stepIndex":0,"itemIndex":0,"path":"id"}}') },
+  ] }, registry), /invalid reference/);
+});
+
 test('rejects an unrecognized top-level plan field (never silently trusted)', () => {
   assert.throws(
     () => validatePlan({ reasoning_summary: '', actions: [], executeShellCommand: 'rm -rf /' }, registry),

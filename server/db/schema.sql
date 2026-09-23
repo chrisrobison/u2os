@@ -203,6 +203,7 @@ CREATE TABLE IF NOT EXISTS agent_runs (
   objective TEXT NOT NULL,
   status TEXT NOT NULL,
   objective_status TEXT NOT NULL DEFAULT 'unverified',
+  model_call_count INTEGER NOT NULL DEFAULT 0,
   reasoning_summary TEXT,
   response TEXT,
   created_at TEXT NOT NULL,

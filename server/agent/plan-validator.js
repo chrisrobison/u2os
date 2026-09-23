@@ -12,8 +12,8 @@
 const MAX_ACTIONS = 10;
 const MAX_ARG_DEPTH = 4;
 const MAX_MEMORY_CANDIDATES = 20;
-const KNOWN_PLAN_KEYS = ['reasoning_summary', 'actions', 'memoryCandidates', 'response'];
-const KNOWN_ACTION_KEYS = ['tool', 'arguments', 'reason', 'dependsOn'];
+const KNOWN_PLAN_KEYS = ['reasoning_summary', 'actions', 'memoryCandidates', 'response', 'continue'];
+const KNOWN_ACTION_KEYS = ['tool', 'arguments', 'reason', 'dependsOn', 'resultRefs'];
 const CONFIDENCE_LEVELS = ['low', 'medium', 'high'];
 
 export function validatePlan(plan, toolRegistry) {
@@ -32,12 +32,14 @@ export function validatePlan(plan, toolRegistry) {
   if (plan.response !== undefined && typeof plan.response !== 'string') {
     throw new Error('Model plan response must be a string');
   }
+  if (plan.continue !== undefined && typeof plan.continue !== 'boolean') throw new Error('Model plan continue must be boolean');
   if (plan.memoryCandidates !== undefined) validateMemoryCandidates(plan.memoryCandidates);
 
   return {
     reasoning_summary: plan.reasoning_summary,
-    actions: plan.actions.map((a) => ({ tool: a.tool, arguments: a.arguments, ...(a.reason !== undefined ? { reason: a.reason } : {}), ...(a.dependsOn !== undefined ? { dependsOn: a.dependsOn } : {}) })),
+    actions: plan.actions.map((a) => ({ tool: a.tool, arguments: a.arguments, ...(a.reason !== undefined ? { reason: a.reason } : {}), ...(a.dependsOn !== undefined ? { dependsOn: a.dependsOn } : {}), ...(a.resultRefs !== undefined ? { resultRefs: a.resultRefs } : {}) })),
     ...(plan.response !== undefined ? { response: plan.response } : {}),
+    ...(plan.continue !== undefined ? { continue: plan.continue } : {}),
     ...(plan.memoryCandidates !== undefined ? { memoryCandidates: plan.memoryCandidates } : {}),
   };
 }
@@ -96,6 +98,7 @@ function validateAction(action, index, toolRegistry) {
     throw new Error(`Model action ${action.tool} arguments exceed the maximum nesting depth (${MAX_ARG_DEPTH})`);
   }
   validateArguments(action.arguments, tool.schema, action.tool);
+  if (action.resultRefs !== undefined) validateResultRefs(action.resultRefs, action.arguments, action.tool);
 
   if (action.reason !== undefined && typeof action.reason !== 'string') {
     throw new Error(`Model action ${action.tool}.reason must be a string`);
@@ -110,6 +113,21 @@ function validateAction(action, index, toolRegistry) {
       if (!Number.isInteger(dep) || dep < 0 || dep >= index) {
         throw new Error(`Model action ${action.tool}.dependsOn contains an invalid reference (must be an earlier action's index)`);
       }
+    }
+  }
+}
+
+function validateResultRefs(refs, args, toolName) {
+  if (!plainObject(refs) || Object.keys(refs).length > 8) throw new Error(`Model action ${toolName}.resultRefs must be a bounded object`);
+  for (const [argument, ref] of Object.entries(refs)) {
+    if (!Object.hasOwn(args, argument) || ['__proto__', 'prototype', 'constructor'].includes(argument) ||
+        !plainObject(ref) || Object.keys(ref).some((key) => !['stepIndex', 'itemIndex', 'path'].includes(key))) {
+      throw new Error(`Model action ${toolName}.resultRefs contains an invalid reference`);
+    }
+    if (!Number.isInteger(ref.stepIndex) || ref.stepIndex < 0 || !Number.isInteger(ref.itemIndex) || ref.itemIndex < 0 ||
+        typeof ref.path !== 'string' || ref.path.length > 128 || !/^[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*|\.[0-9]+){0,2}$/.test(ref.path) ||
+        ref.path.split('.').some((part) => ['__proto__', 'prototype', 'constructor'].includes(part))) {
+      throw new Error(`Model action ${toolName}.resultRefs contains an invalid reference`);
     }
   }
 }

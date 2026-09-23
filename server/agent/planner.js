@@ -47,6 +47,7 @@ export class Planner {
     // plan() call with no ContextAssembler involved).
     this.lastProvenanceRefs = [];
     this.lastOmittedObservations = [];
+    this.lastAllowedObservations = [];
   }
 
   /**
@@ -63,14 +64,15 @@ export class Planner {
       this.lastProviderId = provider.id;
       return plan;
     } catch (err) {
+      if (err.code === 'MODEL_CALL_LIMIT') throw err;
       let fallback;
       try { fallback = this.modelRouter.resolveFallback(this.role); }
-      catch (fallbackError) { throw this.modelRouter.allowMock === false ? unavailableModel(fallbackError) : fallbackError; }
+      catch (fallbackError) { throw fallbackError.code === 'MODEL_CALL_LIMIT' ? fallbackError : this.modelRouter.allowMock === false ? unavailableModel(fallbackError) : fallbackError; }
       if (!fallback) throw this.modelRouter.allowMock === false ? unavailableModel(err) : err;
       console.error(`[planner] role "${this.role}" primary provider failed; retrying configured fallback`);
       let plan;
       try { plan = await this._planWith(fallback, context, objective); }
-      catch (fallbackError) { throw this.modelRouter.allowMock === false ? unavailableModel(fallbackError) : fallbackError; }
+      catch (fallbackError) { throw fallbackError.code === 'MODEL_CALL_LIMIT' ? fallbackError : this.modelRouter.allowMock === false ? unavailableModel(fallbackError) : fallbackError; }
       this.lastProviderId = fallback.id;
       return plan;
     }
@@ -86,6 +88,7 @@ export class Planner {
     this.lastOmittedContext = omitted;
     const { observations, omitted: omittedObservations } = filterObservationsForDestination(context.observations, destination, this.dataProcessingPolicy);
     this.lastOmittedObservations = omittedObservations;
+    this.lastAllowedObservations = observations;
     this.lastProvenanceRefs = filteredPersonalContext?.provenanceRefs || [];
 
     if (omitted.length && context.eventBus) {
@@ -108,7 +111,9 @@ export class Planner {
       });
     }
 
-    return provider.plan({ ...context, personalContext: filteredPersonalContext, observations }, objective);
+    context.onModelCall?.();
+    const { onModelCall, ...providerContext } = context;
+    return provider.plan({ ...providerContext, personalContext: filteredPersonalContext, observations }, objective);
   }
 }
 
