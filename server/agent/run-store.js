@@ -58,7 +58,8 @@ export function getRun(runId) {
   const run = db.prepare('SELECT * FROM agent_runs WHERE id = ?').get(runId);
   if (!run) return null;
   const steps = db.prepare(`SELECT s.step_index, s.tool, s.depends_on, s.status, s.action_id,
-    a.status AS action_status, q.status AS queue_status
+    a.status AS action_status, q.status AS queue_status,
+    EXISTS (SELECT 1 FROM action_attempts attempt WHERE attempt.queue_id = q.id AND attempt.error = 'lease expired') AS expired_attempt
     FROM agent_run_steps s
     LEFT JOIN agent_actions a ON a.id = s.action_id
     LEFT JOIN action_queue q ON q.action_id = s.action_id
@@ -117,7 +118,8 @@ function currentStepStatus(step) {
   if (step.action_status === 'executed') return 'executed';
   if (step.queue_status === 'completed') return 'executed';
   if (step.action_status === 'approved' && !step.queue_status) return 'needs_attention';
-  if (step.queue_status === 'retrying' || step.queue_status === 'queued' || step.queue_status === 'running') return 'waiting_for_action';
+  if (['queued', 'leased', 'executing', 'retry_wait'].includes(step.queue_status)) return 'waiting_for_action';
+  if (step.expired_attempt && (step.queue_status === 'failed' || step.queue_status === 'cancelled')) return 'outcome_uncertain';
   if (step.queue_status === 'failed' || step.queue_status === 'cancelled') return 'needs_attention';
   return step.action_status;
 }
@@ -126,6 +128,7 @@ function classifyRun(statuses) {
   if (statuses.includes('planning') || statuses.includes('planned')) return 'running';
   if (statuses.includes('interrupted')) return 'interrupted';
   if (statuses.includes('needs_attention')) return 'needs_attention';
+  if (statuses.includes('outcome_uncertain')) return 'needs_attention';
   if (statuses.includes('waiting_for_approval') || statuses.includes('pending')) return 'waiting_for_approval';
   if (statuses.includes('waiting_for_action') || statuses.includes('approved') || statuses.includes('queued') || statuses.includes('running') || statuses.includes('retrying')) return 'waiting_for_action';
   if (statuses.some((status) => TERMINAL.has(status) && status !== 'executed')) return 'failed';

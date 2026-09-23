@@ -8,6 +8,7 @@ import { EventBus } from '../server/events/event-bus.js';
 import { PolicyEngine } from '../server/policy/policy-engine.js';
 import { createToolRegistry } from '../server/tools/register-all.js';
 import { Agent } from '../server/agent/agent.js';
+import { enqueueAction } from '../server/agent/action-queue-store.js';
 import { createRun, recordRunPlan, beginRunStep, getRun, listRuns, reconcileInterruptedRuns } from '../server/agent/run-store.js';
 import { startServer } from '../server/index.js';
 
@@ -71,6 +72,24 @@ test('planning failure persists a failed run and creates no action', async () =>
     assert.equal(run.objectiveStatus, 'unverified');
     assert.deepEqual(run.steps, []);
     assert.equal(getDb().prepare('SELECT COUNT(*) AS n FROM agent_actions').get().n, 0);
+  } finally { cleanup(dir); }
+});
+
+test('an expired external attempt is reported as outcome uncertain without replay', async () => {
+  const dir = tempHome();
+  try {
+    const result = await fixtureAgent('confirm').handleMessage({ text: 'Create a task' });
+    const actionId = result.actions[0].id;
+    const queue = enqueueAction({ actionId, correlationId: result.correlationId, tool: 'tasks.create', arguments: { title: 'Run fixture task' } });
+    const db = getDb();
+    db.prepare("UPDATE action_queue SET status = 'failed', error_class = 'owner_attention_required' WHERE id = ?").run(queue.id);
+    db.prepare(`INSERT INTO action_attempts (id, queue_id, attempt_number, lease_owner, status, started_at, finished_at, error, error_class)
+      VALUES ('attempt_fixture', ?, 1, 'expired-worker', 'failed', ?, ?, 'lease expired', 'retryable')`)
+      .run(queue.id, new Date().toISOString(), new Date().toISOString());
+    closeAllForTests(); getDb(); reconcileInterruptedRuns();
+    assert.equal(getRun(result.runId).steps[0].status, 'outcome_uncertain');
+    assert.equal(getRun(result.runId).status, 'needs_attention');
+    assert.equal(getDb().prepare('SELECT COUNT(*) AS n FROM tasks').get().n, 0);
   } finally { cleanup(dir); }
 });
 
