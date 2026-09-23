@@ -70,7 +70,8 @@ const TEST_VALUE_C = 'not-a-real-value-fixture-333';
 const INSTANCE_SHAPE_KEYS = ['connectorId', 'createdAt', 'id', 'label', 'lastError', 'lastSyncAt', 'status', 'updatedAt'].sort();
 
 function assertInstanceShape(instance) {
-  assert.deepEqual(Object.keys(instance).sort(), INSTANCE_SHAPE_KEYS);
+  const keys = instance.connectorId === 'imap' ? [...INSTANCE_SHAPE_KEYS, 'smtpInstanceId'].sort() : INSTANCE_SHAPE_KEYS;
+  assert.deepEqual(Object.keys(instance).sort(), keys);
 }
 
 test('imap: create/list/update/delete lifecycle, and multiple instances of the same connector coexist', async () => {
@@ -133,6 +134,38 @@ test('imap: create/list/update/delete lifecycle, and multiple instances of the s
   } finally {
     await cleanup(dir, handle);
   }
+});
+
+test('SMTP instances pair explicitly with IMAP and responses never reveal credentials', async () => {
+  const dir = tempHome();
+  let handle;
+  try {
+    handle = await startServer({ port: 0 });
+    const port = handle.server.address().port;
+    const imap = await post(port, '/api/connectors/imap/instances', {
+      label: 'Inbox', host: 'imap.example.test', username: 'owner@example.test', password: TEST_VALUE_A,
+    });
+    const smtp = await post(port, '/api/connectors/smtp/instances', {
+      label: 'Sender', host: 'smtp.example.test', port: 587, username: 'owner@example.test', password: TEST_VALUE_B, from: 'owner@example.test',
+    });
+    assert.equal(smtp.status, 201);
+    assertInstanceShape(smtp.body);
+    assert.equal(imap.body.smtpInstanceId, null);
+    const paired = await patch(port, `/api/connectors/imap/instances/${imap.body.id}/smtp`, { smtpInstanceId: smtp.body.id });
+    assert.equal(paired.status, 200);
+    assert.equal(paired.body.smtpInstanceId, smtp.body.id);
+    assert.doesNotMatch(JSON.stringify(paired.body), new RegExp(TEST_VALUE_A));
+    assert.doesNotMatch(JSON.stringify(smtp.body), new RegExp(TEST_VALUE_B));
+    const wrong = await patch(port, `/api/connectors/imap/instances/${imap.body.id}/smtp`, { smtpInstanceId: imap.body.id });
+    assert.equal(wrong.status, 400);
+    const removed = await del(port, `/api/connectors/smtp/instances/${smtp.body.id}`);
+    assert.equal(removed.status, 200);
+    const unavailable = await patch(port, `/api/connectors/imap/instances/${imap.body.id}/smtp`, { smtpInstanceId: smtp.body.id });
+    assert.equal(unavailable.status, 400);
+    const unpaired = await patch(port, `/api/connectors/imap/instances/${imap.body.id}/smtp`, { smtpInstanceId: null });
+    assert.equal(unpaired.status, 200);
+    assert.equal(unpaired.body.smtpInstanceId, null);
+  } finally { await cleanup(dir, handle); }
 });
 
 test('brave-search: single apiKey credential shape create/update lifecycle', async () => {

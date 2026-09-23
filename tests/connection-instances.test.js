@@ -6,7 +6,7 @@ import path from 'node:path';
 import { writeEncryptedFile, readEncryptedFile } from '../server/security/vault.js';
 import { getDb, closeAllForTests } from '../server/db/connection.js';
 import { loadConnectorsConfig, saveConnectorsConfig } from '../server/integrations/connectors-config.js';
-import { ensureConnectionInstancesMigrated } from '../server/integrations/connection-instances.js';
+import { ensureConnectionInstancesMigrated, associateSmtpInstance, findInstance } from '../server/integrations/connection-instances.js';
 
 function tempHome() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-conninst-test-'));
@@ -92,7 +92,8 @@ test('each of the 5 legacy connector types is migrated into exactly one row, vau
 
     // Google keeps a shared client-only file for newly connected accounts.
     assert.deepEqual(readEncryptedFile('google', dir), { clientId: google.clientId, clientSecret: google.clientSecret });
-    assert.deepEqual(readEncryptedFile('smtp', dir), smtp);
+    assert.equal(rows(db, 'imap')[0].smtp_instance_id, rows(db, 'smtp')[0].id);
+    assert.equal(readEncryptedFile('smtp', dir), null);
     // Other legacy files are removed after their instance copies are verified.
     for (const legacyName of ['imap', 'web-search', 'notify-webhook']) {
       assert.equal(
@@ -103,9 +104,34 @@ test('each of the 5 legacy connector types is migrated into exactly one row, vau
     }
     ensureConnectionInstancesMigrated({ db, dataDir: dir });
     assert.deepEqual(readEncryptedFile('google', dir), { clientId: google.clientId, clientSecret: google.clientSecret });
+    associateSmtpInstance(db, { imapRow: findInstance(db, 'imap', rows(db, 'imap')[0].id), smtpInstanceId: null });
+    ensureConnectionInstancesMigrated({ db, dataDir: dir });
+    assert.equal(rows(db, 'imap')[0].smtp_instance_id, null, 'explicit unpairing survives repeated migration');
   } finally {
     cleanup(dir);
   }
+});
+
+test('an upgraded global SMTP file reconciles into the migrated instance before removal', () => {
+  const dir = tempHome();
+  try {
+    const original = { host: 'smtp.example.test', port: 587, username: 'owner@example.test', password: 'old-fixture', from: 'owner@example.test' };
+    writeEncryptedFile('smtp', original, dir);
+    const db = getDb();
+    ensureConnectionInstancesMigrated({ db, dataDir: dir });
+    const row = rows(db, 'smtp')[0];
+    const newer = { ...original, password: 'new-fixture', from: 'new@example.test' };
+    writeEncryptedFile('smtp', newer, dir);
+    ensureConnectionInstancesMigrated({ db, dataDir: dir });
+    assert.deepEqual(readEncryptedFile(row.vault_key, dir), newer);
+    assert.equal(rows(db, 'smtp')[0].credential_revision, 1);
+    assert.equal(readEncryptedFile('smtp', dir), null);
+    writeEncryptedFile('smtp', {}, dir);
+    ensureConnectionInstancesMigrated({ db, dataDir: dir });
+    assert.deepEqual(readEncryptedFile(row.vault_key, dir), {});
+    assert.equal(rows(db, 'smtp')[0].status, 'pending');
+    assert.equal(rows(db, 'smtp')[0].credential_revision, 2);
+  } finally { cleanup(dir); }
 });
 
 test('running the migration twice in a row (simulating two boots) does not duplicate rows or throw', () => {

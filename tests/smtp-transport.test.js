@@ -6,11 +6,13 @@ import path from 'node:path';
 import nodemailer from 'nodemailer';
 import { SMTPServer } from 'smtp-server';
 import { getDb, closeAllForTests } from '../server/db/connection.js';
-import { writeEncryptedFile } from '../server/security/vault.js';
+import { createConnectionInstance, findInstance } from '../server/integrations/connection-instances.js';
 import { validateSettings, sendEmail } from '../server/integrations/smtp-transport.js';
 import { EmailSendTool } from '../server/tools/email-tools.js';
 import { PolicyEngine } from '../server/policy/policy-engine.js';
 import { classifyActionError } from '../server/agent/action-error-classifier.js';
+import { sendEmail as sendImapEmail } from '../server/integrations/imap-provider.js';
+import { associateSmtpInstance } from '../server/integrations/connection-instances.js';
 
 function withHome() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-smtp-test-'));
@@ -51,9 +53,10 @@ test('SMTP sends one plain-text message to a local capture server and records it
   try {
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     const localPort = server.server.address().port;
-    writeEncryptedFile('smtp', { host: 'smtp.example.test', port: 465, username: 'owner', password: 'private-password', from: 'owner@example.test' }, dir);
+    const sender = createConnectionInstance(getDb(), { connectorId: 'smtp', label: 'Sender', status: 'connected', credentials: { host: 'smtp.example.test', port: 465, username: 'owner', password: 'private-password', from: 'owner@example.test' }, dataDir: dir });
     const row = await sendEmail({ to: 'alice@example.test', subject: 'Project update', body: 'Status is green.' }, {
       dataDir: dir,
+      instance: findInstance(getDb(), 'smtp', sender.id),
       transportFactory: (config) => {
         assert.equal(config.secure, true);
         assert.equal(config.tls.rejectUnauthorized, true);
@@ -76,20 +79,46 @@ test('SMTP sends one plain-text message to a local capture server and records it
 test('SMTP rejects header injection and sanitizes uncertain delivery errors', async () => {
   const dir = withHome();
   try {
-    writeEncryptedFile('smtp', { host: 'smtp.example.test', port: 587, username: 'owner', password: 'private-password', from: 'owner@example.test' }, dir);
+    const sender = createConnectionInstance(getDb(), { connectorId: 'smtp', label: 'Sender', status: 'connected', credentials: { host: 'smtp.example.test', port: 587, username: 'owner', password: 'private-password', from: 'owner@example.test' }, dataDir: dir });
     let called = false;
     const transportFactory = (config) => {
       assert.equal(config.requireTLS, true);
       called = true;
       return { async sendMail() { throw new Error('private-password in provider response'); }, close() {} };
     };
-    await assert.rejects(sendEmail({ to: 'a@example.test\r\nBcc: b@example.test', subject: 'x', body: 'x' }, { dataDir: dir, transportFactory }), /invalid recipients/);
+    const options = { dataDir: dir, instance: findInstance(getDb(), 'smtp', sender.id), transportFactory };
+    await assert.rejects(sendEmail({ to: 'a@example.test\r\nBcc: b@example.test', subject: 'x', body: 'x' }, options), /invalid recipients/);
     assert.equal(called, false);
-    await assert.rejects(sendEmail({ to: 'a@example.test', subject: 'x\r\nBcc: b@example.test', body: 'x' }, { dataDir: dir, transportFactory }), /invalid subject/);
+    await assert.rejects(sendEmail({ to: 'a@example.test', subject: 'x\r\nBcc: b@example.test', body: 'x' }, options), /invalid subject/);
     assert.equal(called, false);
-    await assert.rejects(sendEmail({ to: 'a@example.test', subject: 'x', body: 'x' }, { dataDir: dir, transportFactory }),
+    await assert.rejects(sendEmail({ to: 'a@example.test', subject: 'x', body: 'x' }, options),
       (err) => !err.message.includes('private-password') && /uncertain/.test(err.message)
         && classifyActionError(err) === 'owner_attention_required');
     assert.equal(getDb().prepare("SELECT count(*) AS n FROM emails WHERE folder = 'sent'").get().n, 0);
+  } finally { cleanup(dir); }
+});
+
+test('two IMAP accounts send through their explicitly paired SMTP identities', async () => {
+  const dir = withHome();
+  try {
+    const db = getDb();
+    const sent = [];
+    const transportFactory = (config) => ({
+      async sendMail(message) { sent.push({ user: config.auth.user, from: message.from }); return { accepted: [message.to[0]], rejected: [] }; },
+      close() {},
+    });
+    for (const account of ['one', 'two']) {
+      const imap = createConnectionInstance(db, { connectorId: 'imap', label: account, status: 'connected', credentials: { host: 'imap.example.test', port: 993, username: `${account}@example.test`, password: 'fixture' }, dataDir: dir });
+      const smtp = createConnectionInstance(db, { connectorId: 'smtp', label: account, status: 'connected', credentials: { host: 'smtp.example.test', port: 587, username: `${account}@example.test`, password: 'fixture', from: `${account}@example.test` }, dataDir: dir });
+      associateSmtpInstance(db, { imapRow: findInstance(db, 'imap', imap.id), smtpInstanceId: smtp.id });
+      await sendImapEmail({ to: 'fixture@example.test', subject: 'Fixture', body: 'Fixture' }, {
+        instance: findInstance(db, 'imap', imap.id), smtpIdentity: { instanceId: smtp.id, credentialRevision: findInstance(db, 'smtp', smtp.id).credential_revision },
+        transportFactory, dataDir: dir, db,
+      });
+    }
+    assert.deepEqual(sent, [
+      { user: 'one@example.test', from: 'one@example.test' },
+      { user: 'two@example.test', from: 'two@example.test' },
+    ]);
   } finally { cleanup(dir); }
 });

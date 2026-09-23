@@ -21,10 +21,6 @@ function validAddress(value) {
   return typeof value === 'string' && value.length <= 320 && /^[^\s@,<>]+@[^\s@,<>]+\.[^\s@,<>]+$/.test(value);
 }
 
-export function isConfigured(dataDir) {
-  try { return !!validateSettings(readEncryptedFile('smtp', dataDir)); } catch { return false; }
-}
-
 function uncertainOutcome(message) {
   const error = new Error(message);
   error.ownerAttentionRequired = true;
@@ -42,9 +38,9 @@ function validateMessage({ to, subject, body, inReplyTo } = {}) {
   return { recipients, subject, body, inReplyTo: inReplyTo || undefined };
 }
 
-export async function sendEmail(message, { dataDir, transportFactory = (config) => nodemailer.createTransport(config), db = getDb() } = {}) {
+export async function sendEmail(message, { dataDir, instance, transportFactory = (config) => nodemailer.createTransport(config), db = getDb() } = {}) {
   let settings;
-  try { settings = validateSettings(readEncryptedFile('smtp', dataDir)); } catch { throw new Error('smtp: credentials are not configured'); }
+  try { settings = validateSettings(readEncryptedFile(instance?.vault_key, dataDir)); } catch { throw new Error('smtp: selected account is not configured'); }
   const { recipients, subject, body, inReplyTo } = validateMessage(message);
   let transport;
   try {

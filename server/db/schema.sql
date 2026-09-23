@@ -409,6 +409,8 @@ CREATE TABLE IF NOT EXISTS connection_instances (
   last_error TEXT,
   last_sync_at TEXT,
   credential_revision INTEGER NOT NULL DEFAULT 0,
+  smtp_instance_id TEXT,
+  smtp_pair_initialized INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   deleted_at TEXT

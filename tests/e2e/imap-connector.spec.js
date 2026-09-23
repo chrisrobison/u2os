@@ -14,6 +14,20 @@ test('owner can configure and disconnect IMAP without exposing its app password'
     await page.locator('form button[type="submit"]').click();
     await expect(page.locator('.workspace__title', { hasText: 'Connectors' })).toBeVisible();
 
+    await page.locator('[data-catalog-id="smtp"]').click();
+    await page.locator('u2-connector-setup [data-show-add-account]').click();
+    const senderForm = page.locator('u2-connector-setup [data-add-instance-form]');
+    await senderForm.locator('input[name="label"]').fill('Personal sender');
+    await senderForm.locator('input[name="host"]').fill('smtp.example.test');
+    await senderForm.locator('select[name="port"]').selectOption('587');
+    await senderForm.locator('input[name="username"]').fill('owner@example.test');
+    await senderForm.locator('input[name="password"]').fill('PRIVATE_SMTP_APP_PASSWORD');
+    await senderForm.locator('input[name="from"]').fill('owner@example.test');
+    await senderForm.locator('button[type="submit"]').click();
+    await expect(page.locator('u2-connector-setup .connector-account', { hasText: 'Personal sender' })).toBeVisible();
+    const smtp = (await (await page.request.get(`${dedicated.baseURL}/api/connectors/smtp/instances`)).json()).instances[0];
+    await page.locator('u2-connector-setup [data-close]').click();
+
     await page.locator('[data-catalog-id="imap"]').click();
     await page.locator('u2-connector-setup [data-show-add-account]').click();
     const form = page.locator('u2-connector-setup form[data-add-instance-form]');
@@ -24,6 +38,11 @@ test('owner can configure and disconnect IMAP without exposing its app password'
     await form.locator('button[type="submit"]').click();
     const account = page.locator('u2-connector-setup .connector-account', { hasText: 'Personal mail' });
     await expect(account).toBeVisible();
+    await account.locator('[data-smtp-pair-form] select').selectOption(smtp.id);
+    await account.locator('[data-smtp-pair-form] button[type="submit"]').click();
+    await expect(account.locator('[data-smtp-pair-form] select')).toHaveValue(smtp.id);
+    const accountsResponse = await page.request.get(`${dedicated.baseURL}/api/connectors/imap/instances`);
+    expect((await accountsResponse.json()).instances[0].smtpInstanceId).toBe(smtp.id);
     await account.locator('[data-use-instance]').click();
 
     const email = page.locator('u2-card[title="Email"]');
@@ -54,7 +73,9 @@ test('owner can configure SMTP sending without exposing its app password', async
     await expect(page.locator('.workspace__title', { hasText: 'Connectors' })).toBeVisible();
 
     await page.locator('[data-catalog-id="smtp"]').click();
-    const form = page.locator('u2-connector-setup form[data-connector-form]');
+    await page.locator('u2-connector-setup [data-show-add-account]').click();
+    const form = page.locator('u2-connector-setup form[data-add-instance-form]');
+    await form.locator('input[name="label"]').fill('Personal sender');
     await form.locator('input[name="host"]').fill('smtp.example.test');
     await form.locator('select[name="port"]').selectOption('587');
     await form.locator('input[name="username"]').fill('owner@example.test');
@@ -67,8 +88,8 @@ test('owner can configure SMTP sending without exposing its app password', async
     expect(text).not.toContain('PRIVATE_SMTP_APP_PASSWORD');
     expect(JSON.parse(text).smtpConfigured).toBe(true);
 
-    await page.locator('[data-catalog-id="smtp"]').click();
-    await page.locator('u2-connector-setup [data-disconnect]').click();
+    page.on('dialog', (dialog) => dialog.accept());
+    await page.locator('u2-connector-setup [data-remove-instance]').click();
     await expect(page.locator('[data-catalog-id="smtp"] .status-dot')).toHaveClass(/is-disconnected/);
   } finally {
     await context.close();

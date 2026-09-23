@@ -135,9 +135,7 @@ function alreadyMigrated(db, connectorId) {
  * (google-calendar/gmail/google-contacts) -- so those are matched too,
  * rather than the literal (and for google, never-matching) "active ===
  * connectorId". smtp intentionally matches no domain: email.send goes
- * through smtp-transport.js directly and is never gated by the email
- * domain's active *read* provider in connectors.yaml, so it has nothing to
- * point activeInstanceId at here. */
+ * through an explicit IMAP association, not an active SMTP domain. */
 function matchingDomains(connectorId, config) {
   const providerIds = providerIdsForConnector(connectorId);
   return Object.keys(config).filter((domain) => providerIds.has(config[domain]?.active));
@@ -305,18 +303,37 @@ export function ensureConnectionInstancesMigrated({ db, dataDir } = {}) {
       log.warn('connection-instances', 'could not restore shared Google OAuth client configuration', { error: err?.message || String(err) });
     }
   }
-  // SMTP still uses its single bare vault key until account pairing lands.
-  // Preserve delivery for installations already migrated into an instance.
-  const migratedSmtp = db.prepare("SELECT * FROM connection_instances WHERE connector_id = 'smtp' AND deleted_at IS NULL ORDER BY created_at LIMIT 1").get();
+  // Only the two unambiguous migrated legacy accounts are paired. Never
+  // infer a sender for newly created accounts or overwrite an owner choice.
+  const migratedImap = db.prepare("SELECT * FROM connection_instances WHERE connector_id = 'imap' AND deleted_at IS NULL AND metadata LIKE '%legacy-single-file%' ORDER BY created_at LIMIT 1").get();
+  const migratedSmtp = db.prepare("SELECT * FROM connection_instances WHERE connector_id = 'smtp' AND deleted_at IS NULL AND metadata LIKE '%legacy-single-file%' ORDER BY created_at LIMIT 1").get();
+  // Releases between the first instance migration and account pairing
+  // restored the bare SMTP file for the old UI. It may contain newer
+  // settings, or {} after Disconnect. Reconcile it into the migrated row,
+  // verify the encrypted copy, then remove the obsolete file. A failed
+  // write/verification leaves the bare file untouched for a safe retry.
   if (migratedSmtp) {
     try {
-      if (!readEncryptedFile('smtp', dataDir)) {
-        const settings = readEncryptedFile(migratedSmtp.vault_key, dataDir);
-        if (settings) writeEncryptedFile('smtp', settings, dataDir);
+      const legacy = readEncryptedFile('smtp', dataDir);
+      if (legacy !== null) {
+        const current = readEncryptedFile(migratedSmtp.vault_key, dataDir);
+        if (JSON.stringify(legacy) !== JSON.stringify(current)) {
+          writeEncryptedFile(migratedSmtp.vault_key, legacy, dataDir);
+          if (JSON.stringify(readEncryptedFile(migratedSmtp.vault_key, dataDir)) !== JSON.stringify(legacy)) {
+            throw new Error('SMTP credential copy verification failed');
+          }
+          db.prepare('UPDATE connection_instances SET status = ?, credential_revision = credential_revision + 1, updated_at = ? WHERE id = ?')
+            .run(looksConnected('smtp', legacy) ? 'connected' : 'pending', new Date().toISOString(), migratedSmtp.id);
+        }
+        deleteLegacyFileBestEffort('smtp', 'smtp', dataDir);
       }
     } catch (err) {
-      log.warn('connection-instances', 'could not restore legacy SMTP transport settings', { error: err?.message || String(err) });
+      log.warn('connection-instances', 'could not reconcile legacy SMTP transport settings; original file retained', { error: err?.message || String(err) });
     }
+  }
+  if (migratedImap && migratedSmtp && !migratedImap.smtp_pair_initialized) {
+    db.prepare('UPDATE connection_instances SET smtp_instance_id = ?, smtp_pair_initialized = 1, updated_at = ? WHERE id = ? AND smtp_pair_initialized = 0')
+      .run(migratedSmtp.id, new Date().toISOString(), migratedImap.id);
   }
 
   return results;
@@ -341,6 +358,7 @@ function toInstanceApiShape(row) {
     status: row.status,
     lastError: row.last_error,
     lastSyncAt: row.last_sync_at,
+    smtpInstanceId: row.connector_id === 'imap' ? row.smtp_instance_id : undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -385,6 +403,15 @@ export function findInstance(db, connectorId, instanceId) {
       .prepare('SELECT * FROM connection_instances WHERE id = ? AND connector_id = ? AND deleted_at IS NULL')
       .get(instanceId, connectorId) || null
   );
+}
+
+export function associateSmtpInstance(db, { imapRow, smtpInstanceId }) {
+  if (imapRow?.connector_id !== 'imap') throw new Error('IMAP account is required');
+  if (smtpInstanceId !== null && !findInstance(db, 'smtp', smtpInstanceId)) throw new Error('SMTP account is unavailable');
+  const now = new Date().toISOString();
+  db.prepare('UPDATE connection_instances SET smtp_instance_id = ?, smtp_pair_initialized = 1, credential_revision = credential_revision + 1, updated_at = ? WHERE id = ? AND deleted_at IS NULL')
+    .run(smtpInstanceId, now, imapRow.id);
+  return toInstanceApiShape(findInstance(db, 'imap', imapRow.id));
 }
 
 /** Creates a new connection instance: mints an id + vault_key

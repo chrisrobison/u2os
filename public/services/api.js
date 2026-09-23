@@ -291,24 +291,11 @@ export function saveGoogleCredentials({ clientId, clientSecret } = {}) {
 }
 
 // issue #163 PR 5: saveWebSearchCredentials/saveImapCredentials/
-// disconnectImap/saveSmtpCredentials/disconnectSmtp/
+// disconnectImap/
 // saveNotifyWebhookCredentials wrapped the now-removed legacy single-account
 // credential routes -- every connector that can have more than one account
-// (imap, brave-search/web-search, webhook) is configured through the
-// connection-instance wrappers below instead; SMTP (which genuinely has no
-// multi-account concept -- see connector-catalog.js's smtp entry) keeps a
-// single-shot pair, just renamed to a non-legacy path.
-
-export function saveSmtpSettings({ host, port, username, password, from } = {}) {
-  return request('/api/connectors/smtp/settings', {
-    method: 'POST', headers: JSON_HEADERS,
-    body: JSON.stringify({ host, port, username, password, from }),
-  });
-}
-
-export function clearSmtpSettings() {
-  return request('/api/connectors/smtp/settings/clear', { method: 'POST', headers: JSON_HEADERS });
-}
+// (imap, SMTP, brave-search/web-search, webhook) is configured through the
+// connection-instance wrappers below instead.
 
 export function disconnectGoogleService(service) {
   return request(`/api/connectors/google/disconnect${qs({ service })}`, {
@@ -342,6 +329,12 @@ export function setActiveProvider(domain, providerId, { connectorId, instanceId 
 // /api/connectors/:connectorId/instances routes.
 export function listConnectorInstances(connectorId) {
   return request(`/api/connectors/${encodeURIComponent(connectorId)}/instances`);
+}
+
+export function associateImapSmtp(imapInstanceId, smtpInstanceId) {
+  return request(`/api/connectors/imap/instances/${encodeURIComponent(imapInstanceId)}/smtp`, {
+    method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify({ smtpInstanceId }),
+  });
 }
 
 export function createConnectorInstance(connectorId, data = {}) {

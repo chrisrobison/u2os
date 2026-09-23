@@ -6,6 +6,7 @@ import { simpleParser } from 'mailparser';
 import { getDb } from '../db/connection.js';
 import { readEncryptedFile } from '../security/vault.js';
 import { sendEmail as sendViaSmtp } from './smtp-transport.js';
+import { findInstance } from './connection-instances.js';
 
 export const id = 'imap';
 const MAX_RECENT = 50;
@@ -129,6 +130,11 @@ export async function getEmail(localId, { dataDir, instance } = {}) {
   return getRow(localId);
 }
 
-export async function sendEmail(message) {
-  return sendViaSmtp(message);
+export async function sendEmail(message, { instance, smtpIdentity, dataDir, db = getDb(), transportFactory } = {}) {
+  const currentImap = instance?.id && findInstance(db, 'imap', instance.id);
+  const smtp = smtpIdentity?.instanceId && findInstance(db, 'smtp', smtpIdentity.instanceId);
+  if (!smtp || smtp.status !== 'connected' || currentImap?.smtp_instance_id !== smtp.id || smtp.credential_revision !== smtpIdentity.credentialRevision) {
+    throw new Error('imap: SMTP sender association changed; no message was attempted');
+  }
+  return sendViaSmtp(message, { instance: smtp, dataDir, db, transportFactory });
 }

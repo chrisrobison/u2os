@@ -14,17 +14,21 @@ export function accountDomainForAction(toolName) {
   return ACCOUNT_BOUND_ACTION_DOMAINS[toolName] || null;
 }
 
-export function captureSmtpIdentity() {
+export function captureSmtpIdentity(imapBinding) {
+  const imap = findInstance(getDb(), 'imap', imapBinding.instanceId);
+  const smtp = imap?.smtp_instance_id && findInstance(getDb(), 'smtp', imap.smtp_instance_id);
+  if (!smtp || smtp.status !== 'connected') throw new Error('Select a connected SMTP sender for this IMAP account; no send was proposed');
   let settings;
-  try { settings = validateSmtpSettings(readEncryptedFile('smtp')); }
+  try { settings = validateSmtpSettings(readEncryptedFile(smtp.vault_key)); }
   catch { throw new Error('SMTP is not configured for the selected IMAP account; no send was proposed'); }
-  return { host: settings.host, username: settings.username, from: settings.from };
+  return { instanceId: smtp.id, credentialRevision: smtp.credential_revision, label: smtp.label, from: settings.from };
 }
 
 export function assertSmtpIdentity(binding) {
-  if (binding?.providerId !== 'imap' || !binding.smtpIdentity) return;
-  const current = captureSmtpIdentity();
-  if (JSON.stringify(current) !== JSON.stringify(binding.smtpIdentity)) {
+  if (binding?.providerId !== 'imap') return;
+  if (!binding.smtpIdentity?.instanceId) throw new Error('SMTP account binding is missing; new approval is required');
+  const current = captureSmtpIdentity(binding);
+  if (current.instanceId !== binding.smtpIdentity.instanceId || current.credentialRevision !== binding.smtpIdentity.credentialRevision || current.from !== binding.smtpIdentity.from) {
     throw new Error('SMTP sender identity changed since approval; no message was attempted');
   }
 }

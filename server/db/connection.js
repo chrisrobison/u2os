@@ -106,6 +106,8 @@ export function getDb() {
   // provenance. Add it without rebuilding existing queue tables.
   ensureColumn(db, 'action_queue', 'actor', 'TEXT');
   ensureColumn(db, 'connection_instances', 'credential_revision', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'connection_instances', 'smtp_instance_id', 'TEXT');
+  ensureColumn(db, 'connection_instances', 'smtp_pair_initialized', 'INTEGER NOT NULL DEFAULT 0');
   // Durable trigger scheduling: older installations have persisted due
   // times but no execution ownership. Additive leases allow atomic claims
   // and expired-worker recovery without rebuilding or discarding triggers.

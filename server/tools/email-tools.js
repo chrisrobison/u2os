@@ -100,7 +100,7 @@ export class EmailSendTool extends Tool {
     if (context.accountBinding.providerId !== 'mock' && provider.id === mockEmailProvider.id) {
       throw new Error('email: configured real provider is not connected; no message was sent');
     }
-    const email = await provider.sendEmail(args);
+    const email = await provider.sendEmail(args, { smtpIdentity: context.accountBinding.smtpIdentity });
     context.eventBus.publish({
       type: 'email.sent',
       source: provider.id,
