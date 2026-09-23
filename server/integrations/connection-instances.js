@@ -16,8 +16,21 @@
 import { newId } from '../db/ids.js';
 import { readEncryptedFile, writeEncryptedFile, deleteEncryptedFile } from '../security/vault.js';
 import { loadConnectorsConfig, saveConnectorsConfig } from './connectors-config.js';
-import { CONNECTOR_CATALOG } from './connector-catalog.js';
+import { CONNECTOR_CATALOG, providerIdsForConnector } from './connector-catalog.js';
 import { log } from '../logging/logger.js';
+
+// -----------------------------------------------------------------------
+// issue #163 PR 2 of 5: connection_instances CRUD, layered on top of PR 1's
+// table + migration above. server/api/routes/connectors.js's new
+// /api/connectors/:connectorId/instances routes call the exported functions
+// below rather than issuing raw SQL themselves, so every read/write of this
+// table stays in one place. Per-connector credential shape
+// validation/normalization stays in the routes file (it's an HTTP-boundary
+// concern, same pattern as trigger config validation in
+// server/api/routes/triggers.js) -- this module only knows how to store an
+// already-validated plaintext object against a vault_key and keep the row
+// in sync with it.
+// -----------------------------------------------------------------------
 
 // connectorId is the STABLE identity carried forward (matches
 // connector-catalog.js's `id` field, and REAL_PROVIDERS'/connectors.yaml's
@@ -126,11 +139,7 @@ function alreadyMigrated(db, connectorId) {
  * domain's active *read* provider in connectors.yaml, so it has nothing to
  * point activeInstanceId at here. */
 function matchingDomains(connectorId, config) {
-  const catalog = catalogEntry(connectorId);
-  const providerIds = new Set([connectorId]);
-  for (const service of catalog?.setup?.services || []) {
-    if (service.providerId) providerIds.add(service.providerId);
-  }
+  const providerIds = providerIdsForConnector(connectorId);
   return Object.keys(config).filter((domain) => providerIds.has(config[domain]?.active));
 }
 
@@ -278,4 +287,117 @@ export function ensureConnectionInstancesMigrated({ db, dataDir } = {}) {
   }
 
   return results;
+}
+
+// -----------------------------------------------------------------------
+// CRUD (issue #163 PR 2 of 5)
+// -----------------------------------------------------------------------
+
+/** Maps a connection_instances DB row to the API-facing, GUARANTEED
+ * secret-free shape: only columns that can never hold a credential are
+ * ever read here (never `vault_key`, never `metadata`, and nothing that
+ * requires a vault read). Every route below builds its response through
+ * this function (or a plain array of it) so a secret leaking into an API
+ * response would require a code path that bypasses this entirely, not just
+ * a missed field. */
+function toInstanceApiShape(row) {
+  return {
+    id: row.id,
+    connectorId: row.connector_id,
+    label: row.label,
+    status: row.status,
+    lastError: row.last_error,
+    lastSyncAt: row.last_sync_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/** Lists every non-deleted instance for a connector id, oldest first. Pure
+ * `connection_instances` read -- never touches the vault, so it is
+ * structurally impossible for this function to leak a decrypted secret. */
+export function listInstances(db, connectorId) {
+  const rows = db
+    .prepare('SELECT * FROM connection_instances WHERE connector_id = ? AND deleted_at IS NULL ORDER BY created_at ASC')
+    .all(connectorId);
+  return rows.map(toInstanceApiShape);
+}
+
+/** Finds the raw (non-API-shaped) DB row for a single instance, scoped to
+ * both instanceId AND connectorId AND "not soft-deleted" in one query --
+ * this is what makes a mismatched {connectorId, instanceId} pair (or a
+ * soft-deleted instance) resolve to "not found" rather than accidentally
+ * operating on the wrong connector's instance. Returns null, never throws,
+ * so callers (route handlers) turn a null into their own 404/400. */
+export function findInstance(db, connectorId, instanceId) {
+  return (
+    db
+      .prepare('SELECT * FROM connection_instances WHERE id = ? AND connector_id = ? AND deleted_at IS NULL')
+      .get(instanceId, connectorId) || null
+  );
+}
+
+/** Creates a new connection instance: mints an id + vault_key
+ * ('<connectorId>__<instanceId>', matching PR 1's migration convention),
+ * writes `credentials` to the vault only if non-null (google instances are
+ * created credential-less -- OAuth attaches tokens to this vault_key
+ * later, in PR 3), inserts the row, and returns its secret-free API shape.
+ * `credentials` must already be validated/normalized by the caller -- this
+ * function does no per-connector-type validation itself. */
+export function createConnectionInstance(db, { connectorId, label, credentials = null, status = 'pending', dataDir } = {}) {
+  const id = newId('conn');
+  const vaultKey = `${connectorId}__${id}`;
+  if (credentials != null) {
+    writeEncryptedFile(vaultKey, credentials, dataDir);
+  }
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO connection_instances (id, connector_id, label, status, vault_key, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(id, connectorId, label, status, vaultKey, now, now);
+  return toInstanceApiShape(db.prepare('SELECT * FROM connection_instances WHERE id = ?').get(id));
+}
+
+/** Updates an existing instance's label and/or stored credentials.
+ * `row` must be a live row previously returned by findInstance (the caller
+ * already did the connectorId/instanceId/not-deleted check). `label`
+ * undefined leaves the label unchanged; `credentials` undefined leaves the
+ * vault entry untouched, while any other value (already
+ * validated/merged/normalized by the caller) overwrites it entirely via
+ * the row's existing vault_key -- callers that want a partial credential
+ * update must read-merge-validate themselves before calling this. */
+export function updateConnectionInstance(db, { row, label, credentials, dataDir } = {}) {
+  if (credentials !== undefined) {
+    writeEncryptedFile(row.vault_key, credentials, dataDir);
+  }
+  const nextLabel = label !== undefined ? label : row.label;
+  const now = new Date().toISOString();
+  db.prepare('UPDATE connection_instances SET label = ?, updated_at = ? WHERE id = ?').run(nextLabel, now, row.id);
+  return toInstanceApiShape(db.prepare('SELECT * FROM connection_instances WHERE id = ?').get(row.id));
+}
+
+/** Soft-deletes an instance (sets deleted_at) and removes its vault file.
+ * `row` must be a live row previously returned by findInstance. Returns the
+ * deleted instance's final secret-free API shape (deletion does not change
+ * any of the fields toInstanceApiShape reads, so the returned `status` is
+ * whatever it was immediately before deletion -- callers that need to
+ * signal "this is now deleted" add that themselves in the response). Does
+ * NOT touch connectors.yaml -- resetting a domain's active/activeInstanceId
+ * when the deleted instance was the active one is the route handler's job
+ * (it also needs to trigger a sync-scheduler reconcile), not this module's. */
+export function deleteConnectionInstance(db, { row, dataDir } = {}) {
+  // Vault deletion happens BEFORE the DB soft-delete, deliberately.
+  // deleteEncryptedFile() is idempotent (a no-op if the file is already
+  // gone), so if it throws (I/O error, permissions), the row is left live
+  // and findInstance()/listInstances() still return it -- the DELETE can
+  // simply be retried. Doing this in the opposite order would let a
+  // vault-delete failure soft-delete the row first, permanently orphaning a
+  // decryptable secret file: findInstance()/listInstances() both filter
+  // deleted_at IS NULL, so a deleted-but-not-vault-cleaned row can never be
+  // looked up again via the API -- an unrecoverable secret leak with no DB
+  // pointer and no cleanup path.
+  deleteEncryptedFile(row.vault_key, dataDir);
+  const now = new Date().toISOString();
+  db.prepare('UPDATE connection_instances SET deleted_at = ?, updated_at = ? WHERE id = ?').run(now, now, row.id);
+  return toInstanceApiShape({ ...row, updated_at: now });
 }

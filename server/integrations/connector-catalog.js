@@ -51,3 +51,23 @@ export const CONNECTOR_CATALOG = [
 export function getConnectorCatalog() {
   return { version: CONNECTOR_CATALOG_VERSION, connectors: CONNECTOR_CATALOG };
 }
+
+/** Which providerId(s) (as used in connectors.yaml / connectors-config.js's
+ * `active` field) this catalog connector id can appear as a domain's active
+ * provider for. For most connectors this is just the connector id itself
+ * (imap, brave-search, webhook); google is multi-service, so its OAuth
+ * setup's `services` entries carry the real per-domain provider ids
+ * (google-calendar/gmail/google-contacts) instead of the literal (and for
+ * google, never-matching) connector id. Used both by
+ * connection-instances.js's legacy migration (matchingDomains) and by
+ * server/api/routes/connectors.js's instance-aware "set active
+ * provider/instance" route to check a {connectorId, providerId} pair is
+ * actually consistent before persisting it. */
+export function providerIdsForConnector(connectorId) {
+  const catalog = CONNECTOR_CATALOG.find((c) => c.id === connectorId);
+  const ids = new Set([connectorId]);
+  for (const service of catalog?.setup?.services || []) {
+    if (service.providerId) ids.add(service.providerId);
+  }
+  return ids;
+}

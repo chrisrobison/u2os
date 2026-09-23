@@ -1,14 +1,26 @@
 import crypto from 'node:crypto';
 import { sendJson } from '../router.js';
 import { getHealth, resolveConnectedRealProvider } from '../../integrations/provider-registry.js';
-import { setActiveProvider, validProviderIdsFor } from '../../integrations/connectors-config.js';
+import {
+  setActiveProvider,
+  validProviderIdsFor,
+  loadConnectorsConfig,
+  saveConnectorsConfig,
+} from '../../integrations/connectors-config.js';
 import { triggerSync, reconcile as reconcileSyncScheduler } from '../../integrations/sync-scheduler.js';
 import { manifestsByDomain } from '../../integrations/skill-manifests.js';
 import { readEncryptedFile, writeEncryptedFile } from '../../security/vault.js';
 import { validateSettings as validateImapSettings } from '../../integrations/imap-provider.js';
 import { validateSettings as validateSmtpSettings } from '../../integrations/smtp-transport.js';
 import { isConfigured as isSmtpConfigured } from '../../integrations/smtp-transport.js';
-import { getConnectorCatalog } from '../../integrations/connector-catalog.js';
+import { getConnectorCatalog, providerIdsForConnector } from '../../integrations/connector-catalog.js';
+import {
+  listInstances,
+  findInstance,
+  createConnectionInstance,
+  updateConnectionInstance,
+  deleteConnectionInstance,
+} from '../../integrations/connection-instances.js';
 import {
   buildAuthUrl,
   exchangeCodeForTokens,
@@ -43,6 +55,79 @@ function pruneExpiredStates() {
   for (const [state, entry] of pendingOauthStates) {
     if (entry.expiresAt <= now) pendingOauthStates.delete(state);
   }
+}
+
+// -----------------------------------------------------------------------
+// Multiple account instances per connector (issue #163 PR 2 of 5).
+// -----------------------------------------------------------------------
+
+// Per-connector credential validation/normalization for the instance CRUD
+// routes below, reusing the exact same validators (and, for imap/smtp, the
+// exact same friendly error text) as the single-shot credential routes
+// above -- so multi-instance create/update accepts and rejects exactly what
+// the old single-account routes always did. `google` is deliberately absent:
+// a google instance is OAuth-driven (PR 3 attaches tokens to its vault_key),
+// so it never takes credential fields through this CRUD surface.
+const CREDENTIAL_VALIDATORS = {
+  imap: (merged) => {
+    try {
+      return validateImapSettings(merged);
+    } catch {
+      throw new Error('Invalid IMAP settings; use a host, username, app password, and TLS port 993');
+    }
+  },
+  smtp: (merged) => {
+    try {
+      return validateSmtpSettings(merged);
+    } catch {
+      throw new Error('Invalid SMTP settings; use a host, port 465 or 587, username, app password, and From address');
+    }
+  },
+  'brave-search': (merged) => {
+    if (!merged.apiKey) throw new Error('apiKey is required');
+    return { apiKey: merged.apiKey };
+  },
+  webhook: (merged) => {
+    if (!merged.webhookUrl) throw new Error('webhookUrl is required');
+    return { webhookUrl: merged.webhookUrl, format: merged.format === 'ntfy' ? 'ntfy' : 'json' };
+  },
+};
+
+// The full set of connector ids the instance CRUD routes accept -- the four
+// credentialed types above, plus google (label-only; see CREDENTIAL_VALIDATORS'
+// comment). Every other catalog id (including every 'planned' connector) is
+// rejected with a 400 rather than silently creating an unusable row.
+const INSTANCE_CONNECTOR_IDS = new Set(['google', ...Object.keys(CREDENTIAL_VALIDATORS)]);
+
+function isNonEmptyString(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+/** Every request-body field except `label` is treated as a credential field
+ * for create/update -- connector-specific validators above decide which of
+ * them are actually meaningful. */
+function credentialFieldsFromBody(body) {
+  const { label, ...rest } = body || {};
+  return rest;
+}
+
+/** If this instance was the activeInstanceId for any connectors.yaml domain,
+ * resets that domain to { active: 'mock', activeInstanceId: null } --
+ * deliberately never auto-switches to another remaining instance of the
+ * same connector, so deleting one account never silently changes which
+ * account's data the agent is reading from. Returns the list of domains
+ * that were reset (empty if none), so the caller knows whether a
+ * sync-scheduler reconcile is warranted. */
+function resetActiveInstanceReferences(instanceId, dataDir) {
+  const config = loadConnectorsConfig(dataDir);
+  const domains = Object.keys(config).filter((domain) => config[domain]?.activeInstanceId === instanceId);
+  if (domains.length) {
+    for (const domain of domains) {
+      config[domain] = { ...config[domain], active: 'mock', activeInstanceId: null };
+    }
+    saveConnectorsConfig(config, dataDir);
+  }
+  return domains;
 }
 
 export function registerConnectorRoutes(router, { db, eventBus } = {}) {
@@ -147,6 +232,20 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
     sendJson(res, 200, { disconnected: service });
   });
 
+  // --- Legacy single-account credential routes -----------------------
+  // issue #163's approved plan calls for removing these entirely in this
+  // PR, with no deprecated aliases (pre-1.0, no external consumers). They
+  // are deliberately KEPT here, additively, alongside the new
+  // /api/connectors/:connectorId/instances routes below: the schema-driven
+  // setup dialog shipped in PR #161 (public/components/u2-connectors.js,
+  // public/components/u2-connector-setup.js) POSTs straight to each
+  // catalog entry's `setup.credentialEndpoint`, which is still one of
+  // these exact paths (see connector-catalog.js) -- and the frontend isn't
+  // migrated to the instance endpoints until PR 5 of this sequence.
+  // Removing them now would 404 the only working "connect a
+  // credentialed connector" UI flow that exists today, for the two PRs in
+  // between. Flagged explicitly in this PR's report; PR 5 should delete
+  // this whole block once the frontend moves to the instance routes.
   router.post('/api/connectors/web-search/credentials', async (req, res) => {
     const { apiKey } = req.body || {};
     if (!apiKey) return sendJson(res, 400, { error: 'apiKey is required' });
@@ -195,9 +294,135 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
     sendJson(res, 200, { configured: true });
   });
 
+  // --- Connection instances: multiple accounts per connector (#163 PR 2) --
+
+  // GET never touches the vault -- listInstances() is a pure
+  // connection_instances read, so it is structurally impossible for a
+  // secret to leak from this route.
+  router.get('/api/connectors/:connectorId/instances', async (req, res) => {
+    const { connectorId } = req.params;
+    sendJson(res, 200, { instances: listInstances(db, connectorId) });
+  });
+
+  router.post('/api/connectors/:connectorId/instances', async (req, res) => {
+    const { connectorId } = req.params;
+    if (!INSTANCE_CONNECTOR_IDS.has(connectorId)) {
+      return sendJson(res, 400, { error: `Unknown or unavailable connector "${connectorId}"` });
+    }
+    const { label } = req.body || {};
+    if (!isNonEmptyString(label)) {
+      return sendJson(res, 400, { error: 'label is required' });
+    }
+    const credentialFields = credentialFieldsFromBody(req.body);
+
+    if (connectorId === 'google') {
+      // OAuth-driven: no credentials at creation time -- a later OAuth
+      // connect (issue #163 PR 3) attaches tokens to this instance's
+      // vault_key. Reject credential-shaped fields outright rather than
+      // silently ignoring them.
+      if (Object.keys(credentialFields).length) {
+        return sendJson(res, 400, { error: 'google instances are connected via OAuth; pass only a label here' });
+      }
+      const instance = createConnectionInstance(db, { connectorId, label: label.trim(), credentials: null, status: 'pending' });
+      return sendJson(res, 201, instance);
+    }
+
+    try {
+      const credentials = CREDENTIAL_VALIDATORS[connectorId](credentialFields);
+      const instance = createConnectionInstance(db, { connectorId, label: label.trim(), credentials, status: 'connected' });
+      sendJson(res, 201, instance);
+    } catch (err) {
+      sendJson(res, 400, { error: err.message });
+    }
+  });
+
+  router.patch('/api/connectors/:connectorId/instances/:instanceId', async (req, res) => {
+    const { connectorId, instanceId } = req.params;
+    // findInstance scopes on id AND connector_id AND deleted_at IS NULL in
+    // one query -- a mismatched connectorId/instanceId pair, or a
+    // soft-deleted instance, both resolve to "not found" here rather than
+    // silently operating on the wrong instance.
+    const row = findInstance(db, connectorId, instanceId);
+    if (!row) return sendJson(res, 404, { error: 'Not Found' });
+
+    const { label, ...credentialFields } = req.body || {};
+    if (label !== undefined && !isNonEmptyString(label)) {
+      return sendJson(res, 400, { error: 'label must be a non-empty string' });
+    }
+    const hasCredentialFields = Object.keys(credentialFields).length > 0;
+    if (hasCredentialFields && connectorId === 'google') {
+      return sendJson(res, 400, { error: 'google instances are connected via OAuth; pass only a label here' });
+    }
+
+    try {
+      let credentials;
+      if (hasCredentialFields) {
+        // Read-merge-validate: a PATCH may send only a subset of credential
+        // fields (e.g. just a new password), so merge onto whatever is
+        // already stored before re-validating the full shape.
+        const current = readEncryptedFile(row.vault_key) || {};
+        credentials = CREDENTIAL_VALIDATORS[connectorId]({ ...current, ...credentialFields });
+      }
+      const updated = updateConnectionInstance(db, {
+        row,
+        label: label !== undefined ? label.trim() : undefined,
+        credentials,
+      });
+      sendJson(res, 200, updated);
+    } catch (err) {
+      sendJson(res, 400, { error: err.message });
+    }
+  });
+
+  router.delete('/api/connectors/:connectorId/instances/:instanceId', async (req, res) => {
+    const { connectorId, instanceId } = req.params;
+    const row = findInstance(db, connectorId, instanceId);
+    if (!row) return sendJson(res, 404, { error: 'Not Found' });
+
+    const deleted = deleteConnectionInstance(db, { row });
+    // Explicit design decision (issue #163): never silently switch to
+    // another remaining instance of the same connector -- reset to mock
+    // instead, so which account's data the agent reads from never changes
+    // without an explicit owner action.
+    const resetDomains = resetActiveInstanceReferences(instanceId);
+    if (resetDomains.length) {
+      reconcileSyncScheduler({ db, eventBus });
+    }
+    sendJson(res, 200, { deleted: true, ...deleted });
+  });
+
   router.post('/api/connectors/:domain/active', async (req, res) => {
     const { domain } = req.params;
-    const { providerId } = req.body || {};
+    const { providerId, connectorId, instanceId } = req.body || {};
+
+    if (connectorId !== undefined || instanceId !== undefined) {
+      // Instance-aware path (#163 PR 2): sets `active` and
+      // `activeInstanceId` atomically, only after providerId/connectorId/
+      // instanceId are fully validated as mutually consistent -- the
+      // parent issue's "provider routing atomicity" requirement. Any
+      // inconsistent pair is rejected outright rather than resolved to
+      // "closest guess".
+      if (!connectorId || !instanceId || !providerId) {
+        return sendJson(res, 400, { error: 'connectorId, instanceId, and providerId are all required together' });
+      }
+      const validIds = validProviderIdsFor(domain);
+      if (!validIds.includes(providerId)) {
+        return sendJson(res, 400, { error: `Unknown provider "${providerId}" for domain "${domain}"`, validProviders: validIds });
+      }
+      if (!providerIdsForConnector(connectorId).has(providerId)) {
+        return sendJson(res, 400, { error: `Provider "${providerId}" does not belong to connector "${connectorId}"` });
+      }
+      const instance = findInstance(db, connectorId, instanceId);
+      if (!instance) {
+        return sendJson(res, 400, { error: `No connected instance "${instanceId}" for connector "${connectorId}"` });
+      }
+      const config = loadConnectorsConfig();
+      config[domain] = { ...config[domain], active: providerId, activeInstanceId: instanceId };
+      saveConnectorsConfig(config);
+      reconcileSyncScheduler({ db, eventBus });
+      return sendJson(res, 200, { domain, active: providerId, activeInstanceId: instanceId });
+    }
+
     try {
       setActiveProvider(domain, providerId);
       reconcileSyncScheduler({ db, eventBus });
