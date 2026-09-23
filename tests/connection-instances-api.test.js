@@ -67,7 +67,7 @@ const TEST_VALUE_A = 'not-a-real-value-fixture-111';
 const TEST_VALUE_B = 'not-a-real-value-fixture-222';
 const TEST_VALUE_C = 'not-a-real-value-fixture-333';
 
-const INSTANCE_SHAPE_KEYS = ['connectorId', 'createdAt', 'id', 'label', 'lastError', 'lastSyncAt', 'status', 'updatedAt'].sort();
+const INSTANCE_SHAPE_KEYS = ['connectorId', 'createdAt', 'id', 'label', 'lastError', 'lastSyncAt', 'status', 'sync', 'updatedAt'].sort();
 
 function assertInstanceShape(instance) {
   const keys = instance.connectorId === 'imap' ? [...INSTANCE_SHAPE_KEYS, 'smtpInstanceId'].sort() : INSTANCE_SHAPE_KEYS;

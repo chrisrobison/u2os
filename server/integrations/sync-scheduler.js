@@ -72,17 +72,17 @@ async function runSync(domain, { db, eventBus, dataDir } = {}) {
   }
   try {
     const result = await provider.syncChanges({ db, eventBus, correlationId: newId('corr'), dataDir });
-    recordSyncSuccess(domain);
+    recordSyncSuccess(domain, provider.connectionInstanceId, { db });
     return result;
   } catch (err) {
-    recordSyncError(domain, err);
-    // SECURITY: err.message is guaranteed secret-free by provider modules
-    // (see recordSyncError's comment above) -- safe to log in full.
+    const safeError = recordSyncError(domain, provider.connectionInstanceId, err, { db });
+    // Unexpected provider messages may contain secrets. Only the allowlisted
+    // or generic sanitized reason reaches health, logs, and the API.
     log.error('sync-scheduler', `sync failed for domain "${domain}"`, {
       domain,
-      error: err?.message || String(err),
+      error: safeError,
     });
-    throw err;
+    throw new Error(safeError);
   }
 }
 

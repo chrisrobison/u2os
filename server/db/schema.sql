@@ -416,3 +416,15 @@ CREATE TABLE IF NOT EXISTS connection_instances (
   deleted_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_connection_instances_connector ON connection_instances(connector_id, deleted_at);
+
+-- Google instances may sync Calendar, Gmail, and Contacts independently.
+-- A per-instance, per-domain row prevents one service or account from
+-- overwriting another's freshness/error state.
+CREATE TABLE IF NOT EXISTS connection_sync_state (
+  instance_id TEXT NOT NULL REFERENCES connection_instances(id),
+  domain TEXT NOT NULL,
+  last_sync_at TEXT,
+  last_error TEXT,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (instance_id, domain)
+);

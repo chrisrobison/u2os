@@ -350,7 +350,9 @@ export function ensureConnectionInstancesMigrated({ db, dataDir } = {}) {
  * this function (or a plain array of it) so a secret leaking into an API
  * response would require a code path that bypasses this entirely, not just
  * a missed field. */
-function toInstanceApiShape(row) {
+function toInstanceApiShape(db, row) {
+  const sync = Object.fromEntries(db.prepare('SELECT domain, last_sync_at, last_error FROM connection_sync_state WHERE instance_id = ?').all(row.id)
+    .map((entry) => [entry.domain, { lastSyncAt: entry.last_sync_at, lastError: entry.last_error }]));
   return {
     id: row.id,
     connectorId: row.connector_id,
@@ -358,6 +360,7 @@ function toInstanceApiShape(row) {
     status: row.status,
     lastError: row.last_error,
     lastSyncAt: row.last_sync_at,
+    sync,
     smtpInstanceId: row.connector_id === 'imap' ? row.smtp_instance_id : undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -371,7 +374,7 @@ export function listInstances(db, connectorId) {
   const rows = db
     .prepare('SELECT * FROM connection_instances WHERE connector_id = ? AND deleted_at IS NULL ORDER BY created_at ASC')
     .all(connectorId);
-  return rows.map(toInstanceApiShape);
+  return rows.map((row) => toInstanceApiShape(db, row));
 }
 
 /** Internal-only counterpart to listInstances(): returns RAW (secret-key-
@@ -411,7 +414,7 @@ export function associateSmtpInstance(db, { imapRow, smtpInstanceId }) {
   const now = new Date().toISOString();
   db.prepare('UPDATE connection_instances SET smtp_instance_id = ?, smtp_pair_initialized = 1, credential_revision = credential_revision + 1, updated_at = ? WHERE id = ? AND deleted_at IS NULL')
     .run(smtpInstanceId, now, imapRow.id);
-  return toInstanceApiShape(findInstance(db, 'imap', imapRow.id));
+  return toInstanceApiShape(db, findInstance(db, 'imap', imapRow.id));
 }
 
 /** Creates a new connection instance: mints an id + vault_key
@@ -432,7 +435,7 @@ export function createConnectionInstance(db, { connectorId, label, credentials =
     `INSERT INTO connection_instances (id, connector_id, label, status, vault_key, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`
   ).run(id, connectorId, label, status, vaultKey, now, now);
-  return toInstanceApiShape(db.prepare('SELECT * FROM connection_instances WHERE id = ?').get(id));
+  return toInstanceApiShape(db, db.prepare('SELECT * FROM connection_instances WHERE id = ?').get(id));
 }
 
 /** Updates an existing instance's label and/or stored credentials.
@@ -451,7 +454,7 @@ export function updateConnectionInstance(db, { row, label, credentials, dataDir 
   const now = new Date().toISOString();
   db.prepare('UPDATE connection_instances SET label = ?, credential_revision = credential_revision + ?, updated_at = ? WHERE id = ?')
     .run(nextLabel, credentials !== undefined ? 1 : 0, now, row.id);
-  return toInstanceApiShape(db.prepare('SELECT * FROM connection_instances WHERE id = ?').get(row.id));
+  return toInstanceApiShape(db, db.prepare('SELECT * FROM connection_instances WHERE id = ?').get(row.id));
 }
 
 /** Soft-deletes an instance (sets deleted_at) and removes its vault file.
@@ -477,5 +480,5 @@ export function deleteConnectionInstance(db, { row, dataDir } = {}) {
   deleteEncryptedFile(row.vault_key, dataDir);
   const now = new Date().toISOString();
   db.prepare('UPDATE connection_instances SET deleted_at = ?, updated_at = ? WHERE id = ?').run(now, now, row.id);
-  return toInstanceApiShape({ ...row, updated_at: now });
+  return toInstanceApiShape(db, { ...row, updated_at: now });
 }
