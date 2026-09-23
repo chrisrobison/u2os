@@ -149,11 +149,14 @@ export async function getValidAccessToken(vaultKey, service, { dataDir, fetchImp
   if (token.expiry && token.access_token && Date.now() < token.expiry - REFRESH_SKEW_MS) {
     return token.access_token;
   }
-  if (!stored.clientId || !stored.clientSecret) {
+  const sharedClient = readEncryptedFile('google', dataDir) || {};
+  const clientId = sharedClient.clientId || stored.clientId;
+  const clientSecret = sharedClient.clientSecret || stored.clientSecret;
+  if (!clientId || !clientSecret) {
     throw new Error('google-oauth: missing stored Google OAuth client credentials');
   }
   const refreshed = await refreshAccessToken(
-    { clientId: stored.clientId, clientSecret: stored.clientSecret, refreshToken: token.refresh_token },
+    { clientId, clientSecret, refreshToken: token.refresh_token },
     fetchImpl
   );
   const next = storeTokens(vaultKey, service, { ...refreshed, refresh_token: token.refresh_token }, dataDir);

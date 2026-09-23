@@ -286,6 +286,39 @@ export function ensureConnectionInstancesMigrated({ db, dataDir } = {}) {
     results.push({ connectorId, migrated: true, instanceId, status, domains });
   }
 
+  // OAuth client credentials are shared by all Google account instances.
+  // Earlier migrations moved the combined legacy file (including client
+  // credentials) into the first instance and removed the bare file. Restore
+  // a client-only shared file on every boot when needed, after the instance
+  // copy has been verified. Never recreate it from a deleted account.
+  const migratedGoogle = db.prepare("SELECT * FROM connection_instances WHERE connector_id = 'google' AND deleted_at IS NULL ORDER BY created_at LIMIT 1").get();
+  if (migratedGoogle) {
+    try {
+      const shared = readEncryptedFile('google', dataDir) || {};
+      const account = readEncryptedFile(migratedGoogle.vault_key, dataDir) || {};
+      const clientId = shared.clientId || account.clientId;
+      const clientSecret = shared.clientSecret || account.clientSecret;
+      if (clientId && clientSecret && (shared.clientId !== clientId || shared.clientSecret !== clientSecret || shared.tokens)) {
+        writeEncryptedFile('google', { clientId, clientSecret }, dataDir);
+      }
+    } catch (err) {
+      log.warn('connection-instances', 'could not restore shared Google OAuth client configuration', { error: err?.message || String(err) });
+    }
+  }
+  // SMTP still uses its single bare vault key until account pairing lands.
+  // Preserve delivery for installations already migrated into an instance.
+  const migratedSmtp = db.prepare("SELECT * FROM connection_instances WHERE connector_id = 'smtp' AND deleted_at IS NULL ORDER BY created_at LIMIT 1").get();
+  if (migratedSmtp) {
+    try {
+      if (!readEncryptedFile('smtp', dataDir)) {
+        const settings = readEncryptedFile(migratedSmtp.vault_key, dataDir);
+        if (settings) writeEncryptedFile('smtp', settings, dataDir);
+      }
+    } catch (err) {
+      log.warn('connection-instances', 'could not restore legacy SMTP transport settings', { error: err?.message || String(err) });
+    }
+  }
+
   return results;
 }
 
@@ -417,81 +450,4 @@ export function deleteConnectionInstance(db, { row, dataDir } = {}) {
   const now = new Date().toISOString();
   db.prepare('UPDATE connection_instances SET deleted_at = ?, updated_at = ? WHERE id = ?').run(now, now, row.id);
   return toInstanceApiShape({ ...row, updated_at: now });
-}
-
-function liveInstanceForConnector(db, connectorId) {
-  return db
-    .prepare('SELECT * FROM connection_instances WHERE connector_id = ? AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 1')
-    .get(connectorId);
-}
-
-/**
- * Legacy-route compatibility shim (issue #163 PR 4; server/api/routes/
- * connectors.js's "Legacy single-account credential routes" block, kept
- * only because the pre-PR-5 frontend still POSTs to them -- see that
- * block's own comment). Before PR 4, every real provider module read
- * credentials from a bare `<connectorId>.enc.json` vault file directly;
- * since PR 4, every real provider module resolves credentials through a
- * connection_instances row instead, so a legacy route writing straight to
- * the bare key (with no row backing it) would silently configure
- * credentials nothing can ever find -- exactly the imap/webhook e2e
- * regression review caught after the routing PR shipped.
- *
- * This bridges the two: reuse whatever live instance already exists for
- * `connectorId` (writing into ITS real vault_key, whatever that already is
- * -- a bare legacy key from a prior call to this same shim, or an
- * already-migrated instance-scoped key from PR 1's boot-time migration), or
- * create one for the first time. A freshly-created row uses
- * `vaultKeyOverride` (falling back to the bare `connectorId`) as its vault
- * key -- matching whatever filename the connector's provider module has
- * historically written to -- and is tagged the same
- * `migratedFrom: 'legacy-single-file'` way PR 1's real migration tags a
- * carried-forward single account: functionally, this IS that same
- * grandfathered single-account case, just triggered by a live API call
- * instead of a boot-time file scan, and it must generate the same
- * unprefixed local ids (see connector-instance-ids.js) for exactly the same
- * reason. Returns the resulting raw row.
- */
-export function ensureLegacyCredentialInstance(db, { connectorId, plaintext, vaultKeyOverride, dataDir } = {}) {
-  const now = new Date().toISOString();
-  const existing = liveInstanceForConnector(db, connectorId);
-  if (existing) {
-    writeEncryptedFile(existing.vault_key, plaintext, dataDir);
-    db.prepare('UPDATE connection_instances SET status = ?, updated_at = ? WHERE id = ?').run('connected', now, existing.id);
-    return { ...existing, status: 'connected', updated_at: now };
-  }
-
-  const instanceId = newId('conn');
-  const vaultKey = vaultKeyOverride || connectorId;
-  writeEncryptedFile(vaultKey, plaintext, dataDir);
-  const label = buildLabel(connectorId, plaintext);
-  const metadata = JSON.stringify({ migratedFrom: MIGRATION_TAG });
-  db.prepare(
-    `INSERT INTO connection_instances (id, connector_id, label, status, vault_key, metadata, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(instanceId, connectorId, label, 'connected', vaultKey, metadata, now, now);
-
-  const config = loadConnectorsConfig(dataDir);
-  const domains = matchingDomains(connectorId, config);
-  if (domains.length) {
-    for (const domain of domains) config[domain] = { ...config[domain], activeInstanceId: instanceId };
-    saveConnectorsConfig(config, dataDir);
-  }
-  return { id: instanceId, connector_id: connectorId, label, status: 'connected', vault_key: vaultKey, metadata, created_at: now, updated_at: now };
-}
-
-/**
- * The disconnect counterpart to ensureLegacyCredentialInstance(): clears
- * whichever live instance already exists for `connectorId` at its REAL
- * vault_key (not necessarily the bare connectorId), so a legacy disconnect
- * route actually clears what a provider module reads. A no-op if no live
- * instance exists yet.
- */
-export function clearLegacyCredentialInstance(db, { connectorId, dataDir } = {}) {
-  const existing = liveInstanceForConnector(db, connectorId);
-  if (!existing) return null;
-  writeEncryptedFile(existing.vault_key, {}, dataDir);
-  const now = new Date().toISOString();
-  db.prepare('UPDATE connection_instances SET status = ?, updated_at = ? WHERE id = ?').run('pending', now, existing.id);
-  return { ...existing, status: 'pending', updated_at: now };
 }

@@ -25,6 +25,7 @@ U2OS is currently a working pre-alpha prototype. The repository implements the s
 - A device/capability subsystem (see [docs/devices.md](docs/devices.md)): a persisted device registry, an in-memory capability catalog, a deterministic (never LLM-driven) trust/privacy-aware resolver, a realtime WebSocket device bus (`/ws/devices`), the browser itself as a registered device, semantic presentation (`presentation.present`/`presentation.notify`) routed through the same policy/approval/audit pipeline as every other tool, a device management UI (`#/devices`), an enforced trust lifecycle (pairing-request events, revocation that disconnects live connections and is checked on every path), a metadata-only stream registry, and a service-provider unification proof of concept
 - Google Calendar, Gmail, Google Contacts, Brave Search, and webhook connector adapters, with mock fallbacks
 - Encrypted local credential storage and Google OAuth support
+- Named Google, IMAP, Brave Search, and webhook connection instances with explicit account selection in the Connectors UI (SMTP remains single-account)
 - Browser microphone, VAD, STT/TTS, barge-in, voice enrollment, and confidence-aware authorization
 - Timers, recurring schedules, event rules, condition watches, and proactive event evaluation
 - Outcome feedback that adjusts prioritization without weakening authorization policies

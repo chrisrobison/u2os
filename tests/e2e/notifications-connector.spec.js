@@ -16,14 +16,18 @@ test('owner can configure and select real notification delivery without exposing
     await expect(page.locator('.workspace__title', { hasText: 'Connectors' })).toBeVisible();
 
     await page.locator('[data-catalog-id="webhook"]').click();
-    const credentials = page.locator('u2-connector-setup form[data-connector-form]');
+    await page.locator('u2-connector-setup [data-show-add-account]').click();
+    const credentials = page.locator('u2-connector-setup form[data-add-instance-form]');
+    await credentials.locator('input[name="label"]').fill('Personal alerts');
     await credentials.locator('input[name="webhookUrl"]').fill(WEBHOOK_URL);
     await credentials.locator('select[name="format"]').selectOption('ntfy');
     await credentials.locator('button[type="submit"]').click();
-    await expect(page.locator('u2-connector-setup dialog')).not.toBeVisible();
+    const account = page.locator('u2-connector-setup .connector-account', { hasText: 'Personal alerts' });
+    await expect(account).toBeVisible();
+    await account.locator('[data-use-instance]').click();
 
     const notifications = page.locator('u2-card[title="Notifications"]');
-    await notifications.locator('select[data-provider-domain="notifications"]').selectOption('webhook');
+    await expect(notifications).toContainText('Personal alerts');
     await expect(notifications.locator('.connector-status')).toContainText('Webhook Notifications');
     await expect(notifications.locator('.status-dot')).toHaveClass(/is-connected/);
 

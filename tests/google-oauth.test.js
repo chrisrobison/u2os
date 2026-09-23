@@ -125,6 +125,28 @@ test('getValidAccessToken throws a clear "not connected" error when no tokens ar
   }
 });
 
+test('a new Google instance refreshes with the shared OAuth client without copying its secret into the account vault', async () => {
+  const dir = tempHome();
+  try {
+    writeEncryptedFile('google', { clientId: 'shared-id', clientSecret: 'shared-secret' }, dir);
+    storeTokens('google__conn_new', 'gmail', { access_token: 'EXPIRED', refresh_token: 'REFRESH', expires_in: -1 }, dir);
+    const calls = [];
+    const token = await getValidAccessToken('google__conn_new', 'gmail', {
+      dataDir: dir,
+      fetchImpl: async (_url, options) => {
+        calls.push(new URLSearchParams(options.body));
+        return { ok: true, json: async () => ({ access_token: 'FRESH', expires_in: 3600 }) };
+      },
+    });
+    assert.equal(token, 'FRESH');
+    assert.equal(calls[0].get('client_id'), 'shared-id');
+    assert.equal(calls[0].get('client_secret'), 'shared-secret');
+    assert.equal(readEncryptedFile('google__conn_new', dir).clientSecret, undefined);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // issue #163 PR 3: storeTokens/hasTokens/clearTokens/getValidAccessToken all
 // take an explicit vaultKey now (the connection instance's vault key, e.g.
 // 'google__conn_abc'), rather than always hardcoding the bare 'google' vault

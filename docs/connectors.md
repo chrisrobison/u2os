@@ -10,7 +10,9 @@ This document is the contract for: the skill/connector manifest format, the prov
 
 The Connectors page is a compact catalog rather than a wall of provider-specific forms. Selecting a row opens the same keyboard-accessible setup dialog for Google OAuth, IMAP, SMTP, API-key, and webhook configuration. Planned definitions—including RSS/Atom, POP3, Discord, WhatsApp, iMessage, Slack, and Microsoft 365—are discoverable but explicitly unavailable until their adapters exist.
 
-Definitions declare `accountMode: "single" | "multiple"`. This is the forward-compatible contract for connection instances; current encrypted credential storage remains single-instance until the separate multi-account persistence migration is complete. A catalog entry is a connector type, not an account record.
+Definitions declare `accountMode: "single" | "multiple"`. Google, IMAP, Brave Search, and webhook notifications support named connection instances. Their account list supports creation, renaming, credential updates where applicable, explicit domain selection, and removal. Google has one shared OAuth client configuration; each named account receives separate service tokens. SMTP remains a single global configuration pending explicit IMAP-to-SMTP account association (tracked in #172). A catalog entry is a connector type, not an account record.
+
+The domain card shows the selected account label. With exactly one connected instance, selecting a real provider in the domain selector selects that instance. With multiple connected instances, choose **Use account** on the intended account row; U2OS never guesses. Removing a selected instance returns that domain to Mock and leaves other instances intact. Credential values are write-only in the API and browser. Existing single-account encrypted credentials are migrated to labeled instances on startup; the migration is idempotent.
 
 ## Principles carried over from PROMPT.md
 
@@ -49,7 +51,8 @@ public/components/u2-connectors.js   Settings/Connectors page (paste credentials
 
 ```
 ~/.u2os/credentials/master.key           32 random bytes, mode 0600, generated on first run if absent, NEVER logged
-~/.u2os/credentials/google.enc.json       encrypted: {clientId, clientSecret, tokens: {calendar:{...}, gmail:{...}, contacts:{...}}}
+~/.u2os/credentials/google.enc.json       encrypted: shared OAuth client id and secret
+~/.u2os/credentials/google__<instance-id>.enc.json  encrypted: that account's service tokens
 ~/.u2os/credentials/web-search.enc.json   encrypted: {apiKey}
 ~/.u2os/credentials/notify-webhook.enc.json  encrypted: {webhookUrl, format}
 ```
@@ -59,6 +62,7 @@ public/components/u2-connectors.js   Settings/Connectors page (paste credentials
 ```yaml
 calendar:
   active: mock          # or google-calendar
+  activeInstanceId: null # exact connected account ID when real
 email:
   active: mock          # or gmail
 contacts:
@@ -131,10 +135,10 @@ Resolution: read `connectors.yaml[domain].active`. If `'mock'` (or missing/inval
 You create **one** Google OAuth client (Desktop or Web application type; if Web, add `http://localhost:4000/api/connectors/google/oauth/callback` — or whatever port you actually run on — as an authorized redirect URI) and enable the Calendar API, Gmail API, and People API in the same Google Cloud project. U2OS then lets you connect each of the three services independently (different scopes, independent tokens, independent disconnect) using that one client id/secret.
 
 1. `POST /api/connectors/google/credentials { clientId, clientSecret }` — encrypts and stores under `google.enc.json`.
-2. `GET /api/connectors/google/oauth/start?service=calendar|gmail|contacts` — builds `https://accounts.google.com/o/oauth2/v2/auth` with `client_id`, `redirect_uri`, `response_type=code`, the service's scope, `access_type=offline`, `prompt=consent`, and a random `state` token cached server-side (in-memory `Map`, 10-minute TTL) keyed to the requested service — redirects the browser there.
-3. Google redirects back to `GET /api/connectors/google/oauth/callback?code=&state=`. This exact callback route does not require a U2OS session because an external OAuth redirect may not carry the host-scoped session cookie. It remains protected by the short-lived, cryptographically random, single-use `state`: the server validates `state` against the in-memory cache and rejects expired, replayed, or forged callbacks. It then exchanges `code` at `https://oauth2.googleapis.com/token`, stores `{ access_token, refresh_token, expiry }` under `google.enc.json`'s `tokens.<service>`, selects the corresponding provider for its domain, marks that service connected, and redirects the browser to `/#/connectors?connected=<service>` (or `?error=...`). OAuth start, credentials, disconnect, and all other connector routes still require an authenticated owner session. Connector health reports connected providers separately from the active provider, so a stored Google connection remains visible even when the owner later selects another provider.
+2. Create a named Google account in the setup dialog (`POST /api/connectors/google/instances { label }`). `GET /api/connectors/google/oauth/start?service=calendar|gmail|contacts&instanceId=<id>` builds the Google consent URL and binds its short-lived state to that instance.
+3. Google redirects back to `GET /api/connectors/google/oauth/callback?code=&state=`. The public callback validates the short-lived, single-use state and that its bound account still exists. It stores tokens at that account's encrypted vault key, selects the exact instance for the corresponding domain, and redirects to the Connectors page. Other connector routes require an authenticated owner session.
 4. `getValidAccessToken(service)` (in `google-oauth.js`) decrypts the stored token, refreshes via the refresh-token grant if expired (updating the stored access token), and returns a usable bearer token for the provider modules to call the real APIs with.
-5. `POST /api/connectors/google/disconnect?service=calendar` clears that service's stored tokens (does not necessarily revoke server-side at Google, though calling Google's revoke endpoint too is a nice-to-have if there's time).
+5. `POST /api/connectors/google/instances/<id>/disconnect?service=calendar` clears that account's service tokens without affecting another account. It does not revoke Google's server-side grant.
 
 ## Google Calendar provider — real API calls
 
@@ -161,14 +165,14 @@ REST v3, via native `fetch` (no `googleapis` SDK dependency):
 
 ## Web search provider — Brave Search API
 
-- `POST /api/connectors/web-search/credentials { apiKey }`.
+- Create or update a named `brave-search` instance through `/api/connectors/brave-search/instances`.
 - `GET https://api.search.brave.com/res/v1/web/search?q=<query>` with header `X-Subscription-Token: <apiKey>`.
 - Map top results → `{ title, url, snippet }[]`, same shape `web.search`'s mock already returns, so `server/tools/web-tools.js` doesn't change its return contract at all.
 - If not configured, `provider-registry` resolves `'web'` to the mock provider automatically (this is just the normal fallback path, not a special case) — the mock's canned results stay clearly labeled as mock in their response.
 
 ## Notifications provider — generic webhook (ntfy.sh-compatible)
 
-- `POST /api/connectors/notify-webhook/credentials { webhookUrl, format }` where `format` is `'json'` (default: POST `{title, body, priority}` as JSON) or `'ntfy'` (POST `body` as the raw text payload with `Title` and `Priority` headers, per ntfy.sh's convention — this also happens to work for most simple "POST a message" webhook receivers).
+- Create or update a named `webhook` instance through `/api/connectors/webhook/instances` with `{ label, webhookUrl, format }`, where `format` is `'json'` or `'ntfy'`.
 - `notifications.send` tool, when this provider is active, does the real `fetch(webhookUrl, {...})` and still also inserts the `notification.sent` event exactly as the mock does (the event log doesn't care which provider delivered it).
 - Delivery has a 10-second default timeout. Network/timeout errors are sanitized so a credential-bearing URL cannot enter queue errors or logs; HTTP status is retained for trusted failure classification. The provider does not claim idempotency, so an uncertain outcome is sent to owner attention rather than automatically replayed.
 
@@ -204,8 +208,8 @@ U2OS never has your Google login — you do this in Google's own UI, then paste 
 4. Add these scopes on the consent screen: `.../auth/calendar`, `.../auth/gmail.readonly`, `.../auth/gmail.send`, `.../auth/contacts.readonly`.
 5. **APIs & Services → Credentials → Create Credentials → OAuth client ID**. Application type **Web application**. Under "Authorized redirect URIs" add `http://localhost:4000/api/connectors/google/oauth/callback` (adjust the port if you run U2OS elsewhere).
 6. Copy the **Client ID** and **Client secret** it gives you.
-7. In the U2OS UI, open **Connectors**, paste them into the Google card, save, then click **Connect** next to Calendar, Gmail, or Contacts individually — each opens Google's consent screen in a new tab; approve it, and you'll land back on the Connectors page showing that service as connected.
-8. Flip the domain(s) you want to use it for from `mock` to the real connector — either via the same Connectors page (a "Use this for calendar/email/contacts" toggle) or by hand-editing `~/.u2os/config/connectors.yaml`.
+7. In **Connectors → Google**, save the OAuth client, add a named account, then choose **Connect** for Calendar, Gmail, or Contacts in that account's row. Google's consent screen opens in the same browser tab; after approval, U2OS selects that exact account for the service's domain.
+8. To change accounts later, choose **Use account** in the desired account's service row.
 
 ## Setting up Brave Search (optional, for real `web.search`)
 
