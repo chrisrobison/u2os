@@ -156,3 +156,27 @@ test('personal router rejects mock planner and never retries a failed real plann
   assert.equal(realWithMockFallback.resolveFallback('planner'), null);
   await assert.rejects(new Planner({ modelRouter: realWithMockFallback }).plan({ toolRegistry: registry }, 'test'), { code: 'MODEL_UNAVAILABLE', status: 503 });
 });
+
+test('model-call accounting includes each primary and fallback provider attempt', async () => {
+  const router = new ModelRouter({
+    providers: { first: { type: 'openai-compatible' }, second: { type: 'anthropic' } },
+    roles: { planner: 'first' }, fallback: 'second',
+  }, { createProvider: (config) => ({ id: config.type, destination: 'local_model', plan: async () => {
+    if (config.type === 'openai-compatible') throw new Error('primary unavailable');
+    return { reasoning_summary: 'fallback', actions: [] };
+  } }) });
+  let calls = 0;
+  const planner = new Planner({ modelRouter: router });
+  await planner.plan({ toolRegistry: registry, onModelCall: () => { calls++; } }, 'test');
+  assert.equal(calls, 2);
+  calls = 0;
+  await assert.rejects(planner.plan({ toolRegistry: registry, onModelCall: () => {
+    if (++calls > 1) { const error = new Error('model limit'); error.code = 'MODEL_CALL_LIMIT'; throw error; }
+  } }, 'test'), { code: 'MODEL_CALL_LIMIT' });
+  assert.equal(calls, 2);
+  router.allowMock = false;
+  calls = 0;
+  await assert.rejects(planner.plan({ toolRegistry: registry, onModelCall: () => {
+    if (++calls > 1) { const error = new Error('model limit'); error.code = 'MODEL_CALL_LIMIT'; throw error; }
+  } }, 'test'), { code: 'MODEL_CALL_LIMIT' });
+});

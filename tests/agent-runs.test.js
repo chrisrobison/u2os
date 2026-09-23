@@ -9,7 +9,7 @@ import { PolicyEngine } from '../server/policy/policy-engine.js';
 import { createToolRegistry } from '../server/tools/register-all.js';
 import { Agent } from '../server/agent/agent.js';
 import { enqueueAction } from '../server/agent/action-queue-store.js';
-import { createRun, recordRunPlan, beginRunStep, getRun, listRuns, reconcileInterruptedRuns } from '../server/agent/run-store.js';
+import { createRun, recordRunPlan, beginModelCall, beginRunStep, getRun, listRuns, reconcileInterruptedRuns } from '../server/agent/run-store.js';
 import { startServer } from '../server/index.js';
 
 function tempHome() { const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-runs-')); process.env.U2OS_HOME = dir; return dir; }
@@ -119,6 +119,29 @@ test('additive run schema opens a pre-run data directory without changing existi
     assert.ok(reopened.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'agent_runs'").get());
     assert.ok(reopened.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'agent_run_steps'").get());
     assert.equal(reopened.prepare('SELECT COUNT(*) AS n FROM agent_runs').get().n, 0);
+  } finally { cleanup(dir); }
+});
+
+test('later plan rounds append steps, retain absolute dependencies, and migrate model-call count', () => {
+  const dir = tempHome();
+  try {
+    const runId = createRun({ correlationId: 'corr_rounds', actorId: 'owner', objective: 'Research then draft' });
+    const first = { reasoning_summary: 'Search', actions: [{ tool: 'email.search', arguments: { query: 'role' } }] };
+    const second = { reasoning_summary: 'Check then draft', actions: [
+      { tool: 'calendar.list', arguments: {} },
+      { tool: 'email.draft', arguments: { to: 'a@example.test', subject: 'Re', body: 'Hi' }, dependsOn: [0] },
+    ] };
+    beginModelCall(runId);
+    assert.equal(recordRunPlan(runId, first), 0);
+    beginModelCall(runId);
+    assert.equal(recordRunPlan(runId, second), 1);
+    assert.deepEqual(getDb().prepare('SELECT step_index, depends_on FROM agent_run_steps WHERE run_id = ? ORDER BY step_index').all(runId).map((row) => [row.step_index, JSON.parse(row.depends_on)]), [[0, []], [1, []], [2, [1]]]);
+    assert.equal(getRun(runId).modelCalls, 2);
+    closeAllForTests();
+    const db = getDb();
+    db.exec('ALTER TABLE agent_runs DROP COLUMN model_call_count');
+    closeAllForTests();
+    assert.equal(getDb().prepare('SELECT model_call_count FROM agent_runs WHERE id = ?').get(runId).model_call_count, 0);
   } finally { cleanup(dir); }
 });
 

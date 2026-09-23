@@ -15,6 +15,9 @@ import { proposeMemoryCandidate } from '../memory/candidate-store.js';
 import { captureAccountBinding } from '../integrations/provider-registry.js';
 import { accountDomainForAction, assertCalendarTarget, captureSmtpIdentity } from './account-binding.js';
 import * as defaultRunStore from './run-store.js';
+import { resolveActionReferences } from './result-references.js';
+
+const MAX_MODEL_CALLS_PER_MESSAGE = 3;
 
 /**
  * Agent: the orchestrator. It does not itself plan, evaluate policy,
@@ -68,8 +71,8 @@ export class Agent {
   }
 
   // `voice` is `{ confidence: number } | undefined` -- undefined for the
-  // existing text-chat path (POST /api/agent/message), which must remain
-  // byte-identical to before Phase 4/5. Only POST /api/agent/voice-message
+  // existing text-chat path (POST /api/agent/message), which must preserve
+  // the same authorization behavior. Only POST /api/agent/voice-message
   // ever passes it. See server/voice/authorize.js for the one place it
   // actually changes anything.
   async handleMessage({ text, actorId = 'user', voice } = {}) {
@@ -95,48 +98,78 @@ export class Agent {
       metadata: { correlationId, provenance: 'user:message' },
     });
 
-    const plan = await this.planner.plan(planContext, text);
-    this.runStore.recordRunPlan(runId, plan);
-    // Explainability (PLAN.md Phase 9): the retrieved-memory-item ids that
-    // actually reached the provider which produced THIS plan (after
-    // data-processing filtering) -- attached to every action's audit row
-    // below so a later "why did U2OS do this" view can point at exactly
-    // what informed it, not just the model's own prose.
-    const contextProvenance = this.planner.lastProvenanceRefs || [];
-    const proposedActions = plan.actions || [];
+    let plan;
+    let acceptedPlan;
+    let stopReason = null;
     const results = [];
     const pendingActionIds = [];
+    const observations = [];
+    const memoryCandidates = [];
+    const attempted = new Set();
 
-    for (const [index, proposed] of proposedActions.entries()) {
-      const unmet = (proposed.dependsOn || []).filter((dependency) => results[dependency]?.status !== 'executed');
-      if (unmet.length) {
-        results.push({
-          status: 'skipped',
-          tool: proposed.tool,
-          arguments: proposed.arguments || {},
-          dependsOn: proposed.dependsOn,
-          unmetDependencies: unmet.map((dependency) => ({ index: dependency, status: results[dependency]?.status || 'unknown', actionId: results[dependency]?.id || null })),
-          reason: 'Prerequisite action did not complete successfully; no attempt was made',
-        });
-        this.runStore.recordRunStepOutcome(runId, index, 'skipped');
-        continue;
+    for (let round = 0; round < MAX_MODEL_CALLS_PER_MESSAGE; round++) {
+      if (round > 0 && this.runStore.getModelCallCount?.(runId) >= MAX_MODEL_CALLS_PER_MESSAGE) {
+        stopReason = 'Continuation stopped at the model-call limit. The objective is not verified.';
+        break;
       }
-      const actionId = this.runStore.beginRunStep(runId, index);
-      const outcome = await this.evaluateAndMaybeExecute({
-        actionId,
-        tool: proposed.tool,
-        arguments: proposed.arguments || {},
-        requestedBy: actorId,
-        requestText: text,
-        reasoningSummary: plan.reasoning_summary,
-        correlationId,
-        actor,
-        voice,
-        contextProvenance,
-      });
-      results.push(outcome);
-      this.runStore.recordRunStepOutcome(runId, index, outcome.status);
-      if (outcome.status === 'pending') pendingActionIds.push(outcome.id);
+      plan = await this.planner.plan({ ...planContext, observations, onModelCall: () => this.runStore.beginModelCall(runId, MAX_MODEL_CALLS_PER_MESSAGE) }, text);
+      if (round > 0 && observations.length && !(this.planner.lastAllowedObservations || []).some((observation) => observation.items.length)) {
+        stopReason = 'Continuation stopped: the configured model cannot receive the required observations under the current privacy policy. The objective is not verified.';
+        plan = acceptedPlan;
+        break;
+      }
+      const baseIndex = this.runStore.recordRunPlan(runId, plan);
+      acceptedPlan = plan;
+      const roundResults = [];
+      const observedBefore = observations.length;
+      // Provenance is specific to the provider that produced this plan,
+      // after destination-aware filtering (including any fallback).
+      const contextProvenance = this.planner.lastProvenanceRefs || [];
+
+      for (const [index, proposed] of (plan.actions || []).entries()) {
+        const stepIndex = baseIndex + index;
+        const unmet = (proposed.dependsOn || []).filter((dependency) => roundResults[dependency]?.status !== 'executed');
+        if (unmet.length) {
+          const skipped = {
+            status: 'skipped', tool: proposed.tool, arguments: proposed.arguments || {}, dependsOn: proposed.dependsOn,
+            unmetDependencies: unmet.map((dependency) => ({ index: baseIndex + dependency, status: roundResults[dependency]?.status || 'unknown', actionId: roundResults[dependency]?.id || null })),
+            reason: 'Prerequisite action did not complete successfully; no attempt was made',
+          };
+          results.push(skipped); roundResults.push(skipped);
+          this.runStore.recordRunStepOutcome(runId, stepIndex, 'skipped');
+          continue;
+        }
+        const resolved = resolveActionReferences(proposed, this.planner.lastAllowedObservations || [], this.toolRegistry, { continuation: round > 0 });
+        const signature = JSON.stringify([resolved.tool, canonicalArguments(resolved.arguments)]);
+        if (attempted.has(signature)) {
+          const skipped = { status: 'skipped', tool: resolved.tool, arguments: resolved.arguments, reason: 'Repeated action made no progress; no attempt was made' };
+          results.push(skipped); roundResults.push(skipped);
+          this.runStore.recordRunStepOutcome(runId, stepIndex, 'skipped');
+          continue;
+        }
+        attempted.add(signature);
+        const actionId = this.runStore.beginRunStep(runId, stepIndex);
+        const outcome = await this.evaluateAndMaybeExecute({
+          actionId, tool: resolved.tool, arguments: resolved.arguments, requestedBy: actorId,
+          requestText: text, reasoningSummary: plan.reasoning_summary, correlationId,
+          actor, voice, contextProvenance,
+        });
+        results.push(outcome); roundResults.push(outcome);
+        this.runStore.recordRunStepOutcome(runId, stepIndex, outcome.status);
+        if (outcome.status === 'pending') pendingActionIds.push(outcome.id);
+        if (outcome.status === 'executed' && this.toolRegistry.get(resolved.tool).category === 'read') {
+          observations.push({ stepIndex, tool: resolved.tool, actionId: outcome.id, status: 'executed', result: outcome.result });
+        }
+      }
+      if (Array.isArray(plan.memoryCandidates)) memoryCandidates.push(...plan.memoryCandidates);
+      if (plan.continue !== true) break;
+      if (!roundResults.length || roundResults.some((outcome) => outcome.status !== 'executed' || this.toolRegistry.get(outcome.tool).category !== 'read') || observations.length === observedBefore) {
+        stopReason = 'Continuation stopped: read-only prerequisites did not all complete. Review the action statuses; the objective is not verified.';
+        break;
+      }
+      if (round === MAX_MODEL_CALLS_PER_MESSAGE - 1) {
+        stopReason = 'Continuation stopped at the model-call limit. The objective is not verified.';
+      }
     }
 
     if (this.ownerEntityId) {
@@ -152,8 +185,8 @@ export class Agent {
     // later review -- it is NOT a memory write. Promoting a candidate into an
     // established fact (with its own provenance/confidence) is a separate,
     // explicit step; a plan can never silently become "established truth".
-    if (Array.isArray(plan.memoryCandidates)) {
-      for (const [index, candidate] of plan.memoryCandidates.entries()) {
+    if (memoryCandidates.length) {
+      for (const [index, candidate] of memoryCandidates.entries()) {
         const stored = proposeMemoryCandidate({ content: candidate.content, confidence: candidate.confidence, correlationId, proposedBy: actorId });
         this.eventBus.publish({
           type: 'agent.memory_candidate.proposed',
@@ -166,11 +199,8 @@ export class Agent {
       }
     }
 
-    const skippedCount = results.filter((result) => result.status === 'skipped').length;
-    const incompleteResponse = skippedCount
-      ? `${skippedCount} dependent action${skippedCount === 1 ? ' was' : 's were'} not attempted because prerequisites did not complete. Review action statuses before continuing.`
-      : null;
-    const response = incompleteResponse || plan.response;
+    const incompleteResponse = summarizeIncompleteActions(results);
+    const response = stopReason ? `${stopReason}${incompleteResponse ? ` ${incompleteResponse}` : ''}` : incompleteResponse || plan.response;
     this.runStore.finishRun(runId, response);
     return {
       runId,
@@ -178,8 +208,8 @@ export class Agent {
       reasoning_summary: plan.reasoning_summary,
       actions: results,
       pendingActionIds,
-      ...(incompleteResponse ? { response: incompleteResponse } : plan.response !== undefined ? { response: plan.response } : {}),
-      ...(plan.memoryCandidates !== undefined ? { memoryCandidates: plan.memoryCandidates } : {}),
+      ...(response !== undefined ? { response } : {}),
+      ...(memoryCandidates.length ? { memoryCandidates } : {}),
     };
   }
 
@@ -314,4 +344,24 @@ export class Agent {
   async rejectAction(id, rejectedBy) {
     return this.approvalManager.reject(id, rejectedBy);
   }
+}
+
+function summarizeIncompleteActions(results) {
+  const incomplete = results.filter((result) => result.status !== 'executed');
+  if (!incomplete.length) return null;
+  const completed = results.length - incomplete.length;
+  const pending = incomplete.filter((result) => result.status === 'pending');
+  const notAttempted = incomplete.filter((result) => ['skipped', 'blocked', 'rejected'].includes(result.status));
+  const failed = incomplete.length - pending.length - notAttempted.length;
+  const recipients = pending.filter((result) => result.tool === 'email.send' && typeof result.arguments?.to === 'string')
+    .map((result) => result.arguments.to.slice(0, 120));
+  return `${completed} action(s) completed; ${pending.length} awaiting approval${recipients.length ? ` (email to ${recipients.join(', ')})` : ''}; ${notAttempted.length} not attempted; ${failed} failed or needing attention. The objective is not verified.`;
+}
+
+function canonicalArguments(value) {
+  if (Array.isArray(value)) return value.map(canonicalArguments);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalArguments(value[key])]));
+  }
+  return value;
 }

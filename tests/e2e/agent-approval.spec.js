@@ -116,7 +116,8 @@ test.describe.serial('agent chat + inline approval flow (#16)', () => {
     await sendChat(RESCHEDULE_MESSAGE);
 
     const agentBubble = page.locator('.chat-bubble.is-agent').last();
-    await expect(agentBubble).toContainText('Proposing to move it');
+    await expect(agentBubble).toContainText('awaiting approval');
+    await expect(agentBubble).toContainText('objective is not verified');
 
     const card = page.locator('.approval-list u2-approval').last();
     await expect(card).toHaveAttribute('data-status', 'pending');

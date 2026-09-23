@@ -102,6 +102,7 @@ export function getDb() {
   // non-chat route, or a proactive evaluator, may have none).
   ensureColumn(db, 'agent_actions', 'context_provenance', 'TEXT');
   ensureColumn(db, 'agent_actions', 'account_binding', 'TEXT');
+  ensureColumn(db, 'agent_runs', 'model_call_count', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'owners', 'entity_id', 'TEXT REFERENCES entities(id)');
   // Durable action delivery initially shipped without persisted actor
   // provenance. Add it without rebuilding existing queue tables.

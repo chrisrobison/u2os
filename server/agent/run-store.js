@@ -14,16 +14,34 @@ export function createRun({ correlationId, actorId, objective }) {
 export function recordRunPlan(runId, plan) {
   const db = getDb();
   const now = new Date().toISOString();
-  withTransaction(db, () => {
+  return withTransaction(db, () => {
+    const baseIndex = db.prepare('SELECT COALESCE(MAX(step_index) + 1, 0) AS next FROM agent_run_steps WHERE run_id = ?').get(runId).next;
     const insert = db.prepare(`INSERT INTO agent_run_steps
       (run_id, step_index, tool, arguments, depends_on, status, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, 'planned', ?, ?)`);
     for (const [index, action] of plan.actions.entries()) {
-      insert.run(runId, index, action.tool, JSON.stringify(action.arguments), JSON.stringify(action.dependsOn || []), now, now);
+      insert.run(runId, baseIndex + index, action.tool, JSON.stringify(action.arguments), JSON.stringify((action.dependsOn || []).map((dependency) => baseIndex + dependency)), now, now);
     }
     db.prepare(`UPDATE agent_runs SET status = 'running', reasoning_summary = ?, updated_at = ? WHERE id = ?`)
       .run(plan.reasoning_summary, now, runId);
+    return baseIndex;
   });
+}
+
+export function beginModelCall(runId, limit = 3) {
+  const changed = getDb().prepare(`UPDATE agent_runs SET model_call_count = model_call_count + 1, updated_at = ?
+    WHERE id = ? AND model_call_count < ? AND status IN ('planning', 'running')`)
+    .run(new Date().toISOString(), runId, limit);
+  if (changed.changes !== 1) {
+    const error = new Error('Run model-call limit reached');
+    error.code = 'MODEL_CALL_LIMIT';
+    error.status = 429;
+    throw error;
+  }
+}
+
+export function getModelCallCount(runId) {
+  return getDb().prepare('SELECT model_call_count FROM agent_runs WHERE id = ?').get(runId)?.model_call_count ?? 0;
 }
 
 export function beginRunStep(runId, index) {
@@ -76,7 +94,7 @@ export function getRun(runId) {
   for (const [position, step] of currentSteps.entries()) {
     if (step.status !== steps[position].status) updateStep.run(step.status, now, runId, step.index);
   }
-  const status = run.status === 'failed' || !steps.length ? run.status : classifyRun(currentSteps.map((step) => step.status));
+  const status = ['planning', 'running', 'failed'].includes(run.status) || !steps.length ? run.status : classifyRun(currentSteps.map((step) => step.status));
   if (run.status !== status) {
     db.prepare('UPDATE agent_runs SET status = ?, updated_at = ? WHERE id = ?')
       .run(status, now, runId);
@@ -86,6 +104,7 @@ export function getRun(runId) {
     correlationId: run.correlation_id,
     status,
     objectiveStatus: run.objective_status,
+    modelCalls: run.model_call_count,
     steps: currentSteps,
     createdAt: run.created_at,
     updatedAt: run.status !== status ? now : run.updated_at,
@@ -103,10 +122,8 @@ export function reconcileInterruptedRuns() {
   const now = new Date().toISOString();
   db.prepare(`UPDATE agent_run_steps SET status = 'interrupted', updated_at = ?
     WHERE action_id IS NULL AND status IN ('planned', 'running')`).run(now);
-  db.prepare(`UPDATE agent_runs SET status = 'interrupted', updated_at = ?
-    WHERE status IN ('planning', 'running') AND NOT EXISTS
-      (SELECT 1 FROM agent_run_steps WHERE run_id = agent_runs.id)`).run(now);
-  const ids = db.prepare("SELECT id FROM agent_runs WHERE status IN ('planning', 'running', 'waiting_for_action', 'waiting_for_approval')").all();
+  db.prepare(`UPDATE agent_runs SET status = 'interrupted', updated_at = ? WHERE status IN ('planning', 'running')`).run(now);
+  const ids = db.prepare("SELECT id FROM agent_runs WHERE status IN ('interrupted', 'waiting_for_action', 'waiting_for_approval')").all();
   for (const { id } of ids) getRun(id);
 }
 
