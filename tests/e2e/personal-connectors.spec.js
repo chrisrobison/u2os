@@ -10,6 +10,8 @@ test('personal connector status shows unavailable services without offering mock
     await page.goto(`${dedicated.baseURL}/#/connectors`);
     await page.locator('input[name="passphrase"]').fill('correct horse battery staple');
     await page.locator('form button[type="submit"]').click();
+    await expect(page.locator('.agent-panel__notice')).toContainText('Planner unavailable');
+    await expect(page.locator('.agent-panel__input')).toBeDisabled();
     const email = page.locator('u2-card[title="Email"]');
     await expect(email).toContainText('No real account selected');
     await expect(email.locator('.status-dot')).toHaveClass(/is-disconnected/);

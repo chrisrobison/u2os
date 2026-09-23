@@ -6,6 +6,7 @@ import { MockModelProvider } from './mock-model-provider.js';
 import { OpenAICompatibleProvider } from './openai-compatible-provider.js';
 import { AnthropicProvider } from './anthropic-provider.js';
 import { ModelRouter } from './model-router.js';
+import { readInstallationMode } from '../seed/installation-mode.js';
 
 const SINGLE_PROVIDER_TYPES = ['mock', 'openai-compatible', 'anthropic'];
 
@@ -33,7 +34,15 @@ export function saveMultiProviderConfig(model, secrets = {}, dataDir = getDataDi
 }
 export function createModelProvider(dataDir = getDataDir()) {
   const config = loadModelConfig(dataDir);
+  if (readInstallationMode(dataDir) !== 'demo' && config.provider === 'mock') throw modelUnavailable();
   return instantiateSingleProvider(config, dataDir);
+}
+
+function modelUnavailable() {
+  const error = new Error('Planner unavailable: configure a local or remote model for personal mode, then restart U2OS');
+  error.code = 'MODEL_UNAVAILABLE';
+  error.status = 503;
+  return error;
 }
 
 function instantiateSingleProvider(config, dataDir) {
@@ -82,10 +91,11 @@ function instantiateSingleProvider(config, dataDir) {
  */
 export function createModelRouter(dataDir = getDataDir()) {
   const config = loadModelConfig(dataDir);
+  const allowMock = readInstallationMode(dataDir) === 'demo';
 
   if (!config.providers) {
     const secret = config.provider && config.provider !== 'mock' ? readEncryptedFile(`model-${config.provider}`, dataDir) : null;
-    return new ModelRouter({ ...config, apiKey: secret?.apiKey });
+    return new ModelRouter({ ...config, apiKey: secret?.apiKey }, { allowMock });
   }
 
   const providers = {};
@@ -97,5 +107,5 @@ export function createModelRouter(dataDir = getDataDir()) {
     const secret = readEncryptedFile(`model-provider-${providerConfig.apiKeyRef || name}`, dataDir);
     providers[name] = { ...providerConfig, apiKey: secret?.apiKey };
   }
-  return new ModelRouter({ providers, roles: config.roles, fallback: config.fallback });
+  return new ModelRouter({ providers, roles: config.roles, fallback: config.fallback }, { allowMock });
 }

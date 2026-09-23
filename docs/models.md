@@ -1,6 +1,6 @@
 # Model providers
 
-U2OS defaults to the deterministic `MockModelProvider`. Two real adapters are implemented, deliberately non-identical so the `ModelProvider` abstraction is proven rather than nominal:
+Explicit demo homes default to the deterministic `MockModelProvider`; personal homes report the planner as unavailable until a local or remote model is explicitly configured. Two real adapters are implemented, deliberately non-identical so the `ModelProvider` abstraction is proven rather than nominal:
 
 - `openai-compatible` -- `POST <baseUrl>/v1/chat/completions`, `response_format: json_object`, bearer auth. Targets Ollama, llama.cpp, LM Studio, or a hosted OpenAI-compatible endpoint.
 - `anthropic` -- `POST <baseUrl or https://api.anthropic.com>/v1/messages`, `x-api-key`/`anthropic-version` headers, a top-level `system` field instead of a system message, and no guaranteed JSON-only response mode (the provider strips one bounded markdown fence if the model wraps its answer in one).
@@ -27,7 +27,9 @@ or, for Anthropic:
 { "provider": "anthropic", "model": "claude-...", "apiKey": "sk-ant-..." }
 ```
 
-The endpoint and model name are stored in `U2OS_HOME/config/config.json`; a supplied API key is encrypted in the existing credential vault under `model-<provider>` and is never returned by `GET /api/model`. Restart U2OS after changing providers. Set `{ "provider": "mock" }` to return to the offline deterministic planner.
+The endpoint and model name are stored in `U2OS_HOME/config/config.json`; a supplied API key is encrypted in the existing credential vault under `model-<provider>` and is never returned by `GET /api/model`. Restart U2OS after changing providers. Only an isolated demo home may select `{ "provider": "mock" }`; personal homes reject that choice.
+
+`GET /api/model` reports `plannerStatus` as `configuration-required`, `configured`, or `demo`. In a personal home with no configured real/local planner, chat and voice planning return HTTP 503 with an actionable message, no action is proposed, and the agent panel disables its composer. This is a configuration check, not a live model-endpoint probe: a configured provider can still be unavailable at request time, in which case a sanitized error is reported rather than retrying through a mock.
 
 The same endpoint also accepts the multi-provider shape shown below. Provider API keys may be supplied inside their provider entries; they are removed from `config.json` and encrypted in the vault. Changes currently require a restart.
 
@@ -50,11 +52,11 @@ A multi-provider, per-role config is supported through `POST /api/model` and at 
 }
 ```
 
-Each non-mock provider's API key is read from the vault under `model-provider-<apiKeyRef || providerName>`. If the role's primary provider throws while planning, `Planner` retries exactly once against the configured `fallback` provider (if any and if distinct from the primary) and records which provider actually produced the plan for the audit trail -- it never silently retries in a loop or auto-selects a "better" model.
+Each non-mock provider's API key is read from the vault under `model-provider-<apiKeyRef || providerName>`. If the role's primary provider throws while planning, `Planner` retries exactly once against an allowed configured `fallback` provider (if any and if distinct from the primary; a mock fallback is ignored in personal mode) and records which provider actually produced the plan for the audit trail -- it never silently retries in a loop or auto-selects a "better" model.
 
 ## Embeddings and semantic memory retrieval
 
-`server/agent/embeddings/` provides an `EmbeddingProvider` abstraction (`embed`/`embedBatch`), separate from `ModelProvider` since it's a different capability. Two implementations exist: `MockEmbeddingProvider` (deterministic word-hash sketch, offline default -- clearly not real semantic understanding) and `OpenAICompatibleEmbeddingProvider` (`POST <baseUrl>/v1/embeddings`, the same family of endpoint Ollama/llama.cpp/LM Studio/hosted OpenAI-compatible servers expose).
+`server/agent/embeddings/` provides an `EmbeddingProvider` abstraction (`embed`/`embedBatch`), separate from `ModelProvider` since it's a different capability. Two implementations exist: `MockEmbeddingProvider` (deterministic word-hash sketch for demos/tests, not real semantic understanding) and `OpenAICompatibleEmbeddingProvider` (`POST <baseUrl>/v1/embeddings`, the same family of endpoint Ollama/llama.cpp/LM Studio/hosted OpenAI-compatible servers expose). Personal homes cannot resolve the mock embedding provider.
 
 Configure it as an explicit `embeddings` role in the multi-provider config shape above, e.g. `"roles": { "planner": "local-planner", "embeddings": "embed" }` with a provider entry `"embed": { "type": "embedding-openai-compatible", "baseUrl": "...", "model": "nomic-embed-text" }`.
 

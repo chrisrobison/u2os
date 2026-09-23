@@ -61,10 +61,14 @@ export class Planner {
       this.lastProviderId = provider.id;
       return plan;
     } catch (err) {
-      const fallback = this.modelRouter.resolveFallback(this.role);
-      if (!fallback) throw err;
-      console.error(`[planner] role "${this.role}" provider (${provider.id}) failed (${err.message}); retrying with fallback provider (${fallback.id})`);
-      const plan = await this._planWith(fallback, context, objective);
+      let fallback;
+      try { fallback = this.modelRouter.resolveFallback(this.role); }
+      catch (fallbackError) { throw this.modelRouter.allowMock === false ? unavailableModel(fallbackError) : fallbackError; }
+      if (!fallback) throw this.modelRouter.allowMock === false ? unavailableModel(err) : err;
+      console.error(`[planner] role "${this.role}" primary provider failed; retrying configured fallback`);
+      let plan;
+      try { plan = await this._planWith(fallback, context, objective); }
+      catch (fallbackError) { throw this.modelRouter.allowMock === false ? unavailableModel(fallbackError) : fallbackError; }
       this.lastProviderId = fallback.id;
       return plan;
     }
@@ -92,4 +96,12 @@ export class Planner {
 
     return provider.plan({ ...context, personalContext: filteredPersonalContext }, objective);
   }
+}
+
+function unavailableModel(cause) {
+  const error = new Error('Planner unavailable: configured model failed; check its endpoint and credentials, then retry');
+  error.code = 'MODEL_UNAVAILABLE';
+  error.status = 503;
+  error.cause = cause;
+  return error;
 }

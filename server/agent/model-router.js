@@ -27,9 +27,10 @@ import { OpenAICompatibleEmbeddingProvider } from './embeddings/openai-compatibl
  * at "local-small") is constructed once.
  */
 export class ModelRouter {
-  constructor(config = {}, { createProvider = defaultCreateProvider } = {}) {
+  constructor(config = {}, { createProvider = defaultCreateProvider, allowMock = true } = {}) {
     this.config = normalizeConfig(config);
     this.createProvider = createProvider;
+    this.allowMock = allowMock;
     this._cache = new Map();
   }
 
@@ -52,6 +53,7 @@ export class ModelRouter {
     const primaryName = this.config.roles[role] ?? this.config.roles.default;
     const fallbackName = this.config.fallback;
     if (!fallbackName || fallbackName === primaryName) return null;
+    if (!this.allowMock && isMock(this.config.providers[fallbackName])) return null;
     return this._instantiate(fallbackName, `${role}:fallback`);
   }
 
@@ -65,11 +67,19 @@ export class ModelRouter {
     if (!providerConfig) {
       throw new Error(`ModelRouter: role "${role}" references unknown provider "${providerName}"`);
     }
+    if (!this.allowMock && isMock(providerConfig)) {
+      const error = new Error('Planner unavailable: configure a local or remote model for personal mode, then restart U2OS');
+      error.code = 'MODEL_UNAVAILABLE';
+      error.status = 503;
+      throw error;
+    }
     const provider = this.createProvider(providerConfig);
     this._cache.set(providerName, provider);
     return provider;
   }
 }
+
+function isMock(config) { return config?.type === 'mock' || config?.type === 'mock-embedding'; }
 
 function defaultCreateProvider(providerConfig) {
   const factory = PROVIDER_FACTORIES[providerConfig.type];
