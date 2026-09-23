@@ -139,7 +139,8 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
     }
   }
 
-  const ownerEntityId = runSeed({ eventBus });
+  runSeed({ eventBus });
+  const ownerEntityId = auth.ensureOwnerEntityLink()?.id || null;
 
   // Phase 3: connectors.yaml is written with all-mock defaults on first run
   // (same idempotent pattern as policies-loader.js), then sync-scheduler
@@ -175,7 +176,7 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
 
   const router = new Router({ auth, publicOrigin });
   const startTime = Date.now();
-  registerAuthRoutes(router, { auth });
+  registerAuthRoutes(router, { auth, agent });
   registerModelRoutes(router);
   registerHealthRoutes(router, { dataDir, dbPath, startTime });
   registerAgentRoutes(router, { agent });

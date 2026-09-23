@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { promisify } from 'node:util';
+import { newId } from '../db/ids.js';
 
 const scrypt = promisify(crypto.scrypt);
 const COOKIE = 'u2os_session';
@@ -22,9 +23,50 @@ export class AuthService {
     const params = { N: 16384, r: 8, p: 1, keylen: 64 };
     const hash = await derive(passphrase, salt, params);
     const id = 'owner';
-    this.db.prepare('INSERT INTO owners (id, passphrase_hash, salt, scrypt_params, created_at) VALUES (?,?,?,?,?)')
-      .run(id, hash.toString('base64'), salt.toString('base64'), JSON.stringify(params), new Date().toISOString());
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      if (this.hasOwner()) throw httpError(409, 'Owner setup is already complete');
+      const entityId = this.createOwnerEntity();
+      this.db.prepare('INSERT INTO owners (id, entity_id, passphrase_hash, salt, scrypt_params, created_at) VALUES (?,?,?,?,?,?)')
+        .run(id, entityId, hash.toString('base64'), salt.toString('base64'), JSON.stringify(params), new Date().toISOString());
+      this.db.exec('COMMIT');
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
     return id;
+  }
+
+  createOwnerEntity() {
+    const id = newId('ent');
+    const now = new Date().toISOString();
+    this.db.prepare("INSERT INTO entities (id, type, name, attributes, status, created_at, updated_at) VALUES (?, 'Person', 'Owner', '{}', 'active', ?, ?)").run(id, now, now);
+    return id;
+  }
+
+  ownerEntity() {
+    const row = this.db.prepare("SELECT e.* FROM owners o JOIN entities e ON e.id = o.entity_id WHERE o.id = 'owner' AND e.type = 'Person' AND COALESCE(e.status, 'active') != 'deleted'").get();
+    return row ? { id: row.id, name: row.name } : null;
+  }
+
+  ensureOwnerEntityLink() {
+    if (!this.hasOwner()) return null;
+    if (this.ownerEntity()) return this.ownerEntity();
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      if (!this.ownerEntity()) {
+        const id = this.createOwnerEntity();
+        this.db.prepare("UPDATE owners SET entity_id = ? WHERE id = 'owner'").run(id);
+      }
+      this.db.exec('COMMIT');
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+    return this.ownerEntity();
+  }
+
+  linkOwnerEntity(entityId) {
+    if (typeof entityId !== 'string' || !this.db.prepare("SELECT id FROM entities WHERE id = ? AND type = 'Person' AND COALESCE(status, 'active') != 'deleted'").get(entityId)) {
+      throw httpError(400, 'Select an existing active Person entity');
+    }
+    if (!this.hasOwner()) throw httpError(409, 'Owner setup is required');
+    this.db.prepare("UPDATE owners SET entity_id = ? WHERE id = 'owner'").run(entityId);
+    return this.ownerEntity();
   }
 
   async login(passphrase) {
