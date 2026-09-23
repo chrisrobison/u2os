@@ -66,6 +66,8 @@ Retrieval combines semantic similarity with exact-word overlap, recency, confide
 
 Embedding providers identify their authoritative destination just like planning providers. Candidate text is evaluated by the data-processing policy before embedding: restricted private/sensitive candidates are not sent to a remote endpoint, the omission is audited as `agent.context_restricted`, and those candidates continue through deterministic ranking with a semantic contribution of zero. Local embedding providers may receive them when policy allows.
 
+For future multi-step planning, `Planner` also filters `context.observations` independently for each resolved provider. The real-provider payload places allowed, bounded tool results under `tool_observations` (untrusted data), never in the trusted system instruction or owner objective. Account-backed results default to `private`; a configured remote model therefore receives no such content under the default policy unless the owner changes that policy. Restricted observation metadata is audited without result text. This boundary is implemented, but the current one-pass agent does not yet call the planner again with tool observations.
+
 ## Known limitations
 
 - The browser UI still exposes only the single-provider form; multi-provider configuration currently uses the HTTP API or config file.
