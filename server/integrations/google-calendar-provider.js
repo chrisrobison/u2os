@@ -10,9 +10,16 @@ export const id = 'google-calendar';
 const API_BASE = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
 const ID_PREFIX = 'gcal_';
 
+// Hardcodes the legacy 'google' vault key rather than resolving a specific
+// connection instance -- full multi-instance-aware provider routing is
+// issue #163 PR 4's job, not this one's. This keeps working unchanged for
+// the single pre-migration `google` account any given installation has,
+// exactly as before PR 3's google-oauth.js vaultKey change.
+const LEGACY_VAULT_KEY = 'google';
+
 /** Cheap synchronous local-state check -- no network call. */
 export function isConnected(dataDir) {
-  return hasTokens('calendar', dataDir);
+  return hasTokens(LEGACY_VAULT_KEY, 'calendar', dataDir);
 }
 
 function toLocalId(googleEventId) {
@@ -65,7 +72,7 @@ function getRowById(localId) {
 }
 
 async function authHeaders(fetchImpl, dataDir) {
-  const token = await getValidAccessToken('calendar', { dataDir, fetchImpl });
+  const token = await getValidAccessToken(LEGACY_VAULT_KEY, 'calendar', { dataDir, fetchImpl });
   return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 }
 

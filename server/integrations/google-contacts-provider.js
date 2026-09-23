@@ -10,8 +10,15 @@ export const id = 'google-contacts';
 const API_URL = 'https://people.googleapis.com/v1/people/me/connections?personFields=names,emailAddresses,phoneNumbers';
 const ID_PREFIX = 'gc_';
 
+// Hardcodes the legacy 'google' vault key rather than resolving a specific
+// connection instance -- full multi-instance-aware provider routing is
+// issue #163 PR 4's job, not this one's. This keeps working unchanged for
+// the single pre-migration `google` account any given installation has,
+// exactly as before PR 3's google-oauth.js vaultKey change.
+const LEGACY_VAULT_KEY = 'google';
+
 export function isConnected(dataDir) {
-  return hasTokens('contacts', dataDir);
+  return hasTokens(LEGACY_VAULT_KEY, 'contacts', dataDir);
 }
 
 function sanitizeResourceName(resourceName) {
@@ -50,7 +57,7 @@ function upsertFact(entityId, key, value) {
 }
 
 export async function searchContacts({ query } = {}, { fetchImpl = globalThis.fetch, dataDir } = {}) {
-  const token = await getValidAccessToken('contacts', { dataDir, fetchImpl });
+  const token = await getValidAccessToken(LEGACY_VAULT_KEY, 'contacts', { dataDir, fetchImpl });
   const res = await fetchImpl(API_URL, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) throw new Error(`google-contacts: searchContacts failed (status ${res.status})`);
   const json = await res.json();

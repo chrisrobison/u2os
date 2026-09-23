@@ -1,7 +1,13 @@
 // Generic Google OAuth2 client: auth URL construction, code exchange, token
-// refresh, and a small per-service access-token cache backed by
-// google.enc.json via server/security/vault.js. Per docs/connectors.md's
-// "OAuth2 flow" section.
+// refresh, and a small per-service access-token cache backed by a connection
+// instance's `<vaultKey>.enc.json` via server/security/vault.js. Per
+// docs/connectors.md's "OAuth2 flow" section.
+//
+// Instance-aware (issue #163 PR 3 of 5): every token-storage function below
+// takes an explicit `vaultKey` identifying which `google` connection
+// instance the tokens belong to, instead of hardcoding the legacy bare
+// 'google' vault file -- see server/integrations/connection-instances.js for
+// the `<connectorId>__<instanceId>` vault key convention.
 //
 // Every network-hitting function accepts an injectable `fetchImpl` (default
 // globalThis.fetch) so tests can verify request construction with a fake
@@ -80,12 +86,19 @@ export async function refreshAccessToken({ clientId, clientSecret, refreshToken 
 
 /**
  * Stores { access_token, refresh_token, expiry (absolute ms timestamp) }
- * under google.enc.json's tokens.<service>, preserving the previously stored
- * refresh_token if this exchange/refresh didn't return a new one (Google
- * only returns refresh_token on first consent with prompt=consent).
+ * under `<vaultKey>.enc.json`'s tokens.<service>, preserving the previously
+ * stored refresh_token if this exchange/refresh didn't return a new one
+ * (Google only returns refresh_token on first consent with prompt=consent).
+ *
+ * `vaultKey` is the connection instance's vault key (issue #163's
+ * `<connectorId>__<instanceId>` convention, e.g. `google__conn_abc123` --
+ * see server/integrations/connection-instances.js), NOT a service name.
+ * Every call site must pass it explicitly -- there is deliberately no
+ * default, so a caller can never silently write/read the wrong account's
+ * tokens by forgetting to specify one.
  */
-export function storeTokens(service, { access_token, refresh_token, expires_in }, dataDir) {
-  const existing = readEncryptedFile('google', dataDir) || {};
+export function storeTokens(vaultKey, service, { access_token, refresh_token, expires_in }, dataDir) {
+  const existing = readEncryptedFile(vaultKey, dataDir) || {};
   const existingTokens = existing.tokens || {};
   const previous = existingTokens[service] || {};
   const expiry = Date.now() + (expires_in ?? 0) * 1000;
@@ -100,32 +113,34 @@ export function storeTokens(service, { access_token, refresh_token, expires_in }
       },
     },
   };
-  writeEncryptedFile('google', next, dataDir);
+  writeEncryptedFile(vaultKey, next, dataDir);
   return next.tokens[service];
 }
 
-export function clearTokens(service, dataDir) {
-  const existing = readEncryptedFile('google', dataDir);
+export function clearTokens(vaultKey, service, dataDir) {
+  const existing = readEncryptedFile(vaultKey, dataDir);
   if (!existing || !existing.tokens || !existing.tokens[service]) return;
   const tokens = { ...existing.tokens };
   delete tokens[service];
-  writeEncryptedFile('google', { ...existing, tokens }, dataDir);
+  writeEncryptedFile(vaultKey, { ...existing, tokens }, dataDir);
 }
 
-export function hasTokens(service, dataDir) {
-  const existing = readEncryptedFile('google', dataDir);
+export function hasTokens(vaultKey, service, dataDir) {
+  const existing = readEncryptedFile(vaultKey, dataDir);
   return !!(existing && existing.tokens && existing.tokens[service] && existing.tokens[service].refresh_token);
 }
 
 /**
  * Returns a usable bearer access token for `service` ('calendar' | 'gmail' |
- * 'contacts'), refreshing via the stored refresh_token if the cached access
- * token is within 60s of expiry (or already expired), and persisting the
- * refreshed access token back. Throws a clear "not connected" error (no
- * secret values) if this service has never been connected.
+ * 'contacts') under the connection instance identified by `vaultKey`,
+ * refreshing via the stored refresh_token if the cached access token is
+ * within 60s of expiry (or already expired), and persisting the refreshed
+ * access token back to that same vaultKey. Throws a clear "not connected"
+ * error (no secret values) if this service has never been connected under
+ * this vaultKey.
  */
-export async function getValidAccessToken(service, { dataDir, fetchImpl = globalThis.fetch } = {}) {
-  const stored = readEncryptedFile('google', dataDir);
+export async function getValidAccessToken(vaultKey, service, { dataDir, fetchImpl = globalThis.fetch } = {}) {
+  const stored = readEncryptedFile(vaultKey, dataDir);
   const token = stored?.tokens?.[service];
   if (!token || !token.refresh_token) {
     throw new Error(`google-oauth: ${service} is not connected`);
@@ -141,6 +156,6 @@ export async function getValidAccessToken(service, { dataDir, fetchImpl = global
     { clientId: stored.clientId, clientSecret: stored.clientSecret, refreshToken: token.refresh_token },
     fetchImpl
   );
-  const next = storeTokens(service, { ...refreshed, refresh_token: token.refresh_token }, dataDir);
+  const next = storeTokens(vaultKey, service, { ...refreshed, refresh_token: token.refresh_token }, dataDir);
   return next.access_token;
 }
