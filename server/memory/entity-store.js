@@ -58,6 +58,7 @@ export function getEntityDeletionPreview(id) {
 }
 
 export function deleteEntity(id, previewToken) {
+  assertNotOwnerEntity(id);
   const preview = getEntityDeletionPreview(id);
   if (!preview) return null;
   if (!previewToken || previewToken !== preview.token) {
@@ -76,6 +77,7 @@ export function updateEntity(id, patch = {}) {
   const attributes =
     patch.attributes !== undefined ? { ...existing.attributes, ...patch.attributes } : existing.attributes;
   const status = patch.status !== undefined ? patch.status : existing.status;
+  if (status === 'deleted') assertNotOwnerEntity(id);
   const now = new Date().toISOString();
   db.prepare('UPDATE entities SET name = ?, attributes = ?, status = ?, updated_at = ? WHERE id = ?').run(
     name,
@@ -85,6 +87,14 @@ export function updateEntity(id, patch = {}) {
     id
   );
   return getEntity(id);
+}
+
+function assertNotOwnerEntity(id) {
+  if (getDb().prepare('SELECT id FROM owners WHERE entity_id = ?').get(id)) {
+    const error = new Error('Relink the owner before deleting this entity');
+    error.code = 'OWNER_ENTITY_PROTECTED';
+    throw error;
+  }
 }
 
 function rowToEntity(row) {

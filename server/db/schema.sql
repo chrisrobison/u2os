@@ -237,6 +237,7 @@ CREATE INDEX IF NOT EXISTS idx_action_attempts_queue
 
 CREATE TABLE IF NOT EXISTS owners (
   id TEXT PRIMARY KEY,
+  entity_id TEXT REFERENCES entities(id),
   passphrase_hash TEXT NOT NULL,
   salt TEXT NOT NULL,
   scrypt_params TEXT NOT NULL,

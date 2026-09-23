@@ -49,6 +49,11 @@ export class Agent {
     this.evaluatorRegistry = evaluatorRegistry || registerBuiltinEvaluators(new EvaluatorRegistry());
   }
 
+  setOwnerEntityId(id) {
+    this.ownerEntityId = id;
+    this.contextAssembler.ownerEntityId = id;
+  }
+
   /**
    * Composes a dashboard schema from real calendar/tasks/memory data for
    * the requested context ('morning' | 'before-meeting' | 'project') --

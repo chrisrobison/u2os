@@ -49,7 +49,7 @@ export function registerMemoryRoutes(router, { eventBus } = {}) {
       eventBus?.publish({ type: 'memory.entity_deleted', source: 'user', actor: { type: 'user', id: req.owner.id }, subject: { type: 'entity', id: result.entity.id }, data: { type: result.entity.type, impactCounts: result.preview.counts }, metadata: { provenance: 'user:memory-management' } });
       sendJson(res, 200, { deleted: true, id: result.entity.id });
     } catch (error) {
-      if (error.code === 'STALE_PREVIEW') return sendJson(res, 409, { error: error.message });
+      if (error.code === 'STALE_PREVIEW' || error.code === 'OWNER_ENTITY_PROTECTED') return sendJson(res, 409, { error: error.message });
       throw error;
     }
   });
