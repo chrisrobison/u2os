@@ -145,3 +145,14 @@ test('Planner with a plain modelProvider (no router) behaves exactly as before -
   assert.equal(plan.reasoning_summary, 'plain: hi');
   assert.equal(planner.lastProviderId, 'plain');
 });
+
+test('personal router rejects mock planner and never retries a failed real planner through a mock fallback', async () => {
+  const mockOnly = new ModelRouter({ provider: 'mock' }, { allowMock: false });
+  assert.throws(() => mockOnly.resolve('planner'), { code: 'MODEL_UNAVAILABLE' });
+  const realWithMockFallback = new ModelRouter({
+    providers: { real: { type: 'openai-compatible', baseUrl: 'http://127.0.0.1:1234', model: 'fixture' }, fixture: { type: 'mock' } },
+    roles: { planner: 'real' }, fallback: 'fixture',
+  }, { allowMock: false, createProvider: (config) => ({ id: config.type, plan: async () => { throw new Error('real provider unavailable'); } }) });
+  assert.equal(realWithMockFallback.resolveFallback('planner'), null);
+  await assert.rejects(new Planner({ modelRouter: realWithMockFallback }).plan({ toolRegistry: registry }, 'test'), { code: 'MODEL_UNAVAILABLE', status: 503 });
+});

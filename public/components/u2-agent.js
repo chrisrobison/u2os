@@ -1,4 +1,4 @@
-import { sendAgentMessage, sendVoiceMessage } from '../services/api.js';
+import { getModelStatus, sendAgentMessage, sendVoiceMessage } from '../services/api.js';
 import { AudioPipeline } from '../services/audio.js';
 import { VoiceprintService } from '../services/voiceprint.js';
 import './u2-approval.js';
@@ -40,6 +40,27 @@ export class U2Agent extends HTMLElement {
     if (this._built) return;
     this._built = true;
     this._render();
+    this._loadPlannerStatus();
+  }
+
+  async _loadPlannerStatus() {
+    try {
+      const model = await getModelStatus();
+      if (model.plannerStatus === 'configuration-required') {
+        this._plannerUnavailable = true;
+        this._notice.textContent = 'Planner unavailable. Configure a local or remote model via /api/model or config/config.json, then restart U2OS.';
+        this._notice.hidden = false;
+        this._input.disabled = true;
+        this._sendBtn.disabled = true;
+        this._micBtn.disabled = true;
+      } else if (model.plannerStatus === 'demo') {
+        this._notice.textContent = 'Demo planner: responses and actions use deterministic fixtures, not personal reasoning.';
+        this._notice.hidden = false;
+      }
+    } catch {
+      this._notice.textContent = 'Planner status unavailable; check the server connection before sending a request.';
+      this._notice.hidden = false;
+    }
   }
 
   // Trusted workflow entry points can use the same composer lifecycle as a
@@ -60,6 +81,7 @@ export class U2Agent extends HTMLElement {
           <u2-agent-status></u2-agent-status>
         </div>
         <div class="agent-panel__transcript"></div>
+        <p class="agent-panel__notice" hidden></p>
         <form class="agent-panel__composer">
           <textarea class="agent-panel__input" rows="1" placeholder="Ask U2OS..."></textarea>
           <button type="button" class="icon-btn agent-panel__mic" data-action="mic-toggle" title="Voice input">&#127908;</button>
@@ -69,6 +91,7 @@ export class U2Agent extends HTMLElement {
     `;
 
     this._transcript = this.querySelector('.agent-panel__transcript');
+    this._notice = this.querySelector('.agent-panel__notice');
     this._statusEl = this.querySelector('u2-agent-status');
     this._input = this.querySelector('.agent-panel__input');
     this._sendBtn = this.querySelector('button[type="submit"]');
@@ -142,9 +165,9 @@ export class U2Agent extends HTMLElement {
       this._appendBubble('system', `Something went wrong: ${err.message}`);
       this._setStatus('idle');
     } finally {
-      this._sendBtn.disabled = false;
-      this._input.disabled = false;
-      this._input.focus();
+      this._sendBtn.disabled = Boolean(this._plannerUnavailable);
+      this._input.disabled = Boolean(this._plannerUnavailable);
+      if (!this._plannerUnavailable) this._input.focus();
     }
   }
 

@@ -1,6 +1,7 @@
 import { sendJson } from '../router.js';
 import { loadModelConfig, saveModelConfig, saveMultiProviderConfig } from '../../agent/provider-config.js';
 import { readEncryptedFile } from '../../security/vault.js';
+import { readInstallationMode } from '../../seed/installation-mode.js';
 
 const PROVIDERS_REQUIRING_MODEL = ['openai-compatible', 'anthropic'];
 
@@ -8,7 +9,12 @@ export function registerModelRoutes(router) {
   router.get('/api/model', async (_req, res) => {
     const config = loadModelConfig();
     const apiKeyConfigured = config.provider && config.provider !== 'mock' ? Boolean(readEncryptedFile(`model-${config.provider}`)?.apiKey) : false;
-    sendJson(res, 200, { ...redactSecrets(config), apiKeyConfigured });
+    const demo = readInstallationMode() === 'demo';
+    const plannerName = config.roles?.planner || config.roles?.default || config.fallback || (!config.roles && Object.keys(config.providers || {})[0]);
+    const planner = config.providers ? config.providers[plannerName]?.type : config.provider;
+    const mock = planner === 'mock' || planner === 'mock-embedding';
+    const plannerStatus = !planner || planner === 'embedding-openai-compatible' || mock && !demo ? 'configuration-required' : mock ? 'demo' : 'configured';
+    sendJson(res, 200, { ...redactSecrets(config), apiKeyConfigured, plannerStatus });
   });
   router.post('/api/model', async (req, res) => {
     if (req.body?.providers || req.body?.roles) {
@@ -21,6 +27,9 @@ export function registerModelRoutes(router) {
       }
     }
     const { provider, baseUrl, model, timeoutMs, apiKey } = req.body || {};
+    if (provider === 'mock' && readInstallationMode() !== 'demo') {
+      return sendJson(res, 400, { error: 'Mock models are available only in an isolated demo home; configure a local or remote model' });
+    }
     if (!['mock', ...PROVIDERS_REQUIRING_MODEL].includes(provider)) {
       return sendJson(res, 400, { error: `provider must be one of: mock, ${PROVIDERS_REQUIRING_MODEL.join(', ')}` });
     }
@@ -61,6 +70,7 @@ function validateMultiProvider(body) {
   for (const [name, raw] of Object.entries(body.providers)) {
     if (!/^[a-zA-Z0-9_-]{1,64}$/.test(name)) throw new Error(`Invalid provider name: ${name}`);
     if (!raw || !allowedTypes.has(raw.type)) throw new Error(`Invalid provider type for ${name}`);
+    if (raw.type === 'mock' && readInstallationMode() !== 'demo') throw new Error('Mock models are available only in an isolated demo home');
     if (raw.type !== 'mock' && !raw.model) throw new Error(`model is required for provider ${name}`);
     if (['openai-compatible', 'embedding-openai-compatible'].includes(raw.type) && !raw.baseUrl) throw new Error(`baseUrl is required for provider ${name}`);
     if (raw.baseUrl) {
@@ -77,6 +87,7 @@ function validateMultiProvider(body) {
     roles[role] = providerName;
   }
   if (!roles.planner) throw new Error('roles.planner is required');
+  if (providers[roles.planner].type === 'embedding-openai-compatible') throw new Error('roles.planner must reference a planning model');
   if (body.fallback && !providers[body.fallback]) throw new Error('fallback references an unknown provider');
   return { config: { providers, roles, ...(body.fallback ? { fallback: body.fallback } : {}) }, secrets };
 }

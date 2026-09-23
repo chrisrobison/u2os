@@ -37,6 +37,8 @@ test('demo mode is explicit, persistent, and cannot take over a personal home', 
     assert.equal(setup.status, 201);
     const linkedId = handle.auth.ownerEntity().id;
     assert.equal(handle.agent.ownerEntityId, linkedId);
+    const demoStatus = await fetch(`http://127.0.0.1:${handle.port}/api/model`, { headers: { cookie: setup.headers.get('set-cookie').split(';')[0] } });
+    assert.equal((await demoStatus.json()).plannerStatus, 'demo');
     assert.equal(getDb().prepare('SELECT name FROM entities WHERE id = ?').get(linkedId).name, 'Chris');
     await close(handle); handle = await startServer({ port: 0 });
     assert.equal(JSON.parse(fs.readFileSync(installationModePath(dir))).mode, 'demo');
@@ -63,5 +65,33 @@ test('unmarked legacy data is preserved and never converted into demo data', asy
     assert.equal(JSON.parse(fs.readFileSync(installationModePath(dir))).mode, 'personal');
     assert.equal(fs.readFileSync(path.join(dir, 'config', 'legacy.json'), 'utf8'), '{"user":"real"}');
     assert.deepEqual(getDb().prepare('SELECT id, name FROM entities').all().map(({ id, name }) => ({ id, name })), [{ id: real.id, name: 'Actual contact' }]);
+  } finally { if (handle) await close(handle); delete process.env.U2OS_HOME; fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('personal mode exposes planner configuration gap and cannot run the canned planner', async () => {
+  const dir = tempHome(); process.env.U2OS_HOME = dir; let handle;
+  try {
+    handle = await startServer({ port: 0 });
+    const origin = `http://127.0.0.1:${handle.port}`;
+    const setup = await fetch(`${origin}/api/auth/setup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ passphrase: 'test-only owner passphrase' }) });
+    const cookie = setup.headers.get('set-cookie').split(';')[0];
+    const csrf = (await setup.json()).csrfToken;
+    const headers = { cookie, origin, 'x-u2os-csrf': csrf, 'content-type': 'application/json' };
+    assert.equal((await (await fetch(`${origin}/api/model`, { headers })).json()).plannerStatus, 'configuration-required');
+    const plan = await fetch(`${origin}/api/agent/message`, { method: 'POST', headers, body: JSON.stringify({ text: 'Send a reply' }) });
+    assert.equal(plan.status, 503);
+    assert.match((await plan.json()).error, /configure a local or remote model/);
+    assert.equal(getDb().prepare('SELECT COUNT(*) AS count FROM agent_actions').get().count, 0);
+    const rejectedMock = await fetch(`${origin}/api/model`, { method: 'POST', headers, body: JSON.stringify({ provider: 'mock' }) });
+    assert.equal(rejectedMock.status, 400);
+    const rejectedMultiMock = await fetch(`${origin}/api/model`, { method: 'POST', headers, body: JSON.stringify({ providers: { fixture: { type: 'mock' } }, roles: { planner: 'fixture' } }) });
+    assert.equal(rejectedMultiMock.status, 400);
+    const rejectedEmbeddingPlanner = await fetch(`${origin}/api/model`, { method: 'POST', headers, body: JSON.stringify({ providers: { embed: { type: 'embedding-openai-compatible', baseUrl: 'http://127.0.0.1:1234', model: 'fixture' } }, roles: { planner: 'embed' } }) });
+    assert.equal(rejectedEmbeddingPlanner.status, 400);
+    const configured = await fetch(`${origin}/api/model`, { method: 'POST', headers, body: JSON.stringify({ provider: 'openai-compatible', baseUrl: 'http://127.0.0.1:1234', model: 'fixture' }) });
+    assert.equal(configured.status, 200);
+    await close(handle); handle = await startServer({ port: 0 });
+    const session = handle.auth.createSession('owner');
+    assert.equal((await (await fetch(`http://127.0.0.1:${handle.port}/api/model`, { headers: { cookie: `u2os_session=${session.token}` } })).json()).plannerStatus, 'configured');
   } finally { if (handle) await close(handle); delete process.env.U2OS_HOME; fs.rmSync(dir, { recursive: true, force: true }); }
 });

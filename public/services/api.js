@@ -53,6 +53,10 @@ export function getHealth() {
   return request('/api/health');
 }
 
+export function getModelStatus() {
+  return request('/api/model');
+}
+
 export function saveConnectorConfig(endpoint, values) {
   return request(endpoint, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(values) });
 }
