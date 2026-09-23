@@ -35,7 +35,7 @@ function renderProviderOptions(domain) {
       const label = isMock ? 'Mock' : manifest?.name || id;
       const suffix = isStub ? ' (coming soon)' : '';
       const selected = id === domain.active ? ' selected' : '';
-      const disabled = isStub ? ' disabled' : '';
+      const disabled = isStub || (isMock && domain.mode === 'personal') ? ' disabled' : '';
       return `<option value="${escapeHtml(id)}"${selected}${disabled}>${escapeHtml(label + suffix)}</option>`;
     })
     .join('');
@@ -46,6 +46,7 @@ function renderDomainCard(domain, ctx) {
   const activeLabel = providerLabel(domain, domain.active);
   const dotClass = domain.connected ? 'is-connected' : 'is-disconnected';
   const accountLabel = domain.activeInstanceId ? ctx.instanceLabels[domain.activeInstanceId] : null;
+  const statusLabel = domain.connected ? '' : domain.active === 'mock' && domain.mode === 'personal' ? ' · No real account selected' : ' · Disconnected';
 
   const metaLines = [];
   if (domain.lastSyncAt) {
@@ -63,7 +64,7 @@ function renderDomainCard(domain, ctx) {
     <u2-card title="${escapeHtml(label)}">
       <div class="connector-status">
         <span class="status-dot ${dotClass}"></span>
-        <span>${escapeHtml(activeLabel)}${accountLabel ? ` · ${escapeHtml(accountLabel)}` : ''}</span>
+        <span>${escapeHtml(activeLabel)}${accountLabel ? ` · ${escapeHtml(accountLabel)}` : ''}${escapeHtml(statusLabel)}</span>
       </div>
       ${metaLines.join('')}
       <div class="connector-controls">

@@ -22,6 +22,7 @@ import * as triggerEngine from '../server/triggers/trigger-engine.js';
 function tempHome(prefix) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   process.env.U2OS_HOME = dir;
+  ensureInstallationMode('demo', dir);
   return dir;
 }
 

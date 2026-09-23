@@ -176,10 +176,11 @@ test.describe.serial('memory candidate accept/reject flow (#17)', () => {
     factRow = page.locator('.fact-row--current', { hasText: 'Preferred meeting time' });
     await expect(factRow).toContainText('Prefers morning meetings');
     await expect(factRow).toContainText('correction:');
+    const correctedId = await factRow.getAttribute('data-fact-id');
 
     page.once('dialog', (dialog) => dialog.accept());
     await factRow.getByRole('button', { name: 'Delete', exact: true }).click();
-    await expect(page.locator('.fact-row--deleted', { hasText: 'Preferred meeting time' })).toContainText('Prefers morning meetings');
+    await expect(page.locator(`.fact-row--deleted[data-fact-id="${correctedId}"]`)).toContainText('Prefers morning meetings');
     await expect(page.locator('.fact-row--current', { hasText: 'Preferred meeting time' })).toHaveCount(0);
     expect(chrisId).toBeTruthy();
   });

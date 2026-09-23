@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { ensureInstallationMode } from '../server/seed/installation-mode.js';
 import { getDb, closeAllForTests } from '../server/db/connection.js';
 import { EventBus } from '../server/events/event-bus.js';
 import { createCapabilityRegistry } from '../server/devices/register-capabilities.js';
@@ -21,6 +22,7 @@ import { invokeCapability } from '../server/devices/capabilities.js';
 function tempHome() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-service-unification-'));
   process.env.U2OS_HOME = dir;
+  ensureInstallationMode('demo', dir);
   return dir;
 }
 function cleanup(dir) {

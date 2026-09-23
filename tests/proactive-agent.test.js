@@ -11,6 +11,7 @@ import { createToolRegistry } from '../server/tools/register-all.js';
 import { MockModelProvider } from '../server/agent/mock-model-provider.js';
 import { Agent } from '../server/agent/agent.js';
 import { runSeed } from '../server/seed/seed.js';
+import { ensureInstallationMode } from '../server/seed/installation-mode.js';
 import { createEntity, deleteEntity, getEntityDeletionPreview } from '../server/memory/entity-store.js';
 import * as tasksProvider from '../server/integrations/mock-tasks-provider.js';
 import * as calendarProvider from '../server/integrations/mock-calendar-provider.js';
@@ -20,6 +21,7 @@ import { explainRecommendation } from '../server/agent/explain-recommendation.js
 function tempHome() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-proactive-test-'));
   process.env.U2OS_HOME = dir;
+  ensureInstallationMode('demo', dir);
   return dir;
 }
 

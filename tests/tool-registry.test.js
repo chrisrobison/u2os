@@ -8,10 +8,12 @@ import { CalendarListTool, CalendarRescheduleTool } from '../server/tools/calend
 import { EventBus } from '../server/events/event-bus.js';
 import { getDb } from '../server/db/connection.js';
 import * as calendarProvider from '../server/integrations/mock-calendar-provider.js';
+import { ensureInstallationMode } from '../server/seed/installation-mode.js';
 
 function tempHome() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-test-'));
   process.env.U2OS_HOME = dir;
+  ensureInstallationMode('demo', dir);
   return dir;
 }
 

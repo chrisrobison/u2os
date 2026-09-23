@@ -11,11 +11,13 @@ import { createToolRegistry } from '../server/tools/register-all.js';
 import { MockModelProvider } from '../server/agent/mock-model-provider.js';
 import { Agent } from '../server/agent/agent.js';
 import { runSeed } from '../server/seed/seed.js';
+import { ensureInstallationMode } from '../server/seed/installation-mode.js';
 import { listEvents } from '../server/events/log.js';
 
 function tempHome() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-test-'));
   process.env.U2OS_HOME = dir;
+  ensureInstallationMode('demo', dir);
   return dir;
 }
 
