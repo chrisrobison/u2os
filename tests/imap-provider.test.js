@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { getDb, closeAllForTests } from '../server/db/connection.js';
 import { setActiveProvider } from '../server/integrations/connectors-config.js';
-import { getProvider } from '../server/integrations/provider-registry.js';
+import { getProvider, captureAccountBinding } from '../server/integrations/provider-registry.js';
 import { syncChanges, listEmails, getEmail, validateSettings } from '../server/integrations/imap-provider.js';
 import { EmailSendTool } from '../server/tools/email-tools.js';
 import { createConnectionInstance } from '../server/integrations/connection-instances.js';
@@ -100,9 +100,9 @@ test('IMAP-selected email.send never silently falls back to mock delivery', asyn
   const dir = withHome();
   try {
     setActiveProvider('email', 'imap', dir);
-    await assert.rejects(new EmailSendTool().execute({ to: 'a@example.com', subject: 'x', body: 'x' }), /not connected/);
+    assert.throws(() => captureAccountBinding('email'), /No connected account/);
     createImapInstance(getDb(), { host: 'mail.example.com', port: 993, username: 'owner', password: 'secret' });
-    await assert.rejects(new EmailSendTool().execute({ to: 'a@example.com', subject: 'x', body: 'x' }), /smtp: credentials/);
+    await assert.rejects(new EmailSendTool().execute({ to: 'a@example.com', subject: 'x', body: 'x' }, { accountBinding: captureAccountBinding('email') }), /smtp: credentials/);
     assert.equal(getDb().prepare("SELECT count(*) AS n FROM emails WHERE folder = 'sent'").get().n, 0);
   } finally { cleanup(dir); }
 });

@@ -12,6 +12,8 @@ import {
   stopLeasedAction,
 } from './action-queue-store.js';
 import { classifyActionError } from './action-error-classifier.js';
+import { getProviderForBinding } from '../integrations/provider-registry.js';
+import { accountDomainForAction, assertCalendarTarget, assertSmtpIdentity } from './account-binding.js';
 
 export class ActionQueueWorker {
   constructor({ actionEvaluator, actionExecutor, eventBus, workerId, maxActionAgeMs = 24 * 60 * 60 * 1000, leaseMs = 30_000 }) {
@@ -39,6 +41,12 @@ export class ActionQueueWorker {
     if (action.status === 'rejected' || action.rejected_at) {
       return this._stop(item, 'cancelled', 'Owner approval was rejected or revoked', 'owner_attention_required', action);
     }
+    if (action.status === 'executed') {
+      const attempt = beginActionAttempt({ queueId: item.id, leaseOwner: this.workerId });
+      const completed = completeActionAttempt(attempt.id, { leaseOwner: this.workerId });
+      this._publishQueueStatus(completed);
+      return this._currentOutcome(action.id);
+    }
 
     let tool;
     let evaluation;
@@ -62,6 +70,22 @@ export class ActionQueueWorker {
       updateAgentAction(action.id, { status: 'pending' });
       return this._stop(item, 'failed', 'Current policy requires owner approval', 'owner_attention_required', action);
     }
+    const accountDomain = accountDomainForAction(item.tool);
+    if (accountDomain) {
+      try {
+        getProviderForBinding(accountDomain, action.accountBinding);
+        if (item.tool === 'email.send') assertSmtpIdentity(action.accountBinding);
+        if (item.tool === 'calendar.reschedule') assertCalendarTarget(action.accountBinding, item.arguments.eventId);
+      }
+      catch (error) {
+        updateAgentAction(action.id, { status: 'failed', result: { error: error.message } });
+        return this._stop(item, 'failed', error.message, 'owner_attention_required', action);
+      }
+    }
+    if (JSON.stringify(item.arguments) !== JSON.stringify(action.arguments)) {
+      updateAgentAction(action.id, { status: 'failed', result: { error: 'Queued payload differs from the approved proposal' } });
+      return this._stop(item, 'failed', 'Queued payload differs from the approved proposal', 'owner_attention_required', action);
+    }
 
     const priorAttempts = listActionAttempts(item.id);
     const recoveredUncertainAttempt = priorAttempts.at(-1)?.error === 'lease expired';
@@ -71,11 +95,6 @@ export class ActionQueueWorker {
     }
 
     const attempt = beginActionAttempt({ queueId: item.id, leaseOwner: this.workerId });
-    if (action.status === 'executed') {
-      const completed = completeActionAttempt(attempt.id, { leaseOwner: this.workerId });
-      this._publishQueueStatus(completed);
-      return this._currentOutcome(action.id);
-    }
     const heartbeat = setInterval(() => {
       renewActionLease(item.id, { leaseOwner: this.workerId, leaseMs: this.leaseMs });
     }, Math.max(10, Math.floor(this.leaseMs / 3)));
@@ -86,6 +105,7 @@ export class ActionQueueWorker {
         correlationId: item.correlation_id,
         actor: item.actor || { type: 'agent', id: action.requested_by },
         idempotencyKey: item.idempotency_key,
+        accountBinding: action.accountBinding,
         rethrow: true,
       });
     } catch (error) {

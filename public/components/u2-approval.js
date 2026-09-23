@@ -39,6 +39,7 @@ function normalize(raw) {
     policyRule: raw?.policy_rule ?? null,
     status: raw?.status ?? 'pending',
     result: raw?.result ?? null,
+    accountBinding: raw?.accountBinding ?? null,
   };
 }
 
@@ -105,6 +106,8 @@ export class U2Approval extends HTMLElement {
     this.innerHTML = `
       <div class="u2-approval__title">U2OS wants to ${escapeHtml(humanizeTool(a.tool))}</div>
       ${renderArgs(a.tool, a.arguments)}
+      ${a.accountBinding ? `<div class="u2-approval__policy">Account: ${escapeHtml(a.accountBinding.label)} (${escapeHtml(a.accountBinding.providerId)})</div>` : ''}
+      ${a.accountBinding?.smtpIdentity ? `<div class="u2-approval__policy">SMTP sender: ${escapeHtml(a.accountBinding.smtpIdentity.from)} (global transport)</div>` : ''}
       ${a.reason ? `<div class="u2-approval__reason">${escapeHtml(a.reason)}</div>` : ''}
       ${policyLine ? `<div class="u2-approval__policy">${policyLine}</div>` : ''}
       ${a.id ? `<u2-why action-id="${escapeHtml(a.id)}"></u2-why>` : ''}

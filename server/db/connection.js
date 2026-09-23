@@ -101,9 +101,11 @@ export function getDb() {
   // model plan (e.g. a direct evaluateAndMaybeExecute() call from a
   // non-chat route, or a proactive evaluator, may have none).
   ensureColumn(db, 'agent_actions', 'context_provenance', 'TEXT');
+  ensureColumn(db, 'agent_actions', 'account_binding', 'TEXT');
   // Durable action delivery initially shipped without persisted actor
   // provenance. Add it without rebuilding existing queue tables.
   ensureColumn(db, 'action_queue', 'actor', 'TEXT');
+  ensureColumn(db, 'connection_instances', 'credential_revision', 'INTEGER NOT NULL DEFAULT 0');
   // Durable trigger scheduling: older installations have persisted due
   // times but no execution ownership. Additive leases allow atomic claims
   // and expired-worker recovery without rebuilding or discarding triggers.

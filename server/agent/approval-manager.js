@@ -1,5 +1,7 @@
 import { recordAudit, updateAgentAction, getAgentAction } from '../policy/policy-engine.js';
 import { enqueueAction, getQueuedActionByActionId, requeueAction } from './action-queue-store.js';
+import { getProviderForBinding } from '../integrations/provider-registry.js';
+import { accountDomainForAction, assertCalendarTarget, assertSmtpIdentity } from './account-binding.js';
 
 /**
  * ApprovalManager: owns the pending-approval lifecycle -- create (audit row
@@ -26,7 +28,7 @@ export class ApprovalManager {
    * row; the caller (Agent) decides whether to execute immediately based on
    * `evaluation.blocked`/`evaluation.requiresApproval`.
    */
-  recordDecision({ tool, arguments: args, requestedBy, requestText, model, reasoningSummary, evaluation, correlationId, actor, contextProvenance }) {
+  recordDecision({ tool, arguments: args, requestedBy, requestText, model, reasoningSummary, evaluation, correlationId, actor, contextProvenance, accountBinding }) {
     const auditRow = recordAudit({
       requestedBy,
       requestText,
@@ -41,6 +43,7 @@ export class ApprovalManager {
       status: evaluation.blocked ? 'blocked' : evaluation.requiresApproval ? 'pending' : 'approved',
       correlationId,
       contextProvenance,
+      accountBinding,
     });
 
     if (evaluation.blocked) {
@@ -78,6 +81,24 @@ export class ApprovalManager {
     const tool = this.actionEvaluator.resolve(action.tool);
     const evaluation = this.actionEvaluator.evaluate({ tool, arguments: action.arguments });
     const actor = { type: 'user', id: approvedBy };
+
+    const accountDomain = accountDomainForAction(action.tool);
+    if (accountDomain) {
+      try {
+        getProviderForBinding(accountDomain, action.accountBinding);
+        if (action.tool === 'email.send') assertSmtpIdentity(action.accountBinding);
+        if (action.tool === 'calendar.reschedule') assertCalendarTarget(action.accountBinding, action.arguments.eventId);
+      }
+      catch (error) {
+        updateAgentAction(id, { status: 'blocked', result: { error: error.message } });
+        this.eventBus.publish({
+          type: 'agent.action.failed', source: 'account-binding', actor,
+          subject: { type: 'agent_action', id }, data: { tool: action.tool, reason: error.message },
+          metadata: { correlationId: action.correlation_id, provenance: 'runtime:account-binding' },
+        });
+        return { id, status: 'blocked', tool: action.tool, reason: error.message };
+      }
+    }
 
     if (evaluation.blocked) {
       updateAgentAction(id, { status: 'blocked' });

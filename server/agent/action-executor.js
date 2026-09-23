@@ -13,9 +13,9 @@ export class ActionExecutor {
     this.eventBus = eventBus;
   }
 
-  async execute(actionId, tool, args, { correlationId, actor, idempotencyKey = null, rethrow = false }) {
+  async execute(actionId, tool, args, { correlationId, actor, idempotencyKey = null, accountBinding = null, rethrow = false }) {
     try {
-      const result = await tool.execute(args, { eventBus: this.eventBus, correlationId, actor, idempotencyKey });
+      const result = await tool.execute(args, { eventBus: this.eventBus, correlationId, actor, idempotencyKey, accountBinding });
       updateAgentAction(actionId, { status: 'executed', result });
       this.eventBus.publish({
         type: 'agent.action.completed',

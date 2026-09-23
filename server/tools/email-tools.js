@@ -1,7 +1,7 @@
 import { Tool } from './tool.js';
-import { getProvider } from '../integrations/provider-registry.js';
+import { getProvider, getProviderForBinding } from '../integrations/provider-registry.js';
 import * as mockEmailProvider from '../integrations/mock-email-provider.js';
-import { loadConnectorsConfig } from '../integrations/connectors-config.js';
+import { assertSmtpIdentity } from '../agent/account-binding.js';
 
 export class EmailSearchTool extends Tool {
   get name() { return 'email.search'; }
@@ -93,10 +93,11 @@ export class EmailSendTool extends Tool {
     };
   }
   async execute(args, context) {
-    const provider = getProvider('email');
+    assertSmtpIdentity(context?.accountBinding);
+    const provider = getProviderForBinding('email', context?.accountBinding);
     // A configured real mailbox must never silently turn an approved send
     // into a mock/local-only send when credentials are missing or revoked.
-    if (loadConnectorsConfig().email.active !== 'mock' && provider.id === mockEmailProvider.id) {
+    if (context.accountBinding.providerId !== 'mock' && provider.id === mockEmailProvider.id) {
       throw new Error('email: configured real provider is not connected; no message was sent');
     }
     const email = await provider.sendEmail(args);

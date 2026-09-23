@@ -203,7 +203,7 @@ test('connection-instance CRUD routes (#163 PR 2) never leak a stored secret acr
 });
 
 test(
-  'switching calendar.active to google-calendar (not connected) never bypasses policy -- reschedule still requires approval, identical to the mock path',
+  'switching calendar.active to google-calendar without an account blocks a consequential action',
   async () => {
     const dir = tempHome();
     let handle;
@@ -224,13 +224,13 @@ test(
       assert.equal(result.actions.length, 1);
       const proposed = result.actions[0];
       assert.equal(proposed.tool, 'calendar.reschedule');
-      assert.equal(proposed.status, 'pending', 'must still require approval, exactly like the mock-provider path');
+      assert.equal(proposed.status, 'blocked');
 
       const db = handle.eventBus.db;
       const row = db.prepare('SELECT * FROM agent_actions WHERE id = ?').get(proposed.id);
       assert.ok(row);
-      assert.equal(row.status, 'pending');
-      assert.equal(row.requires_approval, 1);
+      assert.equal(row.status, 'blocked');
+      assert.equal(row.policy_rule, 'account-binding');
       assert.equal(row.tool, 'calendar.reschedule');
     } finally {
       await cleanup(dir, handle);

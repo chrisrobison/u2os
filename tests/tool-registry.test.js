@@ -54,7 +54,7 @@ test('calendar.reschedule tool actually updates calendar_events and emits calend
     const tool = registry.get('calendar.reschedule');
     const result = await tool.execute(
       { eventId: event.id, newStartAt: '2026-09-18T14:00:00.000Z', newEndAt: '2026-09-18T14:30:00.000Z' },
-      { eventBus: bus, correlationId: 'corr_test', actor: { type: 'user', id: 'user' } }
+      { eventBus: bus, correlationId: 'corr_test', actor: { type: 'user', id: 'user' }, accountBinding: { domain: 'calendar', providerId: 'mock', connectorId: null, instanceId: null, label: 'Mock' } }
     );
 
     assert.equal(result.start_at, '2026-09-18T14:00:00.000Z');

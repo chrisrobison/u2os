@@ -1,5 +1,6 @@
 import { Tool } from './tool.js';
-import { getProvider } from '../integrations/provider-registry.js';
+import { getProvider, getProviderForBinding } from '../integrations/provider-registry.js';
+import { assertCalendarTarget } from '../agent/account-binding.js';
 
 export class CalendarListTool extends Tool {
   get name() { return 'calendar.list'; }
@@ -32,7 +33,7 @@ export class CalendarCreateTool extends Tool {
     };
   }
   async execute(args, context) {
-    const provider = getProvider('calendar'); // resolved per-call, so switching providers takes effect without a restart
+    const provider = getProviderForBinding('calendar', context?.accountBinding);
     const event = await provider.createEvent(args);
     context.eventBus.publish({
       type: 'calendar.event_added',
@@ -58,7 +59,8 @@ export class CalendarRescheduleTool extends Tool {
     };
   }
   async execute(args, context) {
-    const provider = getProvider('calendar');
+    assertCalendarTarget(context?.accountBinding, args.eventId);
+    const provider = getProviderForBinding('calendar', context?.accountBinding);
     const change = await provider.rescheduleEvent(args.eventId, {
       newStartAt: args.newStartAt,
       newEndAt: args.newEndAt,

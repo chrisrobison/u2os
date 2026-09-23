@@ -30,10 +30,10 @@ class Tool {
 | `email.search` | email | read | `{ query?, folder? }` | active provider (mock or real Gmail) |
 | `email.read` | email | read | `{ id }` | reads one email via active provider, marks read |
 | `email.draft` | email | draft | `{ to, subject, body, inReplyTo? }` | MOCK/STUB only -- creates a local draft row, no send, no event, regardless of active provider |
-| `email.send` | email | consequential | `{ to, subject, body, inReplyTo?, draftId? }` | active provider (mock or real Gmail) → `email.sent` |
+| `email.send` | email | consequential | `{ to, subject, body, inReplyTo?, draftId? }` | provider/account captured at proposal → `email.sent` |
 | `calendar.list` | calendar | read | `{ from?, to? }` | active provider (mock or real Google Calendar) |
 | `calendar.create` | calendar | consequential | `{ title, startAt, endAt, attendees?, location? }` | active provider → `calendar.event_added` |
-| `calendar.reschedule` | calendar | consequential | `{ eventId, newStartAt, newEndAt }` | active provider → `calendar.event_changed` |
+| `calendar.reschedule` | calendar | consequential | `{ eventId, newStartAt, newEndAt }` | captured account, with event ownership checked → `calendar.event_changed` |
 | `contacts.search` | contacts | read | `{ query }` | active provider (mock or real Google Contacts) |
 | `tasks.list` | tasks | read | `{ status? }` | MOCK/STUB only -- reads the local `tasks` table |
 | `tasks.create` | tasks | consequential | `{ title, dueAt?, relatedEntityId? }` | MOCK/STUB only -- inserts a local row → `task.created` |
