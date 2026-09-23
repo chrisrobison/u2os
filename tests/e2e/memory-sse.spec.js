@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { startDedicatedServer, stopDedicatedServer, createOwner } from './helpers.js';
+import { startDedicatedServer, stopDedicatedServer, createOwner, expireIdleSessions } from './helpers.js';
 import { proposeMemoryCandidate } from '../../server/memory/candidate-store.js';
 
 // Issue #17: real-browser coverage of (a) the memory-candidate accept/reject
@@ -366,13 +366,12 @@ test.describe.serial('SSE live update, reconnect, and recovery (#17)', () => {
 });
 
 // ---------------------------------------------------------------------
-// 6: an idle-expired session stops the retry loop from ever succeeding
-// again, cleanly (401s forever, no uncaught exception) -- own dedicated
-// server with a short sessionIdleSeconds (see file header for why).
+// 6: an idle-expired session stops the retry loop from succeeding again,
+// cleanly (401s forever, no uncaught exception) -- own dedicated server.
 // ---------------------------------------------------------------------
 
 test('an idle-expired session stops SSE retries and returns the owner to login', async ({ browser }) => {
-  const dedicated = await startDedicatedServer({ sessionIdleSeconds: 0.05 });
+  const dedicated = await startDedicatedServer();
   await createOwner(dedicated.baseURL, PASSPHRASE);
   const context = await browser.newContext();
   const page = await context.newPage();
@@ -389,23 +388,19 @@ test('an idle-expired session stops SSE retries and returns the owner to login',
     await page.locator('input[name="passphrase"]').fill(PASSPHRASE);
     await page.locator('form button[type="submit"]').click();
     await expect(page.locator('u2-nav')).toBeVisible();
-
-    // Let the 50ms idle window lapse (mirrors auth.spec.js's own
-    // sessionIdleSeconds: 0.05 pattern) with no further requests from this
-    // page.
-    await page.waitForTimeout(200);
+    await expect(page.locator('[data-connection-state]')).toHaveText('Live');
+    expireIdleSessions(dedicated.handle);
 
     // The already-open SSE connection from page load stays open regardless
     // of server-side session state (attach() only checks auth once, at
     // connect time) -- force it closed so the client's retry loop makes a
     // brand NEW connection attempt, which now hits the expired session.
-    dedicated.handle.server.closeAllConnections();
-
-    const firstUnauthorized = await page.waitForResponse(
+    const firstUnauthorized = page.waitForResponse(
       (res) => res.url().includes('/api/events/stream') && res.status() === 401,
       { timeout: 15000 }
     );
-    expect(firstUnauthorized.status()).toBe(401);
+    dedicated.handle.server.closeAllConnections();
+    expect((await firstUnauthorized).status()).toBe(401);
     await expect(page.locator('.workspace__subtitle')).toHaveText('Your session expired. Log in again to reconnect.');
     await expect(page.locator('button[type="submit"]')).toHaveText('Log in');
     await page.waitForTimeout(1500);
