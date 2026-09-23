@@ -149,6 +149,59 @@ test('successful Google OAuth services activate their corresponding provider', (
   }
 });
 
+test('connection-instance CRUD routes (#163 PR 2) never leak a stored secret across list/create/update/active/delete responses', async () => {
+  const dir = tempHome();
+  let handle;
+  try {
+    handle = await startServer({ port: 0 });
+    const port = handle.server.address().port;
+    const SECRET = 'sekrit-test-value-xyz';
+
+    const createRes = await fetch(`http://127.0.0.1:${port}/api/connectors/imap/instances`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: 'Work IMAP', host: 'imap.example.com', username: 'alice', password: SECRET }),
+    });
+    const createBody = await createRes.text();
+    assert.equal(createRes.status, 201, createBody);
+    assert.doesNotMatch(createBody, new RegExp(SECRET), 'create response must never contain the stored secret');
+    const created = JSON.parse(createBody);
+
+    const listRes = await fetch(`http://127.0.0.1:${port}/api/connectors/imap/instances`);
+    const listBody = await listRes.text();
+    assert.doesNotMatch(listBody, new RegExp(SECRET), 'list response must never contain the stored secret');
+
+    const updateRes = await fetch(`http://127.0.0.1:${port}/api/connectors/imap/instances/${created.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: `${SECRET}-rotated` }),
+    });
+    const updateBody = await updateRes.text();
+    assert.equal(updateRes.status, 200, updateBody);
+    assert.doesNotMatch(updateBody, new RegExp(SECRET), 'update response must never contain the stored secret');
+
+    const activateRes = await fetch(`http://127.0.0.1:${port}/api/connectors/email/active`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ connectorId: 'imap', instanceId: created.id, providerId: 'imap' }),
+    });
+    const activateBody = await activateRes.text();
+    assert.equal(activateRes.status, 200, activateBody);
+    assert.doesNotMatch(activateBody, new RegExp(SECRET), 'active-provider response must never contain the stored secret');
+
+    const deleteRes = await fetch(`http://127.0.0.1:${port}/api/connectors/imap/instances/${created.id}`, { method: 'DELETE' });
+    const deleteBody = await deleteRes.text();
+    assert.equal(deleteRes.status, 200, deleteBody);
+    assert.doesNotMatch(deleteBody, new RegExp(SECRET), 'delete response must never contain the stored secret');
+
+    const overviewRes = await fetch(`http://127.0.0.1:${port}/api/connectors`);
+    const overviewBody = await overviewRes.text();
+    assert.doesNotMatch(overviewBody, new RegExp(SECRET), 'GET /api/connectors must never contain the stored secret');
+  } finally {
+    await cleanup(dir, handle);
+  }
+});
+
 test(
   'switching calendar.active to google-calendar (not connected) never bypasses policy -- reschedule still requires approval, identical to the mock path',
   async () => {
