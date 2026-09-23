@@ -12,6 +12,8 @@ import { enqueueAction } from './action-queue-store.js';
 import { EvaluatorRegistry } from './proactive/evaluator-registry.js';
 import { registerBuiltinEvaluators } from './proactive/builtin-evaluators.js';
 import { proposeMemoryCandidate } from '../memory/candidate-store.js';
+import { captureAccountBinding } from '../integrations/provider-registry.js';
+import { accountDomainForAction, assertCalendarTarget, captureSmtpIdentity } from './account-binding.js';
 
 /**
  * Agent: the orchestrator. It does not itself plan, evaluate policy,
@@ -149,12 +151,26 @@ export class Agent {
   async evaluateAndMaybeExecute({ tool: toolName, arguments: args, requestedBy, requestText, reasoningSummary, correlationId, actor, voice, contextProvenance }) {
     const tool = this.actionEvaluator.resolve(toolName);
     const rawEvaluation = this.actionEvaluator.evaluate({ tool, arguments: args });
+    const accountDomain = accountDomainForAction(toolName);
+    let accountBinding = null;
+    let bindingError = null;
+    if (accountDomain) {
+      try {
+        accountBinding = captureAccountBinding(accountDomain);
+        if (toolName === 'email.send' && accountBinding.providerId === 'imap') accountBinding.smtpIdentity = captureSmtpIdentity();
+        if (toolName === 'calendar.reschedule') assertCalendarTarget(accountBinding, args?.eventId);
+      }
+      catch (err) { bindingError = err.message; }
+    }
     // Additive-only voice gate (server/voice/authorize.js): a no-op unless
     // `voice` is present, and even then only ever tightens `rawEvaluation`,
     // never loosens it. The audit row records the (possibly voice-adjusted)
     // policyRule/requiresApproval, so a voice-forced approval is always
     // inspectable in the audit trail, never silent.
-    const evaluation = applyVoiceAuthorization({ evaluation: rawEvaluation, voice });
+    const voiceEvaluation = applyVoiceAuthorization({ evaluation: rawEvaluation, voice });
+    const evaluation = bindingError && !voiceEvaluation.blocked
+      ? { ...voiceEvaluation, blocked: true, requiresApproval: false, reason: bindingError, rule: 'account-binding' }
+      : voiceEvaluation;
 
     const auditRow = this.approvalManager.recordDecision({
       tool,
@@ -167,13 +183,14 @@ export class Agent {
       correlationId,
       actor,
       contextProvenance,
+      accountBinding,
     });
 
     if (evaluation.blocked) {
-      return { id: auditRow.id, status: 'blocked', tool: toolName, arguments: args, reason: evaluation.reason };
+      return { id: auditRow.id, status: 'blocked', tool: toolName, arguments: args, reason: evaluation.reason, accountBinding };
     }
     if (evaluation.requiresApproval) {
-      return { id: auditRow.id, status: 'pending', tool: toolName, arguments: args, reason: evaluation.reason };
+      return { id: auditRow.id, status: 'pending', tool: toolName, arguments: args, reason: evaluation.reason, accountBinding };
     }
     enqueueAction({
       actionId: auditRow.id,

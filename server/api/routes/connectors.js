@@ -270,7 +270,7 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
       // route above), so the mirror write PR 3 left here as a stopgap is no
       // longer needed and has been removed.
       storeTokens(instance.vault_key, service, tokens);
-      db.prepare('UPDATE connection_instances SET status = ?, updated_at = ? WHERE id = ?').run('connected', new Date().toISOString(), instanceId);
+      db.prepare('UPDATE connection_instances SET status = ?, credential_revision = credential_revision + 1, updated_at = ? WHERE id = ?').run('connected', new Date().toISOString(), instanceId);
       activateGoogleProvider(service, undefined, instanceId);
       reconcileSyncScheduler({ db, eventBus });
       res.writeHead(302, { Location: `/#/connectors?connected=${encodeURIComponent(service)}` });
@@ -307,7 +307,10 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
     const target = GOOGLE_PROVIDER_TARGETS[service];
     const config = loadConnectorsConfig();
     const instance = resolveInstanceForDomain(target.providerId, config[target.domain]?.activeInstanceId);
-    if (instance) clearTokens(instance.vault_key, service);
+    if (instance) {
+      clearTokens(instance.vault_key, service);
+      db.prepare('UPDATE connection_instances SET credential_revision = credential_revision + 1, updated_at = ? WHERE id = ?').run(new Date().toISOString(), instance.id);
+    }
     clearTokens('google', service);
     reconcileSyncScheduler({ db, eventBus });
     sendJson(res, 200, { disconnected: service });
@@ -332,7 +335,8 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
       const mod = getRealProviderModule(GOOGLE_PROVIDER_TARGETS[candidate].providerId);
       return mod?.isConnected?.(instance.vault_key);
     });
-    if (!stillConnected) db.prepare('UPDATE connection_instances SET status = ?, updated_at = ? WHERE id = ?').run('pending', new Date().toISOString(), instanceId);
+    db.prepare('UPDATE connection_instances SET status = ?, credential_revision = credential_revision + 1, updated_at = ? WHERE id = ?')
+      .run(stillConnected ? 'connected' : 'pending', new Date().toISOString(), instanceId);
     const target = GOOGLE_PROVIDER_TARGETS[service];
     const config = loadConnectorsConfig();
     if (config[target.domain]?.activeInstanceId === instanceId) {

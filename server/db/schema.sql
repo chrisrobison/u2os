@@ -189,6 +189,7 @@ CREATE TABLE IF NOT EXISTS agent_actions (
   -- proposed action's plan, after the data-processing privacy filter --
   -- see server/agent/explain.js.
   context_provenance TEXT,
+  account_binding TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -407,6 +408,7 @@ CREATE TABLE IF NOT EXISTS connection_instances (
   metadata TEXT,
   last_error TEXT,
   last_sync_at TEXT,
+  credential_revision INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   deleted_at TEXT

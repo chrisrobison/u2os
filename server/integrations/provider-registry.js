@@ -212,6 +212,39 @@ export function getProvider(domain, { dataDir } = {}) {
   return bindProviderToInstance(activeId, real, instance, dataDir);
 }
 
+/** Capture the runtime-selected identity before a consequential action is
+ * audited. The model never supplies any of these fields. */
+export function captureAccountBinding(domain, { dataDir } = {}) {
+  const config = loadConnectorsConfig(dataDir);
+  const providerId = config[domain]?.active || 'mock';
+  if (providerId === 'mock') return { domain, providerId, connectorId: null, instanceId: null, label: 'Mock' };
+  const connectorId = connectorIdForProviderId(providerId);
+  const instance = resolveInstanceForDomain(providerId, config[domain]?.activeInstanceId, dataDir);
+  if (!connectorId || !isProviderInstanceConnected(providerId, instance, dataDir)) {
+    throw new Error(`No connected account is selected for ${domain}; connect or select an account before proposing this action`);
+  }
+  return { domain, providerId, connectorId, instanceId: instance.id, credentialRevision: instance.credential_revision, label: instance.label };
+}
+
+/** Resolve only the persisted identity. Switching the active provider cannot
+ * redirect an approved or queued action. Deleted/disconnected accounts fail
+ * before any provider call. */
+export function getProviderForBinding(domain, binding, { dataDir } = {}) {
+  if (!binding || binding.domain !== domain) throw new Error(`Account binding is missing for ${domain}; owner review required`);
+  if (binding.providerId === 'mock' && binding.instanceId === null && binding.connectorId === null) return MOCK_PROVIDERS[domain];
+  if (!validProviderIdsFor(domain).includes(binding.providerId) || connectorIdForProviderId(binding.providerId) !== binding.connectorId) {
+    throw new Error(`Account binding is invalid for ${domain}; owner review required`);
+  }
+  const instance = findInstance(getDb(), binding.connectorId, binding.instanceId);
+  if (instance && instance.credential_revision !== binding.credentialRevision) {
+    throw new Error(`Selected account for ${domain} was reconnected or changed; new approval is required`);
+  }
+  if (!isProviderInstanceConnected(binding.providerId, instance, dataDir)) {
+    throw new Error(`Selected account for ${domain} is deleted or disconnected; no action was attempted`);
+  }
+  return bindProviderToInstance(binding.providerId, REAL_PROVIDERS[binding.providerId], instance, dataDir);
+}
+
 /** Returns the real provider module for `domain` ONLY if it's the
  * configured active provider AND currently connected (via its resolved
  * connection instance), else null. Used by sync-scheduler.js, which must

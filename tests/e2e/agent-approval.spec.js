@@ -121,6 +121,7 @@ test.describe.serial('agent chat + inline approval flow (#16)', () => {
     const card = page.locator('.approval-list u2-approval').last();
     await expect(card).toHaveAttribute('data-status', 'pending');
     await expect(card.locator('.u2-approval__title')).toContainText('reschedule a calendar event');
+    await expect(card).toContainText('Account: Mock (mock)');
     await expect(card.locator('[data-action="approve"]')).toBeVisible();
     await expect(card.locator('[data-action="approve"]')).toHaveText('Approve');
     await expect(card.locator('[data-action="reject"]')).toBeVisible();

@@ -422,7 +422,8 @@ export function updateConnectionInstance(db, { row, label, credentials, dataDir 
   }
   const nextLabel = label !== undefined ? label : row.label;
   const now = new Date().toISOString();
-  db.prepare('UPDATE connection_instances SET label = ?, updated_at = ? WHERE id = ?').run(nextLabel, now, row.id);
+  db.prepare('UPDATE connection_instances SET label = ?, credential_revision = credential_revision + ?, updated_at = ? WHERE id = ?')
+    .run(nextLabel, credentials !== undefined ? 1 : 0, now, row.id);
   return toInstanceApiShape(db.prepare('SELECT * FROM connection_instances WHERE id = ?').get(row.id));
 }
 

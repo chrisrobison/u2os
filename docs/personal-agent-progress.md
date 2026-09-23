@@ -4,7 +4,7 @@ Tracking issue: [#172](https://github.com/chrisrobison/u2os/issues/172). This re
 
 | Area | Implemented | Fixture tested | Live validated | Remaining |
 |---|---|---|---|---|
-| Connector instances | Schema, legacy migration, CRUD, OAuth state binding, provider routing, named setup UI (PRs #168–#171; issue #173) | Node and browser flows for separate accounts, migration, and OAuth binding | No | Bind consequential actions to exact account; IMAP/SMTP pairing; account-specific sync health |
+| Connector instances | Schema, legacy migration, CRUD, OAuth state binding, provider routing, named setup UI (PRs #168–#171, #174), consequential email/calendar account binding (issue #175) | Node and browser flows for separate accounts, migration, OAuth binding, and approved Gmail account selection | No | IMAP/SMTP pairing (#176); account-specific sync health |
 | Personal initialization | Demo seeding and mock providers exist | Existing demo suites | No | Clean personal path, stable owner entity, isolated demo mode, honest disconnect states |
 | Agent runs | One-pass plan, policy gate, durable action queue | Node and browser approval/queue suites | No | Persisted multi-step observations, dependencies, continuation, limits, resume |
 | Conversations and search | Structured memory and limited context retrieval | Context/privacy suites | No | Scoped durable turns/references; account-scoped email search |
