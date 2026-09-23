@@ -1,5 +1,6 @@
 import { DataProcessingPolicy } from '../policy/data-processing-policy.js';
 import { filterPersonalContextForDestination } from './context-privacy-filter.js';
+import { filterObservationsForDestination } from './observation-filter.js';
 
 /**
  * Planner: turns an objective plus assembled context into a structured
@@ -45,6 +46,7 @@ export class Planner {
     // when the context carried no personalContext (e.g. a bare unit-test
     // plan() call with no ContextAssembler involved).
     this.lastProvenanceRefs = [];
+    this.lastOmittedObservations = [];
   }
 
   /**
@@ -82,6 +84,8 @@ export class Planner {
       this.dataProcessingPolicy
     );
     this.lastOmittedContext = omitted;
+    const { observations, omitted: omittedObservations } = filterObservationsForDestination(context.observations, destination, this.dataProcessingPolicy);
+    this.lastOmittedObservations = omittedObservations;
     this.lastProvenanceRefs = filteredPersonalContext?.provenanceRefs || [];
 
     if (omitted.length && context.eventBus) {
@@ -94,7 +98,17 @@ export class Planner {
       });
     }
 
-    return provider.plan({ ...context, personalContext: filteredPersonalContext }, objective);
+    if (omittedObservations.length && context.eventBus) {
+      context.eventBus.publish({
+        type: 'agent.observation_restricted',
+        source: 'agent',
+        actor: context.actor,
+        data: { destination, providerId: provider.id, omitted: omittedObservations },
+        metadata: { correlationId: context.correlationId, provenance: 'planner:observation-policy' },
+      });
+    }
+
+    return provider.plan({ ...context, personalContext: filteredPersonalContext, observations }, objective);
   }
 }
 
