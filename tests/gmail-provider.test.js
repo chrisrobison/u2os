@@ -28,7 +28,7 @@ function neverCalledFetch() {
 test('sendEmail rejects a CRLF-injected header in "to" before ever calling fetch', async () => {
   const dir = tempHome();
   try {
-    storeTokens('gmail', { access_token: 'AT', refresh_token: 'RT', expires_in: 3600 }, dir);
+    storeTokens('google', 'gmail', { access_token: 'AT', refresh_token: 'RT', expires_in: 3600 }, dir);
     await assert.rejects(
       () =>
         sendEmail(
@@ -45,7 +45,7 @@ test('sendEmail rejects a CRLF-injected header in "to" before ever calling fetch
 test('sendEmail rejects a CRLF-injected header in "subject" before ever calling fetch', async () => {
   const dir = tempHome();
   try {
-    storeTokens('gmail', { access_token: 'AT', refresh_token: 'RT', expires_in: 3600 }, dir);
+    storeTokens('google', 'gmail', { access_token: 'AT', refresh_token: 'RT', expires_in: 3600 }, dir);
     await assert.rejects(
       () =>
         sendEmail(
@@ -62,7 +62,7 @@ test('sendEmail rejects a CRLF-injected header in "subject" before ever calling 
 test('sendEmail still sends normally when to/subject are clean', async () => {
   const dir = tempHome();
   try {
-    storeTokens('gmail', { access_token: 'AT', refresh_token: 'RT', expires_in: 3600 }, dir);
+    storeTokens('google', 'gmail', { access_token: 'AT', refresh_token: 'RT', expires_in: 3600 }, dir);
     const fetchImpl = async () => ({
       ok: true,
       status: 200,

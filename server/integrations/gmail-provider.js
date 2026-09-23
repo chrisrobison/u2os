@@ -10,8 +10,15 @@ export const id = 'gmail';
 const API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me';
 const ID_PREFIX = 'gmail_';
 
+// Hardcodes the legacy 'google' vault key rather than resolving a specific
+// connection instance -- full multi-instance-aware provider routing is
+// issue #163 PR 4's job, not this one's. This keeps working unchanged for
+// the single pre-migration `google` account any given installation has,
+// exactly as before PR 3's google-oauth.js vaultKey change.
+const LEGACY_VAULT_KEY = 'google';
+
 export function isConnected(dataDir) {
-  return hasTokens('gmail', dataDir);
+  return hasTokens(LEGACY_VAULT_KEY, 'gmail', dataDir);
 }
 
 function toLocalId(messageId) {
@@ -23,7 +30,7 @@ function toGmailId(localId) {
 }
 
 async function authHeaders(fetchImpl, dataDir) {
-  const token = await getValidAccessToken('gmail', { dataDir, fetchImpl });
+  const token = await getValidAccessToken(LEGACY_VAULT_KEY, 'gmail', { dataDir, fetchImpl });
   return { Authorization: `Bearer ${token}` };
 }
 

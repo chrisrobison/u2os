@@ -48,7 +48,12 @@ export function activateGoogleProvider(service, dataDir) {
 // callback -- per docs/connectors.md's OAuth2 flow step 2/3. Never persisted
 // (a restart mid-flow simply invalidates any pending, unfinished connect
 // attempt, which is fine).
-const pendingOauthStates = new Map(); // state -> { service, expiresAt }
+//
+// `instanceId` (issue #163 PR 3 of 5) binds this pending flow to the
+// specific `google` connection instance it was started for -- see the
+// callback route below for why this is a *distinct* protection from the
+// state token's CSRF protection.
+const pendingOauthStates = new Map(); // state -> { service, instanceId, expiresAt }
 
 function pruneExpiredStates() {
   const now = Date.now();
@@ -165,13 +170,24 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
     if (!GOOGLE_SERVICES.includes(service)) {
       return sendJson(res, 400, { error: `service must be one of ${GOOGLE_SERVICES.join(', ')}` });
     }
+    // issue #163 PR 3: every OAuth flow must be bound to a specific `google`
+    // connection instance up front -- required and validated BEFORE any
+    // CSRF state token is minted, so a state token can never exist for a
+    // missing or already-deleted instance.
+    const { instanceId } = req.query;
+    if (!isNonEmptyString(instanceId)) {
+      return sendJson(res, 400, { error: 'instanceId is required' });
+    }
+    if (!findInstance(db, 'google', instanceId)) {
+      return sendJson(res, 404, { error: 'Not Found' });
+    }
     const stored = readEncryptedFile('google');
     if (!stored?.clientId) {
       return sendJson(res, 400, { error: 'Google OAuth client credentials are not configured yet' });
     }
     pruneExpiredStates();
     const state = crypto.randomBytes(24).toString('hex');
-    pendingOauthStates.set(state, { service, expiresAt: Date.now() + OAUTH_STATE_TTL_MS });
+    pendingOauthStates.set(state, { service, instanceId, expiresAt: Date.now() + OAUTH_STATE_TTL_MS });
 
     const redirectUri = redirectUriFor(req);
     const url = buildAuthUrl({
@@ -196,8 +212,23 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
     }
     pendingOauthStates.delete(state); // single-use
 
-    const { service } = entry;
+    const { service, instanceId } = entry;
+    // SECURITY (instance-confusion protection -- additional to, and
+    // distinct from, the CSRF protection above): `state` being unguessable,
+    // single-use, and TTL-bound already prevents a forged or replayed
+    // callback from any origin. This additionally prevents a *valid,
+    // non-forged* callback -- e.g. two legitimate concurrent OAuth flows for
+    // two different google accounts -- from ever writing tokens to the
+    // wrong instance: the callback has no way to attach tokens to any
+    // instance other than the one this `state` token was minted for back in
+    // /oauth/start, and it re-validates that instance still exists (it may
+    // have been soft-deleted by a concurrent request mid-flow) before ever
+    // exchanging the code or writing anything to the vault.
     try {
+      const instance = findInstance(db, 'google', instanceId);
+      if (!instance) {
+        throw new Error(`connection instance "${instanceId}" no longer exists`);
+      }
       const stored = readEncryptedFile('google');
       if (!stored?.clientId || !stored?.clientSecret) {
         throw new Error('Google OAuth client credentials are not configured');
@@ -209,7 +240,21 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
         redirectUri,
         code,
       });
-      storeTokens(service, tokens);
+      storeTokens(instance.vault_key, service, tokens);
+      // STOPGAP until issue #163 PR 4 makes gmail-provider.js/
+      // google-calendar-provider.js/google-contacts-provider.js
+      // instance-aware: those three modules (and the /disconnect route
+      // below) still hardcode reading the bare 'google' vault key
+      // (LEGACY_VAULT_KEY), which nothing wrote to as of this PR since
+      // tokens now live at instance.vault_key. Without this mirror write,
+      // completing OAuth would report success but leave every provider's
+      // isConnected()/authHeaders() unable to find the tokens it just
+      // stored -- a regression versus main, not merely PR 1's pre-existing
+      // migration gap. Mirroring keeps the legacy single-account read path
+      // working exactly as it did before this PR, for any installation
+      // that has exactly one google instance (the common case pre-PR 4).
+      // Remove this mirror write once PR 4 lands.
+      storeTokens('google', service, tokens);
       activateGoogleProvider(service);
       reconcileSyncScheduler({ db, eventBus });
       res.writeHead(302, { Location: `/#/connectors?connected=${encodeURIComponent(service)}` });
@@ -227,7 +272,14 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
     if (!GOOGLE_SERVICES.includes(service)) {
       return sendJson(res, 400, { error: `service must be one of ${GOOGLE_SERVICES.join(', ')}` });
     }
-    clearTokens(service);
+    // Legacy, pre-instance route -- like the provider modules' isConnected/
+    // authHeaders (see their LEGACY_VAULT_KEY comments), this still targets
+    // the bare 'google' vault key rather than a specific connection
+    // instance. Making this instance-aware is issue #163 PR 4/5's job
+    // (instances already have their own disconnect path via DELETE
+    // /api/connectors/google/instances/:instanceId, which removes that
+    // instance's own vault file directly).
+    clearTokens('google', service);
     reconcileSyncScheduler({ db, eventBus });
     sendJson(res, 200, { disconnected: service });
   });
