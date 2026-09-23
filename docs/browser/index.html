@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>U2OS docs</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <p id="file-protocol-warning" role="status" hidden>
+    You're viewing this via <code>file://</code>, so fetching the markdown files will likely be
+    blocked by the browser. Serve the <code>docs/</code> folder over HTTP instead, e.g.
+    <code>npx serve docs</code> or <code>python3 -m http.server 8000 --directory docs</code>,
+    then open <code>http://localhost:&lt;port&gt;/browser/</code>.
+  </p>
+
+  <header class="topbar">
+    <button id="menu-toggle" class="icon-btn" aria-label="Toggle navigation" title="Toggle navigation">&#9776;</button>
+    <span class="brand">U2OS <span class="brand-sub">docs</span></span>
+    <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search docs">
+    <button id="raw-toggle" class="text-btn" aria-pressed="false" title="Toggle raw markdown">Raw</button>
+    <button id="theme-toggle" class="text-btn" title="Toggle theme">&#9678; Auto</button>
+  </header>
+
+  <div class="layout">
+    <nav id="sidebar" class="sidebar" aria-label="Documents">
+      <ul id="doc-list"></ul>
+    </nav>
+
+    <main id="content" class="content" tabindex="-1">
+      <p class="loading">Loading&hellip;</p>
+    </main>
+
+    <aside id="toc" class="toc" aria-label="On this page"></aside>
+  </div>
+
+  <footer class="statusbar">
+    <span id="status"></span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
