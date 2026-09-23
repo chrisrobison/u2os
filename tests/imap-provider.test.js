@@ -4,11 +4,23 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { getDb, closeAllForTests } from '../server/db/connection.js';
-import { writeEncryptedFile } from '../server/security/vault.js';
 import { setActiveProvider } from '../server/integrations/connectors-config.js';
 import { getProvider } from '../server/integrations/provider-registry.js';
 import { syncChanges, listEmails, getEmail, validateSettings } from '../server/integrations/imap-provider.js';
 import { EmailSendTool } from '../server/tools/email-tools.js';
+import { createConnectionInstance } from '../server/integrations/connection-instances.js';
+
+// issue #163 PR 4: imap-provider.js is instance-aware -- credentials live at
+// a connection instance's own vault_key, not the legacy bare 'imap' key.
+// createImapInstance() creates a real connection_instances row (writing
+// `settings` to its vault_key) and returns the RAW row (needed for its
+// `.vault_key`, not the secret-free API shape createConnectionInstance()
+// itself returns) -- the same shape provider-registry.js resolves and
+// threads through to every instance-bound provider call.
+function createImapInstance(db, settings, label = 'Test IMAP account') {
+  const created = createConnectionInstance(db, { connectorId: 'imap', label, credentials: settings, status: 'connected' });
+  return db.prepare('SELECT * FROM connection_instances WHERE id = ?').get(created.id);
+}
 
 function withHome() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-imap-test-'));
@@ -54,14 +66,17 @@ test('IMAP sync is bounded, idempotent, and mirrors parsed inbox mail without cr
   const dir = withHome();
   try {
     const settings = { host: 'mail.example.com', port: 993, username: 'owner@example.com', password: 'private-password' };
-    writeEncryptedFile('imap', settings, dir);
-    setActiveProvider('email', 'imap', dir);
-    assert.equal(getProvider('email', { dataDir: dir }).id, 'imap');
     const db = getDb();
+    const instance = createImapInstance(db, settings);
+    setActiveProvider('email', 'imap', dir);
+    // No explicit activeInstanceId set -- resolved via provider-registry's
+    // "exactly one connected instance" fallback (this connector has only
+    // the one just created).
+    assert.equal(getProvider('email', { dataDir: dir }).id, 'imap');
     const published = [];
     const eventBus = { publish(event) { published.push(event); } };
     const { client, calls } = fakeClient();
-    const options = { db, eventBus, dataDir: dir, clientFactory: (config) => {
+    const options = { db, eventBus, dataDir: dir, instance, clientFactory: (config) => {
       assert.equal(config.secure, true);
       assert.equal(config.port, 993);
       assert.equal(config.auth.pass, 'private-password');
@@ -77,7 +92,7 @@ test('IMAP sync is bounded, idempotent, and mirrors parsed inbox mail without cr
     assert.equal(rows.length, 1);
     assert.equal(rows[0].subject, 'Project update');
     assert.equal(rows[0].body.trim(), 'Status is green.');
-    assert.equal((await getEmail(rows[0].id, { dataDir: dir })).id, rows[0].id);
+    assert.equal((await getEmail(rows[0].id, { dataDir: dir, instance })).id, rows[0].id);
   } finally { cleanup(dir); }
 });
 
@@ -86,7 +101,7 @@ test('IMAP-selected email.send never silently falls back to mock delivery', asyn
   try {
     setActiveProvider('email', 'imap', dir);
     await assert.rejects(new EmailSendTool().execute({ to: 'a@example.com', subject: 'x', body: 'x' }), /not connected/);
-    writeEncryptedFile('imap', { host: 'mail.example.com', port: 993, username: 'owner', password: 'secret' }, dir);
+    createImapInstance(getDb(), { host: 'mail.example.com', port: 993, username: 'owner', password: 'secret' });
     await assert.rejects(new EmailSendTool().execute({ to: 'a@example.com', subject: 'x', body: 'x' }), /smtp: credentials/);
     assert.equal(getDb().prepare("SELECT count(*) AS n FROM emails WHERE folder = 'sent'").get().n, 0);
   } finally { cleanup(dir); }

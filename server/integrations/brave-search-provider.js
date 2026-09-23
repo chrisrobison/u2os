@@ -8,13 +8,16 @@ export const id = 'brave-search';
 
 const API_URL = 'https://api.search.brave.com/res/v1/web/search';
 
-export function isConnected(dataDir) {
-  const stored = readEncryptedFile('web-search', dataDir);
+/** `vaultKey` identifies which `brave-search` connection instance to check
+ * (issue #163 PR 4) -- required, no default, so a caller can never silently
+ * check the wrong account. */
+export function isConnected(vaultKey, dataDir) {
+  const stored = readEncryptedFile(vaultKey, dataDir);
   return !!stored?.apiKey;
 }
 
-export async function search({ query }, { fetchImpl = globalThis.fetch, dataDir } = {}) {
-  const stored = readEncryptedFile('web-search', dataDir);
+export async function search({ query }, { fetchImpl = globalThis.fetch, dataDir, instance } = {}) {
+  const stored = readEncryptedFile(instance?.vault_key, dataDir);
   if (!stored?.apiKey) {
     throw new Error('brave-search: not connected');
   }

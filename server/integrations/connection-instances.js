@@ -323,6 +323,23 @@ export function listInstances(db, connectorId) {
   return rows.map(toInstanceApiShape);
 }
 
+/** Internal-only counterpart to listInstances(): returns RAW (secret-key-
+ * bearing) rows -- includes vault_key and metadata -- for connector-internal
+ * callers that need them. Added for issue #163 PR 4's provider-registry.js,
+ * which needs a connector's live instance rows to resolve a domain's
+ * connected instance (including the "exactly one connected instance"
+ * fallback when a domain has no explicit activeInstanceId yet) and to check
+ * server/integrations/connector-instance-ids.js's grandfathered/
+ * non-grandfathered id-prefix rule. NEVER call this from an HTTP route
+ * handler -- toInstanceApiShape() (used by listInstances() above) is what
+ * keeps a vault_key out of every API response, and this function
+ * deliberately bypasses it. */
+export function listInstanceRows(db, connectorId) {
+  return db
+    .prepare('SELECT * FROM connection_instances WHERE connector_id = ? AND deleted_at IS NULL ORDER BY created_at ASC')
+    .all(connectorId);
+}
+
 /** Finds the raw (non-API-shaped) DB row for a single instance, scoped to
  * both instanceId AND connectorId AND "not soft-deleted" in one query --
  * this is what makes a mismatched {connectorId, instanceId} pair (or a

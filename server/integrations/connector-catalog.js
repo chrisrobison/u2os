@@ -71,3 +71,17 @@ export function providerIdsForConnector(connectorId) {
   }
   return ids;
 }
+
+/** Reverse of providerIdsForConnector(): which catalog connector id a given
+ * domain-active providerId belongs to (e.g. 'gmail' -> 'google',
+ * 'imap' -> 'imap'), or null for a providerId with no catalog owner (e.g.
+ * 'mock', or 'caldav', which has no REAL_PROVIDERS module yet). Used by
+ * provider-registry.js (issue #163 PR 4) to resolve which connector's
+ * connection_instances rows a domain's active provider id should be looked
+ * up against. */
+export function connectorIdForProviderId(providerId) {
+  for (const connector of CONNECTOR_CATALOG) {
+    if (providerIdsForConnector(connector.id).has(providerId)) return connector.id;
+  }
+  return null;
+}

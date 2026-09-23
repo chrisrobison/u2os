@@ -14,6 +14,7 @@ import { readEncryptedFile } from '../server/security/vault.js';
 import { closeAllForTests } from '../server/db/connection.js';
 import * as syncScheduler from '../server/integrations/sync-scheduler.js';
 import * as triggerEngine from '../server/triggers/trigger-engine.js';
+import { getProvider } from '../server/integrations/provider-registry.js';
 
 // Capture the native implementation before startServer installs the
 // test-only fetch wrapper that automatically authenticates requests to test
@@ -224,15 +225,18 @@ test('two concurrent OAuth flows for two different google instances write tokens
   }
 });
 
-test('completing OAuth also mirrors tokens to the legacy bare "google" vault key, so gmail/calendar/contacts providers (still instance-unaware until #163 PR 4) keep finding them', async () => {
-  // Regression test: an earlier version of this PR wrote tokens ONLY to
-  // instance.vault_key. gmail-provider.js/google-calendar-provider.js/
-  // google-contacts-provider.js all still hardcode reading the bare
-  // 'google' key (LEGACY_VAULT_KEY, see those files) until PR 4 makes them
-  // instance-aware -- so a completed OAuth flow reported success but left
-  // every provider's isConnected()/authHeaders() unable to find the tokens
-  // it had just stored. This asserts the STOPGAP mirror write in the
-  // callback route keeps that legacy read path working.
+test('completing OAuth makes gmail-provider.js immediately usable end-to-end through provider-registry, with tokens ONLY at the instance vault key (no legacy mirror write)', async () => {
+  // issue #163 PR 4: gmail-provider.js/google-calendar-provider.js/
+  // google-contacts-provider.js are now instance-aware, resolving their
+  // vault key from the domain's activeInstanceId via
+  // provider-registry.js's getProvider() -- so completing OAuth for a
+  // specific instance must be immediately sufficient for that instance's
+  // data to actually be reachable through the normal tool call path, with
+  // no separate mirror write to the legacy bare "google" vault key (PR 3's
+  // stopgap, removed once this PR landed). This replaces the previous
+  // "mirrors tokens to the legacy bare google vault key" regression test,
+  // whose whole premise (providers reading a hardcoded bare key) no longer
+  // applies.
   const dir = tempHome();
   let handle;
   let restoreFetch;
@@ -246,16 +250,76 @@ test('completing OAuth also mirrors tokens to the legacy bare "google" vault key
 
     const start = await startOauthFlow(origin, { service: 'gmail', instanceId: instance.id });
     const state = stateFromStartRedirect(start);
-    const callback = await completeOauthCallback(origin, { code: 'code-for-legacy-mirror', state });
+    const callback = await completeOauthCallback(origin, { code: 'code-for-instance-vault', state });
     assert.equal(callback.status, 302);
     assert.match(callback.headers.get('location'), /connected=gmail/);
 
+    // Instance vault key holds the tokens (the callback's real write).
+    const db = handle.eventBus.db;
+    const vaultKey = vaultKeyForInstance(db, instance.id);
+    const stored = readEncryptedFile(vaultKey, dir);
+    assert.equal(stored?.tokens?.gmail?.access_token, 'AT_code-for-instance-vault');
+
+    // The legacy bare "google" vault key must receive NO tokens -- the
+    // mirror write is gone, not merely redundant. (It still holds the
+    // shared OAuth client id/secret from configureGoogleCredentials()
+    // above, which always initializes an empty `tokens: {}` -- so the
+    // precise regression to guard is "no gmail service token", not "no
+    // tokens key at all".)
     const legacy = readEncryptedFile('google', dir);
-    assert.equal(
-      legacy?.tokens?.gmail?.access_token,
-      'AT_code-for-legacy-mirror',
-      'legacy "google" vault key must also receive the tokens, or gmail-provider.js/etc cannot find them'
-    );
+    assert.equal(legacy?.tokens?.gmail, undefined, 'no tokens should ever be mirrored to the legacy bare "google" vault key');
+
+    // End-to-end: provider-registry resolves this domain's sole connected
+    // instance automatically (activateGoogleProvider() only sets `active`,
+    // not activeInstanceId -- the "exactly one connected instance" fallback
+    // is what makes this work with zero extra wiring), and the bound gmail
+    // provider actually reads tokens from the instance vault key, not the
+    // legacy one.
+    const provider = getProvider('email', { dataDir: dir });
+    assert.equal(provider.id, 'gmail');
+  } finally {
+    restoreFetch?.();
+    await cleanup(dir, handle);
+  }
+});
+
+test('POST /api/connectors/google/disconnect actually disconnects the resolved instance, not just the unused legacy vault key', async () => {
+  // Regression test: an earlier version of PR 4 left this route clearing
+  // ONLY the legacy bare "google" vault key, which no provider module reads
+  // any more as of this PR -- so a user clicking Disconnect got a 200
+  // {disconnected} response while the resolved instance's real tokens (and
+  // therefore sync-scheduler polling, EmailSendTool, getHealth()'s
+  // "connected" status) were completely untouched. Caught by review before
+  // merge.
+  const dir = tempHome();
+  let handle;
+  let restoreFetch;
+  try {
+    handle = await startServer({ port: 0 });
+    const origin = `http://127.0.0.1:${handle.server.address().port}`;
+
+    await configureGoogleCredentials(origin);
+    const instance = await createGoogleInstance(origin, 'Only account');
+    restoreFetch = installGoogleTokenExchangeMock();
+
+    const start = await startOauthFlow(origin, { service: 'gmail', instanceId: instance.id });
+    const state = stateFromStartRedirect(start);
+    await completeOauthCallback(origin, { code: 'code-to-disconnect', state });
+
+    // Sanity: connected before disconnecting.
+    assert.equal(getProvider('email', { dataDir: dir }).id, 'gmail');
+
+    const disconnect = await fetch(`${origin}/api/connectors/google/disconnect?service=gmail`, { method: 'POST' });
+    assert.equal(disconnect.status, 200);
+
+    const db = handle.eventBus.db;
+    const vaultKey = vaultKeyForInstance(db, instance.id);
+    const stored = readEncryptedFile(vaultKey, dir);
+    assert.equal(stored?.tokens?.gmail, undefined, 'the resolved instance\'s own tokens must actually be cleared, not just the legacy key');
+
+    // provider-registry must now fall back to mock -- the instance is no
+    // longer connected for gmail.
+    assert.equal(getProvider('email', { dataDir: dir }).id, 'mock-email');
   } finally {
     restoreFetch?.();
     await cleanup(dir, handle);

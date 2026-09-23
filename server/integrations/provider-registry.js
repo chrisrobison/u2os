@@ -8,6 +8,15 @@
 // connectors-config on every getProvider() call, so flipping the active
 // provider in connectors.yaml (or via the API) takes effect on the very next
 // call, with no server restart required.
+//
+// Instance-aware (issue #163 PR 4 of 5): a domain's `active` provider id is
+// no longer enough on its own -- since a connector can now have MULTIPLE
+// connected accounts (server/integrations/connection-instances.js), the
+// registry must also resolve WHICH connection instance backs that domain
+// (`config[domain].activeInstanceId`) and thread that instance's vault key
+// through to the real provider module. See bindProviderToInstance() below
+// for how a resolved instance is made available to every provider call
+// without changing any existing call site's zero-options call shape.
 import * as mockCalendar from './mock-calendar-provider.js';
 import * as mockEmail from './mock-email-provider.js';
 import * as mockContacts from './mock-contacts-provider.js';
@@ -20,6 +29,9 @@ import * as googleContacts from './google-contacts-provider.js';
 import * as braveSearch from './brave-search-provider.js';
 import * as webhookNotify from './webhook-notify-provider.js';
 import { loadConnectorsConfig, validProviderIdsFor, DOMAINS } from './connectors-config.js';
+import { connectorIdForProviderId } from './connector-catalog.js';
+import { findInstance, listInstanceRows } from './connection-instances.js';
+import { getDb } from '../db/connection.js';
 import { log } from '../logging/logger.js';
 
 const MOCK_PROVIDERS = {
@@ -43,6 +55,43 @@ const REAL_PROVIDERS = {
   webhook: webhookNotify,
 };
 
+// Which of each real provider module's exported functions take a
+// connection instance -- every one of them touches the vault and/or (for
+// the 3 Google modules) generates a local row id from an upstream id, per
+// connector-instance-ids.js. Deliberately explicit (rather than binding
+// every exported function blindly) so a plain-data argument that happens to
+// be an object (e.g. gmail.sendEmail's `{to, subject, body}`) never gets
+// mistaken for a trailing options object -- see withInjectedOptions() below.
+//
+// imap's `sendEmail` is deliberately absent: it delegates straight to
+// smtp-transport.js, which has no connection-instance routing of its own.
+// There is no "active SMTP instance" concept in connectors.yaml (SMTP was
+// never a selectable provider id for any domain -- see
+// connection-instances.js's matchingDomains() comment), so nothing resolves
+// a specific SMTP account to thread through here; smtp-transport.js still
+// reads its single legacy 'smtp' vault key exactly as before this PR. This
+// is a pre-existing gap outside issue #163's scope, not a regression.
+// Each method name maps to its ARITY: how many positional "data" arguments
+// it takes BEFORE the trailing options object (0 for a method like
+// syncChanges({db, eventBus, ...}) whose single argument already IS the
+// options object). This is required, not merely convenient: every one of
+// these methods is called by its tool/trigger-engine/adapter call site with
+// ONLY the data argument(s) and no options object at all (e.g.
+// `provider.send(args)`, `provider.search(args)`) -- so a "is the last
+// argument options-shaped?" heuristic cannot tell a 1-arity method's sole
+// (data) argument apart from a 0-arity method's sole (options) argument,
+// since both are plain objects and both are `args[0]`. Knowing the arity up
+// front lets withInjectedOptions() always inject at the correct fixed
+// position instead of guessing.
+const OPTIONS_ARITY = {
+  'google-calendar': { listEvents: 1, getEvent: 1, createEvent: 1, rescheduleEvent: 2, syncChanges: 0 },
+  gmail: { listEmails: 1, getEmail: 1, sendEmail: 1, syncChanges: 0 },
+  'google-contacts': { searchContacts: 1, syncChanges: 0 },
+  imap: { syncChanges: 0, listEmails: 1, getEmail: 1 },
+  'brave-search': { search: 1 },
+  webhook: { send: 1 },
+};
+
 // Logs a health warning once per (domain, providerId) pair per process,
 // rather than spamming on every call.
 const warnedOnce = new Set();
@@ -53,19 +102,95 @@ const warnedOnce = new Set();
 // only sync outcomes and explicit resets touch it.
 const syncHealth = {};
 
-function isRealProviderConnected(providerId, dataDir) {
+/** Whether `instance` (a raw connection_instances row) is actually
+ * connected for `providerId`'s specific service -- e.g. a 'google' instance
+ * may have calendar tokens but no gmail tokens, so this is per-providerId,
+ * not per-connector. Every real provider module's isConnected(vaultKey,
+ * dataDir) takes an explicit vault key (no default), matching
+ * oauth/google-oauth.js's existing convention -- see that file's header. */
+function isProviderInstanceConnected(providerId, instance, dataDir) {
   const real = REAL_PROVIDERS[providerId];
-  if (!real || typeof real.isConnected !== 'function') return false;
+  if (!real || typeof real.isConnected !== 'function' || !instance) return false;
   try {
-    return !!real.isConnected(dataDir);
+    return !!real.isConnected(instance.vault_key, dataDir);
   } catch {
     return false;
   }
 }
 
+/** Resolves the raw connection_instances row backing a domain's active
+ * provider id. If the domain has an explicit `activeInstanceId` (set by the
+ * PR 2 CRUD API's /active route, or by the migration), that instance is
+ * used exactly as configured -- findInstance() returns null for a missing
+ * or soft-deleted instance, which callers correctly treat as "not
+ * connected" rather than falling back to guessing. If there's no explicit
+ * activeInstanceId (a hand-edited connectors.yaml, or the legacy
+ * bare-providerId path such as activateGoogleProvider() after a completed
+ * OAuth flow), this falls back to the connector's sole instance that is
+ * ACTUALLY connected for this specific providerId -- but only if there is
+ * exactly one. It never silently guesses between multiple connected
+ * candidates of the same connector. */
+export function resolveInstanceForDomain(providerId, activeInstanceId, dataDir) {
+  const connectorId = connectorIdForProviderId(providerId);
+  if (!connectorId) return null;
+  const db = getDb();
+  if (activeInstanceId) {
+    return findInstance(db, connectorId, activeInstanceId);
+  }
+  const candidates = listInstanceRows(db, connectorId).filter((row) => isProviderInstanceConnected(providerId, row, dataDir));
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+function withInjectedOptions(fn, extra, arity) {
+  return (...args) => {
+    if (args.length > arity) {
+      const existing = args[arity];
+      const hasOptions = existing !== undefined && existing !== null && typeof existing === 'object' && !Array.isArray(existing);
+      args[arity] = hasOptions ? { ...existing, ...extra } : extra;
+    } else {
+      while (args.length < arity) args.push(undefined);
+      args[arity] = extra;
+    }
+    return fn(...args);
+  };
+}
+
+/** Wraps a real provider module's instance-bound methods (per
+ * OPTIONS_ARITY above) so every existing call site elsewhere in the
+ * codebase (server/tools/*.js, trigger-engine.js, the notification service
+ * adapter) keeps working with its current zero-options call shape -- e.g.
+ * `provider.listEvents(args)` -- while the resolved connection instance and
+ * dataDir are injected into each call's options object automatically, at
+ * the fixed position OPTIONS_ARITY says that method's options object
+ * belongs at. Non-bound properties (the `id` string, `isConnected`,
+ * `validateSettings`, etc.) pass through unchanged. */
+function bindProviderToInstance(providerId, real, instance, dataDir) {
+  const bound = { ...real };
+  for (const [name, arity] of Object.entries(OPTIONS_ARITY[providerId] || {})) {
+    if (typeof real[name] === 'function') {
+      bound[name] = withInjectedOptions(real[name].bind(real), { dataDir, instance }, arity);
+    }
+  }
+  return bound;
+}
+
+function warnNotConnectedOnce(domain, activeId) {
+  const warnKey = `${domain}:${activeId}`;
+  if (warnedOnce.has(warnKey)) return;
+  warnedOnce.add(warnKey);
+  log.warn(
+    'provider-registry',
+    `domain "${domain}" is configured for "${activeId}" but that connector is not connected yet -- falling back to mock.`,
+    { domain, activeId }
+  );
+}
+
 /**
  * getProvider(domain) -> the resolved provider module for that domain.
- * Domains: calendar, email, contacts, web, notifications.
+ * Domains: calendar, email, contacts, web, notifications. For a connected
+ * real provider, the returned object is bound to the domain's resolved
+ * connection instance (see bindProviderToInstance) -- callers never need to
+ * know or pass which instance is active.
  */
 export function getProvider(domain, { dataDir } = {}) {
   const mockProvider = MOCK_PROVIDERS[domain];
@@ -76,32 +201,41 @@ export function getProvider(domain, { dataDir } = {}) {
 
   if (activeId === 'mock') return mockProvider;
 
-  if (isRealProviderConnected(activeId, dataDir)) {
-    return REAL_PROVIDERS[activeId];
-  }
+  const real = REAL_PROVIDERS[activeId];
+  if (!real) return mockProvider; // e.g. 'caldav': no module implemented yet
 
-  const warnKey = `${domain}:${activeId}`;
-  if (!warnedOnce.has(warnKey)) {
-    warnedOnce.add(warnKey);
-    log.warn(
-      'provider-registry',
-      `domain "${domain}" is configured for "${activeId}" but that connector is not connected yet -- falling back to mock.`,
-      { domain, activeId }
-    );
+  const instance = resolveInstanceForDomain(activeId, config[domain]?.activeInstanceId, dataDir);
+  if (!instance || !isProviderInstanceConnected(activeId, instance, dataDir)) {
+    warnNotConnectedOnce(domain, activeId);
+    return mockProvider;
   }
-  return mockProvider;
+  return bindProviderToInstance(activeId, real, instance, dataDir);
 }
 
 /** Returns the real provider module for `domain` ONLY if it's the
- * configured active provider AND currently connected, else null. Used by
- * sync-scheduler.js, which must never poll a mock or a not-yet-connected
- * real provider. */
+ * configured active provider AND currently connected (via its resolved
+ * connection instance), else null. Used by sync-scheduler.js, which must
+ * never poll a mock or a not-yet-connected real provider. */
 export function resolveConnectedRealProvider(domain, { dataDir } = {}) {
   const config = loadConnectorsConfig(dataDir);
   const activeId = config[domain]?.active || 'mock';
   if (activeId === 'mock') return null;
-  if (!isRealProviderConnected(activeId, dataDir)) return null;
-  return REAL_PROVIDERS[activeId] || null;
+  const real = REAL_PROVIDERS[activeId];
+  if (!real) return null;
+  const instance = resolveInstanceForDomain(activeId, config[domain]?.activeInstanceId, dataDir);
+  if (!instance || !isProviderInstanceConnected(activeId, instance, dataDir)) return null;
+  return bindProviderToInstance(activeId, real, instance, dataDir);
+}
+
+/** Whether ANY live instance of the connector backing `providerId` is
+ * currently connected -- used only by getHealth()'s connectedProviders list
+ * (which providers the UI can offer to switch a domain to), independent of
+ * which instance (if any) is the domain's current active one. */
+function isAnyInstanceConnected(providerId, dataDir) {
+  const connectorId = connectorIdForProviderId(providerId);
+  if (!connectorId) return false;
+  const db = getDb();
+  return listInstanceRows(db, connectorId).some((row) => isProviderInstanceConnected(providerId, row, dataDir));
 }
 
 /** GET /api/connectors' primary data source: per-domain status plus which
@@ -112,11 +246,15 @@ export function getHealth({ dataDir } = {}) {
   return DOMAINS.map((domain) => {
     const activeId = config[domain]?.active || 'mock';
     const connectedProviders = validProviderIdsFor(domain).filter(
-      (providerId) => providerId !== 'mock' && isRealProviderConnected(providerId, dataDir)
+      (providerId) => providerId !== 'mock' && isAnyInstanceConnected(providerId, dataDir)
     );
     // Mock is always available -- it never depends on external credentials,
-    // so it is reported as connected.
-    const connected = activeId === 'mock' ? true : isRealProviderConnected(activeId, dataDir);
+    // so it is reported as connected. A real active provider is "connected"
+    // only if the domain's resolved connection instance is itself connected.
+    const connected =
+      activeId === 'mock'
+        ? true
+        : isProviderInstanceConnected(activeId, resolveInstanceForDomain(activeId, config[domain]?.activeInstanceId, dataDir), dataDir);
     const h = syncHealth[domain] || {};
     return {
       domain,

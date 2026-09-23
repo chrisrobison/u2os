@@ -5,8 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { getProvider, getHealth, resolveConnectedRealProvider } from '../server/integrations/provider-registry.js';
 import { setActiveProvider } from '../server/integrations/connectors-config.js';
-import { writeEncryptedFile } from '../server/security/vault.js';
-import { closeAllForTests } from '../server/db/connection.js';
+import { getDb, closeAllForTests } from '../server/db/connection.js';
+import { createConnectionInstance } from '../server/integrations/connection-instances.js';
+import { storeTokens } from '../server/integrations/oauth/google-oauth.js';
 
 function tempHome() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-registry-test-'));
@@ -63,12 +64,15 @@ test('configuring a real provider without stored credentials falls back to mock,
 test('health reports connected real providers independently of the active provider', () => {
   const dir = tempHome();
   try {
-    writeEncryptedFile('google', {
-      tokens: {
-        gmail: { access_token: 'test-access', refresh_token: 'test-refresh', expiry: Date.now() + 60_000 },
-        contacts: { access_token: 'test-access', refresh_token: 'test-refresh', expiry: Date.now() + 60_000 },
-      },
-    });
+    // issue #163 PR 4: credentials live at a connection instance's own
+    // vault_key, not the legacy bare 'google' key -- getHealth()'s
+    // connectedProviders now scans every live instance of a connector
+    // (regardless of which one, if any, is the domain's active instance).
+    const db = getDb();
+    const instance = createConnectionInstance(db, { connectorId: 'google', label: 'Test account', status: 'pending' });
+    const vaultKey = db.prepare('SELECT vault_key FROM connection_instances WHERE id = ?').get(instance.id).vault_key;
+    storeTokens(vaultKey, 'gmail', { access_token: 'test-access', refresh_token: 'test-refresh', expires_in: 3600 });
+    storeTokens(vaultKey, 'contacts', { access_token: 'test-access', refresh_token: 'test-refresh', expires_in: 3600 });
 
     const health = getHealth();
     const email = health.find((entry) => entry.domain === 'email');

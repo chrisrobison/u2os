@@ -22,8 +22,11 @@ export function validateSettings(settings) {
   return { host, port, username, password };
 }
 
-export function isConnected(dataDir) {
-  try { return !!validateSettings(readEncryptedFile('imap', dataDir)); } catch { return false; }
+/** `vaultKey` identifies which `imap` connection instance to check (issue
+ * #163 PR 4) -- required, no default, so a caller can never silently check
+ * the wrong account. */
+export function isConnected(vaultKey, dataDir) {
+  try { return !!validateSettings(readEncryptedFile(vaultKey, dataDir)); } catch { return false; }
 }
 
 function accountPrefix(settings) {
@@ -47,9 +50,9 @@ function getRow(localId, db = getDb()) {
   return row ? { ...row, to_addr: JSON.parse(row.to_addr || '[]'), is_read: !!row.is_read } : null;
 }
 
-export async function syncChanges({ db = getDb(), eventBus, correlationId, dataDir, clientFactory = (config) => new ImapFlow(config) } = {}) {
+export async function syncChanges({ db = getDb(), eventBus, correlationId, dataDir, instance, clientFactory = (config) => new ImapFlow(config) } = {}) {
   let settings;
-  try { settings = validateSettings(readEncryptedFile('imap', dataDir)); } catch { throw new Error('imap: credentials are not configured'); }
+  try { settings = validateSettings(readEncryptedFile(instance.vault_key, dataDir)); } catch { throw new Error('imap: credentials are not configured'); }
   const client = clientFactory({
     host: settings.host, port: 993, secure: true,
     auth: { user: settings.username, pass: settings.password },
@@ -112,7 +115,7 @@ export async function syncChanges({ db = getDb(), eventBus, correlationId, dataD
 export async function listEmails({ folder = 'inbox', query } = {}, options = {}) {
   if (folder !== 'inbox') return [];
   await syncChanges(options);
-  const settings = validateSettings(readEncryptedFile('imap', options.dataDir));
+  const settings = validateSettings(readEncryptedFile(options.instance?.vault_key, options.dataDir));
   const prefix = accountPrefix(settings);
   const rows = getDb().prepare(`SELECT * FROM emails WHERE substr(id, 1, ?) = ? AND folder = 'inbox'
     AND (? IS NULL OR subject LIKE ? OR body LIKE ? OR from_addr LIKE ?)
@@ -120,8 +123,8 @@ export async function listEmails({ folder = 'inbox', query } = {}, options = {})
   return rows.map((row) => ({ ...row, to_addr: JSON.parse(row.to_addr || '[]'), is_read: !!row.is_read }));
 }
 
-export async function getEmail(localId, { dataDir } = {}) {
-  const settings = validateSettings(readEncryptedFile('imap', dataDir));
+export async function getEmail(localId, { dataDir, instance } = {}) {
+  const settings = validateSettings(readEncryptedFile(instance?.vault_key, dataDir));
   if (!String(localId).startsWith(accountPrefix(settings))) return null;
   return getRow(localId);
 }

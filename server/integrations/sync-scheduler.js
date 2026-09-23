@@ -3,6 +3,16 @@
 // NOT start a timer for any domain still on 'mock' or not connected, and
 // re-resolves the connected provider on every tick so a mid-run
 // disconnect/switch is respected without a restart.
+//
+// Instance-aware (issue #163 PR 4 of 5): resolveConnectedRealProvider()
+// itself now resolves the domain's active connection instance
+// (server/integrations/provider-registry.js's resolveInstanceForDomain) and
+// returns a provider object already bound to that instance's vault key --
+// so the provider.syncChanges({db, eventBus, correlationId, dataDir}) call
+// below transparently runs against the correct account with no separate
+// instance/vaultKey plumbing needed here. Switching a domain's
+// activeInstanceId (the PR 2 /active route) takes effect on this module's
+// very next tick, same as switching `active` itself always has.
 import { newId } from '../db/ids.js';
 import { loadConnectorsConfig, DOMAINS } from './connectors-config.js';
 import { resolveConnectedRealProvider, recordSyncSuccess, recordSyncError } from './provider-registry.js';
