@@ -1,11 +1,22 @@
 import { sendJson } from '../router.js';
 import { verifyVoiceObservation } from '../../voice/enrollment-store.js';
+import { getRun, listRuns } from '../../agent/run-store.js';
 
 // Agent conversation entry point. Approve/reject live in routes/actions.js
 // (kept in one place rather than duplicated here) since they operate on
 // agent_actions rows regardless of whether they originated from chat or a
 // direct API call.
 export function registerAgentRoutes(router, { agent }) {
+  router.get('/api/agent/runs', async (req, res) => {
+    sendJson(res, 200, { runs: listRuns({ limit: req.query.limit }) });
+  });
+
+  router.get('/api/agent/runs/:id', async (req, res) => {
+    const run = getRun(req.params.id);
+    if (!run) return sendJson(res, 404, { error: 'Run not found' });
+    sendJson(res, 200, run);
+  });
+
   router.post('/api/agent/message', async (req, res) => {
     const text = req.body?.text;
     if (!text || typeof text !== 'string') {
