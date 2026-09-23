@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import fs from 'node:fs';
 import { STATE_FILE } from './state-file.js';
-import { withDedicatedServer, createOwner } from './helpers.js';
+import { withDedicatedServer, createOwner, expireIdleSessions } from './helpers.js';
 
 // Issue #14: real-browser coverage of the auth lifecycle, driven through the
 // actual inline setup/login form (public/components/u2-app.js's
@@ -127,20 +127,13 @@ test.describe('auth lifecycle (#14)', () => {
   });
 
   test('an idle-expired session falls back to the auth form on reload', async ({ page }) => {
-    // Mirrors tests/auth.test.js:50's sessionIdleSeconds: 0.05 (50ms)
-    // pattern exactly, on its own dedicated server -- never applied to the
-    // shared global harness.
-    await withDedicatedServer(page, { sessionIdleSeconds: 0.05 }, async ({ baseURL }) => {
+    await withDedicatedServer(page, {}, async ({ baseURL, handle }) => {
       await page.goto(baseURL);
       await page.locator('input[name="passphrase"]').fill(PASSPHRASE);
       await page.locator('form button[type="submit"]').click();
       await expect(page.locator('u2-nav')).toBeVisible();
 
-      // Let the 50ms idle window lapse with no further requests from this
-      // page (the shell's own background traffic -- one dashboard fetch,
-      // one SSE connection -- has already settled by the time the shell is
-      // visible above).
-      await page.waitForTimeout(200);
+      expireIdleSessions(handle);
 
       await page.reload();
 

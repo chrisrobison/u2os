@@ -99,3 +99,11 @@ export async function createOwner(baseURL, passphrase) {
   });
   if (res.status !== 201) throw new Error(`owner setup failed: ${res.status}`);
 }
+
+/** Expire only this isolated server's session after its browser shell is
+ * fully ready. Avoids a tiny idle timeout racing WebKit startup while still
+ * exercising the real 401/auth fallback path. */
+export function expireIdleSessions(handle) {
+  const result = handle.auth.db.prepare('UPDATE sessions SET last_seen_at = ?').run(new Date(0).toISOString());
+  if (!result.changes) throw new Error('Expected an authenticated session to expire');
+}
