@@ -18,6 +18,18 @@ import {
 
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 const GOOGLE_SERVICES = ['calendar', 'gmail', 'contacts'];
+const GOOGLE_PROVIDER_TARGETS = {
+  calendar: { domain: 'calendar', providerId: 'google-calendar' },
+  gmail: { domain: 'email', providerId: 'gmail' },
+  contacts: { domain: 'contacts', providerId: 'google-contacts' },
+};
+
+export function activateGoogleProvider(service, dataDir) {
+  const target = GOOGLE_PROVIDER_TARGETS[service];
+  if (!target) throw new Error(`Unknown Google service: ${service}`);
+  setActiveProvider(target.domain, target.providerId, dataDir);
+  return target;
+}
 
 // In-memory, per-process state cache for CSRF protection on the OAuth
 // callback -- per docs/connectors.md's OAuth2 flow step 2/3. Never persisted
@@ -112,6 +124,7 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
         code,
       });
       storeTokens(service, tokens);
+      activateGoogleProvider(service);
       reconcileSyncScheduler({ db, eventBus });
       res.writeHead(302, { Location: `/#/connectors?connected=${encodeURIComponent(service)}` });
       res.end();

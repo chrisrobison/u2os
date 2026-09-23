@@ -111,6 +111,9 @@ export function getHealth({ dataDir } = {}) {
   const config = loadConnectorsConfig(dataDir);
   return DOMAINS.map((domain) => {
     const activeId = config[domain]?.active || 'mock';
+    const connectedProviders = validProviderIdsFor(domain).filter(
+      (providerId) => providerId !== 'mock' && isRealProviderConnected(providerId, dataDir)
+    );
     // Mock is always available -- it never depends on external credentials,
     // so it is reported as connected.
     const connected = activeId === 'mock' ? true : isRealProviderConnected(activeId, dataDir);
@@ -119,6 +122,7 @@ export function getHealth({ dataDir } = {}) {
       domain,
       active: activeId,
       connected,
+      connectedProviders,
       availableProviders: validProviderIdsFor(domain),
       lastSyncAt: h.lastSyncAt || null,
       lastError: h.lastError || null,

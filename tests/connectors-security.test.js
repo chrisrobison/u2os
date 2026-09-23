@@ -9,6 +9,8 @@ import { setActiveProvider } from '../server/integrations/connectors-config.js';
 import { closeAllForTests } from '../server/db/connection.js';
 import * as syncScheduler from '../server/integrations/sync-scheduler.js';
 import * as triggerEngine from '../server/triggers/trigger-engine.js';
+import { activateGoogleProvider } from '../server/api/routes/connectors.js';
+import { loadConnectorsConfig } from '../server/integrations/connectors-config.js';
 
 // Capture the native implementation before startServer installs the test-only
 // fetch wrapper that automatically authenticates requests to test servers.
@@ -126,6 +128,24 @@ test('only the state-protected OAuth callback is public among Google connector r
     assert.equal(connectors.status, 401);
   } finally {
     await cleanup(dir, handle);
+  }
+});
+
+test('successful Google OAuth services activate their corresponding provider', () => {
+  const dir = tempHome();
+  try {
+    activateGoogleProvider('calendar');
+    activateGoogleProvider('gmail');
+    activateGoogleProvider('contacts');
+
+    const config = loadConnectorsConfig();
+    assert.equal(config.calendar.active, 'google-calendar');
+    assert.equal(config.email.active, 'gmail');
+    assert.equal(config.contacts.active, 'google-contacts');
+  } finally {
+    closeAllForTests();
+    delete process.env.U2OS_HOME;
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 

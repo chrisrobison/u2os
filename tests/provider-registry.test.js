@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { getProvider, getHealth, resolveConnectedRealProvider } from '../server/integrations/provider-registry.js';
 import { setActiveProvider } from '../server/integrations/connectors-config.js';
+import { writeEncryptedFile } from '../server/security/vault.js';
 import { closeAllForTests } from '../server/db/connection.js';
 
 function tempHome() {
@@ -54,6 +55,30 @@ test('configuring a real provider without stored credentials falls back to mock,
 
     // sync-scheduler must never treat this as a connected real provider.
     assert.equal(resolveConnectedRealProvider('calendar'), null);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('health reports connected real providers independently of the active provider', () => {
+  const dir = tempHome();
+  try {
+    writeEncryptedFile('google', {
+      tokens: {
+        gmail: { access_token: 'test-access', refresh_token: 'test-refresh', expiry: Date.now() + 60_000 },
+        contacts: { access_token: 'test-access', refresh_token: 'test-refresh', expiry: Date.now() + 60_000 },
+      },
+    });
+
+    const health = getHealth();
+    const email = health.find((entry) => entry.domain === 'email');
+    const contacts = health.find((entry) => entry.domain === 'contacts');
+
+    assert.equal(email.active, 'mock');
+    assert.equal(email.connected, true, 'the active mock provider remains healthy');
+    assert.deepEqual(email.connectedProviders, ['gmail']);
+    assert.equal(contacts.active, 'mock');
+    assert.deepEqual(contacts.connectedProviders, ['google-contacts']);
   } finally {
     cleanup(dir);
   }

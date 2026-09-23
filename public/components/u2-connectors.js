@@ -88,7 +88,7 @@ function renderDomainCard(domain, ctx) {
 function renderGoogleCard(connectors, ctx) {
   const rows = GOOGLE_SERVICES.map(({ service, domain, providerId, label }) => {
     const domainEntry = connectors.find((d) => d.domain === domain);
-    const connectedViaGoogle = !!domainEntry && domainEntry.active === providerId && domainEntry.connected === true;
+    const connectedViaGoogle = !!domainEntry && (domainEntry.connectedProviders || []).includes(providerId);
     const busy = ctx.busyKeys.has(`google:${service}`);
     const action = connectedViaGoogle
       ? `<button type="button" class="btn" data-google-disconnect="${service}" ${busy ? 'disabled' : ''}>${busy ? 'Disconnecting...' : 'Disconnect'}</button>`
