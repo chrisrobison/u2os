@@ -103,6 +103,10 @@ export function getDb() {
   ensureColumn(db, 'agent_actions', 'context_provenance', 'TEXT');
   ensureColumn(db, 'agent_actions', 'account_binding', 'TEXT');
   ensureColumn(db, 'agent_runs', 'model_call_count', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'agent_runs', 'voice_confidence', 'REAL');
+  ensureColumn(db, 'agent_run_steps', 'context_provenance', 'TEXT');
+  ensureColumn(db, 'agent_run_steps', 'account_context', 'TEXT');
+  ensureColumn(db, 'agent_run_steps', 'model_id', 'TEXT');
   ensureColumn(db, 'owners', 'entity_id', 'TEXT REFERENCES entities(id)');
   // Durable action delivery initially shipped without persisted actor
   // provenance. Add it without rebuilding existing queue tables.

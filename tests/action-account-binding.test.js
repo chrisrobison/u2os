@@ -14,6 +14,11 @@ import * as syncScheduler from '../server/integrations/sync-scheduler.js';
 import * as triggerEngine from '../server/triggers/trigger-engine.js';
 import { assertCalendarTarget } from '../server/agent/account-binding.js';
 import { getProviderForBinding } from '../server/integrations/provider-registry.js';
+import { Agent } from '../server/agent/agent.js';
+import { EventBus } from '../server/events/event-bus.js';
+import { PolicyEngine } from '../server/policy/policy-engine.js';
+import { createToolRegistry } from '../server/tools/register-all.js';
+import { getRun } from '../server/agent/run-store.js';
 
 async function withAccounts(run) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-account-binding-'));
@@ -81,6 +86,30 @@ test('approved email send retains the original Google account after active accou
       assert.deepEqual(seen, ['Bearer token-first']);
       assert.equal(getAgentAction(proposal.id).accountBinding.instanceId, first.id);
     } finally { globalThis.fetch = previousFetch; }
+  });
+});
+
+test('a deferred send retains the selected account before its prerequisite is approved', async () => {
+  await withAccounts(async ({ db, dir, first, second }) => {
+    const agent = new Agent({
+      modelProvider: { id: 'account-plan-fixture', destination: 'local_model', plan: async () => ({
+        reasoning_summary: 'Create a task, then prepare the send', actions: [
+          { tool: 'tasks.create', arguments: { title: 'First step' } },
+          { tool: 'email.send', arguments: { to: 'recipient@example.test', subject: 'Fixture', body: 'Fixture body' }, dependsOn: [0] },
+        ],
+      }) },
+      policyEngine: new PolicyEngine({ policies: { tasks: { create: 'confirm' }, email: { send: 'confirm' } } }),
+      toolRegistry: createToolRegistry(), eventBus: new EventBus(db),
+    });
+    const result = await agent.handleMessage({ text: 'Create task, then send mail', actorId: 'owner' });
+    assert.deepEqual(result.actions.map((item) => item.status), ['pending', 'waiting_dependency']);
+    assert.equal(JSON.parse(db.prepare('SELECT account_context FROM agent_run_steps WHERE run_id = ? AND step_index = 1').get(result.runId).account_context).binding.instanceId, first.id);
+    switchTo(dir, second.id);
+    await agent.approveAction(result.actions[0].id, 'owner');
+    const sendId = getRun(result.runId).steps[1].actionId;
+    assert.equal(getAgentAction(sendId).status, 'pending');
+    assert.equal(getAgentAction(sendId).accountBinding.instanceId, first.id);
+    assert.equal(getAgentAction(sendId).model, 'account-plan-fixture');
   });
 });
 

@@ -3,24 +3,24 @@ import { newId } from '../db/ids.js';
 
 const TERMINAL = new Set(['executed', 'blocked', 'failed', 'cancelled', 'rejected', 'skipped']);
 
-export function createRun({ correlationId, actorId, objective }) {
+export function createRun({ correlationId, actorId, objective, voice }) {
   const id = newId('run');
   const now = new Date().toISOString();
-  getDb().prepare(`INSERT INTO agent_runs (id, correlation_id, actor_id, objective, status, created_at, updated_at)
-    VALUES (?, ?, ?, ?, 'planning', ?, ?)`).run(id, correlationId, actorId, objective, now, now);
+  getDb().prepare(`INSERT INTO agent_runs (id, correlation_id, actor_id, objective, voice_confidence, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, 'planning', ?, ?)`).run(id, correlationId, actorId, objective, voice ? voice.confidence : null, now, now);
   return id;
 }
 
-export function recordRunPlan(runId, plan) {
+export function recordRunPlan(runId, plan, contextProvenance = [], accountContexts = [], modelId = null) {
   const db = getDb();
   const now = new Date().toISOString();
   return withTransaction(db, () => {
     const baseIndex = db.prepare('SELECT COALESCE(MAX(step_index) + 1, 0) AS next FROM agent_run_steps WHERE run_id = ?').get(runId).next;
     const insert = db.prepare(`INSERT INTO agent_run_steps
-      (run_id, step_index, tool, arguments, depends_on, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, 'planned', ?, ?)`);
+      (run_id, step_index, tool, arguments, depends_on, context_provenance, account_context, model_id, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'planned', ?, ?)`);
     for (const [index, action] of plan.actions.entries()) {
-      insert.run(runId, baseIndex + index, action.tool, JSON.stringify(action.arguments), JSON.stringify((action.dependsOn || []).map((dependency) => baseIndex + dependency)), now, now);
+      insert.run(runId, baseIndex + index, action.tool, JSON.stringify(action.arguments), JSON.stringify((action.dependsOn || []).map((dependency) => baseIndex + dependency)), JSON.stringify(contextProvenance), accountContexts[index] ? JSON.stringify(accountContexts[index]) : null, modelId, now, now);
     }
     db.prepare(`UPDATE agent_runs SET status = 'running', reasoning_summary = ?, updated_at = ? WHERE id = ?`)
       .run(plan.reasoning_summary, now, runId);
@@ -47,9 +47,21 @@ export function getModelCallCount(runId) {
 export function beginRunStep(runId, index) {
   const actionId = newId('act');
   const changed = getDb().prepare(`UPDATE agent_run_steps SET status = 'running', action_id = ?, updated_at = ?
-    WHERE run_id = ? AND step_index = ? AND status = 'planned'`).run(actionId, new Date().toISOString(), runId, index);
+    WHERE run_id = ? AND step_index = ? AND status IN ('planned', 'waiting_dependency')`).run(actionId, new Date().toISOString(), runId, index);
   if (changed.changes !== 1) throw new Error('Run step is no longer planned');
   return actionId;
+}
+
+export function getRunExecution(runId) {
+  const db = getDb();
+  const run = db.prepare('SELECT * FROM agent_runs WHERE id = ?').get(runId);
+  if (!run) return null;
+  const steps = db.prepare('SELECT * FROM agent_run_steps WHERE run_id = ? ORDER BY step_index').all(runId);
+  return { run, steps };
+}
+
+export function findRunByAction(actionId) {
+  return getDb().prepare('SELECT run_id FROM agent_run_steps WHERE action_id = ?').get(actionId)?.run_id ?? null;
 }
 
 export function recordRunStepOutcome(runId, index, status) {
@@ -147,6 +159,7 @@ function classifyRun(statuses) {
   if (statuses.includes('needs_attention')) return 'needs_attention';
   if (statuses.includes('outcome_uncertain')) return 'needs_attention';
   if (statuses.includes('waiting_for_approval') || statuses.includes('pending')) return 'waiting_for_approval';
+  if (statuses.includes('waiting_dependency')) return 'waiting_for_dependency';
   if (statuses.includes('waiting_for_action') || statuses.includes('approved') || statuses.includes('queued') || statuses.includes('running') || statuses.includes('retrying')) return 'waiting_for_action';
   if (statuses.some((status) => TERMINAL.has(status) && status !== 'executed')) return 'failed';
   return 'completed';
