@@ -27,7 +27,7 @@ class Tool {
 
 | Tool | Domain | Category | Args | Effect / emitted event |
 |---|---|---|---|---|
-| `email.search` | email | read | `{ query?, folder? }` | active provider (mock or real Gmail) |
+| `email.search` | email | read | `{ query?, folder? }` | selected account; bounded Gmail provider search or recent synchronized IMAP inbox, not exhaustive |
 | `email.read` | email | read | `{ id }` | reads one email via active provider, marks read |
 | `email.draft` | email | draft | `{ to, subject, body, inReplyTo? }` | MOCK/STUB only -- creates a local draft row, no send, no event, regardless of active provider |
 | `email.send` | email | consequential | `{ to, subject, body, inReplyTo?, draftId? }` | provider/account captured at proposal → `email.sent` |
