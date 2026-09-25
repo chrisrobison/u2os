@@ -495,8 +495,7 @@ export class Agent {
         try { await this.approvalManager.reject(step.action_id, cancelledBy); }
         catch { /* An approval may already have won; inspect its queue below. */ }
       }
-      const cancelledQueue = cancelUnstartedAction(step.action_id);
-      if (cancelledQueue) updateAgentAction(step.action_id, { status: 'cancelled' });
+      cancelUnstartedAction(step.action_id);
     }
     return this.runStore.getRun(runId);
   }

@@ -88,12 +88,14 @@ export function requestRunCancellation(runId, cancelledBy) {
   if (!status) return null;
   if (['completed', 'failed'].includes(status.status)) return status;
   const now = new Date().toISOString();
-  getDb().prepare(`UPDATE agent_runs SET cancel_requested_at = COALESCE(cancel_requested_at, ?), cancelled_by = COALESCE(cancelled_by, ?),
-    continuation_after_step = NULL, continuation_claimed = 0, updated_at = ? WHERE id = ?`)
-    .run(now, cancelledBy, now, runId);
-  getDb().prepare(`UPDATE agent_run_steps SET status = 'cancelled', updated_at = ?
-    WHERE run_id = ? AND action_id IS NULL AND status IN ('planned', 'waiting_dependency')`)
-    .run(now, runId);
+  withTransaction(getDb(), () => {
+    getDb().prepare(`UPDATE agent_runs SET cancel_requested_at = COALESCE(cancel_requested_at, ?), cancelled_by = COALESCE(cancelled_by, ?),
+      continuation_after_step = NULL, continuation_claimed = 0, updated_at = ? WHERE id = ?`)
+      .run(now, cancelledBy, now, runId);
+    getDb().prepare(`UPDATE agent_run_steps SET status = 'cancelled', updated_at = ?
+      WHERE run_id = ? AND action_id IS NULL AND status IN ('planned', 'waiting_dependency')`)
+      .run(now, runId);
+  });
   return getRun(runId);
 }
 
