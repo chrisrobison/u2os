@@ -106,6 +106,8 @@ export function getDb() {
   ensureColumn(db, 'agent_runs', 'voice_confidence', 'REAL');
   ensureColumn(db, 'agent_runs', 'continuation_after_step', 'INTEGER');
   ensureColumn(db, 'agent_runs', 'continuation_claimed', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'agent_runs', 'cancel_requested_at', 'TEXT');
+  ensureColumn(db, 'agent_runs', 'cancelled_by', 'TEXT');
   ensureColumn(db, 'agent_run_steps', 'context_provenance', 'TEXT');
   ensureColumn(db, 'agent_run_steps', 'account_context', 'TEXT');
   ensureColumn(db, 'agent_run_steps', 'model_id', 'TEXT');

@@ -57,6 +57,22 @@ export function getQueuedActionByActionId(actionId) {
   return rowToQueuedAction(getDb().prepare('SELECT * FROM action_queue WHERE action_id = ?').get(actionId));
 }
 
+/** Cancellation only wins before a worker leases an action. A leased or
+ * executing provider call remains authoritative and must finish or reconcile. */
+export function cancelUnstartedAction(actionId) {
+  const now = new Date().toISOString();
+  return withTransaction(getDb(), () => {
+    const db = getDb();
+    const row = db.prepare(`UPDATE action_queue SET status = 'cancelled', last_error = 'Run cancelled before attempt',
+      error_class = 'non_retryable', updated_at = ?
+      WHERE action_id = ? AND status IN ('queued', 'retry_wait')
+      AND EXISTS (SELECT 1 FROM agent_actions WHERE id = ? AND status != 'executed') RETURNING *`).get(now, actionId, actionId);
+    if (!row) return null;
+    db.prepare("UPDATE agent_actions SET status = 'cancelled', updated_at = ? WHERE id = ?").run(now, actionId);
+    return rowToQueuedAction(row);
+  });
+}
+
 export function listQueuedActions({ status } = {}) {
   const db = getDb();
   const rows = status

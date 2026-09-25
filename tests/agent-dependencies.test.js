@@ -10,7 +10,7 @@ function makeAgent(statuses, actions) {
   const calls = [];
   const runStore = {
     createRun: () => 'run_fixture', beginModelCall() {}, recordRunPlan: () => 0, beginRunStep: (_, index) => `act_${index}`,
-    recordRunStepOutcome() {}, finishRun() {}, failRun() {},
+    recordRunStepOutcome() {}, finishRun() {}, failRun() {}, isCancellationRequested: () => false,
   };
   const agent = new Agent({ modelProvider: { id: 'fixture' }, toolRegistry: registry, eventBus: { publish() {} }, runStore });
   agent.contextAssembler.assemble = async () => ({});
