@@ -5,11 +5,11 @@ const TERMINAL = new Set(['executed', 'blocked', 'failed', 'cancelled', 'rejecte
 export const DEFAULT_RUN_STEP_LIMIT = 16;
 export const DEFAULT_RUN_ELAPSED_MS = 86_400_000;
 
-export function createRun({ correlationId, actorId, objective, voice }) {
+export function createRun({ correlationId, actorId, objective, voice, conversationId = null }) {
   const id = newId('run');
   const now = new Date().toISOString();
-  getDb().prepare(`INSERT INTO agent_runs (id, correlation_id, actor_id, objective, voice_confidence, deadline_at, status, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'planning', ?, ?)`).run(id, correlationId, actorId, objective, voice ? voice.confidence : null,
+  getDb().prepare(`INSERT INTO agent_runs (id, correlation_id, actor_id, objective, conversation_id, voice_confidence, deadline_at, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'planning', ?, ?)`).run(id, correlationId, actorId, objective, conversationId, voice ? voice.confidence : null,
       new Date(Date.now() + DEFAULT_RUN_ELAPSED_MS).toISOString(), now, now);
   return id;
 }

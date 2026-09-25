@@ -18,6 +18,7 @@ import * as defaultRunStore from './run-store.js';
 import { resolveActionReferences } from './result-references.js';
 import { validatePlan } from './plan-validator.js';
 import { getAgentAction, updateAgentAction } from '../policy/policy-engine.js';
+import { appendTurn, requireConversation } from './conversation-store.js';
 
 const MAX_MODEL_CALLS_PER_MESSAGE = 3;
 
@@ -77,15 +78,32 @@ export class Agent {
   // the same authorization behavior. Only POST /api/agent/voice-message
   // ever passes it. See server/voice/authorize.js for the one place it
   // actually changes anything.
-  async handleMessage({ text, actorId = 'user', voice } = {}) {
+  async handleMessage({ text, actorId = 'user', voice, conversationId = null } = {}) {
+    if (conversationId) requireConversation(conversationId, actorId);
     const correlationId = newId('corr');
     const actor = { type: 'user', id: actorId };
-    const runId = this.runStore.createRun({ correlationId, actorId, objective: text, voice });
+    const runId = this.runStore.createRun({ correlationId, actorId, objective: text, voice, conversationId });
+    let result;
     try {
-      return await this._handleRunMessage({ text, actorId, voice, correlationId, actor, runId });
+      if (conversationId) appendTurn({ conversationId, ownerId: actorId, role: 'user', content: text, correlationId, runId });
+      result = await this._handleRunMessage({ text, actorId, voice, correlationId, actor, runId });
     } catch (error) {
       this.runStore.failRun(runId);
+      if (conversationId) {
+        try { appendTurn({ conversationId, ownerId: actorId, role: 'system', content: 'This turn failed. No completion was claimed; check run status for any attempted or uncertain action.', correlationId, runId }); }
+        catch { console.error('[agent] failed to save failed conversation turn'); }
+      }
       throw error;
+    }
+    if (!conversationId) return result;
+    try {
+      appendTurn({ conversationId, ownerId: actorId, role: 'assistant', content: result.response || result.reasoning_summary || "I don't have anything to add.", correlationId, runId });
+      return { ...result, conversationId, conversationSaved: true };
+    } catch {
+      // The action may already have happened. Do not turn a completed run
+      // into a retryable HTTP failure just because transcript storage failed.
+      console.error('[agent] failed to save assistant conversation turn');
+      return { ...result, conversationId, conversationSaved: false };
     }
   }
 

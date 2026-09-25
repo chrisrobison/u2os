@@ -157,11 +157,19 @@ export function deleteMemoryFact(id) {
   return request(`/api/memory/facts/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
-export function sendAgentMessage(text) {
+export function createConversation() {
+  return request('/api/agent/conversations', { method: 'POST', headers: JSON_HEADERS, body: '{}' });
+}
+
+export function getConversationTurns(id) {
+  return request(`/api/agent/conversations/${encodeURIComponent(id)}/turns`);
+}
+
+export function sendAgentMessage(text, conversationId) {
   return request('/api/agent/message', {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({ text, conversationId }),
   });
 }
 
@@ -169,12 +177,13 @@ export function sendAgentMessage(text) {
 // `{ cluster, identity, confidence }` -- pass the Phase 4 stub or a real
 // Phase 5 voiceprint-service result, either way. Response shape is
 // identical to sendAgentMessage()'s, so callers render both the same way.
-export function sendVoiceMessage(text, speaker) {
+export function sendVoiceMessage(text, speaker, conversationId) {
   return request('/api/agent/voice-message', {
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify({
       text,
+      conversationId,
       // identity/confidence are display hints only. Authorization is based
       // on this observation vector, compared with enrollment by the server.
       voiceObservation: { vector: speaker?.observationVector || null },
