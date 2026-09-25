@@ -1,6 +1,6 @@
 import { sendJson } from '../router.js';
 import { verifyVoiceObservation } from '../../voice/enrollment-store.js';
-import { getRun, listRuns } from '../../agent/run-store.js';
+import { getRun, getRunResult, listRuns } from '../../agent/run-store.js';
 
 // Agent conversation entry point. Approve/reject live in routes/actions.js
 // (kept in one place rather than duplicated here) since they operate on
@@ -17,10 +17,17 @@ export function registerAgentRoutes(router, { agent }) {
     sendJson(res, 200, run);
   });
 
+  router.get('/api/agent/runs/:id/result', async (req, res) => {
+    const run = getRunResult(req.params.id);
+    if (!run) return sendJson(res, 404, { error: 'Run not found' });
+    sendJson(res, 200, run);
+  });
+
   router.post('/api/agent/runs/:id/resume', async (req, res) => {
     const run = getRun(req.params.id);
     if (!run) return sendJson(res, 404, { error: 'Run not found' });
-    const updated = await agent.resumeRunDependents(req.params.id);
+    await agent.resumeRunDependents(req.params.id);
+    const updated = await agent.resumeRunPlanning(req.params.id);
     sendJson(res, 200, updated);
   });
 

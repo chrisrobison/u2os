@@ -17,6 +17,7 @@ import { accountDomainForAction, assertCalendarTarget, captureSmtpIdentity } fro
 import * as defaultRunStore from './run-store.js';
 import { resolveActionReferences } from './result-references.js';
 import { validatePlan } from './plan-validator.js';
+import { getAgentAction } from '../policy/policy-engine.js';
 
 const MAX_MODEL_CALLS_PER_MESSAGE = 3;
 
@@ -88,35 +89,34 @@ export class Agent {
     }
   }
 
-  async _handleRunMessage({ text, actorId, voice, correlationId, actor, runId }) {
+  async _handleRunMessage({ text, actorId, voice, correlationId, actor, runId, resume = false, previousObservations = [], previousResults = [], previousAttempted = new Set() }) {
     const planContext = await this.contextAssembler.assemble({ correlationId, actor, objective: text });
 
-    this.eventBus.publish({
-      type: 'agent.message.received',
-      source: 'user',
-      actor,
-      data: { text },
+    if (!resume) this.eventBus.publish({
+      type: 'agent.message.received', source: 'user', actor, data: { text },
       metadata: { correlationId, provenance: 'user:message' },
     });
 
-    let plan;
+    let plan = resume ? { reasoning_summary: this.runStore.getRunExecution(runId)?.run.reasoning_summary || '' } : null;
     let acceptedPlan;
     let stopReason = null;
-    const results = [];
+    const results = [...previousResults];
     const pendingActionIds = [];
-    const observations = [];
+    const observations = [...previousObservations];
     const memoryCandidates = [];
-    const attempted = new Set();
+    const attempted = new Set(previousAttempted);
 
-    for (let round = 0; round < MAX_MODEL_CALLS_PER_MESSAGE; round++) {
+    for (let round = resume ? this.runStore.getModelCallCount(runId) : 0; round < MAX_MODEL_CALLS_PER_MESSAGE; round++) {
       if (round > 0 && this.runStore.getModelCallCount?.(runId) >= MAX_MODEL_CALLS_PER_MESSAGE) {
         stopReason = 'Continuation stopped at the model-call limit. The objective is not verified.';
+        this.runStore.clearContinuation(runId);
         break;
       }
       plan = validatePlan(await this.planner.plan({ ...planContext, observations, onModelCall: () => this.runStore.beginModelCall(runId, MAX_MODEL_CALLS_PER_MESSAGE) }, text), this.toolRegistry);
       if (round > 0 && observations.length && !(this.planner.lastAllowedObservations || []).some((observation) => observation.items.length)) {
         stopReason = 'Continuation stopped: the configured model cannot receive the required observations under the current privacy policy. The objective is not verified.';
-        plan = acceptedPlan;
+        plan = acceptedPlan || plan;
+        this.runStore.clearContinuation(runId);
         break;
       }
       // Provenance is specific to the provider that produced this plan,
@@ -165,22 +165,27 @@ export class Agent {
         results.push(outcome); roundResults.push(outcome);
         this.runStore.recordRunStepOutcome(runId, stepIndex, outcome.status);
         if (outcome.status === 'pending') pendingActionIds.push(outcome.id);
-        if (outcome.status === 'executed' && this.toolRegistry.get(proposed.tool).category === 'read') {
+        if (outcome.status === 'executed') {
           observations.push({ stepIndex, tool: proposed.tool, actionId: outcome.id, status: 'executed', result: outcome.result });
         }
       }
       if (Array.isArray(plan.memoryCandidates)) memoryCandidates.push(...plan.memoryCandidates);
       if (plan.continue !== true) break;
-      if (!roundResults.length || roundResults.some((outcome) => outcome.status !== 'executed' || this.toolRegistry.get(outcome.tool).category !== 'read') || observations.length === observedBefore) {
-        stopReason = 'Continuation stopped: read-only prerequisites did not all complete. Review the action statuses; the objective is not verified.';
+      if (!roundResults.length || roundResults.some((outcome) => outcome.status !== 'executed') || observations.length === observedBefore) {
+        const resumable = roundResults.length > 0 && roundResults.every((outcome) => ['executed', 'pending', 'waiting_dependency', 'waiting_for_action', 'retrying', 'queued'].includes(outcome.status));
+        if (!resumable) {
+          this.runStore.clearContinuation(runId);
+        }
+        stopReason = `Continuation ${resumable ? 'paused' : 'stopped'}: prerequisites did not all complete. Review the action statuses; the objective is not verified.`;
         break;
       }
       if (round === MAX_MODEL_CALLS_PER_MESSAGE - 1) {
         stopReason = 'Continuation stopped at the model-call limit. The objective is not verified.';
+        this.runStore.clearContinuation(runId);
       }
     }
 
-    if (this.ownerEntityId) {
+    if (!resume && this.ownerEntityId) {
       try {
         detectAndRecordCommitment({ text, ownerEntityId: this.ownerEntityId, eventBus: this.eventBus, correlationId });
       } catch (err) {
@@ -208,12 +213,12 @@ export class Agent {
     }
 
     const incompleteResponse = summarizeIncompleteActions(results);
-    const response = stopReason ? `${stopReason}${incompleteResponse ? ` ${incompleteResponse}` : ''}` : incompleteResponse || plan.response;
+    const response = stopReason ? `${stopReason}${incompleteResponse ? ` ${incompleteResponse}` : ''}` : incompleteResponse || plan?.response;
     this.runStore.finishRun(runId, response);
     return {
       runId,
       correlationId,
-      reasoning_summary: plan.reasoning_summary,
+      reasoning_summary: plan?.reasoning_summary,
       actions: results,
       pendingActionIds,
       ...(response !== undefined ? { response } : {}),
@@ -352,7 +357,10 @@ export class Agent {
   async _wakeLinkedRun(actionId) {
     const runId = this.runStore.findRunByAction(actionId);
     if (!runId) return;
-    try { await this.resumeRunDependents(runId); }
+    try {
+      await this.resumeRunDependents(runId);
+      await this.resumeRunPlanning(runId);
+    }
     catch {
       // Approval/rejection has already committed. Keep its response truthful;
       // the owner can inspect and retry the still-durable waiting run.
@@ -400,6 +408,45 @@ export class Agent {
         modelIdentity: step.model_id,
       });
       this.runStore.recordRunStepOutcome(runId, step.step_index, outcome.status);
+    }
+    return this.runStore.getRun(runId);
+  }
+
+  /** Resume only a checkpoint whose authoritative actions all completed.
+   * The atomic claim and persisted call count bound duplicate wakes and crashes. */
+  async resumeRunPlanning(runId) {
+    const status = this.runStore.getRun(runId);
+    if (!status || status.status !== 'ready_to_continue') return status;
+    if (status.modelCalls >= MAX_MODEL_CALLS_PER_MESSAGE) {
+      this.runStore.clearContinuation(runId);
+      this.runStore.finishRun(runId, 'Continuation stopped at the model-call limit. The objective is not verified.');
+      return this.runStore.getRun(runId);
+    }
+    if (!this.runStore.claimContinuation(runId)) return this.runStore.getRun(runId);
+    const { run, steps } = this.runStore.getRunExecution(runId);
+    const observations = [];
+    const results = [];
+    const attempted = new Set();
+    try {
+      for (const step of steps) {
+        const action = getAgentAction(step.action_id);
+        if (!action || action.status !== 'executed') {
+          this.runStore.failRun(runId, 'Continuation needs owner review: a recorded prerequisite has no confirmed result. No action was replayed.');
+          return this.runStore.getRun(runId);
+        }
+        const args = JSON.parse(step.arguments);
+        attempted.add(JSON.stringify([step.tool, canonicalArguments(args)]));
+        observations.push({ stepIndex: step.step_index, tool: step.tool, actionId: step.action_id, status: 'executed', result: action.result });
+        results.push({ id: step.action_id, tool: step.tool, arguments: args, status: 'executed', result: action.result });
+      }
+      await this._handleRunMessage({
+        text: run.objective, actorId: run.actor_id, correlationId: run.correlation_id,
+        actor: { type: 'user', id: run.actor_id },
+        voice: run.voice_confidence === null ? undefined : { confidence: run.voice_confidence },
+        runId, resume: true, previousObservations: observations, previousResults: results, previousAttempted: attempted,
+      });
+    } catch {
+      this.runStore.failRun(runId, 'Continuation failed during planning. Completed actions were not replayed; review the run before giving a new instruction.');
     }
     return this.runStore.getRun(runId);
   }
