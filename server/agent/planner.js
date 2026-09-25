@@ -64,15 +64,15 @@ export class Planner {
       this.lastProviderId = provider.id;
       return plan;
     } catch (err) {
-      if (err.code === 'MODEL_CALL_LIMIT') throw err;
+      if (err.code === 'MODEL_CALL_LIMIT' || err.code === 'RUN_BUDGET_EXHAUSTED') throw err;
       let fallback;
       try { fallback = this.modelRouter.resolveFallback(this.role); }
-      catch (fallbackError) { throw fallbackError.code === 'MODEL_CALL_LIMIT' ? fallbackError : this.modelRouter.allowMock === false ? unavailableModel(fallbackError) : fallbackError; }
+      catch (fallbackError) { throw ['MODEL_CALL_LIMIT', 'RUN_BUDGET_EXHAUSTED'].includes(fallbackError.code) ? fallbackError : this.modelRouter.allowMock === false ? unavailableModel(fallbackError) : fallbackError; }
       if (!fallback) throw this.modelRouter.allowMock === false ? unavailableModel(err) : err;
       console.error(`[planner] role "${this.role}" primary provider failed; retrying configured fallback`);
       let plan;
       try { plan = await this._planWith(fallback, context, objective); }
-      catch (fallbackError) { throw fallbackError.code === 'MODEL_CALL_LIMIT' ? fallbackError : this.modelRouter.allowMock === false ? unavailableModel(fallbackError) : fallbackError; }
+      catch (fallbackError) { throw ['MODEL_CALL_LIMIT', 'RUN_BUDGET_EXHAUSTED'].includes(fallbackError.code) ? fallbackError : this.modelRouter.allowMock === false ? unavailableModel(fallbackError) : fallbackError; }
       this.lastProviderId = fallback.id;
       return plan;
     }

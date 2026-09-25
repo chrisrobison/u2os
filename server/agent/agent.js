@@ -112,15 +112,35 @@ export class Agent {
         this.runStore.clearContinuation(runId);
         break;
       }
+      const budgetBeforeModel = this.runStore.getBudgetStopReason?.(runId);
+      if (budgetBeforeModel) {
+        this.runStore.markBudgetExhausted(runId, budgetBeforeModel);
+        stopReason = `Run budget exhausted (${budgetBeforeModel}); no new model call was started. The objective is not verified.`;
+        break;
+      }
       if (round > 0 && this.runStore.getModelCallCount?.(runId) >= MAX_MODEL_CALLS_PER_MESSAGE) {
         stopReason = 'Continuation stopped at the model-call limit. The objective is not verified.';
         this.runStore.clearContinuation(runId);
         break;
       }
-      const proposedPlan = await this.planner.plan({ ...planContext, observations, onModelCall: () => this.runStore.beginModelCall(runId, MAX_MODEL_CALLS_PER_MESSAGE) }, text);
+      let proposedPlan;
+      try {
+        proposedPlan = await this.planner.plan({ ...planContext, observations, onModelCall: () => this.runStore.beginModelCall(runId, MAX_MODEL_CALLS_PER_MESSAGE) }, text);
+      } catch (error) {
+        if (error.code !== 'RUN_BUDGET_EXHAUSTED') throw error;
+        this.runStore.markBudgetExhausted(runId, error.reason);
+        stopReason = `Run budget exhausted (${error.reason}); no new model call was started. The objective is not verified.`;
+        break;
+      }
       if (this.runStore.isCancellationRequested(runId)) {
         stopReason = 'Run cancellation requested. The in-flight model result was discarded before any new action.';
         this.runStore.clearContinuation(runId);
+        break;
+      }
+      const budgetAfterModel = this.runStore.getBudgetStopReason?.(runId);
+      if (budgetAfterModel) {
+        this.runStore.markBudgetExhausted(runId, budgetAfterModel);
+        stopReason = `Run budget exhausted (${budgetAfterModel}); the late model result was discarded. The objective is not verified.`;
         break;
       }
       plan = validatePlan(proposedPlan, this.toolRegistry);
@@ -152,6 +172,14 @@ export class Agent {
           this.runStore.recordRunStepOutcome(runId, stepIndex, 'cancelled');
           continue;
         }
+        const budgetBeforeStep = this.runStore.getBudgetStopReason?.(runId);
+        if (budgetBeforeStep) {
+          this.runStore.markBudgetExhausted(runId, budgetBeforeStep);
+          const stopped = { status: 'budget_exhausted', tool: proposed.tool, arguments: proposed.arguments, reason: budgetBeforeStep };
+          results.push(stopped); roundResults.push(stopped);
+          stopReason = `Run budget exhausted (${budgetBeforeStep}); no further step was started. The objective is not verified.`;
+          continue;
+        }
         const unmet = (proposed.dependsOn || []).filter((dependency) => roundResults[dependency]?.status !== 'executed');
         if (unmet.length) {
           const waiting = unmet.some((dependency) => ['pending', 'waiting_dependency', 'waiting_for_action', 'retrying', 'queued', 'uncertain', 'outcome_uncertain'].includes(roundResults[dependency]?.status));
@@ -173,7 +201,16 @@ export class Agent {
           continue;
         }
         attempted.add(signature);
-        const actionId = this.runStore.beginRunStep(runId, stepIndex);
+        let actionId;
+        try { actionId = this.runStore.beginRunStep(runId, stepIndex); }
+        catch (error) {
+          if (error.code !== 'RUN_BUDGET_EXHAUSTED') throw error;
+          this.runStore.markBudgetExhausted(runId, error.reason);
+          const stopped = { status: 'budget_exhausted', tool: proposed.tool, arguments: proposed.arguments, reason: error.reason };
+          results.push(stopped); roundResults.push(stopped);
+          stopReason = `Run budget exhausted (${error.reason}); no further step was started. The objective is not verified.`;
+          continue;
+        }
         const outcome = await this.evaluateAndMaybeExecute({
           actionId, tool: proposed.tool, arguments: proposed.arguments, requestedBy: actorId,
           requestText: text, reasoningSummary: plan.reasoning_summary, correlationId,
@@ -370,6 +407,11 @@ export class Agent {
   async approveAction(id, approvedBy) {
     const linked = this.runStore.findRunByAction(id);
     if (linked && this.runStore.isCancellationRequested(linked)) throw new Error('Run was cancelled; approval is no longer valid');
+    if (linked && getAgentAction(id)?.status === 'pending' && this.runStore.isRunDeadlineExpired(linked)) {
+      updateAgentAction(id, { status: 'blocked', result: { error: 'Run elapsed-time budget expired before approval' } });
+      this.runStore.markBudgetExhausted(linked, 'elapsed_limit');
+      return { id, status: 'blocked', reason: 'Run elapsed-time budget expired before approval' };
+    }
     const result = await this.approvalManager.approve(id, approvedBy);
     await this._wakeLinkedRun(id);
     return result;
@@ -407,6 +449,11 @@ export class Agent {
       if (this.runStore.isCancellationRequested(runId)) {
         this.runStore.recordRunStepOutcome(runId, step.step_index, 'cancelled');
         continue;
+      }
+      const budgetReason = this.runStore.getBudgetStopReason?.(runId);
+      if (budgetReason) {
+        this.runStore.markBudgetExhausted(runId, budgetReason);
+        break;
       }
       const current = this.runStore.getRun(runId);
       const dependencies = JSON.parse(step.depends_on).map((index) => current.steps.find((item) => item.index === index));
@@ -449,6 +496,8 @@ export class Agent {
   async resumeRunPlanning(runId) {
     const status = this.runStore.getRun(runId);
     if (!status || status.status !== 'ready_to_continue') return status;
+    const budgetReason = this.runStore.getBudgetStopReason?.(runId);
+    if (budgetReason) return this.runStore.markBudgetExhausted(runId, budgetReason);
     if (status.modelCalls >= MAX_MODEL_CALLS_PER_MESSAGE) {
       this.runStore.clearContinuation(runId);
       this.runStore.finishRun(runId, 'Continuation stopped at the model-call limit. The objective is not verified.');

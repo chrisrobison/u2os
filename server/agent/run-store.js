@@ -2,12 +2,15 @@ import { getDb, withTransaction } from '../db/connection.js';
 import { newId } from '../db/ids.js';
 
 const TERMINAL = new Set(['executed', 'blocked', 'failed', 'cancelled', 'rejected', 'skipped']);
+export const DEFAULT_RUN_STEP_LIMIT = 16;
+export const DEFAULT_RUN_ELAPSED_MS = 86_400_000;
 
 export function createRun({ correlationId, actorId, objective, voice }) {
   const id = newId('run');
   const now = new Date().toISOString();
-  getDb().prepare(`INSERT INTO agent_runs (id, correlation_id, actor_id, objective, voice_confidence, status, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, 'planning', ?, ?)`).run(id, correlationId, actorId, objective, voice ? voice.confidence : null, now, now);
+  getDb().prepare(`INSERT INTO agent_runs (id, correlation_id, actor_id, objective, voice_confidence, deadline_at, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'planning', ?, ?)`).run(id, correlationId, actorId, objective, voice ? voice.confidence : null,
+      new Date(Date.now() + DEFAULT_RUN_ELAPSED_MS).toISOString(), now, now);
   return id;
 }
 
@@ -29,10 +32,14 @@ export function recordRunPlan(runId, plan, contextProvenance = [], accountContex
 }
 
 export function beginModelCall(runId, limit = 3) {
+  const now = new Date().toISOString();
   const changed = getDb().prepare(`UPDATE agent_runs SET model_call_count = model_call_count + 1, updated_at = ?
-    WHERE id = ? AND model_call_count < ? AND status IN ('planning', 'running') AND cancel_requested_at IS NULL`)
-    .run(new Date().toISOString(), runId, limit);
+    WHERE id = ? AND model_call_count < ? AND status IN ('planning', 'running') AND cancel_requested_at IS NULL
+    AND step_count < step_limit AND deadline_at > ?`)
+    .run(now, runId, limit, now);
   if (changed.changes !== 1) {
+    const reason = getBudgetStopReason(runId);
+    if (reason) throw budgetError(reason);
     const error = new Error('Run model-call limit reached');
     error.code = 'MODEL_CALL_LIMIT';
     error.status = 429;
@@ -46,11 +53,51 @@ export function getModelCallCount(runId) {
 
 export function beginRunStep(runId, index) {
   const actionId = newId('act');
-  const changed = getDb().prepare(`UPDATE agent_run_steps SET status = 'running', action_id = ?, updated_at = ?
-    WHERE run_id = ? AND step_index = ? AND status IN ('planned', 'waiting_dependency')
-    AND EXISTS (SELECT 1 FROM agent_runs WHERE id = ? AND cancel_requested_at IS NULL)`).run(actionId, new Date().toISOString(), runId, index, runId);
-  if (changed.changes !== 1) throw new Error('Run step is no longer planned');
+  withTransaction(getDb(), () => {
+    const reason = getBudgetStopReason(runId);
+    if (reason) throw budgetError(reason);
+    const now = new Date().toISOString();
+    const reserved = getDb().prepare(`UPDATE agent_runs SET step_count = step_count + 1, updated_at = ?
+      WHERE id = ? AND step_count < step_limit AND deadline_at > ? AND cancel_requested_at IS NULL`).run(now, runId, now);
+    if (reserved.changes !== 1) throw budgetError(getBudgetStopReason(runId) || 'run_unavailable');
+    const changed = getDb().prepare(`UPDATE agent_run_steps SET status = 'running', action_id = ?, updated_at = ?
+      WHERE run_id = ? AND step_index = ? AND status IN ('planned', 'waiting_dependency')`).run(actionId, now, runId, index);
+    if (changed.changes !== 1) throw new Error('Run step is no longer planned');
+  });
   return actionId;
+}
+
+export function getBudgetStopReason(runId, now = new Date()) {
+  const row = getDb().prepare('SELECT step_count, step_limit, deadline_at FROM agent_runs WHERE id = ?').get(runId);
+  if (!row) return 'run_unavailable';
+  if (new Date(now).toISOString() >= row.deadline_at) return 'elapsed_limit';
+  if (row.step_count >= row.step_limit) return 'step_limit';
+  return null;
+}
+
+export function isRunDeadlineExpired(runId) {
+  const row = getDb().prepare('SELECT deadline_at FROM agent_runs WHERE id = ?').get(runId);
+  return Boolean(row && new Date().toISOString() >= row.deadline_at);
+}
+
+export function markBudgetExhausted(runId, reason) {
+  const now = new Date().toISOString();
+  withTransaction(getDb(), () => {
+    getDb().prepare(`UPDATE agent_runs SET budget_stop_reason = COALESCE(budget_stop_reason, ?),
+      continuation_after_step = NULL, continuation_claimed = 0, status = 'budget_exhausted',
+      response = 'Run budget exhausted. Completed or in-flight actions were not replayed; the objective is not verified.', updated_at = ?
+      WHERE id = ? AND cancel_requested_at IS NULL`).run(reason, now, runId);
+    getDb().prepare(`UPDATE agent_run_steps SET status = 'budget_exhausted', updated_at = ?
+      WHERE run_id = ? AND action_id IS NULL AND status IN ('planned', 'waiting_dependency')`).run(now, runId);
+  });
+  return getRun(runId);
+}
+
+function budgetError(reason) {
+  const error = new Error(`Run budget exhausted: ${reason}`);
+  error.code = 'RUN_BUDGET_EXHAUSTED';
+  error.reason = reason;
+  return error;
 }
 
 export function getRunExecution(runId) {
@@ -107,8 +154,8 @@ export function recordRunStepOutcome(runId, index, status) {
 export function finishRun(runId, response = null) {
   const db = getDb();
   const rows = db.prepare('SELECT status FROM agent_run_steps WHERE run_id = ? ORDER BY step_index').all(runId);
-  const checkpoint = db.prepare('SELECT continuation_after_step, cancel_requested_at FROM agent_runs WHERE id = ?').get(runId);
-  const status = classifyRun(rows.map((row) => row.status), checkpoint?.continuation_after_step != null, Boolean(checkpoint?.cancel_requested_at));
+  const checkpoint = db.prepare('SELECT continuation_after_step, cancel_requested_at, budget_stop_reason FROM agent_runs WHERE id = ?').get(runId);
+  const status = classifyRun(rows.map((row) => row.status), checkpoint?.continuation_after_step != null, Boolean(checkpoint?.cancel_requested_at), Boolean(checkpoint?.budget_stop_reason));
   db.prepare('UPDATE agent_runs SET status = ?, response = ?, updated_at = ? WHERE id = ?')
     .run(status, response, new Date().toISOString(), runId);
   return status;
@@ -143,11 +190,13 @@ export function getRun(runId) {
     if (step.status !== steps[position].status) updateStep.run(step.status, now, runId, step.index);
   }
   const status = (!run.cancel_requested_at && ['planning', 'running', 'failed'].includes(run.status)) || (!steps.length && !run.cancel_requested_at)
-    ? run.status : classifyRun(currentSteps.map((step) => step.status), run.continuation_after_step !== null, Boolean(run.cancel_requested_at));
+    ? run.status : classifyRun(currentSteps.map((step) => step.status), run.continuation_after_step !== null, Boolean(run.cancel_requested_at), Boolean(run.budget_stop_reason));
   if (run.status !== status) {
     db.prepare('UPDATE agent_runs SET status = ?, updated_at = ? WHERE id = ?')
       .run(status, now, runId);
   }
+  const terminalRun = ['completed', 'failed', 'cancelled', 'budget_exhausted'].includes(status);
+  const usageEnd = terminalRun && run.status === status ? Date.parse(run.updated_at) : Date.now();
   return {
     id: run.id,
     correlationId: run.correlation_id,
@@ -157,6 +206,19 @@ export function getRun(runId) {
     continuationReady: status === 'ready_to_continue',
     cancellationRequested: Boolean(run.cancel_requested_at),
     cancelRequestedAt: run.cancel_requested_at,
+    budget: {
+      stepsUsed: run.step_count,
+      stepLimit: run.step_limit,
+      modelCallsUsed: run.model_call_count,
+      modelCallLimit: 3,
+      elapsedMs: Math.max(0, usageEnd - Date.parse(run.created_at)),
+      elapsedLimitMs: run.elapsed_limit_ms,
+      deadlineAt: run.deadline_at,
+      currentLimit: terminalRun && !run.budget_stop_reason ? null : new Date().toISOString() >= run.deadline_at ? 'elapsed_limit'
+        : run.step_count >= run.step_limit ? 'step_limit' : null,
+      stopReason: run.budget_stop_reason,
+      monetaryCost: { available: false, amount: null, currency: null },
+    },
     steps: currentSteps,
     createdAt: run.created_at,
     updatedAt: run.status !== status ? now : run.updated_at,
@@ -203,7 +265,7 @@ function currentStepStatus(step) {
   return step.action_status;
 }
 
-function classifyRun(statuses, hasContinuation = false, cancellationRequested = false) {
+function classifyRun(statuses, hasContinuation = false, cancellationRequested = false, budgetStopped = false) {
   if (cancellationRequested) {
     if (statuses.includes('outcome_uncertain') || statuses.includes('needs_attention') || statuses.includes('interrupted')) return 'needs_attention';
     if (statuses.some((status) => ['waiting_for_action', 'approved', 'queued', 'running', 'retrying', 'pending'].includes(status))) return 'cancelling';
@@ -213,6 +275,7 @@ function classifyRun(statuses, hasContinuation = false, cancellationRequested = 
   if (statuses.includes('interrupted')) return 'interrupted';
   if (statuses.includes('needs_attention')) return 'needs_attention';
   if (statuses.includes('outcome_uncertain')) return 'needs_attention';
+  if (budgetStopped && !statuses.some((status) => ['waiting_for_action', 'approved', 'queued', 'running', 'retrying'].includes(status))) return 'budget_exhausted';
   if (statuses.includes('waiting_for_approval') || statuses.includes('pending')) return 'waiting_for_approval';
   if (statuses.includes('waiting_dependency')) return 'waiting_for_dependency';
   if (statuses.includes('waiting_for_action') || statuses.includes('approved') || statuses.includes('queued') || statuses.includes('running') || statuses.includes('retrying')) return 'waiting_for_action';
