@@ -22,8 +22,8 @@ export function recordRunPlan(runId, plan, contextProvenance = [], accountContex
     for (const [index, action] of plan.actions.entries()) {
       insert.run(runId, baseIndex + index, action.tool, JSON.stringify(action.arguments), JSON.stringify((action.dependsOn || []).map((dependency) => baseIndex + dependency)), JSON.stringify(contextProvenance), accountContexts[index] ? JSON.stringify(accountContexts[index]) : null, modelId, now, now);
     }
-    db.prepare(`UPDATE agent_runs SET status = 'running', reasoning_summary = ?, updated_at = ? WHERE id = ?`)
-      .run(plan.reasoning_summary, now, runId);
+    db.prepare(`UPDATE agent_runs SET status = 'running', reasoning_summary = ?, continuation_after_step = ?, continuation_claimed = 0, updated_at = ? WHERE id = ?`)
+      .run(plan.reasoning_summary, plan.continue === true && plan.actions.length ? baseIndex + plan.actions.length - 1 : null, now, runId);
     return baseIndex;
   });
 }
@@ -64,6 +64,20 @@ export function findRunByAction(actionId) {
   return getDb().prepare('SELECT run_id FROM agent_run_steps WHERE action_id = ?').get(actionId)?.run_id ?? null;
 }
 
+export function clearContinuation(runId) {
+  getDb().prepare('UPDATE agent_runs SET continuation_after_step = NULL, continuation_claimed = 0, updated_at = ? WHERE id = ?')
+    .run(new Date().toISOString(), runId);
+}
+
+export function claimContinuation(runId) {
+  const run = getRun(runId);
+  if (!run || run.status !== 'ready_to_continue') return false;
+  const changed = getDb().prepare(`UPDATE agent_runs SET status = 'planning', continuation_claimed = 1, updated_at = ?
+    WHERE id = ? AND status = 'ready_to_continue' AND continuation_claimed = 0 AND continuation_after_step IS NOT NULL`)
+    .run(new Date().toISOString(), runId);
+  return changed.changes === 1;
+}
+
 export function recordRunStepOutcome(runId, index, status) {
   getDb().prepare('UPDATE agent_run_steps SET status = ?, updated_at = ? WHERE run_id = ? AND step_index = ?')
     .run(status, new Date().toISOString(), runId, index);
@@ -72,15 +86,16 @@ export function recordRunStepOutcome(runId, index, status) {
 export function finishRun(runId, response = null) {
   const db = getDb();
   const rows = db.prepare('SELECT status FROM agent_run_steps WHERE run_id = ? ORDER BY step_index').all(runId);
-  const status = classifyRun(rows.map((row) => row.status));
+  const checkpoint = db.prepare('SELECT continuation_after_step FROM agent_runs WHERE id = ?').get(runId);
+  const status = classifyRun(rows.map((row) => row.status), Boolean(checkpoint?.continuation_after_step !== null && checkpoint?.continuation_after_step !== undefined));
   db.prepare('UPDATE agent_runs SET status = ?, response = ?, updated_at = ? WHERE id = ?')
     .run(status, response, new Date().toISOString(), runId);
   return status;
 }
 
-export function failRun(runId) {
-  getDb().prepare(`UPDATE agent_runs SET status = 'failed', updated_at = ? WHERE id = ?`)
-    .run(new Date().toISOString(), runId);
+export function failRun(runId, response = null) {
+  getDb().prepare(`UPDATE agent_runs SET status = 'failed', response = COALESCE(?, response), updated_at = ? WHERE id = ?`)
+    .run(response, new Date().toISOString(), runId);
 }
 
 export function getRun(runId) {
@@ -106,7 +121,7 @@ export function getRun(runId) {
   for (const [position, step] of currentSteps.entries()) {
     if (step.status !== steps[position].status) updateStep.run(step.status, now, runId, step.index);
   }
-  const status = ['planning', 'running', 'failed'].includes(run.status) || !steps.length ? run.status : classifyRun(currentSteps.map((step) => step.status));
+  const status = ['planning', 'running', 'failed'].includes(run.status) || !steps.length ? run.status : classifyRun(currentSteps.map((step) => step.status), run.continuation_after_step !== null);
   if (run.status !== status) {
     db.prepare('UPDATE agent_runs SET status = ?, updated_at = ? WHERE id = ?')
       .run(status, now, runId);
@@ -117,6 +132,7 @@ export function getRun(runId) {
     status,
     objectiveStatus: run.objective_status,
     modelCalls: run.model_call_count,
+    continuationReady: status === 'ready_to_continue',
     steps: currentSteps,
     createdAt: run.created_at,
     updatedAt: run.status !== status ? now : run.updated_at,
@@ -129,12 +145,20 @@ export function listRuns({ limit = 20 } = {}) {
   return ids.map(({ id }) => getRun(id));
 }
 
+export function getRunResult(runId) {
+  const status = getRun(runId);
+  if (!status) return null;
+  const row = getDb().prepare('SELECT response FROM agent_runs WHERE id = ?').get(runId);
+  return { ...status, response: row.response };
+}
+
 export function reconcileInterruptedRuns() {
   const db = getDb();
   const now = new Date().toISOString();
   db.prepare(`UPDATE agent_run_steps SET status = 'interrupted', updated_at = ?
     WHERE action_id IS NULL AND status IN ('planned', 'running')`).run(now);
   db.prepare(`UPDATE agent_runs SET status = 'interrupted', updated_at = ? WHERE status IN ('planning', 'running')`).run(now);
+  db.prepare("UPDATE agent_runs SET continuation_claimed = 0 WHERE status = 'interrupted' AND continuation_after_step IS NOT NULL").run();
   const ids = db.prepare("SELECT id FROM agent_runs WHERE status IN ('interrupted', 'waiting_for_action', 'waiting_for_approval')").all();
   for (const { id } of ids) getRun(id);
 }
@@ -153,7 +177,7 @@ function currentStepStatus(step) {
   return step.action_status;
 }
 
-function classifyRun(statuses) {
+function classifyRun(statuses, hasContinuation = false) {
   if (statuses.includes('planning') || statuses.includes('planned')) return 'running';
   if (statuses.includes('interrupted')) return 'interrupted';
   if (statuses.includes('needs_attention')) return 'needs_attention';
@@ -162,5 +186,5 @@ function classifyRun(statuses) {
   if (statuses.includes('waiting_dependency')) return 'waiting_for_dependency';
   if (statuses.includes('waiting_for_action') || statuses.includes('approved') || statuses.includes('queued') || statuses.includes('running') || statuses.includes('retrying')) return 'waiting_for_action';
   if (statuses.some((status) => TERMINAL.has(status) && status !== 'executed')) return 'failed';
-  return 'completed';
+  return hasContinuation ? 'ready_to_continue' : 'completed';
 }

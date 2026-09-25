@@ -141,12 +141,15 @@ test('later plan rounds append steps, retain absolute dependencies, and migrate 
     const db = getDb();
     db.exec('ALTER TABLE agent_runs DROP COLUMN model_call_count');
     db.exec('ALTER TABLE agent_runs DROP COLUMN voice_confidence');
+    db.exec('ALTER TABLE agent_runs DROP COLUMN continuation_after_step');
+    db.exec('ALTER TABLE agent_runs DROP COLUMN continuation_claimed');
     db.exec('ALTER TABLE agent_run_steps DROP COLUMN context_provenance');
     db.exec('ALTER TABLE agent_run_steps DROP COLUMN account_context');
     db.exec('ALTER TABLE agent_run_steps DROP COLUMN model_id');
     closeAllForTests();
     assert.equal(getDb().prepare('SELECT model_call_count FROM agent_runs WHERE id = ?').get(runId).model_call_count, 0);
     assert.equal(getDb().prepare('SELECT voice_confidence FROM agent_runs WHERE id = ?').get(runId).voice_confidence, null);
+    assert.equal(getDb().prepare('SELECT continuation_after_step, continuation_claimed FROM agent_runs WHERE id = ?').get(runId).continuation_claimed, 0);
     assert.equal(getDb().prepare('SELECT context_provenance FROM agent_run_steps WHERE run_id = ? LIMIT 1').get(runId).context_provenance, null);
     assert.equal(getDb().prepare('SELECT account_context FROM agent_run_steps WHERE run_id = ? LIMIT 1').get(runId).account_context, null);
     assert.equal(getDb().prepare('SELECT model_id FROM agent_run_steps WHERE run_id = ? LIMIT 1').get(runId).model_id, null);
@@ -170,6 +173,10 @@ test('run status API is owner-only and returns metadata without objectives or pa
     const body = await response.text();
     assert.equal(JSON.parse(body).steps[0].status, 'planned');
     assert.doesNotMatch(body, /secret objective|secret payload|private reasoning/);
+    assert.equal((await fetch(`${url}/result`)).status, 401);
+    const result = await fetch(`${url}/result`, { headers: { cookie } });
+    assert.equal(result.status, 200);
+    assert.doesNotMatch(await result.text(), /secret objective|secret payload|private reasoning/);
     const resumed = await fetch(`${url}/resume`, { method: 'POST', headers: { cookie, origin: `http://127.0.0.1:${handle.port}`, 'x-u2os-csrf': csrfToken } });
     assert.equal(resumed.status, 200);
     assert.doesNotMatch(await resumed.text(), /secret objective|secret payload|private reasoning/);
