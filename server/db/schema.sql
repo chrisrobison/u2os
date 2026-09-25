@@ -207,6 +207,8 @@ CREATE TABLE IF NOT EXISTS agent_runs (
   voice_confidence REAL,
   continuation_after_step INTEGER,
   continuation_claimed INTEGER NOT NULL DEFAULT 0,
+  cancel_requested_at TEXT,
+  cancelled_by TEXT,
   reasoning_summary TEXT,
   response TEXT,
   created_at TEXT NOT NULL,

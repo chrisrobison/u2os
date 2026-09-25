@@ -143,6 +143,8 @@ test('later plan rounds append steps, retain absolute dependencies, and migrate 
     db.exec('ALTER TABLE agent_runs DROP COLUMN voice_confidence');
     db.exec('ALTER TABLE agent_runs DROP COLUMN continuation_after_step');
     db.exec('ALTER TABLE agent_runs DROP COLUMN continuation_claimed');
+    db.exec('ALTER TABLE agent_runs DROP COLUMN cancel_requested_at');
+    db.exec('ALTER TABLE agent_runs DROP COLUMN cancelled_by');
     db.exec('ALTER TABLE agent_run_steps DROP COLUMN context_provenance');
     db.exec('ALTER TABLE agent_run_steps DROP COLUMN account_context');
     db.exec('ALTER TABLE agent_run_steps DROP COLUMN model_id');
@@ -150,6 +152,7 @@ test('later plan rounds append steps, retain absolute dependencies, and migrate 
     assert.equal(getDb().prepare('SELECT model_call_count FROM agent_runs WHERE id = ?').get(runId).model_call_count, 0);
     assert.equal(getDb().prepare('SELECT voice_confidence FROM agent_runs WHERE id = ?').get(runId).voice_confidence, null);
     assert.equal(getDb().prepare('SELECT continuation_after_step, continuation_claimed FROM agent_runs WHERE id = ?').get(runId).continuation_claimed, 0);
+    assert.equal(getDb().prepare('SELECT cancel_requested_at, cancelled_by FROM agent_runs WHERE id = ?').get(runId).cancel_requested_at, null);
     assert.equal(getDb().prepare('SELECT context_provenance FROM agent_run_steps WHERE run_id = ? LIMIT 1').get(runId).context_provenance, null);
     assert.equal(getDb().prepare('SELECT account_context FROM agent_run_steps WHERE run_id = ? LIMIT 1').get(runId).account_context, null);
     assert.equal(getDb().prepare('SELECT model_id FROM agent_run_steps WHERE run_id = ? LIMIT 1').get(runId).model_id, null);
@@ -180,6 +183,12 @@ test('run status API is owner-only and returns metadata without objectives or pa
     const resumed = await fetch(`${url}/resume`, { method: 'POST', headers: { cookie, origin: `http://127.0.0.1:${handle.port}`, 'x-u2os-csrf': csrfToken } });
     assert.equal(resumed.status, 200);
     assert.doesNotMatch(await resumed.text(), /secret objective|secret payload|private reasoning/);
+    assert.equal((await fetch(`${url}/cancel`, { method: 'POST' })).status, 401);
+    const cancelHeaders = { cookie, origin: `http://127.0.0.1:${handle.port}`, 'x-u2os-csrf': csrfToken };
+    const cancelled = await fetch(`${url}/cancel`, { method: 'POST', headers: cancelHeaders });
+    assert.equal(cancelled.status, 200);
+    assert.equal((await cancelled.json()).status, 'cancelled');
+    assert.equal((await (await fetch(`${url}/cancel`, { method: 'POST', headers: cancelHeaders })).json()).status, 'cancelled');
     assert.equal((await fetch(`${url}_missing`, { headers: { cookie } })).status, 404);
   } finally { if (server) await new Promise((resolve) => server.close(resolve)); cleanup(dir); }
 });

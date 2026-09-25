@@ -8,7 +8,7 @@ import { ActionEvaluator } from './action-evaluator.js';
 import { ActionExecutor } from './action-executor.js';
 import { ApprovalManager } from './approval-manager.js';
 import { ActionQueueWorker } from './action-queue-worker.js';
-import { enqueueAction } from './action-queue-store.js';
+import { enqueueAction, cancelUnstartedAction } from './action-queue-store.js';
 import { EvaluatorRegistry } from './proactive/evaluator-registry.js';
 import { registerBuiltinEvaluators } from './proactive/builtin-evaluators.js';
 import { proposeMemoryCandidate } from '../memory/candidate-store.js';
@@ -17,7 +17,7 @@ import { accountDomainForAction, assertCalendarTarget, captureSmtpIdentity } fro
 import * as defaultRunStore from './run-store.js';
 import { resolveActionReferences } from './result-references.js';
 import { validatePlan } from './plan-validator.js';
-import { getAgentAction } from '../policy/policy-engine.js';
+import { getAgentAction, updateAgentAction } from '../policy/policy-engine.js';
 
 const MAX_MODEL_CALLS_PER_MESSAGE = 3;
 
@@ -107,12 +107,23 @@ export class Agent {
     const attempted = new Set(previousAttempted);
 
     for (let round = resume ? this.runStore.getModelCallCount(runId) : 0; round < MAX_MODEL_CALLS_PER_MESSAGE; round++) {
+      if (this.runStore.isCancellationRequested(runId)) {
+        stopReason = 'Run cancellation requested. No further planning or new actions were started.';
+        this.runStore.clearContinuation(runId);
+        break;
+      }
       if (round > 0 && this.runStore.getModelCallCount?.(runId) >= MAX_MODEL_CALLS_PER_MESSAGE) {
         stopReason = 'Continuation stopped at the model-call limit. The objective is not verified.';
         this.runStore.clearContinuation(runId);
         break;
       }
-      plan = validatePlan(await this.planner.plan({ ...planContext, observations, onModelCall: () => this.runStore.beginModelCall(runId, MAX_MODEL_CALLS_PER_MESSAGE) }, text), this.toolRegistry);
+      const proposedPlan = await this.planner.plan({ ...planContext, observations, onModelCall: () => this.runStore.beginModelCall(runId, MAX_MODEL_CALLS_PER_MESSAGE) }, text);
+      if (this.runStore.isCancellationRequested(runId)) {
+        stopReason = 'Run cancellation requested. The in-flight model result was discarded before any new action.';
+        this.runStore.clearContinuation(runId);
+        break;
+      }
+      plan = validatePlan(proposedPlan, this.toolRegistry);
       if (round > 0 && observations.length && !(this.planner.lastAllowedObservations || []).some((observation) => observation.items.length)) {
         stopReason = 'Continuation stopped: the configured model cannot receive the required observations under the current privacy policy. The objective is not verified.';
         plan = acceptedPlan || plan;
@@ -135,6 +146,12 @@ export class Agent {
 
       for (const [index, proposed] of resolvedActions.entries()) {
         const stepIndex = baseIndex + index;
+        if (this.runStore.isCancellationRequested(runId)) {
+          const stopped = { status: 'cancelled', tool: proposed.tool, arguments: proposed.arguments, reason: 'Run cancelled before this step was attempted' };
+          results.push(stopped); roundResults.push(stopped);
+          this.runStore.recordRunStepOutcome(runId, stepIndex, 'cancelled');
+          continue;
+        }
         const unmet = (proposed.dependsOn || []).filter((dependency) => roundResults[dependency]?.status !== 'executed');
         if (unmet.length) {
           const waiting = unmet.some((dependency) => ['pending', 'waiting_dependency', 'waiting_for_action', 'retrying', 'queued', 'uncertain', 'outcome_uncertain'].includes(roundResults[dependency]?.status));
@@ -160,7 +177,7 @@ export class Agent {
         const outcome = await this.evaluateAndMaybeExecute({
           actionId, tool: proposed.tool, arguments: proposed.arguments, requestedBy: actorId,
           requestText: text, reasoningSummary: plan.reasoning_summary, correlationId,
-          actor, voice, contextProvenance, accountContext: accountContexts[index], modelIdentity: this._describeModel(),
+          actor, voice, contextProvenance, accountContext: accountContexts[index], modelIdentity: this._describeModel(), runId,
         });
         results.push(outcome); roundResults.push(outcome);
         this.runStore.recordRunStepOutcome(runId, stepIndex, outcome.status);
@@ -185,7 +202,7 @@ export class Agent {
       }
     }
 
-    if (!resume && this.ownerEntityId) {
+    if (!resume && !this.runStore.isCancellationRequested(runId) && this.ownerEntityId) {
       try {
         detectAndRecordCommitment({ text, ownerEntityId: this.ownerEntityId, eventBus: this.eventBus, correlationId });
       } catch (err) {
@@ -198,7 +215,7 @@ export class Agent {
     // later review -- it is NOT a memory write. Promoting a candidate into an
     // established fact (with its own provenance/confidence) is a separate,
     // explicit step; a plan can never silently become "established truth".
-    if (memoryCandidates.length) {
+    if (memoryCandidates.length && !this.runStore.isCancellationRequested(runId)) {
       for (const [index, candidate] of memoryCandidates.entries()) {
         const stored = proposeMemoryCandidate({ content: candidate.content, confidence: candidate.confidence, correlationId, proposedBy: actorId });
         this.eventBus.publish({
@@ -213,7 +230,10 @@ export class Agent {
     }
 
     const incompleteResponse = summarizeIncompleteActions(results);
-    const response = stopReason ? `${stopReason}${incompleteResponse ? ` ${incompleteResponse}` : ''}` : incompleteResponse || plan?.response;
+    const cancelled = this.runStore.isCancellationRequested(runId);
+    const response = cancelled
+      ? 'Run cancellation requested. No further steps were started; check run status for any in-flight or uncertain action.'
+      : stopReason ? `${stopReason}${incompleteResponse ? ` ${incompleteResponse}` : ''}` : incompleteResponse || plan?.response;
     this.runStore.finishRun(runId, response);
     return {
       runId,
@@ -232,7 +252,7 @@ export class Agent {
    * of calling a tool directly -- "policy gates everything consequential"
    * applies regardless of which HTTP route triggered it.
    */
-  async evaluateAndMaybeExecute({ actionId, tool: toolName, arguments: args, requestedBy, requestText, reasoningSummary, correlationId, actor, voice, contextProvenance, accountContext, modelIdentity }) {
+  async evaluateAndMaybeExecute({ actionId, tool: toolName, arguments: args, requestedBy, requestText, reasoningSummary, correlationId, actor, voice, contextProvenance, accountContext, modelIdentity, runId }) {
     const tool = this.actionEvaluator.resolve(toolName);
     const rawEvaluation = this.actionEvaluator.evaluate({ tool, arguments: args });
     const accountState = accountContext === undefined ? captureProposedAccount(toolName, args) : accountContext;
@@ -262,6 +282,11 @@ export class Agent {
       contextProvenance,
       accountBinding,
     });
+
+    if (runId && this.runStore.isCancellationRequested(runId)) {
+      updateAgentAction(auditRow.id, { status: 'cancelled', result: { error: 'Run cancelled before execution' } });
+      return { id: auditRow.id, status: 'cancelled', tool: toolName, arguments: args, reason: 'Run cancelled before execution', accountBinding };
+    }
 
     if (evaluation.blocked) {
       return { id: auditRow.id, status: 'blocked', tool: toolName, arguments: args, reason: evaluation.reason, accountBinding };
@@ -343,6 +368,8 @@ export class Agent {
   }
 
   async approveAction(id, approvedBy) {
+    const linked = this.runStore.findRunByAction(id);
+    if (linked && this.runStore.isCancellationRequested(linked)) throw new Error('Run was cancelled; approval is no longer valid');
     const result = await this.approvalManager.approve(id, approvedBy);
     await this._wakeLinkedRun(id);
     return result;
@@ -377,6 +404,10 @@ export class Agent {
     if (!steps.some((step) => step.status === 'waiting_dependency')) return this.runStore.getRun(runId);
     for (const step of steps) {
       if (step.status !== 'waiting_dependency') continue;
+      if (this.runStore.isCancellationRequested(runId)) {
+        this.runStore.recordRunStepOutcome(runId, step.step_index, 'cancelled');
+        continue;
+      }
       const current = this.runStore.getRun(runId);
       const dependencies = JSON.parse(step.depends_on).map((index) => current.steps.find((item) => item.index === index));
       if (dependencies.some((item) => !item)) continue;
@@ -406,6 +437,7 @@ export class Agent {
         accountContext: step.account_context ? JSON.parse(step.account_context) : accountDomainForAction(step.tool)
           ? { binding: null, error: 'Account identity was not captured for this deferred action; replan with the selected account' } : null,
         modelIdentity: step.model_id,
+        runId,
       });
       this.runStore.recordRunStepOutcome(runId, step.step_index, outcome.status);
     }
@@ -447,6 +479,24 @@ export class Agent {
       });
     } catch {
       this.runStore.failRun(runId, 'Continuation failed during planning. Completed actions were not replayed; review the run before giving a new instruction.');
+    }
+    return this.runStore.getRun(runId);
+  }
+
+  async cancelRun(runId, cancelledBy) {
+    const requested = this.runStore.requestRunCancellation(runId, cancelledBy);
+    if (!requested) return null;
+    if (!requested.cancellationRequested) return requested;
+    const execution = this.runStore.getRunExecution(runId);
+    for (const step of execution.steps) {
+      if (!step.action_id) continue;
+      const action = getAgentAction(step.action_id);
+      if (action?.status === 'pending') {
+        try { await this.approvalManager.reject(step.action_id, cancelledBy); }
+        catch { /* An approval may already have won; inspect its queue below. */ }
+      }
+      const cancelledQueue = cancelUnstartedAction(step.action_id);
+      if (cancelledQueue) updateAgentAction(step.action_id, { status: 'cancelled' });
     }
     return this.runStore.getRun(runId);
   }

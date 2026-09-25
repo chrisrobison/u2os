@@ -31,6 +31,12 @@ export function registerAgentRoutes(router, { agent }) {
     sendJson(res, 200, updated);
   });
 
+  router.post('/api/agent/runs/:id/cancel', async (req, res) => {
+    const run = await agent.cancelRun(req.params.id, req.owner.id);
+    if (!run) return sendJson(res, 404, { error: 'Run not found' });
+    sendJson(res, 200, run);
+  });
+
   router.post('/api/agent/message', async (req, res) => {
     const text = req.body?.text;
     if (!text || typeof text !== 'string') {

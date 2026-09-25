@@ -30,7 +30,7 @@ export function recordRunPlan(runId, plan, contextProvenance = [], accountContex
 
 export function beginModelCall(runId, limit = 3) {
   const changed = getDb().prepare(`UPDATE agent_runs SET model_call_count = model_call_count + 1, updated_at = ?
-    WHERE id = ? AND model_call_count < ? AND status IN ('planning', 'running')`)
+    WHERE id = ? AND model_call_count < ? AND status IN ('planning', 'running') AND cancel_requested_at IS NULL`)
     .run(new Date().toISOString(), runId, limit);
   if (changed.changes !== 1) {
     const error = new Error('Run model-call limit reached');
@@ -47,7 +47,8 @@ export function getModelCallCount(runId) {
 export function beginRunStep(runId, index) {
   const actionId = newId('act');
   const changed = getDb().prepare(`UPDATE agent_run_steps SET status = 'running', action_id = ?, updated_at = ?
-    WHERE run_id = ? AND step_index = ? AND status IN ('planned', 'waiting_dependency')`).run(actionId, new Date().toISOString(), runId, index);
+    WHERE run_id = ? AND step_index = ? AND status IN ('planned', 'waiting_dependency')
+    AND EXISTS (SELECT 1 FROM agent_runs WHERE id = ? AND cancel_requested_at IS NULL)`).run(actionId, new Date().toISOString(), runId, index, runId);
   if (changed.changes !== 1) throw new Error('Run step is no longer planned');
   return actionId;
 }
@@ -73,9 +74,27 @@ export function claimContinuation(runId) {
   const run = getRun(runId);
   if (!run || run.status !== 'ready_to_continue') return false;
   const changed = getDb().prepare(`UPDATE agent_runs SET status = 'planning', continuation_claimed = 1, updated_at = ?
-    WHERE id = ? AND status = 'ready_to_continue' AND continuation_claimed = 0 AND continuation_after_step IS NOT NULL`)
+    WHERE id = ? AND status = 'ready_to_continue' AND continuation_claimed = 0 AND continuation_after_step IS NOT NULL AND cancel_requested_at IS NULL`)
     .run(new Date().toISOString(), runId);
   return changed.changes === 1;
+}
+
+export function isCancellationRequested(runId) {
+  return Boolean(getDb().prepare('SELECT cancel_requested_at FROM agent_runs WHERE id = ?').get(runId)?.cancel_requested_at);
+}
+
+export function requestRunCancellation(runId, cancelledBy) {
+  const status = getRun(runId);
+  if (!status) return null;
+  if (['completed', 'failed'].includes(status.status)) return status;
+  const now = new Date().toISOString();
+  getDb().prepare(`UPDATE agent_runs SET cancel_requested_at = COALESCE(cancel_requested_at, ?), cancelled_by = COALESCE(cancelled_by, ?),
+    continuation_after_step = NULL, continuation_claimed = 0, updated_at = ? WHERE id = ?`)
+    .run(now, cancelledBy, now, runId);
+  getDb().prepare(`UPDATE agent_run_steps SET status = 'cancelled', updated_at = ?
+    WHERE run_id = ? AND action_id IS NULL AND status IN ('planned', 'waiting_dependency')`)
+    .run(now, runId);
+  return getRun(runId);
 }
 
 export function recordRunStepOutcome(runId, index, status) {
@@ -86,8 +105,8 @@ export function recordRunStepOutcome(runId, index, status) {
 export function finishRun(runId, response = null) {
   const db = getDb();
   const rows = db.prepare('SELECT status FROM agent_run_steps WHERE run_id = ? ORDER BY step_index').all(runId);
-  const checkpoint = db.prepare('SELECT continuation_after_step FROM agent_runs WHERE id = ?').get(runId);
-  const status = classifyRun(rows.map((row) => row.status), Boolean(checkpoint?.continuation_after_step !== null && checkpoint?.continuation_after_step !== undefined));
+  const checkpoint = db.prepare('SELECT continuation_after_step, cancel_requested_at FROM agent_runs WHERE id = ?').get(runId);
+  const status = classifyRun(rows.map((row) => row.status), checkpoint?.continuation_after_step != null, Boolean(checkpoint?.cancel_requested_at));
   db.prepare('UPDATE agent_runs SET status = ?, response = ?, updated_at = ? WHERE id = ?')
     .run(status, response, new Date().toISOString(), runId);
   return status;
@@ -121,7 +140,8 @@ export function getRun(runId) {
   for (const [position, step] of currentSteps.entries()) {
     if (step.status !== steps[position].status) updateStep.run(step.status, now, runId, step.index);
   }
-  const status = ['planning', 'running', 'failed'].includes(run.status) || !steps.length ? run.status : classifyRun(currentSteps.map((step) => step.status), run.continuation_after_step !== null);
+  const status = (!run.cancel_requested_at && ['planning', 'running', 'failed'].includes(run.status)) || (!steps.length && !run.cancel_requested_at)
+    ? run.status : classifyRun(currentSteps.map((step) => step.status), run.continuation_after_step !== null, Boolean(run.cancel_requested_at));
   if (run.status !== status) {
     db.prepare('UPDATE agent_runs SET status = ?, updated_at = ? WHERE id = ?')
       .run(status, now, runId);
@@ -133,6 +153,8 @@ export function getRun(runId) {
     objectiveStatus: run.objective_status,
     modelCalls: run.model_call_count,
     continuationReady: status === 'ready_to_continue',
+    cancellationRequested: Boolean(run.cancel_requested_at),
+    cancelRequestedAt: run.cancel_requested_at,
     steps: currentSteps,
     createdAt: run.created_at,
     updatedAt: run.status !== status ? now : run.updated_at,
@@ -170,6 +192,8 @@ function currentStepStatus(step) {
   if (step.action_status === 'blocked') return 'blocked';
   if (step.action_status === 'executed') return 'executed';
   if (step.queue_status === 'completed') return 'executed';
+  if (step.action_status === 'cancelled' && step.expired_attempt) return 'outcome_uncertain';
+  if (step.action_status === 'cancelled' && (!step.queue_status || step.queue_status === 'cancelled')) return 'cancelled';
   if (step.action_status === 'approved' && !step.queue_status) return 'needs_attention';
   if (['queued', 'leased', 'executing', 'retry_wait'].includes(step.queue_status)) return 'waiting_for_action';
   if (step.expired_attempt && (step.queue_status === 'failed' || step.queue_status === 'cancelled')) return 'outcome_uncertain';
@@ -177,7 +201,12 @@ function currentStepStatus(step) {
   return step.action_status;
 }
 
-function classifyRun(statuses, hasContinuation = false) {
+function classifyRun(statuses, hasContinuation = false, cancellationRequested = false) {
+  if (cancellationRequested) {
+    if (statuses.includes('outcome_uncertain') || statuses.includes('needs_attention') || statuses.includes('interrupted')) return 'needs_attention';
+    if (statuses.some((status) => ['waiting_for_action', 'approved', 'queued', 'running', 'retrying', 'pending'].includes(status))) return 'cancelling';
+    return 'cancelled';
+  }
   if (statuses.includes('planning') || statuses.includes('planned')) return 'running';
   if (statuses.includes('interrupted')) return 'interrupted';
   if (statuses.includes('needs_attention')) return 'needs_attention';

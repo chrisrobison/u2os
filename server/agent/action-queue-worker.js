@@ -14,6 +14,7 @@ import {
 import { classifyActionError } from './action-error-classifier.js';
 import { getProviderForBinding } from '../integrations/provider-registry.js';
 import { accountDomainForAction, assertCalendarTarget, assertSmtpIdentity } from './account-binding.js';
+import { findRunByAction, isCancellationRequested } from './run-store.js';
 
 export class ActionQueueWorker {
   constructor({ actionEvaluator, actionExecutor, eventBus, workerId, maxActionAgeMs = 24 * 60 * 60 * 1000, leaseMs = 30_000 }) {
@@ -46,6 +47,14 @@ export class ActionQueueWorker {
       const completed = completeActionAttempt(attempt.id, { leaseOwner: this.workerId });
       this._publishQueueStatus(completed);
       return this._currentOutcome(action.id);
+    }
+    const runId = findRunByAction(action.id);
+    if (runId && isCancellationRequested(runId)) {
+      if (item.attempt_count > 0) {
+        return this._stop(item, 'failed', 'Run cancelled after a prior attempt; outcome needs owner review', 'owner_attention_required', action);
+      }
+      updateAgentAction(action.id, { status: 'cancelled', result: { error: 'Run cancelled before attempt' } });
+      return this._stop(item, 'cancelled', 'Run cancelled before attempt', 'non_retryable', action);
     }
 
     let tool;
