@@ -96,6 +96,28 @@ test('IMAP sync is bounded, idempotent, and mirrors parsed inbox mail without cr
   } finally { cleanup(dir); }
 });
 
+test('IMAP query searches only selected account cache and treats wildcard text literally', async () => {
+  const dir = withHome();
+  try {
+    const db = getDb();
+    const first = createImapInstance(db, { host: 'mail.example.com', username: 'one@example.com', password: 'secret' }, 'One');
+    const second = createImapInstance(db, { host: 'mail.example.com', username: 'two@example.com', password: 'secret' }, 'Two');
+    const makeOptions = (instance, subject) => ({ db, dataDir: dir, instance, clientFactory: () => {
+      const { client } = fakeClient();
+      client.fetchOne = async () => ({ source: Buffer.from(`From: Sender <sender@example.com>\r\nTo: Owner <owner@example.com>\r\nSubject: ${subject}\r\nDate: Sun, 20 Sep 2026 12:00:00 +0000\r\nMessage-ID: <same@example.com>\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nBody`) });
+      return client;
+    } });
+    const firstOptions = makeOptions(first, '100% recruiter');
+    const secondOptions = makeOptions(second, 'Other account');
+    await syncChanges(firstOptions);
+    await syncChanges(secondOptions);
+    assert.equal((await listEmails({ query: '100%' }, firstOptions)).length, 1);
+    assert.deepEqual(await listEmails({ query: '100%' }, secondOptions), []);
+    assert.deepEqual(await listEmails({ query: '100_' }, firstOptions), []);
+    await assert.rejects(listEmails({ query: 'x'.repeat(257) }, firstOptions), /at most 256/);
+  } finally { cleanup(dir); }
+});
+
 test('IMAP-selected email.send never silently falls back to mock delivery', async () => {
   const dir = withHome();
   try {

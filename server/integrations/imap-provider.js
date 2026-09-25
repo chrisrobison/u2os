@@ -114,13 +114,17 @@ export async function syncChanges({ db = getDb(), eventBus, correlationId, dataD
 }
 
 export async function listEmails({ folder = 'inbox', query } = {}, options = {}) {
+  if (query !== undefined && (typeof query !== 'string' || query.length > 256 || !query.trim())) {
+    throw new Error('imap: query must be non-empty and at most 256 characters');
+  }
   if (folder !== 'inbox') return [];
   await syncChanges(options);
   const settings = validateSettings(readEncryptedFile(options.instance?.vault_key, options.dataDir));
   const prefix = accountPrefix(settings);
+  const needle = query ? `%${query.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%` : '';
   const rows = getDb().prepare(`SELECT * FROM emails WHERE substr(id, 1, ?) = ? AND folder = 'inbox'
-    AND (? IS NULL OR subject LIKE ? OR body LIKE ? OR from_addr LIKE ?)
-    ORDER BY received_at DESC LIMIT 50`).all(prefix.length, prefix, query || null, `%${query || ''}%`, `%${query || ''}%`, `%${query || ''}%`);
+    AND (? IS NULL OR subject LIKE ? ESCAPE '\\' OR body LIKE ? ESCAPE '\\' OR from_addr LIKE ? ESCAPE '\\')
+    ORDER BY received_at DESC LIMIT 50`).all(prefix.length, prefix, query || null, needle, needle, needle);
   return rows.map((row) => ({ ...row, to_addr: JSON.parse(row.to_addr || '[]'), is_read: !!row.is_read }));
 }
 

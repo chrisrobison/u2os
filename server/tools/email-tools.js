@@ -7,15 +7,14 @@ export class EmailSearchTool extends Tool {
   get name() { return 'email.search'; }
   get domain() { return 'email'; }
   get category() { return 'read'; }
+  get description() { return 'Search the selected email account. Gmail returns at most 50 provider-ranked results; IMAP searches its recently synchronized inbox cache. An empty result is not proof that the whole mailbox has no match.'; }
   get schema() {
     return { type: 'object', properties: { query: { type: 'string' }, folder: { type: 'string' } } };
   }
   async execute(args) {
     const provider = getProvider('email');
-    // Real providers expose listEmails({folder}) (no free-text query
-    // support per docs/connectors.md); the mock's richer searchEmails
-    // (subject/body/from LIKE query) stays available whichever provider is
-    // active, matching this tool's existing return contract exactly.
+    // The mock uses local fixture search. Real providers handle the query
+    // within their selected account and retain the array result contract.
     if (provider.id === mockEmailProvider.id) {
       return provider.searchEmails(args);
     }

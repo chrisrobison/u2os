@@ -19,7 +19,7 @@ The domain card shows the selected account label. With exactly one connected ins
 - **User owns credentials** (§27, §29): you supply your own Google OAuth client, your own Brave Search API key, your own webhook URL. U2OS never depends on a U2OS-operated cloud service for any of this.
 - **Encrypted credentials, least privilege, explicit scopes** (§17): every stored secret is encrypted at rest (see below); each connector declares exactly the OAuth scopes it needs and nothing more.
 - **No mandatory vendor lock-in** (§30): mock providers remain available in isolated demo mode; a personal home with no real account reports the service as unavailable.
-- **Fail toward safety, not silent breakage**: if a domain is configured to use a real connector that isn't actually connected (not yet authorized, token revoked, network error), the provider registry falls back to the mock provider for reads and surfaces a health warning — it does not throw a 500 into the user's face for a routine "not connected yet" state.
+- **Fail toward safety, not silent breakage**: an unconnected real connector is unavailable in personal mode, with an actionable health state; it never returns mock reads. Only an explicitly isolated demo home may use fixtures.
 
 ## Directory layout additions
 
@@ -159,6 +159,7 @@ REST v3, via native `fetch` (no `googleapis` SDK dependency):
 
 - Sync: `GET https://gmail.googleapis.com/gmail/v1/users/me/messages?q=in:inbox+newer_than:1d`, then `GET .../messages/{id}?format=full` for unseen messages so the local row includes its plain-text body.
 - Read: `GET .../messages/{id}?format=full`, extract plain-text body from the MIME parts.
+- Search: `email.search` passes a bounded query to Gmail's `messages.list?q=` for the selected account, optionally with an inbox/sent folder filter, then fetches full messages for the first 50 matches. The result is one provider-ranked page, not proof of exhaustive mailbox coverage; Gmail query syntax applies. Detail-fetch failure fails the search instead of silently presenting an incomplete page. A folder is checked again against returned labels so query operators cannot broaden it. Personal mode never substitutes demo messages for failed Gmail search.
 - Send: `POST .../messages/send` with `raw` = base64url of a minimal hand-built RFC 2822 message (`To:`, `Subject:`, blank line, body) — no MIME/attachment support this phase, documented as a simplification.
 - Map → `emails` row: `from_addr`, `to_addr`, `subject`, `body`, `folder` (`INBOX` label → `inbox`, else best-effort), `received_at` from the message's internal date.
 
@@ -191,6 +192,8 @@ PROMPT.md's Phase 3 list names "task system" alongside the real integrations. Ta
 ## IMAP inbox connector
 
 The owner can enter an IMAP hostname, username, and app password for a named account on the Connectors page, then select that account as the active email provider. Credentials are encrypted under the account's instance vault key; the status API returns no password. IMAP uses TLS on port 993 with normal certificate validation. It fetches at most the latest 50 inbox messages per sync and skips messages over 512 KiB, storing text (not attachments) in the local email cache. IDs include an account hash, mailbox UIDVALIDITY, and UID so repeat syncs do not duplicate mail. Use **Sync now** to verify access; `lastError` reports a sanitized connection failure without credentials.
+
+`email.search` refreshes that selected inbox and filters only its synchronized local records by subject, body, or sender, returning at most 50. It does not search older unsynchronized server mail, other folders, attachments, or skipped oversized messages. The active account's sync status and `lastSyncAt` indicate freshness; an empty search result is not an exhaustive-mailbox claim.
 
 IMAP itself reads only. To send from this account, also configure and select the SMTP companion below. If IMAP is selected without a connected sender, `email.send` is blocked before approval. If a real email provider is selected but its credentials are missing, sending fails rather than silently creating a mock sent item. Inbox contents are private user data and remain subject to U2OS's normal data-processing policy when used as model context. No mailbox was contacted during automated tests; the tests use a fake IMAP client.
 

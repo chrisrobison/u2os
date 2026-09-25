@@ -96,19 +96,32 @@ function getRowById(localId) {
   return row ? { ...row, to_addr: JSON.parse(row.to_addr || '[]'), is_read: !!row.is_read } : null;
 }
 
-export async function listEmails({ folder } = {}, { fetchImpl = globalThis.fetch, dataDir, instance } = {}) {
+/** One bounded Gmail search page. The query is Gmail's server-side `q`
+ * syntax; returned full messages are still checked against the requested
+ * folder because `OR` inside user text must not broaden that constraint. */
+export async function listEmails({ folder, query } = {}, { fetchImpl = globalThis.fetch, dataDir, instance } = {}) {
+  if (folder !== undefined && (typeof folder !== 'string' || !['inbox', 'sent', 'other'].includes(folder))) {
+    throw new Error('gmail: folder must be inbox, sent, or other');
+  }
+  if (query !== undefined && (typeof query !== 'string' || query.length > 256 || !query.trim())) {
+    throw new Error('gmail: query must be non-empty and at most 256 characters');
+  }
   const headers = await authHeaders(fetchImpl, dataDir, instance);
   const url = new URL(`${API_BASE}/messages`);
-  if (folder) url.searchParams.set('q', `in:${folder}`);
+  const search = [folder && folder !== 'other' ? `in:${folder}` : '', query?.trim() || ''].filter(Boolean).join(' ');
+  if (search) url.searchParams.set('q', search);
+  url.searchParams.set('maxResults', '50');
   const listRes = await fetchImpl(url.toString(), { headers });
   if (!listRes.ok) throw new Error(`gmail: list failed (status ${listRes.status})`);
   const listJson = await listRes.json();
   const rows = [];
-  for (const ref of listJson.messages || []) {
-    const msgRes = await fetchImpl(`${API_BASE}/messages/${ref.id}?format=metadata`, { headers });
-    if (!msgRes.ok) continue;
+  for (const ref of (listJson.messages || []).slice(0, 50)) {
+    const msgRes = await fetchImpl(`${API_BASE}/messages/${encodeURIComponent(ref.id)}?format=full`, { headers });
+    if (!msgRes.ok) throw new Error(`gmail: search message fetch failed (status ${msgRes.status})`);
     const msg = await msgRes.json();
-    rows.push(upsertRow(mapGmailMessage(msg, instance)));
+    const mapped = mapGmailMessage(msg, instance);
+    if (folder && mapped.folder !== folder) continue;
+    rows.push(upsertRow(mapped));
   }
   return rows;
 }
