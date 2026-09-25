@@ -35,7 +35,7 @@ export function beginModelCall(runId, limit = 3) {
   const now = new Date().toISOString();
   const changed = getDb().prepare(`UPDATE agent_runs SET model_call_count = model_call_count + 1, updated_at = ?
     WHERE id = ? AND model_call_count < ? AND status IN ('planning', 'running') AND cancel_requested_at IS NULL
-    AND step_count < step_limit AND deadline_at > ?`)
+    AND step_count < step_limit AND input_tokens + output_tokens < token_limit AND deadline_at > ?`)
     .run(now, runId, limit, now);
   if (changed.changes !== 1) {
     const reason = getBudgetStopReason(runId);
@@ -51,6 +51,32 @@ export function getModelCallCount(runId) {
   return getDb().prepare('SELECT model_call_count FROM agent_runs WHERE id = ?').get(runId)?.model_call_count ?? 0;
 }
 
+/** Meter a completed provider response before its plan can authorize effects. */
+export function recordModelUsage(runId, { inputTokens, outputTokens }) {
+  if (!Number.isSafeInteger(inputTokens) || !Number.isSafeInteger(outputTokens) || inputTokens < 0 || outputTokens < 0 || inputTokens > 10_000_000 || outputTokens > 10_000_000) {
+    const error = new Error('Invalid model usage');
+    error.code = 'MODEL_USAGE_INVALID';
+    throw error;
+  }
+  try {
+    const reason = withTransaction(getDb(), () => {
+      const now = new Date().toISOString();
+      const changed = getDb().prepare(`UPDATE agent_runs SET input_tokens = input_tokens + ?, output_tokens = output_tokens + ?,
+        metered_model_calls = metered_model_calls + 1, updated_at = ?
+        WHERE id = ? AND status IN ('planning', 'running') AND metered_model_calls < model_call_count`)
+        .run(inputTokens, outputTokens, now, runId);
+      if (changed.changes !== 1) throw new Error('Run is unavailable for model usage');
+      return getBudgetStopReason(runId);
+    });
+    if (reason) throw budgetError(reason);
+  } catch (error) {
+    if (error.code === 'RUN_BUDGET_EXHAUSTED') throw error;
+    const failure = new Error('Model usage could not be recorded');
+    failure.code = 'MODEL_USAGE_RECORD_FAILED';
+    throw failure;
+  }
+}
+
 export function beginRunStep(runId, index) {
   const actionId = newId('act');
   withTransaction(getDb(), () => {
@@ -58,7 +84,7 @@ export function beginRunStep(runId, index) {
     if (reason) throw budgetError(reason);
     const now = new Date().toISOString();
     const reserved = getDb().prepare(`UPDATE agent_runs SET step_count = step_count + 1, updated_at = ?
-      WHERE id = ? AND step_count < step_limit AND deadline_at > ? AND cancel_requested_at IS NULL`).run(now, runId, now);
+      WHERE id = ? AND step_count < step_limit AND input_tokens + output_tokens < token_limit AND deadline_at > ? AND cancel_requested_at IS NULL`).run(now, runId, now);
     if (reserved.changes !== 1) throw budgetError(getBudgetStopReason(runId) || 'run_unavailable');
     const changed = getDb().prepare(`UPDATE agent_run_steps SET status = 'running', action_id = ?, updated_at = ?
       WHERE run_id = ? AND step_index = ? AND status IN ('planned', 'waiting_dependency')`).run(actionId, now, runId, index);
@@ -68,10 +94,11 @@ export function beginRunStep(runId, index) {
 }
 
 export function getBudgetStopReason(runId, now = new Date()) {
-  const row = getDb().prepare('SELECT step_count, step_limit, deadline_at FROM agent_runs WHERE id = ?').get(runId);
+  const row = getDb().prepare('SELECT step_count, step_limit, input_tokens, output_tokens, token_limit, deadline_at FROM agent_runs WHERE id = ?').get(runId);
   if (!row) return 'run_unavailable';
   if (new Date(now).toISOString() >= row.deadline_at) return 'elapsed_limit';
   if (row.step_count >= row.step_limit) return 'step_limit';
+  if (row.input_tokens + row.output_tokens >= row.token_limit) return 'token_limit';
   return null;
 }
 
@@ -211,11 +238,20 @@ export function getRun(runId) {
       stepLimit: run.step_limit,
       modelCallsUsed: run.model_call_count,
       modelCallLimit: 3,
+      tokens: {
+        input: run.input_tokens,
+        output: run.output_tokens,
+        total: run.input_tokens + run.output_tokens,
+        limit: run.token_limit,
+        meteredCalls: run.metered_model_calls,
+        complete: run.metered_model_calls === run.model_call_count,
+      },
       elapsedMs: Math.max(0, usageEnd - Date.parse(run.created_at)),
       elapsedLimitMs: run.elapsed_limit_ms,
       deadlineAt: run.deadline_at,
       currentLimit: terminalRun && !run.budget_stop_reason ? null : new Date().toISOString() >= run.deadline_at ? 'elapsed_limit'
-        : run.step_count >= run.step_limit ? 'step_limit' : null,
+        : run.step_count >= run.step_limit ? 'step_limit'
+          : run.input_tokens + run.output_tokens >= run.token_limit ? 'token_limit' : null,
       stopReason: run.budget_stop_reason,
       monetaryCost: { available: false, amount: null, currency: null },
     },

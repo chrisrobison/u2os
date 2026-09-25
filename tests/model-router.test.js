@@ -108,6 +108,23 @@ test('Planner routed through a failing primary provider retries once against the
   assert.equal(planner.lastProviderId, 'backup');
 });
 
+test('fallback metering counts both provider responses and never retries a usage-record failure', async () => {
+  const usages = [];
+  const router = new ModelRouter({ providers: { a: { type: 'mock', tag: 'a' }, b: { type: 'mock', tag: 'b' } }, roles: { planner: 'a' }, fallback: 'b' },
+    { createProvider: (cfg) => ({ id: cfg.tag, destination: 'local_model', plan: async (context) => {
+      context.onUsage({ inputTokens: 2, outputTokens: 1, providerId: cfg.tag });
+      if (cfg.tag === 'a') throw new Error('bad plan');
+      return { reasoning_summary: 'fallback', actions: [] };
+    } }) });
+  const planner = new Planner({ modelRouter: router });
+  await planner.plan({ toolRegistry: registry, onModelCall() {}, onUsage: (usage) => usages.push(usage) }, 'x');
+  assert.equal(usages.length, 2);
+  assert.deepEqual(usages.map((usage) => usage.providerId), ['a', 'b']);
+  const failure = Object.assign(new Error('metering unavailable'), { code: 'MODEL_USAGE_RECORD_FAILED' });
+  await assert.rejects(planner.plan({ toolRegistry: registry, onModelCall() {}, onUsage: () => { throw failure; } }, 'x'), { code: 'MODEL_USAGE_RECORD_FAILED' });
+  assert.equal(usages.length, 2);
+});
+
 test('Planner without a fallback propagates the primary provider\'s failure explicitly rather than silently succeeding', async () => {
   const router = new ModelRouter(
     { providers: { primary: { type: 'mock' } }, roles: { planner: 'primary' } },

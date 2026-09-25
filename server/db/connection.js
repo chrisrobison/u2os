@@ -103,6 +103,10 @@ export function getDb() {
   ensureColumn(db, 'agent_actions', 'context_provenance', 'TEXT');
   ensureColumn(db, 'agent_actions', 'account_binding', 'TEXT');
   ensureColumn(db, 'agent_runs', 'model_call_count', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'agent_runs', 'token_limit', 'INTEGER NOT NULL DEFAULT 20000');
+  ensureColumn(db, 'agent_runs', 'input_tokens', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'agent_runs', 'output_tokens', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'agent_runs', 'metered_model_calls', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'agent_runs', 'voice_confidence', 'REAL');
   ensureColumn(db, 'agent_runs', 'continuation_after_step', 'INTEGER');
   ensureColumn(db, 'agent_runs', 'continuation_claimed', 'INTEGER NOT NULL DEFAULT 0');
