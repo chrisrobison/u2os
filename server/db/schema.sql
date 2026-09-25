@@ -383,6 +383,7 @@ CREATE TABLE IF NOT EXISTS conversation_messages (
   session_id TEXT NOT NULL,
   role TEXT NOT NULL,
   content TEXT NOT NULL,
+  classification TEXT NOT NULL DEFAULT 'private',
   correlation_id TEXT,
   run_id TEXT,
   created_at TEXT NOT NULL

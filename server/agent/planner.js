@@ -1,6 +1,7 @@
 import { DataProcessingPolicy } from '../policy/data-processing-policy.js';
 import { filterPersonalContextForDestination } from './context-privacy-filter.js';
 import { filterObservationsForDestination } from './observation-filter.js';
+import { filterConversationHistoryForDestination } from './conversation-history-filter.js';
 
 /**
  * Planner: turns an objective plus assembled context into a structured
@@ -39,15 +40,15 @@ export class Planner {
     // Set after each plan() call: what (if anything) was withheld from the
     // provider that actually handled it, for explainability/audit.
     this.lastOmittedContext = [];
-    // Set after each plan() call: the retrieved-memory-item ids
-    // (facts/entities/relationships/events) that were actually included in
-    // the context sent to the provider for THIS plan, after data-processing
-    // filtering -- see docs/architecture.md's explainability section. Empty
+    // Set after each plan() call: retrieved memory and conversation-turn IDs
+    // actually included for THIS plan after destination-specific filtering.
+    // This is "seen by the model" provenance, not a claim it used every item. Empty
     // when the context carried no personalContext (e.g. a bare unit-test
     // plan() call with no ContextAssembler involved).
     this.lastProvenanceRefs = [];
     this.lastOmittedObservations = [];
     this.lastAllowedObservations = [];
+    this.lastAllowedHistory = [];
   }
 
   /**
@@ -87,9 +88,14 @@ export class Planner {
     );
     this.lastOmittedContext = omitted;
     const { observations, omitted: omittedObservations } = filterObservationsForDestination(context.observations, destination, this.dataProcessingPolicy);
+    const { history, omitted: omittedHistory } = filterConversationHistoryForDestination(context.conversationHistory, destination, this.dataProcessingPolicy);
     this.lastOmittedObservations = omittedObservations;
     this.lastAllowedObservations = observations;
-    this.lastProvenanceRefs = filteredPersonalContext?.provenanceRefs || [];
+    this.lastAllowedHistory = history;
+    this.lastProvenanceRefs = [
+      ...(filteredPersonalContext?.provenanceRefs || []),
+      ...history.filter((turn) => turn.turnId).map((turn) => ({ type: 'conversation_turn', id: turn.turnId })),
+    ];
 
     if (omitted.length && context.eventBus) {
       context.eventBus.publish({
@@ -111,9 +117,17 @@ export class Planner {
       });
     }
 
+    if (omittedHistory.length && context.eventBus) {
+      context.eventBus.publish({
+        type: 'agent.history_restricted', source: 'agent', actor: context.actor,
+        data: { destination, providerId: provider.id, omitted: omittedHistory },
+        metadata: { correlationId: context.correlationId, provenance: 'planner:conversation-history-policy' },
+      });
+    }
+
     context.onModelCall?.();
-    const { onModelCall, ...providerContext } = context;
-    return provider.plan({ ...providerContext, personalContext: filteredPersonalContext, observations }, objective);
+    const { onModelCall, conversationHistory, ...providerContext } = context;
+    return provider.plan({ ...providerContext, personalContext: filteredPersonalContext, observations, conversationHistory: history }, objective);
   }
 }
 

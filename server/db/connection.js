@@ -119,6 +119,7 @@ export function getDb() {
   ensureColumn(db, 'agent_runs', 'deadline_at', 'TEXT');
   ensureColumn(db, 'agent_runs', 'budget_stop_reason', 'TEXT');
   ensureColumn(db, 'conversation_messages', 'run_id', 'TEXT');
+  ensureColumn(db, 'conversation_messages', 'classification', "TEXT NOT NULL DEFAULT 'private'");
   ensureColumn(db, 'agent_run_steps', 'context_provenance', 'TEXT');
   ensureColumn(db, 'agent_run_steps', 'account_context', 'TEXT');
   ensureColumn(db, 'agent_run_steps', 'model_id', 'TEXT');
