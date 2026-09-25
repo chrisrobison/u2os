@@ -201,6 +201,7 @@ CREATE TABLE IF NOT EXISTS agent_runs (
   correlation_id TEXT NOT NULL UNIQUE,
   actor_id TEXT NOT NULL,
   objective TEXT NOT NULL,
+  conversation_id TEXT,
   status TEXT NOT NULL,
   objective_status TEXT NOT NULL DEFAULT 'unverified',
   model_call_count INTEGER NOT NULL DEFAULT 0,
@@ -369,14 +370,24 @@ CREATE TABLE IF NOT EXISTS memory_candidates (
 );
 CREATE INDEX IF NOT EXISTS idx_memory_candidates_status ON memory_candidates(status, created_at);
 
+CREATE TABLE IF NOT EXISTS conversations (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_conversations_owner ON conversations(owner_id, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS conversation_messages (
   id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL,
   role TEXT NOT NULL,
   content TEXT NOT NULL,
   correlation_id TEXT,
+  run_id TEXT,
   created_at TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_conversation_messages_session ON conversation_messages(session_id, created_at DESC);
 
 -- Phase 7 / PROMPT.md's feedback loop, per docs/feedback.md's schema exactly.
 -- Feedback is data like everything else in U2OS: it may only ever influence

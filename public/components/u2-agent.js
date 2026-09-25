@@ -1,4 +1,4 @@
-import { getModelStatus, sendAgentMessage, sendVoiceMessage } from '../services/api.js';
+import { getModelStatus, createConversation, getConversationTurns, sendAgentMessage, sendVoiceMessage } from '../services/api.js';
 import { AudioPipeline } from '../services/audio.js';
 import { VoiceprintService } from '../services/voiceprint.js';
 import './u2-approval.js';
@@ -13,6 +13,7 @@ const DONE_LABELS = {
   'tasks.complete': 'Done. Marked complete.',
   'notifications.send': 'Done. Sent the notification.',
 };
+const CONVERSATION_KEY = 'u2os.conversationId';
 
 // Right-hand conversation panel. Owns the request lifecycle status pill
 // (delegated to <u2-agent-status>, Phase 4/5's real replacement for the
@@ -40,6 +41,7 @@ export class U2Agent extends HTMLElement {
     if (this._built) return;
     this._built = true;
     this._render();
+    this._restorePromise = this._restoreConversation();
     this._loadPlannerStatus();
   }
 
@@ -78,6 +80,7 @@ export class U2Agent extends HTMLElement {
       <div class="agent-panel">
         <div class="agent-panel__header">
           <span class="agent-panel__title">Agent</span>
+          <button type="button" class="btn agent-panel__new-chat" title="Start a new conversation">New chat</button>
           <u2-agent-status></u2-agent-status>
         </div>
         <div class="agent-panel__transcript"></div>
@@ -96,6 +99,7 @@ export class U2Agent extends HTMLElement {
     this._input = this.querySelector('.agent-panel__input');
     this._sendBtn = this.querySelector('button[type="submit"]');
     this._micBtn = this.querySelector('[data-action="mic-toggle"]');
+    this._newChatBtn = this.querySelector('.agent-panel__new-chat');
     this._form = this.querySelector('.agent-panel__composer');
 
     this._setupMicSupport();
@@ -113,6 +117,14 @@ export class U2Agent extends HTMLElement {
     });
 
     this._micBtn.addEventListener('click', () => this._toggleVoice());
+    this._newChatBtn.addEventListener('click', () => {
+      this._restoreGeneration = (this._restoreGeneration || 0) + 1;
+      this._conversationId = null;
+      try { localStorage.removeItem(CONVERSATION_KEY); } catch { /* storage may be disabled */ }
+      this._pendingActionIds.clear();
+      this._transcript.replaceChildren();
+      this._setStatus('idle');
+    });
 
     // Optimistic: the moment an approval button is pressed, something is
     // about to be executed by the tool layer -- reflect that immediately
@@ -148,8 +160,10 @@ export class U2Agent extends HTMLElement {
   }
 
   async _send() {
+    await this._restorePromise;
     const text = this._input.value.trim();
     if (!text) return;
+    const generation = this._restoreGeneration || 0;
 
     this._input.value = '';
     this._appendBubble('user', text);
@@ -158,10 +172,14 @@ export class U2Agent extends HTMLElement {
     this._input.disabled = true;
 
     try {
-      const res = await sendAgentMessage(text);
+      const conversationId = await this._ensureConversation(generation);
+      const res = await sendAgentMessage(text, conversationId);
+      if (generation !== (this._restoreGeneration || 0)) return;
       this._renderAgentResponse(res);
+      if (res.conversationSaved === false) this._appendBubble('system', 'The action result was returned, but this reply could not be saved to conversation history.');
       this._setStatus((res.pendingActionIds || []).length ? 'waiting-for-approval' : 'idle');
     } catch (err) {
+      if (generation !== (this._restoreGeneration || 0)) return;
       this._appendBubble('system', `Something went wrong: ${err.message}`);
       this._setStatus('idle');
     } finally {
@@ -226,13 +244,18 @@ export class U2Agent extends HTMLElement {
   }
 
   async _onVoiceTranscript({ text, speaker }) {
+    await this._restorePromise;
     if (!text) return;
+    const generation = this._restoreGeneration || 0;
     this._appendBubble('user', text);
     this._pipeline.setBusy('thinking');
 
     try {
-      const res = await sendVoiceMessage(text, speaker);
+      const conversationId = await this._ensureConversation(generation);
+      const res = await sendVoiceMessage(text, speaker, conversationId);
+      if (generation !== (this._restoreGeneration || 0)) return;
       this._renderAgentResponse(res);
+      if (res.conversationSaved === false) this._appendBubble('system', 'The reply could not be saved to conversation history.');
 
       const hasPending = (res.pendingActionIds || []).length > 0;
       if (hasPending) {
@@ -241,6 +264,7 @@ export class U2Agent extends HTMLElement {
         this._speak(res.response || res.reasoning_summary);
       }
     } catch (err) {
+      if (generation !== (this._restoreGeneration || 0)) return;
       this._appendBubble('system', `Something went wrong: ${err.message}`);
       this._pipeline.setBusy('listening');
     }
@@ -271,6 +295,34 @@ export class U2Agent extends HTMLElement {
         list.appendChild(el);
       }
       this._appendNode(list);
+    }
+  }
+
+  async _ensureConversation(generation = this._restoreGeneration || 0) {
+    if (this._conversationId) return this._conversationId;
+    const created = await createConversation();
+    if (generation === (this._restoreGeneration || 0)) {
+      this._conversationId = created.conversationId;
+      try { localStorage.setItem(CONVERSATION_KEY, this._conversationId); } catch { /* storage may be disabled */ }
+    }
+    return created.conversationId;
+  }
+
+  async _restoreConversation() {
+    let id;
+    try { id = localStorage.getItem(CONVERSATION_KEY); } catch { return; }
+    if (!id) return;
+    const generation = this._restoreGeneration || 0;
+    try {
+      const { turns } = await getConversationTurns(id);
+      if (generation !== (this._restoreGeneration || 0)) return;
+      this._conversationId = id;
+      this._transcript.replaceChildren();
+      for (const turn of turns) this._appendBubble(turn.role === 'assistant' ? 'agent' : turn.role, turn.content + (turn.truncated ? '…' : ''));
+    } catch {
+      if (generation !== (this._restoreGeneration || 0)) return;
+      try { localStorage.removeItem(CONVERSATION_KEY); } catch { /* storage may be disabled */ }
+      this._conversationId = null;
     }
   }
 

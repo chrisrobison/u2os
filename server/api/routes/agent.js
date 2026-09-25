@@ -1,12 +1,25 @@
 import { sendJson } from '../router.js';
 import { verifyVoiceObservation } from '../../voice/enrollment-store.js';
 import { getRun, getRunResult, listRuns } from '../../agent/run-store.js';
+import { createConversation, getConversationTurns, listConversations } from '../../agent/conversation-store.js';
 
 // Agent conversation entry point. Approve/reject live in routes/actions.js
 // (kept in one place rather than duplicated here) since they operate on
 // agent_actions rows regardless of whether they originated from chat or a
 // direct API call.
 export function registerAgentRoutes(router, { agent }) {
+  router.get('/api/agent/conversations', async (req, res) => {
+    sendJson(res, 200, { conversations: listConversations(req.owner.id, req.query.limit) });
+  });
+
+  router.post('/api/agent/conversations', async (req, res) => {
+    sendJson(res, 201, { conversationId: createConversation(req.owner.id) });
+  });
+
+  router.get('/api/agent/conversations/:id/turns', async (req, res) => {
+    sendJson(res, 200, { conversationId: req.params.id, turns: getConversationTurns(req.params.id, req.owner.id, req.query.limit) });
+  });
+
   router.get('/api/agent/runs', async (req, res) => {
     sendJson(res, 200, { runs: listRuns({ limit: req.query.limit }) });
   });
@@ -39,11 +52,11 @@ export function registerAgentRoutes(router, { agent }) {
 
   router.post('/api/agent/message', async (req, res) => {
     const text = req.body?.text;
-    if (!text || typeof text !== 'string') {
-      return sendJson(res, 400, { error: 'text is required' });
-    }
+    if (!text || typeof text !== 'string' || text.length > 20_000) return sendJson(res, 400, { error: 'text must be 1–20000 characters' });
+    if (req.body?.conversationId !== undefined && typeof req.body.conversationId !== 'string') return sendJson(res, 400, { error: 'conversationId must be a string' });
     const actorId = req.owner.id;
-    const result = await agent.handleMessage({ text, actorId });
+    const conversationId = req.body?.conversationId || createConversation(actorId);
+    const result = await agent.handleMessage({ text, actorId, conversationId });
     sendJson(res, 200, result);
   });
 
@@ -67,9 +80,8 @@ export function registerAgentRoutes(router, { agent }) {
   // `speaker.confidence` is missing/non-numeric.
   router.post('/api/agent/voice-message', async (req, res) => {
     const text = req.body?.text;
-    if (!text || typeof text !== 'string') {
-      return sendJson(res, 400, { error: 'text is required' });
-    }
+    if (!text || typeof text !== 'string' || text.length > 20_000) return sendJson(res, 400, { error: 'text must be 1–20000 characters' });
+    if (req.body?.conversationId !== undefined && typeof req.body.conversationId !== 'string') return sendJson(res, 400, { error: 'conversationId must be a string' });
     const observation = req.body?.voiceObservation;
     const actorId = req.owner.id;
     // Never trust a browser-supplied identity/confidence. The browser sends
@@ -77,7 +89,8 @@ export function registerAgentRoutes(router, { agent }) {
     // performed here, inside the authenticated server boundary.
     const verified = verifyVoiceObservation(observation?.vector);
     const voice = { confidence: verified.confidence };
-    const result = await agent.handleMessage({ text, actorId, voice });
+    const conversationId = req.body?.conversationId || createConversation(actorId);
+    const result = await agent.handleMessage({ text, actorId, voice, conversationId });
     sendJson(res, 200, result);
   });
 }

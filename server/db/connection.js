@@ -103,6 +103,7 @@ export function getDb() {
   ensureColumn(db, 'agent_actions', 'context_provenance', 'TEXT');
   ensureColumn(db, 'agent_actions', 'account_binding', 'TEXT');
   ensureColumn(db, 'agent_runs', 'model_call_count', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'agent_runs', 'conversation_id', 'TEXT');
   ensureColumn(db, 'agent_runs', 'token_limit', 'INTEGER NOT NULL DEFAULT 20000');
   ensureColumn(db, 'agent_runs', 'input_tokens', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'agent_runs', 'output_tokens', 'INTEGER NOT NULL DEFAULT 0');
@@ -117,6 +118,7 @@ export function getDb() {
   ensureColumn(db, 'agent_runs', 'elapsed_limit_ms', 'INTEGER NOT NULL DEFAULT 86400000');
   ensureColumn(db, 'agent_runs', 'deadline_at', 'TEXT');
   ensureColumn(db, 'agent_runs', 'budget_stop_reason', 'TEXT');
+  ensureColumn(db, 'conversation_messages', 'run_id', 'TEXT');
   ensureColumn(db, 'agent_run_steps', 'context_provenance', 'TEXT');
   ensureColumn(db, 'agent_run_steps', 'account_context', 'TEXT');
   ensureColumn(db, 'agent_run_steps', 'model_id', 'TEXT');
