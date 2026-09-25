@@ -14,7 +14,7 @@ import {
 import { classifyActionError } from './action-error-classifier.js';
 import { getProviderForBinding } from '../integrations/provider-registry.js';
 import { accountDomainForAction, assertCalendarTarget, assertSmtpIdentity } from './account-binding.js';
-import { findRunByAction, isCancellationRequested } from './run-store.js';
+import { findRunByAction, isCancellationRequested, isRunDeadlineExpired, markBudgetExhausted } from './run-store.js';
 
 export class ActionQueueWorker {
   constructor({ actionEvaluator, actionExecutor, eventBus, workerId, maxActionAgeMs = 24 * 60 * 60 * 1000, leaseMs = 30_000 }) {
@@ -55,6 +55,12 @@ export class ActionQueueWorker {
       }
       updateAgentAction(action.id, { status: 'cancelled', result: { error: 'Run cancelled before attempt' } });
       return this._stop(item, 'cancelled', 'Run cancelled before attempt', 'non_retryable', action);
+    }
+    if (runId && isRunDeadlineExpired(runId)) {
+      markBudgetExhausted(runId, 'elapsed_limit');
+      if (item.attempt_count > 0) return this._stop(item, 'failed', 'Run deadline expired after a prior attempt; outcome needs owner review', 'owner_attention_required', action);
+      updateAgentAction(action.id, { status: 'blocked', result: { error: 'Run deadline expired before attempt' } });
+      return this._stop(item, 'cancelled', 'Run deadline expired before attempt', 'non_retryable', action);
     }
 
     let tool;

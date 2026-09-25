@@ -108,6 +108,11 @@ export function getDb() {
   ensureColumn(db, 'agent_runs', 'continuation_claimed', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'agent_runs', 'cancel_requested_at', 'TEXT');
   ensureColumn(db, 'agent_runs', 'cancelled_by', 'TEXT');
+  ensureColumn(db, 'agent_runs', 'step_limit', 'INTEGER NOT NULL DEFAULT 16');
+  ensureColumn(db, 'agent_runs', 'step_count', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'agent_runs', 'elapsed_limit_ms', 'INTEGER NOT NULL DEFAULT 86400000');
+  ensureColumn(db, 'agent_runs', 'deadline_at', 'TEXT');
+  ensureColumn(db, 'agent_runs', 'budget_stop_reason', 'TEXT');
   ensureColumn(db, 'agent_run_steps', 'context_provenance', 'TEXT');
   ensureColumn(db, 'agent_run_steps', 'account_context', 'TEXT');
   ensureColumn(db, 'agent_run_steps', 'model_id', 'TEXT');
@@ -126,6 +131,16 @@ export function getDb() {
 
   const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
   db.exec(schema);
+
+  // Idempotent backfill for homes created before run budgets existed. Never
+  // reset a counter that is already higher than the linked action count.
+  for (const run of db.prepare('SELECT id, created_at, elapsed_limit_ms FROM agent_runs WHERE deadline_at IS NULL').all()) {
+    const start = Date.parse(run.created_at);
+    const deadline = new Date((Number.isFinite(start) ? start : Date.now()) + run.elapsed_limit_ms).toISOString();
+    db.prepare('UPDATE agent_runs SET deadline_at = ? WHERE id = ? AND deadline_at IS NULL').run(deadline, run.id);
+  }
+  db.exec(`UPDATE agent_runs SET step_count = (SELECT COUNT(*) FROM agent_run_steps WHERE run_id = agent_runs.id AND action_id IS NOT NULL)
+    WHERE step_count < (SELECT COUNT(*) FROM agent_run_steps WHERE run_id = agent_runs.id AND action_id IS NOT NULL)`);
 
   dbCache.set(dbPath, db);
   return db;

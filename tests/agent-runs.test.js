@@ -145,6 +145,11 @@ test('later plan rounds append steps, retain absolute dependencies, and migrate 
     db.exec('ALTER TABLE agent_runs DROP COLUMN continuation_claimed');
     db.exec('ALTER TABLE agent_runs DROP COLUMN cancel_requested_at');
     db.exec('ALTER TABLE agent_runs DROP COLUMN cancelled_by');
+    db.exec('ALTER TABLE agent_runs DROP COLUMN step_limit');
+    db.exec('ALTER TABLE agent_runs DROP COLUMN step_count');
+    db.exec('ALTER TABLE agent_runs DROP COLUMN elapsed_limit_ms');
+    db.exec('ALTER TABLE agent_runs DROP COLUMN deadline_at');
+    db.exec('ALTER TABLE agent_runs DROP COLUMN budget_stop_reason');
     db.exec('ALTER TABLE agent_run_steps DROP COLUMN context_provenance');
     db.exec('ALTER TABLE agent_run_steps DROP COLUMN account_context');
     db.exec('ALTER TABLE agent_run_steps DROP COLUMN model_id');
@@ -153,9 +158,35 @@ test('later plan rounds append steps, retain absolute dependencies, and migrate 
     assert.equal(getDb().prepare('SELECT voice_confidence FROM agent_runs WHERE id = ?').get(runId).voice_confidence, null);
     assert.equal(getDb().prepare('SELECT continuation_after_step, continuation_claimed FROM agent_runs WHERE id = ?').get(runId).continuation_claimed, 0);
     assert.equal(getDb().prepare('SELECT cancel_requested_at, cancelled_by FROM agent_runs WHERE id = ?').get(runId).cancel_requested_at, null);
+    const budget = getDb().prepare('SELECT step_limit, step_count, elapsed_limit_ms, deadline_at FROM agent_runs WHERE id = ?').get(runId);
+    assert.equal(budget.step_limit, 16);
+    assert.equal(budget.step_count, 0);
+    assert.equal(budget.elapsed_limit_ms, 86_400_000);
+    assert.ok(Number.isFinite(Date.parse(budget.deadline_at)));
     assert.equal(getDb().prepare('SELECT context_provenance FROM agent_run_steps WHERE run_id = ? LIMIT 1').get(runId).context_provenance, null);
     assert.equal(getDb().prepare('SELECT account_context FROM agent_run_steps WHERE run_id = ? LIMIT 1').get(runId).account_context, null);
     assert.equal(getDb().prepare('SELECT model_id FROM agent_run_steps WHERE run_id = ? LIMIT 1').get(runId).model_id, null);
+  } finally { cleanup(dir); }
+});
+
+test('old run budget migration counts previously linked actions without resetting records', async () => {
+  const dir = tempHome();
+  try {
+    const result = await fixtureAgent().handleMessage({ text: 'Create a task' });
+    assert.equal(getRun(result.runId).budget.stepsUsed, 1);
+    closeAllForTests();
+    const db = getDb();
+    db.exec('ALTER TABLE agent_runs DROP COLUMN step_count');
+    db.exec('ALTER TABLE agent_runs DROP COLUMN deadline_at');
+    closeAllForTests();
+    const reopened = getDb();
+    assert.equal(reopened.prepare('SELECT step_count FROM agent_runs WHERE id = ?').get(result.runId).step_count, 1);
+    assert.ok(Number.isFinite(Date.parse(reopened.prepare('SELECT deadline_at FROM agent_runs WHERE id = ?').get(result.runId).deadline_at)));
+    assert.equal(reopened.prepare("SELECT COUNT(*) AS n FROM tasks WHERE title = 'Run fixture task'").get().n, 1);
+    const deadline = reopened.prepare('SELECT deadline_at FROM agent_runs WHERE id = ?').get(result.runId).deadline_at;
+    closeAllForTests();
+    assert.equal(getDb().prepare('SELECT step_count, deadline_at FROM agent_runs WHERE id = ?').get(result.runId).step_count, 1);
+    assert.equal(getDb().prepare('SELECT deadline_at FROM agent_runs WHERE id = ?').get(result.runId).deadline_at, deadline);
   } finally { cleanup(dir); }
 });
 
