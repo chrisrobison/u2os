@@ -79,7 +79,7 @@ export class Agent {
   async handleMessage({ text, actorId = 'user', voice } = {}) {
     const correlationId = newId('corr');
     const actor = { type: 'user', id: actorId };
-    const runId = this.runStore.createRun({ correlationId, actorId, objective: text });
+    const runId = this.runStore.createRun({ correlationId, actorId, objective: text, voice });
     try {
       return await this._handleRunMessage({ text, actorId, voice, correlationId, actor, runId });
     } catch (error) {
@@ -119,31 +119,38 @@ export class Agent {
         plan = acceptedPlan;
         break;
       }
-      const baseIndex = this.runStore.recordRunPlan(runId, plan);
-      acceptedPlan = plan;
-      const roundResults = [];
-      const observedBefore = observations.length;
       // Provenance is specific to the provider that produced this plan,
       // after destination-aware filtering (including any fallback).
       const contextProvenance = this.planner.lastProvenanceRefs || [];
+      // Reject an unverified reference anywhere in this plan before the
+      // first step can cause an external effect or request approval.
+      const resolvedActions = plan.actions.map((action) => resolveActionReferences(
+        action, this.planner.lastAllowedObservations || [], this.toolRegistry, { continuation: round > 0 },
+      ));
+      const accountContexts = resolvedActions.map((action) => captureProposedAccount(action.tool, action.arguments));
+      const baseIndex = this.runStore.recordRunPlan(runId, { ...plan, actions: resolvedActions }, contextProvenance, accountContexts, this._describeModel());
+      acceptedPlan = plan;
+      const roundResults = [];
+      const observedBefore = observations.length;
 
-      for (const [index, proposed] of (plan.actions || []).entries()) {
+      for (const [index, proposed] of resolvedActions.entries()) {
         const stepIndex = baseIndex + index;
         const unmet = (proposed.dependsOn || []).filter((dependency) => roundResults[dependency]?.status !== 'executed');
         if (unmet.length) {
-          const skipped = {
-            status: 'skipped', tool: proposed.tool, arguments: proposed.arguments || {}, dependsOn: proposed.dependsOn,
+          const waiting = unmet.some((dependency) => ['pending', 'waiting_dependency', 'waiting_for_action', 'retrying', 'queued', 'uncertain', 'outcome_uncertain'].includes(roundResults[dependency]?.status));
+          const status = waiting ? 'waiting_dependency' : 'skipped';
+          const deferred = {
+            status, tool: proposed.tool, arguments: proposed.arguments || {}, dependsOn: proposed.dependsOn,
             unmetDependencies: unmet.map((dependency) => ({ index: baseIndex + dependency, status: roundResults[dependency]?.status || 'unknown', actionId: roundResults[dependency]?.id || null })),
-            reason: 'Prerequisite action did not complete successfully; no attempt was made',
+            reason: waiting ? 'Waiting for prerequisite action; no attempt was made' : 'Prerequisite action did not complete successfully; no attempt was made',
           };
-          results.push(skipped); roundResults.push(skipped);
-          this.runStore.recordRunStepOutcome(runId, stepIndex, 'skipped');
+          results.push(deferred); roundResults.push(deferred);
+          this.runStore.recordRunStepOutcome(runId, stepIndex, status);
           continue;
         }
-        const resolved = resolveActionReferences(proposed, this.planner.lastAllowedObservations || [], this.toolRegistry, { continuation: round > 0 });
-        const signature = JSON.stringify([resolved.tool, canonicalArguments(resolved.arguments)]);
+        const signature = JSON.stringify([proposed.tool, canonicalArguments(proposed.arguments)]);
         if (attempted.has(signature)) {
-          const skipped = { status: 'skipped', tool: resolved.tool, arguments: resolved.arguments, reason: 'Repeated action made no progress; no attempt was made' };
+          const skipped = { status: 'skipped', tool: proposed.tool, arguments: proposed.arguments, reason: 'Repeated action made no progress; no attempt was made' };
           results.push(skipped); roundResults.push(skipped);
           this.runStore.recordRunStepOutcome(runId, stepIndex, 'skipped');
           continue;
@@ -151,15 +158,15 @@ export class Agent {
         attempted.add(signature);
         const actionId = this.runStore.beginRunStep(runId, stepIndex);
         const outcome = await this.evaluateAndMaybeExecute({
-          actionId, tool: resolved.tool, arguments: resolved.arguments, requestedBy: actorId,
+          actionId, tool: proposed.tool, arguments: proposed.arguments, requestedBy: actorId,
           requestText: text, reasoningSummary: plan.reasoning_summary, correlationId,
-          actor, voice, contextProvenance,
+          actor, voice, contextProvenance, accountContext: accountContexts[index], modelIdentity: this._describeModel(),
         });
         results.push(outcome); roundResults.push(outcome);
         this.runStore.recordRunStepOutcome(runId, stepIndex, outcome.status);
         if (outcome.status === 'pending') pendingActionIds.push(outcome.id);
-        if (outcome.status === 'executed' && this.toolRegistry.get(resolved.tool).category === 'read') {
-          observations.push({ stepIndex, tool: resolved.tool, actionId: outcome.id, status: 'executed', result: outcome.result });
+        if (outcome.status === 'executed' && this.toolRegistry.get(proposed.tool).category === 'read') {
+          observations.push({ stepIndex, tool: proposed.tool, actionId: outcome.id, status: 'executed', result: outcome.result });
         }
       }
       if (Array.isArray(plan.memoryCandidates)) memoryCandidates.push(...plan.memoryCandidates);
@@ -220,20 +227,12 @@ export class Agent {
    * of calling a tool directly -- "policy gates everything consequential"
    * applies regardless of which HTTP route triggered it.
    */
-  async evaluateAndMaybeExecute({ actionId, tool: toolName, arguments: args, requestedBy, requestText, reasoningSummary, correlationId, actor, voice, contextProvenance }) {
+  async evaluateAndMaybeExecute({ actionId, tool: toolName, arguments: args, requestedBy, requestText, reasoningSummary, correlationId, actor, voice, contextProvenance, accountContext, modelIdentity }) {
     const tool = this.actionEvaluator.resolve(toolName);
     const rawEvaluation = this.actionEvaluator.evaluate({ tool, arguments: args });
-    const accountDomain = accountDomainForAction(toolName);
-    let accountBinding = null;
-    let bindingError = null;
-    if (accountDomain) {
-      try {
-        accountBinding = captureAccountBinding(accountDomain);
-        if (toolName === 'email.send' && accountBinding.providerId === 'imap') accountBinding.smtpIdentity = captureSmtpIdentity(accountBinding);
-        if (toolName === 'calendar.reschedule') assertCalendarTarget(accountBinding, args?.eventId);
-      }
-      catch (err) { bindingError = err.message; }
-    }
+    const accountState = accountContext === undefined ? captureProposedAccount(toolName, args) : accountContext;
+    const accountBinding = accountState?.binding || null;
+    const bindingError = accountState?.error || null;
     // Additive-only voice gate (server/voice/authorize.js): a no-op unless
     // `voice` is present, and even then only ever tightens `rawEvaluation`,
     // never loosens it. The audit row records the (possibly voice-adjusted)
@@ -250,7 +249,7 @@ export class Agent {
       arguments: args,
       requestedBy,
       requestText,
-      model: this._describeModel(),
+      model: modelIdentity || this._describeModel(),
       reasoningSummary,
       evaluation,
       correlationId,
@@ -339,11 +338,83 @@ export class Agent {
   }
 
   async approveAction(id, approvedBy) {
-    return this.approvalManager.approve(id, approvedBy);
+    const result = await this.approvalManager.approve(id, approvedBy);
+    await this._wakeLinkedRun(id);
+    return result;
   }
 
   async rejectAction(id, rejectedBy) {
-    return this.approvalManager.reject(id, rejectedBy);
+    const result = await this.approvalManager.reject(id, rejectedBy);
+    await this._wakeLinkedRun(id);
+    return result;
+  }
+
+  async _wakeLinkedRun(actionId) {
+    const runId = this.runStore.findRunByAction(actionId);
+    if (!runId) return;
+    try { await this.resumeRunDependents(runId); }
+    catch {
+      // Approval/rejection has already committed. Keep its response truthful;
+      // the owner can inspect and retry the still-durable waiting run.
+      console.error('[agent] dependent run wake failed; inspect the run and retry safely');
+    }
+  }
+
+  /** Owner-triggered or approval-triggered wake of already-validated steps.
+   * Never calls a model or replays an action with an assigned action ID. */
+  async resumeRunDependents(runId) {
+    const execution = this.runStore.getRunExecution(runId);
+    if (!execution) return null;
+    const { run, steps } = execution;
+    if (!steps.some((step) => step.status === 'waiting_dependency')) return this.runStore.getRun(runId);
+    for (const step of steps) {
+      if (step.status !== 'waiting_dependency') continue;
+      const current = this.runStore.getRun(runId);
+      const dependencies = JSON.parse(step.depends_on).map((index) => current.steps.find((item) => item.index === index));
+      if (dependencies.some((item) => !item)) continue;
+      if (dependencies.some((item) => ['rejected', 'blocked', 'failed', 'cancelled', 'skipped', 'needs_attention'].includes(item.status))) {
+        this.runStore.recordRunStepOutcome(runId, step.step_index, 'skipped');
+        continue;
+      }
+      if (dependencies.some((item) => item.status !== 'executed')) continue;
+      const args = JSON.parse(step.arguments);
+      const duplicate = this.runStore.getRunExecution(runId).steps.some((prior) => prior.step_index < step.step_index
+        && prior.tool === step.tool && prior.status !== 'waiting_dependency' && prior.status !== 'skipped'
+        && JSON.stringify(canonicalArguments(JSON.parse(prior.arguments))) === JSON.stringify(canonicalArguments(args)));
+      if (duplicate) {
+        this.runStore.recordRunStepOutcome(runId, step.step_index, 'skipped');
+        continue;
+      }
+      // Atomic claim ensures duplicate owner/event wakes cannot execute twice.
+      let actionId;
+      try { actionId = this.runStore.beginRunStep(runId, step.step_index); }
+      catch { continue; }
+      const outcome = await this.evaluateAndMaybeExecute({
+        actionId, tool: step.tool, arguments: args, requestedBy: run.actor_id,
+        requestText: run.objective, reasoningSummary: run.reasoning_summary,
+        correlationId: run.correlation_id, actor: { type: 'user', id: run.actor_id },
+        voice: run.voice_confidence === null ? undefined : { confidence: run.voice_confidence },
+        contextProvenance: step.context_provenance ? JSON.parse(step.context_provenance) : [],
+        accountContext: step.account_context ? JSON.parse(step.account_context) : accountDomainForAction(step.tool)
+          ? { binding: null, error: 'Account identity was not captured for this deferred action; replan with the selected account' } : null,
+        modelIdentity: step.model_id,
+      });
+      this.runStore.recordRunStepOutcome(runId, step.step_index, outcome.status);
+    }
+    return this.runStore.getRun(runId);
+  }
+}
+
+function captureProposedAccount(toolName, args) {
+  const domain = accountDomainForAction(toolName);
+  if (!domain) return null;
+  try {
+    const binding = captureAccountBinding(domain);
+    if (toolName === 'email.send' && binding.providerId === 'imap') binding.smtpIdentity = captureSmtpIdentity(binding);
+    if (toolName === 'calendar.reschedule') assertCalendarTarget(binding, args?.eventId);
+    return { binding, error: null };
+  } catch (error) {
+    return { binding: null, error: error.message };
   }
 }
 
@@ -352,7 +423,7 @@ function summarizeIncompleteActions(results) {
   if (!incomplete.length) return null;
   const completed = results.length - incomplete.length;
   const pending = incomplete.filter((result) => result.status === 'pending');
-  const notAttempted = incomplete.filter((result) => ['skipped', 'blocked', 'rejected'].includes(result.status));
+  const notAttempted = incomplete.filter((result) => ['skipped', 'blocked', 'rejected', 'waiting_dependency'].includes(result.status));
   const failed = incomplete.length - pending.length - notAttempted.length;
   const recipients = pending.filter((result) => result.tool === 'email.send' && typeof result.arguments?.to === 'string')
     .map((result) => result.arguments.to.slice(0, 120));

@@ -40,7 +40,7 @@ for (const status of ['pending', 'blocked', 'rejected', 'failed', 'retrying', 'u
     const { agent, calls } = makeAgent([status, 'executed', 'executed'], [null, [0], null]);
     const result = await agent.handleMessage({ text: 'Do three things' });
     assert.deepEqual(calls, [0, 2]);
-    assert.deepEqual(result.actions.map((action) => action.status), [status, 'skipped', 'executed']);
+    assert.deepEqual(result.actions.map((action) => action.status), [status, ['pending', 'retrying', 'uncertain'].includes(status) ? 'waiting_dependency' : 'skipped', 'executed']);
     assert.deepEqual(result.actions[1].unmetDependencies, [{ index: 0, status, actionId: 'act_0' }]);
     assert.match(result.response, /not attempted/);
     assert.doesNotMatch(result.response, /All work completed/);

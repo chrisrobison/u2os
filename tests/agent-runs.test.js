@@ -140,8 +140,16 @@ test('later plan rounds append steps, retain absolute dependencies, and migrate 
     closeAllForTests();
     const db = getDb();
     db.exec('ALTER TABLE agent_runs DROP COLUMN model_call_count');
+    db.exec('ALTER TABLE agent_runs DROP COLUMN voice_confidence');
+    db.exec('ALTER TABLE agent_run_steps DROP COLUMN context_provenance');
+    db.exec('ALTER TABLE agent_run_steps DROP COLUMN account_context');
+    db.exec('ALTER TABLE agent_run_steps DROP COLUMN model_id');
     closeAllForTests();
     assert.equal(getDb().prepare('SELECT model_call_count FROM agent_runs WHERE id = ?').get(runId).model_call_count, 0);
+    assert.equal(getDb().prepare('SELECT voice_confidence FROM agent_runs WHERE id = ?').get(runId).voice_confidence, null);
+    assert.equal(getDb().prepare('SELECT context_provenance FROM agent_run_steps WHERE run_id = ? LIMIT 1').get(runId).context_provenance, null);
+    assert.equal(getDb().prepare('SELECT account_context FROM agent_run_steps WHERE run_id = ? LIMIT 1').get(runId).account_context, null);
+    assert.equal(getDb().prepare('SELECT model_id FROM agent_run_steps WHERE run_id = ? LIMIT 1').get(runId).model_id, null);
   } finally { cleanup(dir); }
 });
 
@@ -153,13 +161,18 @@ test('run status API is owner-only and returns metadata without objectives or pa
     recordRunPlan(runId, { reasoning_summary: 'private reasoning', actions: [{ tool: 'tasks.create', arguments: { title: 'secret payload' } }] });
     const url = `http://127.0.0.1:${handle.port}/api/agent/runs/${runId}`;
     assert.equal((await fetch(url)).status, 401);
+    assert.equal((await fetch(`${url}/resume`, { method: 'POST' })).status, 401);
     const setup = await fetch(`http://127.0.0.1:${handle.port}/api/auth/setup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ passphrase: 'test-only owner passphrase' }) });
     const cookie = setup.headers.get('set-cookie').split(';')[0];
+    const csrfToken = (await setup.json()).csrfToken;
     const response = await fetch(url, { headers: { cookie } });
     assert.equal(response.status, 200);
     const body = await response.text();
     assert.equal(JSON.parse(body).steps[0].status, 'planned');
     assert.doesNotMatch(body, /secret objective|secret payload|private reasoning/);
+    const resumed = await fetch(`${url}/resume`, { method: 'POST', headers: { cookie, origin: `http://127.0.0.1:${handle.port}`, 'x-u2os-csrf': csrfToken } });
+    assert.equal(resumed.status, 200);
+    assert.doesNotMatch(await resumed.text(), /secret objective|secret payload|private reasoning/);
     assert.equal((await fetch(`${url}_missing`, { headers: { cookie } })).status, 404);
   } finally { if (server) await new Promise((resolve) => server.close(resolve)); cleanup(dir); }
 });
