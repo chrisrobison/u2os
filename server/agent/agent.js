@@ -125,11 +125,14 @@ export class Agent {
       }
       let proposedPlan;
       try {
-        proposedPlan = await this.planner.plan({ ...planContext, observations, onModelCall: () => this.runStore.beginModelCall(runId, MAX_MODEL_CALLS_PER_MESSAGE) }, text);
+        proposedPlan = await this.planner.plan({ ...planContext, observations,
+          onModelCall: () => this.runStore.beginModelCall(runId, MAX_MODEL_CALLS_PER_MESSAGE),
+          onUsage: (usage) => this.runStore.recordModelUsage(runId, usage),
+        }, text);
       } catch (error) {
         if (error.code !== 'RUN_BUDGET_EXHAUSTED') throw error;
         this.runStore.markBudgetExhausted(runId, error.reason);
-        stopReason = `Run budget exhausted (${error.reason}); no new model call was started. The objective is not verified.`;
+        stopReason = `Run budget exhausted (${error.reason}); the candidate plan was discarded before any new action. The objective is not verified.`;
         break;
       }
       if (this.runStore.isCancellationRequested(runId)) {

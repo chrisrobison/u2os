@@ -2,6 +2,7 @@ import { ModelProvider } from './model-provider.js';
 import { validatePlanWithRepair } from './plan-validator.js';
 import { PLANNER_SYSTEM_PROMPT, buildPlanRequestPayload } from './prompt-payload.js';
 import { classifyProviderDestination } from './provider-destination.js';
+import { parseReportedUsage } from './model-usage.js';
 
 export class OpenAICompatibleProvider extends ModelProvider {
   constructor({ baseUrl, model, apiKey = null, timeoutMs = 30000, fetchImpl = fetch, destination = null }) {
@@ -32,7 +33,10 @@ export class OpenAICompatibleProvider extends ModelProvider {
         }),
       });
       if (!response.ok) throw new Error(`Model provider unavailable (HTTP ${response.status})`);
-      const payload = await response.json(); const content = payload?.choices?.[0]?.message?.content;
+      const payload = await response.json();
+      const usage = parseReportedUsage(payload?.usage, 'prompt_tokens', 'completion_tokens');
+      if (usage) context.onUsage?.({ ...usage, providerId: this.id });
+      const content = payload?.choices?.[0]?.message?.content;
       if (typeof content !== 'string') throw new Error('Model provider returned no plan content');
       let parsed; try { parsed = JSON.parse(content); } catch { throw new Error('Model provider returned invalid JSON'); }
       return validatePlanWithRepair(parsed, context.toolRegistry);

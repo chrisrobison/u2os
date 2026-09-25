@@ -49,6 +49,17 @@ test('provider failure is explicit and never silently executes or falls back', a
   await assert.rejects(provider.plan({ toolRegistry: registry }, 'anything'), /unavailable \(HTTP 503\)/);
 });
 
+test('OpenAI-compatible usage is reported before plan validation and malformed usage fails closed', async () => {
+  const usage = [];
+  const provider = new OpenAICompatibleProvider({ baseUrl: 'http://local', model: 'm', fetchImpl: async () =>
+    new Response(JSON.stringify({ usage: { prompt_tokens: 9, completion_tokens: 3 }, choices: [{ message: { content: '{bad' } }] }), { status: 200 }) });
+  await assert.rejects(provider.plan({ toolRegistry: registry, onUsage: (item) => usage.push(item) }, 'x'), /invalid JSON/);
+  assert.deepEqual(usage, [{ inputTokens: 9, outputTokens: 3, providerId: 'openai-compatible:m' }]);
+  const invalid = new OpenAICompatibleProvider({ baseUrl: 'http://local', model: 'm', fetchImpl: async () =>
+    new Response(JSON.stringify({ usage: { prompt_tokens: '9', completion_tokens: 3 } }), { status: 200 }) });
+  await assert.rejects(invalid.plan({ toolRegistry: registry }, 'x'), { code: 'MODEL_USAGE_INVALID' });
+});
+
 // --- AnthropicProvider: the second, deliberately non-identical adapter ----
 // (different auth header, different request/response envelope, no
 // guaranteed JSON-only response mode) -- proves the ModelProvider
@@ -88,6 +99,18 @@ test('Anthropic provider requires apiKey and model', () => {
 test('Anthropic provider failure is explicit, same contract as the OpenAI-compatible provider', async () => {
   const provider = new AnthropicProvider({ apiKey: 'k', model: 'claude-test', fetchImpl: async () => new Response('', { status: 503 }) });
   await assert.rejects(provider.plan({ toolRegistry: registry }, 'anything'), /unavailable \(HTTP 503\)/);
+});
+
+test('Anthropic usage is reported before plan validation; absent usage remains unknown', async () => {
+  const usage = [];
+  const provider = new AnthropicProvider({ apiKey: 'k', model: 'm', fetchImpl: async () =>
+    new Response(JSON.stringify({ usage: { input_tokens: 7, output_tokens: 2 }, content: [{ type: 'text', text: '{bad' }] }), { status: 200 }) });
+  await assert.rejects(provider.plan({ toolRegistry: registry, onUsage: (item) => usage.push(item) }, 'x'), /invalid JSON/);
+  assert.deepEqual(usage, [{ inputTokens: 7, outputTokens: 2, providerId: 'anthropic:m' }]);
+  const missing = new AnthropicProvider({ apiKey: 'k', model: 'm', fetchImpl: async () =>
+    new Response(JSON.stringify({ content: [{ type: 'text', text: '{bad' }] }), { status: 200 }) });
+  await assert.rejects(missing.plan({ toolRegistry: registry, onUsage: (item) => usage.push(item) }, 'x'), /invalid JSON/);
+  assert.equal(usage.length, 1);
 });
 
 test('Anthropic provider output is validated by the exact same validatePlan() as every other provider -- an invented tool is rejected regardless of which provider proposed it', async () => {

@@ -150,6 +150,10 @@ test('later plan rounds append steps, retain absolute dependencies, and migrate 
     db.exec('ALTER TABLE agent_runs DROP COLUMN elapsed_limit_ms');
     db.exec('ALTER TABLE agent_runs DROP COLUMN deadline_at');
     db.exec('ALTER TABLE agent_runs DROP COLUMN budget_stop_reason');
+    db.exec('ALTER TABLE agent_runs DROP COLUMN token_limit');
+    db.exec('ALTER TABLE agent_runs DROP COLUMN input_tokens');
+    db.exec('ALTER TABLE agent_runs DROP COLUMN output_tokens');
+    db.exec('ALTER TABLE agent_runs DROP COLUMN metered_model_calls');
     db.exec('ALTER TABLE agent_run_steps DROP COLUMN context_provenance');
     db.exec('ALTER TABLE agent_run_steps DROP COLUMN account_context');
     db.exec('ALTER TABLE agent_run_steps DROP COLUMN model_id');
@@ -163,6 +167,9 @@ test('later plan rounds append steps, retain absolute dependencies, and migrate 
     assert.equal(budget.step_count, 0);
     assert.equal(budget.elapsed_limit_ms, 86_400_000);
     assert.ok(Number.isFinite(Date.parse(budget.deadline_at)));
+    assert.deepEqual(getRun(runId).budget.tokens, { input: 0, output: 0, total: 0, limit: 20_000, meteredCalls: 0, complete: true });
+    closeAllForTests(); getDb();
+    assert.equal(getRun(runId).budget.tokens.limit, 20_000, 'reopening does not reset migrated token budget');
     assert.equal(getDb().prepare('SELECT context_provenance FROM agent_run_steps WHERE run_id = ? LIMIT 1').get(runId).context_provenance, null);
     assert.equal(getDb().prepare('SELECT account_context FROM agent_run_steps WHERE run_id = ? LIMIT 1').get(runId).account_context, null);
     assert.equal(getDb().prepare('SELECT model_id FROM agent_run_steps WHERE run_id = ? LIMIT 1').get(runId).model_id, null);

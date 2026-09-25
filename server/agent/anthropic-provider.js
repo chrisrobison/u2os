@@ -2,6 +2,7 @@ import { ModelProvider } from './model-provider.js';
 import { validatePlanWithRepair } from './plan-validator.js';
 import { PLANNER_SYSTEM_PROMPT, buildPlanRequestPayload } from './prompt-payload.js';
 import { classifyProviderDestination } from './provider-destination.js';
+import { parseReportedUsage } from './model-usage.js';
 
 const SYSTEM_PROMPT = `${PLANNER_SYSTEM_PROMPT} Respond with raw JSON only -- no prose, no markdown code fences.`;
 
@@ -55,6 +56,8 @@ export class AnthropicProvider extends ModelProvider {
       });
       if (!response.ok) throw new Error(`Model provider unavailable (HTTP ${response.status})`);
       const payload = await response.json();
+      const usage = parseReportedUsage(payload?.usage, 'input_tokens', 'output_tokens');
+      if (usage) context.onUsage?.({ ...usage, providerId: this.id });
       const textBlock = (payload?.content || []).find((block) => block?.type === 'text');
       if (typeof textBlock?.text !== 'string') throw new Error('Model provider returned no plan content');
       let parsed;
