@@ -188,9 +188,22 @@ cannot end before they start; zero duration is retained. Zone-less strings with
 Google's separate endpoint `timeZone` fields are not compared using the server's
 zone or normalized by this change; see the [event reference](https://developers.google.com/workspace/calendar/api/v3/reference/events).
 Minimal cancelled tombstones without usable timestamps fail honestly rather
-than invent dates or claim successful deletion reconciliation. This validation
-is read-only: create/reschedule acknowledgements remain separate work. No
-pagination or exhaustive-calendar coverage is claimed.
+than invent dates or claim successful deletion reconciliation. No pagination
+or exhaustive-calendar coverage is claimed.
+
+Create/reschedule success requires a valid provider event ID (the exact requested
+ID for reschedule), usable mapped fields, confirmed/default status and acknowledged
+start/end instants matching the approved request. Equivalent explicit offsets
+are accepted without normalizing source values. Offset-less acknowledgements
+cannot establish the requested instant and require review; no server-zone guess
+is made. This checks identity/time evidence, not every returned title/guest field
+against the proposal. Transport, HTTP, parsing, contradictory receipts or local
+cache failure after handoff produce fixed `outcome_uncertain` errors without
+provider text/retry hints. No successful event, dependent execution, requeue or
+automatic retry follows. Check the originally bound Calendar account/event
+before a new proposal, including after restart. Missing local reschedule sources
+remain not attempted. Calendar write deadlines and early request validation
+remain separate work; action acknowledgement is not objective completion.
 
 - List: `GET https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=&timeMax=&singleEvents=true&orderBy=startTime`
 - Create: `POST .../events`

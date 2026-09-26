@@ -47,8 +47,8 @@ function mapGoogleEvent(gEvent, instance) {
   };
 }
 
-// Read evidence is untrusted. Validate the entire returned page before cache
-// writes; never manufacture an identity or silently substitute requested IDs.
+// Provider evidence is untrusted. Reads validate the entire returned page
+// before cache writes; never manufacture or substitute resource identities.
 function usableTimestamp(value) {
   if (typeof value !== 'string' || !value.trim() || !Number.isFinite(Date.parse(value))) return false;
   const day = /^(\d{4}-\d{2}-\d{2})(?:$|[tT])/.exec(value)?.[1];
@@ -56,7 +56,7 @@ function usableTimestamp(value) {
   return Boolean(day && new Date(`${day}T00:00:00Z`).toISOString().startsWith(day));
 }
 
-function mapReadEvent(event, instance, expectedId) {
+function mapValidatedEvent(event, instance, expectedId) {
   if (!event || typeof event !== 'object' || Array.isArray(event) || typeof event.id !== 'string' || !event.id.trim()
       || (expectedId !== undefined && event.id !== expectedId)) throw new Error('Invalid calendar event identity');
   for (const key of ['summary', 'location', 'status']) {
@@ -85,7 +85,7 @@ function readPageRows(json, instance) {
   if (!json || typeof json !== 'object' || Array.isArray(json) || (json.items !== undefined && !Array.isArray(json.items))) {
     throw new Error('Invalid calendar event page');
   }
-  return (json.items || []).map((event) => mapReadEvent(event, instance));
+  return (json.items || []).map((event) => mapValidatedEvent(event, instance));
 }
 
 function upsertRow(row) {
@@ -141,8 +141,34 @@ export async function getEvent(localId, { fetchImpl = globalThis.fetch, dataDir,
     if (!res.ok) throw new Error(`google-calendar: getEvent failed (status ${res.status})`);
     const gEvent = await res.json();
     check();
-    return upsertRow(mapReadEvent(gEvent, instance, upstreamId));
+    return upsertRow(mapValidatedEvent(gEvent, instance, upstreamId));
   });
+}
+
+async function acknowledgedWrite(url, request, { fetchImpl, instance, expectedId, startAt, endAt }) {
+  let response;
+  try {
+    response = await fetchImpl(url, request);
+    if (!response.ok) throw new Error('No successful calendar acknowledgement');
+    const event = await response.json(), row = mapValidatedEvent(event, instance, expectedId);
+    // Timed write requests have no separate timeZone field. An offset-less
+    // acknowledgement cannot establish the requested instant; never guess.
+    const matches = (actual, intended) => usableTimestamp(intended) &&
+      /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(actual) && /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(intended) &&
+      Date.parse(actual) === Date.parse(intended);
+    if (['cancelled', 'tentative'].includes(event.status) || !matches(row.start_at, startAt) || !matches(row.end_at, endAt)) {
+      throw new Error('Calendar acknowledgement does not establish the intended change');
+    }
+    return upsertRow(row);
+  } catch {
+    try { Promise.resolve(response?.body?.cancel()).catch(() => {}); } catch { /* Locked native body. */ }
+    const status = Number.isInteger(response?.status) && response.status >= 100 && response.status <= 599 ? response.status : undefined;
+    const error = new Error(`google-calendar: write outcome uncertain${status === undefined ? '' : ` (status ${status})`}; check the originally bound calendar account/event before any new proposal; no automatic retry`);
+    error.code = 'GOOGLE_CALENDAR_WRITE_OUTCOME_UNCERTAIN';
+    error.actionErrorClass = 'outcome_uncertain'; error.ownerAttentionRequired = true; error.safeToRetry = false;
+    if (status !== undefined) error.status = status;
+    throw error;
+  }
 }
 
 export async function createEvent(
@@ -157,24 +183,19 @@ export async function createEvent(
     location: location || undefined,
     attendees: attendees.map((a) => (typeof a === 'string' && a.includes('@') ? { email: a } : { displayName: a })),
   };
-  const res = await fetchImpl(API_BASE, { method: 'POST', headers, body: JSON.stringify(body) });
-  if (!res.ok) throw new Error(`google-calendar: createEvent failed (status ${res.status})`);
-  const gEvent = await res.json();
-  return upsertRow(mapGoogleEvent(gEvent, instance));
+  return acknowledgedWrite(API_BASE, { method: 'POST', headers, body: JSON.stringify(body) }, { fetchImpl, instance, startAt, endAt });
 }
 
 export async function rescheduleEvent(localId, { newStartAt, newEndAt }, { fetchImpl = globalThis.fetch, dataDir, instance } = {}) {
   const before = getRowById(localId);
   if (!before) return null;
   const headers = await authHeaders(fetchImpl, dataDir, instance);
-  const res = await fetchImpl(`${API_BASE}/${encodeURIComponent(toGoogleId(localId, instance))}`, {
+  const expectedId = toGoogleId(localId, instance);
+  const after = await acknowledgedWrite(`${API_BASE}/${encodeURIComponent(expectedId)}`, {
     method: 'PATCH',
     headers,
     body: JSON.stringify({ start: { dateTime: newStartAt }, end: { dateTime: newEndAt } }),
-  });
-  if (!res.ok) throw new Error(`google-calendar: rescheduleEvent failed (status ${res.status})`);
-  const gEvent = await res.json();
-  const after = upsertRow(mapGoogleEvent(gEvent, instance));
+  }, { fetchImpl, instance, expectedId, startAt: newStartAt, endAt: newEndAt });
   return { before, after };
 }
 
