@@ -36,7 +36,17 @@ export class U2Goals extends HTMLElement {
           <p class="goal-form__note">Manual runs use read-only tools in the selected domains. This does not authorize consequential actions or start automation.</p>
           <div class="goal-form__actions"><button type="submit" class="btn btn-primary">Save draft</button><button type="button" class="btn goal-run" hidden>Run once (read-only)</button><button type="button" class="btn goal-reload" hidden>Reload saved goal</button></div>
           <div class="goal-controls" hidden><button type="button" class="btn" data-goal-control="pause">Pause goal</button><button type="button" class="btn" data-goal-control="resume">Resume goal</button><button type="button" class="btn" data-goal-control="cancel">Cancel goal</button></div>
-          <section class="goal-schedule" hidden><label>One-time wake (local time) <input type="datetime-local" name="wakeAt"></label><button type="button" class="btn goal-schedule-save">Schedule one read-only pass</button><p class="goal-wake-status"></p><p class="goal-research-schedule-status"></p></section>
+          <section class="goal-schedule" hidden>
+            <label>First wake (local time) <input type="datetime-local" name="wakeAt" data-goal-scheduling></label>
+            <button type="button" class="btn goal-schedule-save">Schedule one read-only pass</button>
+            <fieldset class="goal-research-controls" hidden><legend>Finite web research</legend>
+              <label>Interval (24–720 hours) <input type="number" step="any" name="researchIntervalHours" value="168" data-goal-scheduling></label>
+              <label>Total passes (2–10, including the first) <input type="number" step="any" name="researchPasses" value="3" data-goal-scheduling></label>
+              <p class="goal-research-schedule-note"></p>
+              <button type="button" class="btn goal-research-schedule-save">Schedule finite read-only research</button>
+            </fieldset>
+            <p class="goal-wake-status"></p><p class="goal-research-schedule-status"></p>
+          </section>
           <p class="goal-message" role="status" aria-live="polite"></p>
           <div class="goal-runs" aria-label="Related runs"></div>
           <section class="goal-evidence" aria-label="Selected run evidence"></section>
@@ -51,6 +61,7 @@ export class U2Goals extends HTMLElement {
     this.querySelector('.goal-reload').addEventListener('click', () => this._select(this._goalId));
     this.querySelector('.goal-run').addEventListener('click', () => this._run());
     this.querySelector('.goal-schedule-save').addEventListener('click', () => this._schedule());
+    this.querySelector('.goal-research-schedule-save').addEventListener('click', () => this._scheduleResearch());
     this.querySelectorAll('[data-goal-control]').forEach((button) => button.addEventListener('click', () => this._control(button.dataset.goalControl)));
     this._form.addEventListener('submit', (event) => { event.preventDefault(); this._save(); });
     this._setDraftEditable(false);
@@ -104,7 +115,7 @@ export class U2Goals extends HTMLElement {
 
   _setDraftEditable(editable) {
     this._draftEditable = editable;
-    this._form.querySelectorAll('textarea, input:not([name="wakeAt"])').forEach((field) => { field.disabled = !editable; });
+    this._form.querySelectorAll('textarea, input:not([data-goal-scheduling])').forEach((field) => { field.disabled = !editable; });
     this._form.querySelector('[type="submit"]').disabled = !editable;
   }
 
@@ -112,6 +123,7 @@ export class U2Goals extends HTMLElement {
     this._generation = (this._generation || 0) + 1;
     this._goalId = null;
     this._revision = null;
+    this._savedGoalPayload = null;
     this._form.reset();
     this._form.maxRuns.value = '10';
     this._form.maxModelCalls.value = '20';
@@ -166,6 +178,7 @@ export class U2Goals extends HTMLElement {
       this._form.maxRuns.value = String(goal.budgets.maxRuns);
       this._form.maxModelCalls.value = String(goal.budgets.maxModelCalls);
       this._form.maxTokens.value = String(goal.budgets.maxTokens);
+      this._savedGoalPayload = this._payload();
       const stateLabel = { draft: 'Draft', active: 'Active', paused: 'Paused', cancelled: 'Cancelled' }[goal.status] || goal.status;
       this.querySelector('.goal-form__title').textContent = `${stateLabel} · revision ${goal.revision}`;
       this.querySelector('.goal-reload').hidden = false;
@@ -183,6 +196,13 @@ export class U2Goals extends HTMLElement {
       const canSchedule = goal.manualRunAvailable && !goal.nextWakeAt && goal.researchSchedule?.status !== 'active';
       this._form.wakeAt.disabled = !canSchedule;
       this.querySelector('.goal-schedule-save').disabled = !canSchedule;
+      const webOnly = goal.permittedScope.domains.length === 1 && goal.permittedScope.domains[0] === 'web';
+      const remainingPasses = Math.min(10, goal.budgets.maxRuns - goal.spent.runs, goal.budgets.maxModelCalls - goal.spent.modelCalls);
+      const canResearch = webOnly && canSchedule && remainingPasses >= 2;
+      this.querySelector('.goal-research-controls').hidden = !webOnly;
+      this._form.querySelectorAll('[name="researchIntervalHours"], [name="researchPasses"]').forEach((field) => { field.disabled = !canResearch; });
+      this.querySelector('.goal-research-schedule-save').disabled = !canResearch;
+      this.querySelector('.goal-research-schedule-note').textContent = `Web-only reads; no applications or outreach. Use the first wake above. At most ${Math.max(0, remainingPasses)} passes fit remaining run/model-call budgets; cumulative token/model limits may stop earlier. Failures or uncertain outcomes stop for review; pause cancels the schedule. Server must be running.`;
       this.querySelector('.goal-wake-status').textContent = goal.lastWake
         ? `Wake ${goal.lastWake.status} · revision ${goal.lastWake.goalRevision} · ${goal.lastWake.fireAt}${goal.lastWake.runId ? ` · inspect run ${goal.lastWake.runId}` : ''}${goal.lastWake.blocker ? ` · ${goal.lastWake.blocker}: review goal state, budgets and linked runs before scheduling again.` : ''}`
         : 'No wake scheduled. Pause cancels pending wakes; resume does not rearm them.';
@@ -366,6 +386,33 @@ export class U2Goals extends HTMLElement {
       if (this._goalId === id) this._message.textContent = 'One read-only wake scheduled. Pause the goal to cancel it. No work started now.';
     } catch (error) {
       if (this._goalId === id) { this._showError(`Could not schedule wake: ${error.message}`); button.disabled = false; }
+    }
+  }
+
+  async _scheduleResearch() {
+    const id = this._goalId;
+    if (!id) return;
+    const revision = this._revision;
+    const generation = this._generation;
+    const button = this.querySelector('.goal-research-schedule-save');
+    button.disabled = true;
+    try {
+      if (JSON.stringify(this._payload()) !== JSON.stringify(this._savedGoalPayload)) throw new Error('Save goal edits before scheduling research');
+      const time = new Date(this._form.wakeAt.value);
+      const intervalHours = Number(this._form.querySelector('[name="researchIntervalHours"]').value);
+      const maxPasses = Number(this._form.querySelector('[name="researchPasses"]').value);
+      if (!Number.isFinite(time.getTime())) throw new Error('Choose a future local date and time');
+      if (!Number.isSafeInteger(intervalHours) || intervalHours < 24 || intervalHours > 720 ||
+          !Number.isSafeInteger(maxPasses) || maxPasses < 2 || maxPasses > 10) throw new Error('Choose whole numbers: 24–720 hours and 2–10 passes');
+      await api.scheduleGoalResearch(id, { fireAt: time.toISOString(), expectedRevision: revision, intervalHours, maxPasses });
+      if (this._goalId !== id || this._generation !== generation) return;
+      await this._select(id);
+      if (this._goalId === id) this._message.textContent = 'Finite read-only research scheduled. No work started now. Pause cancels future passes; resume never rearms them.';
+    } catch (error) {
+      if (this._goalId === id && this._generation === generation) {
+        this._showError(`Could not schedule research: ${error.message}${/changed|revision/i.test(error.message) ? ' Reload the saved goal before scheduling.' : ''}`);
+        button.disabled = false;
+      }
     }
   }
 
