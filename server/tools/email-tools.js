@@ -2,13 +2,16 @@ import { Tool } from './tool.js';
 import { getProvider, getProviderForBinding } from '../integrations/provider-registry.js';
 import * as mockEmailProvider from '../integrations/mock-email-provider.js';
 import { assertSmtpIdentity } from '../agent/account-binding.js';
+import { withObservedSender } from './email-sender.js';
+
+const SENDER_DESCRIPTION = ' sender_address is a conservative single mailbox derived from the untrusted From header, not authenticated identity or Reply-To. Use it for recipient references only when non-null; otherwise ask the owner. Original from_addr is preserved. Threaded replies are not supported.';
 
 export class EmailSearchTool extends Tool {
   get name() { return 'email.search'; }
   get domain() { return 'email'; }
   get category() { return 'read'; }
   get requiresAccountBinding() { return true; }
-  get description() { return 'Search the selected email account. Gmail returns at most 50 provider-ranked results; IMAP searches its recently synchronized inbox cache. An empty result is not proof that the whole mailbox has no match.'; }
+  get description() { return 'Search the selected email account. Gmail returns at most 50 provider-ranked results; IMAP searches its recently synchronized inbox cache. An empty result is not proof that the whole mailbox has no match.' + SENDER_DESCRIPTION; }
   get schema() {
     return { type: 'object', properties: { query: { type: 'string' }, folder: { type: 'string' } } };
   }
@@ -17,9 +20,9 @@ export class EmailSearchTool extends Tool {
     // The mock uses local fixture search. Real providers handle the query
     // within their selected account and retain the array result contract.
     if (provider.id === mockEmailProvider.id) {
-      return provider.searchEmails(args);
+      return (await provider.searchEmails(args)).map(withObservedSender);
     }
-    return provider.listEmails(args);
+    return (await provider.listEmails(args)).map(withObservedSender);
   }
 }
 
@@ -28,6 +31,7 @@ export class EmailReadTool extends Tool {
   get domain() { return 'email'; }
   get category() { return 'read'; }
   get requiresAccountBinding() { return true; }
+  get description() { return 'Read one message from the bound account.' + SENDER_DESCRIPTION; }
   get schema() {
     return { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] };
   }
@@ -36,11 +40,11 @@ export class EmailReadTool extends Tool {
     if (provider.id === mockEmailProvider.id) {
       const email = provider.markRead(args.id);
       if (!email) throw new Error(`No such email: ${args.id}`);
-      return email;
+      return withObservedSender(email);
     }
     const email = await provider.getEmail(args.id);
     if (!email) throw new Error(`No such email: ${args.id}`);
-    return email;
+    return withObservedSender(email);
   }
 }
 

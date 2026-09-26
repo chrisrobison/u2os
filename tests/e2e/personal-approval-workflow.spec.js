@@ -17,11 +17,12 @@ function plan(outcome) {
       const calendar = payload.tool_observations.find((item) => item.tool === 'calendar.list');
       const latest = mail.items.map(({ data }, index) => ({ data, index })).sort((a, b) => Date.parse(b.data.received_at) - Date.parse(a.data.received_at))[0];
       assert.equal(latest.data.subject, 'Remote engineering role follow-up'); assert.equal(calendar.items[0].data.title, 'Fixture interview preparation');
+      assert.equal(latest.data.from_addr, '"Recruiter, Fixture" <recruiter@example.test>'); assert.equal(latest.data.sender_address, 'recruiter@example.test');
       return { reasoning_summary: 'New follow-up grounded in observed evidence; not a threaded reply', continue: true,
         response: 'Follow-up proposed, not sent. Dependent draft waits for acknowledged delivery.', actions: [
           { tool: 'email.send', arguments: { to: 'placeholder', subject: 'Browser role follow-up', body: `I am busy until ${calendar.items[0].data.end_at}; please suggest a later time.` },
-            resultRefs: { to: { stepIndex: 0, itemIndex: latest.index, path: 'from_addr' } } },
-          { tool: 'email.draft', arguments: { to: latest.data.from_addr, subject: 'Browser dependent follow-up draft', body: 'Fixture draft only after acknowledged delivery.' }, dependsOn: [0] },
+            resultRefs: { to: { stepIndex: 0, itemIndex: latest.index, path: 'sender_address' } } },
+          { tool: 'email.draft', arguments: { to: latest.data.sender_address, subject: 'Browser dependent follow-up draft', body: 'Fixture draft only after acknowledged delivery.' }, dependsOn: [0] },
         ] };
     }
     assert.equal(outcome, 'accepted', 'rejection or uncertainty cannot continue planning'); assert.equal(fixture.modelRequests.length, 3);
@@ -44,7 +45,7 @@ async function returnAfterRestart(page, fixture) {
 
 for (const existing of [false, true]) for (const outcome of ['accepted', 'uncertain', 'rejected']) {
   test(`${existing ? 'existing' : 'fresh'} personal home: observed original-account browser approval ${outcome} survives restart without replay`, async ({ page }) => {
-    await withPersonalWorkflow({ existing, simulatedGmailSend: outcome === 'rejected' ? undefined : outcome, modelPlan: plan(outcome), closeConnectionsForTests: false }, async (fixture) => {
+    await withPersonalWorkflow({ existing, simulatedGmailSend: outcome === 'rejected' ? undefined : outcome, modelPlan: plan(outcome), closeConnectionsForTests: false, senderHeader: '"Recruiter, Fixture" <recruiter@example.test>' }, async (fixture) => {
       try {
         await page.goto(fixture.baseURL); await page.getByLabel('Passphrase').fill(PERSONAL_FIXTURE_PASSPHRASE); await page.locator('form button[type="submit"]').click();
         await expect(page.locator('.agent-panel__input')).toBeEnabled(); expect(fixture.modelRequests).toHaveLength(0);
