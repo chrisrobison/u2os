@@ -108,7 +108,9 @@ for (const existing of [false, true]) {
         assert.equal(getDb().prepare("SELECT count(*) n FROM emails WHERE folder IN ('drafts','sent')").get().n, 0);
         assert.throws(() => requeueAction(queue.id), /cannot be requeued/);
         const operations = await fixture.api('/api/actions/operations');
-        assert.ok(operations.items.some((item) => item.actionId === send.id && item.errorClass === 'outcome_uncertain'));
+        const operation = operations.items.find((item) => item.actionId === send.id);
+        assert.equal(operation.errorClass, 'outcome_uncertain');
+        assert.deepEqual(operation.account, { label: 'Selected fixture account', providerId: 'gmail', instanceId: fixture.primary.id });
       }
       assert.doesNotMatch(JSON.stringify({ outcome, completed, restored }), /fixture-primary-gmail|fixture-primary-refresh|fixture-other-gmail/);
       await fixture.api(`/api/actions/${send.id}/approve`, {}, 400);

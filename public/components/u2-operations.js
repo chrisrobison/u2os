@@ -89,24 +89,44 @@ function operationCard(item) {
   const meta = document.createElement('span');
   meta.className = 'operation-card__meta';
   const recovery = item.errorClass === 'recovery_review_required';
+  const uncertain = item.errorClass === 'outcome_uncertain';
+  if (uncertain) card.dataset.outcome = 'uncertain';
   const attempts = item.attemptCount ? ` · ${item.attemptCount} ${recovery ? 'recorded ' : ''}attempt${item.attemptCount === 1 ? '' : 's'}` : '';
-  meta.textContent = `${recovery ? 'outcome unknown from restored snapshot' : item.status.replaceAll('_', ' ')}${attempts}`;
+  meta.textContent = `${recovery ? 'outcome unknown from restored snapshot' : uncertain ? 'outcome uncertain' : item.status.replaceAll('_', ' ')}${attempts}`;
   card.append(tool, meta);
+  const time = document.createElement('time');
+  time.dateTime = item.updatedAt || item.createdAt || '';
+  time.textContent = formatTime(time.dateTime);
+  card.appendChild(time);
+  if (item.account) {
+    const account = document.createElement('span');
+    account.className = 'operation-card__account';
+    account.textContent = `Original account: ${item.account.label} (${item.account.providerId}; ${item.account.instanceId || 'no account instance'})`;
+    card.appendChild(account);
+    if (item.account.smtpIdentity) {
+      const sender = document.createElement('span');
+      sender.className = 'operation-card__sender';
+      sender.textContent = `SMTP sender: ${item.account.smtpIdentity.label} (${item.account.smtpIdentity.instanceId}; ${item.account.smtpIdentity.from})`;
+      card.appendChild(sender);
+    }
+  } else if (recovery || uncertain || ['email.send', 'calendar.create', 'calendar.reschedule', 'notifications.send'].includes(item.tool)) {
+    const account = document.createElement('span');
+    account.className = 'operation-card__account';
+    account.textContent = 'Original account unavailable; inspect the original action before any new proposal.';
+    card.appendChild(account);
+  }
   if (item.errorClass) {
     const attention = document.createElement('span');
     attention.className = 'operation-card__attention';
     attention.textContent = humanizeErrorClass(item.errorClass);
     card.appendChild(attention);
   }
-  const time = document.createElement('time');
-  time.dateTime = item.updatedAt || item.createdAt || '';
-  time.textContent = formatTime(time.dateTime);
-  card.appendChild(time);
   return card;
 }
 
 function humanizeErrorClass(value) {
   if (value === 'recovery_review_required') return 'Restored snapshot: outcome needs review; original work may have progressed. Archived approval cannot be retried.';
+  if (value === 'outcome_uncertain') return 'Delivery outcome uncertain. Check the original account/provider before any fresh proposal. No automatic retry or requeue.';
   return value.replaceAll('_', ' ');
 }
 

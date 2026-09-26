@@ -316,6 +316,10 @@ u2-app {
 .operation-card[data-status="completed"] { border-left-color: var(--accent-active); }
 .operation-card__meta, .operation-card time { color: var(--text-tertiary); font-size: var(--text-xs); }
 .operation-card__attention { color: var(--accent-danger); font-size: var(--text-xs); }
+.operation-card__account, .operation-card__sender, .operation-card__attention { grid-column: 1 / -1; overflow-wrap: anywhere; }
+.operation-card__account, .operation-card__sender { color: var(--text-secondary); font-size: var(--text-xs); }
+.operation-card[data-outcome="uncertain"] { border-left-color: var(--accent-pending); }
+.operation-card[data-outcome="uncertain"] .operation-card__attention { color: var(--accent-pending); }
 
 @media (max-width: 600px) {
   .operation-card { grid-template-columns: 1fr; gap: var(--space-1); }

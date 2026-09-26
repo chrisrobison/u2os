@@ -3,6 +3,7 @@ import { getAgentAction, listPendingActions } from '../../policy/policy-engine.j
 import { recordFeedback } from '../../feedback/feedback-store.js';
 import { explainAction } from '../../agent/explain.js';
 import { listQueuedActions } from '../../agent/action-queue-store.js';
+import { getDb } from '../../db/connection.js';
 
 export function registerActionRoutes(router, { agent, eventBus } = {}) {
   router.get('/api/actions/pending', async (_req, res) => {
@@ -62,6 +63,9 @@ export function registerActionRoutes(router, { agent, eventBus } = {}) {
 export function buildOperationsResponse() {
   const pending = listPendingActions().slice(0, 100);
   const waitingIds = new Set(pending.map((action) => action.id));
+  // Read only the persisted identity column, never resolve the active account
+  // or parse private action arguments/results just to display metadata.
+  const readBinding = getDb().prepare('SELECT account_binding FROM agent_actions WHERE id = ?');
   const queued = listQueuedActions().filter((item) => !waitingIds.has(item.action_id)).slice(-100).reverse().map((item) => ({
     id: item.id,
     actionId: item.action_id,
@@ -70,6 +74,7 @@ export function buildOperationsResponse() {
     attemptCount: item.attempt_count,
     nextAttemptAt: item.next_attempt_at,
     errorClass: item.error_class,
+    account: operationAccount(readBinding.get(item.action_id)?.account_binding),
     createdAt: item.created_at,
     updatedAt: item.updated_at,
   }));
@@ -79,6 +84,7 @@ export function buildOperationsResponse() {
     tool: action.tool,
     status: 'waiting_approval',
     attemptCount: 0,
+    account: operationAccount(action.accountBinding),
     createdAt: action.created_at,
     updatedAt: action.updated_at,
   }));
@@ -86,6 +92,22 @@ export function buildOperationsResponse() {
   const counts = {};
   for (const item of items) counts[item.status] = (counts[item.status] || 0) + 1;
   return { items, counts };
+}
+
+function operationAccount(raw) {
+  try {
+    const binding = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (!binding || typeof binding !== 'object' || Array.isArray(binding) ||
+        !['label', 'providerId'].every((key) => typeof binding[key] === 'string' && binding[key].trim())) return null;
+    const hasInstance = typeof binding.instanceId === 'string' && binding.instanceId.trim();
+    if (!hasInstance && !(binding.providerId === 'mock' && binding.instanceId === null)) return null;
+    const account = { label: binding.label, providerId: binding.providerId, instanceId: binding.instanceId };
+    const sender = binding.smtpIdentity;
+    if (sender && ['label', 'instanceId', 'from'].every((key) => typeof sender[key] === 'string' && sender[key].trim())) {
+      account.smtpIdentity = { label: sender.label, instanceId: sender.instanceId, from: sender.from };
+    }
+    return account;
+  } catch { return null; }
 }
 
 // Best-effort: a failure recording feedback must never surface as a failure
