@@ -15,6 +15,7 @@ import { enqueueAction, leaseActionByActionId, beginActionAttempt } from '../ser
 import { Agent } from '../server/agent/agent.js';
 import { AuthService } from '../server/security/auth.js';
 import { DatabaseSync } from 'node:sqlite';
+import { createConnectionInstance, findInstance } from '../server/integrations/connection-instances.js';
 
 function deferred() { let resolve; const promise = new Promise((done) => { resolve = done; }); return { promise, resolve }; }
 async function fixture(run) {
@@ -76,7 +77,12 @@ test('the OS-backed guard rejects a different process and releases after process
   const second = await child(); assert.equal(second.message.kind, 'failure'); assert.equal(second.message.code, 'HOME_IN_USE');
   assert.doesNotMatch(second.message.error, /fixture-secret|\.sqlite|u2os-runtime-/);
   // Explicit fault injection into isolated storage models an interrupted effect.
+  const account = createConnectionInstance(getDb(), { connectorId: 'webhook', label: 'Interrupted fixture',
+    status: 'connected', credentials: { webhookUrl: 'https://notify.example.test/interrupted-fixture', format: 'json' }, dataDir: dir });
+  const instance = findInstance(getDb(), 'webhook', account.id);
   const action = recordAudit({ requestedBy: 'owner', tool: 'notifications.send', arguments: { title: 'fixture', body: 'fixture' },
+    accountBinding: { domain: 'notifications', providerId: 'webhook', connectorId: 'webhook', instanceId: account.id,
+      label: account.label, credentialRevision: instance.credential_revision },
     status: 'approved', correlationId: 'fixture_interruption', policyDomain: 'notifications', policyRule: 'notifications.send:autonomous', requiresApproval: false });
   const queued = enqueueAction({ actionId: action.id, tool: action.tool, arguments: action.arguments });
   leaseActionByActionId(action.id, { leaseOwner: 'fixture-interrupted', leaseMs: 60000 });

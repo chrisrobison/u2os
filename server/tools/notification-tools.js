@@ -1,5 +1,5 @@
 import { Tool } from './tool.js';
-import { getProvider } from '../integrations/provider-registry.js';
+import { getProviderForBinding } from '../integrations/provider-registry.js';
 
 export class NotificationsSendTool extends Tool {
   get name() { return 'notifications.send'; }
@@ -13,7 +13,7 @@ export class NotificationsSendTool extends Tool {
     };
   }
   async execute(args, context) {
-    const provider = getProvider('notifications');
+    const provider = getProviderForBinding('notifications', context.accountBinding);
     const notification = await provider.send(args);
     context.eventBus.publish({
       type: 'notification.sent',

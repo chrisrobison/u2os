@@ -8,6 +8,7 @@ import { NotificationsSendTool } from '../server/tools/notification-tools.js';
 import { setActiveProvider } from '../server/integrations/connectors-config.js';
 import { getDb, closeAllForTests } from '../server/db/connection.js';
 import { createConnectionInstance } from '../server/integrations/connection-instances.js';
+import { captureAccountBinding } from '../server/integrations/provider-registry.js';
 
 // issue #163 PR 4: webhook-notify-provider.js is instance-aware -- send()
 // reads its stored webhook config from a resolved connection instance's own
@@ -15,7 +16,7 @@ import { createConnectionInstance } from '../server/integrations/connection-inst
 // connection_instances row (via createConnectionInstance(), same as the
 // instance CRUD API) and returns its raw row alongside `dir` -- direct
 // send() calls pass that row as `instance`, and the NotificationsSendTool
-// test (which goes through provider-registry.js's getProvider()) relies on
+// test captures its immutable account binding and relies on
 // its "exactly one connected instance" fallback to resolve the very same
 // row with no explicit activeInstanceId needed.
 function tempHome(format = 'json') {
@@ -106,7 +107,7 @@ test('notifications tool emits success only after real delivery succeeds', async
     const events = [];
     const tool = new NotificationsSendTool();
     await assert.rejects(
-      tool.execute({ title: 'x', body: 'y' }, { eventBus: { publish: (event) => events.push(event) }, actor: { type: 'owner' }, correlationId: 'corr_1' }),
+      tool.execute({ title: 'x', body: 'y' }, { accountBinding: captureAccountBinding('notifications'), eventBus: { publish: (event) => events.push(event) }, actor: { type: 'owner' }, correlationId: 'corr_1' }),
       /delivery failed/
     );
     assert.deepEqual(events, []);

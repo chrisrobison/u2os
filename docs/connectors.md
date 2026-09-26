@@ -188,7 +188,8 @@ REST v3, via native `fetch` (no `googleapis` SDK dependency):
 ## Notifications provider — generic webhook (ntfy.sh-compatible)
 
 - Create or update a named `webhook` instance through `/api/connectors/webhook/instances` with `{ label, webhookUrl, format }`, where `format` is `'json'` or `'ntfy'`.
-- `notifications.send` tool, when this provider is active, does the real `fetch(webhookUrl, {...})` and still also inserts the `notification.sent` event exactly as the mock does (the event log doesn't care which provider delivered it).
+- `notifications.send` captures the selected provider, named connection instance and credential revision when proposed, before approval/enqueue. Execution resolves that persisted identity, never the currently active selection. Approval previews name the intended account without exposing the webhook URL. Delivery publishes `notification.sent` only after success.
+- Deleted/disconnected or reconfigured accounts stop pending sends before delivery; legacy queued notifications without a binding require owner review and a new proposal. Changing the payload also requires a new approval. Account switching cannot redirect approved or queued work.
 - Delivery has a 10-second default timeout. Network/timeout errors are sanitized so a credential-bearing URL cannot enter queue errors or logs; HTTP status is retained for trusted failure classification. The provider does not claim idempotency, so an uncertain outcome is sent to owner attention rather than automatically replayed.
 
 ## Relationship to the device/capability subsystem
