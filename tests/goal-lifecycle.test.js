@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { getDb, closeAllForTests } from '../server/db/connection.js';
-import { controlGoal, createGoalDraft, getGoalDraft, getGoalRunEvidence } from '../server/agent/goal-store.js';
+import { controlGoal, createGoalDraft, getGoalDraft, getGoalRunEvidence, updateGoalDraft } from '../server/agent/goal-store.js';
 import { beginModelCall, beginRunStep, createRun, failRun, getRun, recordRunPlan } from '../server/agent/run-store.js';
 import { startServer } from './helpers/authed-server.js';
 
@@ -60,6 +60,39 @@ test('paused goal state blocks new planning and steps on an existing run', () =>
   assert.equal(getRun(runId).budget.stepsUsed, 0);
 }));
 
+test('paused scope revision preserves ledger and historical evidence across restart', () => withHome(async () => {
+  const goal = createGoalDraft('owner', draft);
+  const runId = createRun({ correlationId: 'scope_revision', actorId: 'owner', objective: goal.objective, goalId: goal.id });
+  beginModelCall(runId);
+  failRun(runId, 'offline');
+  assert.throws(() => updateGoalDraft(goal.id, 'owner', { ...draft, expectedRevision: 1 }), { status: 409 });
+  const paused = controlGoal(goal.id, 'owner', { operation: 'pause', expectedRevision: 1 });
+  const input = { ...draft, objective: 'Find local roles', constraints: ['Local only'],
+    permittedScope: { domains: ['email'], consequentialActions: true },
+    budgets: { maxRuns: 1, maxModelCalls: 1, maxTokens: 1000 }, expectedRevision: paused.revision };
+  assert.throws(() => updateGoalDraft(goal.id, 'other', input), { status: 404 });
+  assert.throws(() => updateGoalDraft(goal.id, 'owner', { ...input, expectedRevision: 1 }), { status: 409 });
+  assert.throws(() => updateGoalDraft(goal.id, 'owner', { ...input, completionCriteria: [] }), { status: 400 });
+  assert.equal(getGoalDraft(goal.id, 'owner').revision, 2);
+  const revised = updateGoalDraft(goal.id, 'owner', input);
+  assert.equal(revised.status, 'paused');
+  assert.equal(revised.revision, 3);
+  assert.deepEqual(revised.spent, paused.spent);
+  assert.deepEqual(revised.relatedRuns, paused.relatedRuns);
+  assert.equal(revised.manualRunAvailable, false);
+  closeAllForTests(); getDb();
+  assert.deepEqual(getGoalDraft(goal.id, 'owner'), revised);
+  const evidence = getGoalRunEvidence(goal.id, 'owner', runId);
+  assert.equal(evidence.goalRevision, 1);
+  assert.equal(evidence.objective, goal.objective);
+  const resumed = controlGoal(goal.id, 'owner', { operation: 'resume', expectedRevision: 3 });
+  assert.equal(resumed.manualRunAvailable, false, 'lowered budgets do not reset spending');
+  assert.throws(() => createRun({ correlationId: 'exhausted_revision', actorId: 'owner', objective: revised.objective, goalId: goal.id }), { status: 409 });
+  assert.throws(() => beginModelCall(runId), { reason: 'goal_unavailable' });
+  controlGoal(goal.id, 'owner', { operation: 'cancel', expectedRevision: 4 });
+  assert.throws(() => updateGoalDraft(goal.id, 'owner', { ...input, expectedRevision: 5 }), { status: 409 });
+}));
+
 test('old immutable goal runs receive a one-time revision snapshot without rebinding later', () => withHome(async () => {
   const goal = createGoalDraft('owner', draft);
   const runId = createRun({ correlationId: 'old_goal_revision', actorId: 'owner', objective: goal.objective, goalId: goal.id });
@@ -111,8 +144,15 @@ test('owner pause API preserves an in-flight read outcome and prevents dependent
     const evidence = getGoalRunEvidence(goal.id, ownerId, result.runId);
     assert.equal(evidence.steps[0].status, 'executed');
     assert.equal(evidence.steps[1].status, 'cancelled');
+    const revise = await fetch(`${base}/api/goals/${goal.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...draft, objective: 'Changed research scope', expectedRevision: paused.revision }) });
+    assert.equal(revise.status, 200);
+    const revised = await revise.json();
+    assert.equal(revised.status, 'paused');
+    assert.equal(revised.spent.runs, 1);
+    assert.equal(getGoalRunEvidence(goal.id, ownerId, result.runId).goalRevision, 1);
     const resumed = await (await fetch(`${base}/api/goals/${goal.id}/control`, { method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ operation: 'resume', expectedRevision: paused.revision }) })).json();
+      body: JSON.stringify({ operation: 'resume', expectedRevision: revised.revision }) })).json();
     assert.equal(resumed.status, 'active');
     assert.equal(resumed.spent.runs, 1);
     assert.equal(resumed.manualRunAvailable, true);

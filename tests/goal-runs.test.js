@@ -131,10 +131,30 @@ test('a lifecycle revision stops an old queued read even after resume', () => wi
     VALUES (?, 0, 'web.search', ?, 'running', ?, ?, ?)`).run(runId, JSON.stringify({ query: 'roles' }), action.id, now, now);
   enqueueAction({ actionId: action.id, correlationId: 'queued_goal_read', tool: 'web.search', arguments: { query: 'roles' } });
   controlGoal(goal.id, 'owner', { operation: 'pause', expectedRevision: 1 });
-  controlGoal(goal.id, 'owner', { operation: 'resume', expectedRevision: 2 });
+  updateGoalDraft(goal.id, 'owner', { ...draft, constraints: ['Bay Area only'], expectedRevision: 2 });
+  controlGoal(goal.id, 'owner', { operation: 'resume', expectedRevision: 3 });
   await agent.actionQueueWorker.processAction(action.id);
   assert.deepEqual(effects, []);
   assert.equal(getRun(runId).steps[0].status, 'blocked');
+}));
+
+test('new explicit goal pass uses revised scope and retains cumulative usage', () => withHome(async () => {
+  const goal = createGoalDraft('owner', draft);
+  const effects = [];
+  const agent = fixture(async () => ({ reasoning_summary: 'try both reads', actions: [
+    { tool: 'web.search', arguments: { query: 'roles' } }, { tool: 'email.read', arguments: { query: 'roles' } },
+  ] }), effects);
+  await agent.handleMessage({ text: goal.objective, actorId: 'owner', goalId: goal.id });
+  controlGoal(goal.id, 'owner', { operation: 'pause', expectedRevision: 1 });
+  const revised = updateGoalDraft(goal.id, 'owner', { ...draft, objective: 'Find recruiter messages',
+    permittedScope: { domains: ['email'], consequentialActions: false }, expectedRevision: 2 });
+  controlGoal(goal.id, 'owner', { operation: 'resume', expectedRevision: 3 });
+  const result = await agent.handleMessage({ text: revised.objective, actorId: 'owner', goalId: goal.id });
+  assert.deepEqual(effects, ['web.search', 'email.read']);
+  assert.equal(getRun(result.runId).goalRevision, 4);
+  assert.equal(getGoalRunEvidence(goal.id, 'owner', result.runId).objective, revised.objective);
+  assert.equal(getGoalDraft(goal.id, 'owner').spent.runs, 2);
+  assert.equal(getGoalDraft(goal.id, 'owner').spent.modelCalls, 2);
 }));
 
 test('failed model remains a visible failed linked run, not a completed goal', () => withHome(async () => {

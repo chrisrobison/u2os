@@ -46,7 +46,7 @@ export function getGoalRunEvidence(goalId, ownerId, runId) {
   if (!getDb().prepare('SELECT 1 FROM goals WHERE id = ? AND owner_id = ?').get(goalId, ownerId)) {
     throw httpError(404, 'Goal not found');
   }
-  const linked = getDb().prepare('SELECT response FROM agent_runs WHERE id = ? AND goal_id = ? AND actor_id = ?')
+  const linked = getDb().prepare('SELECT response, objective, goal_revision FROM agent_runs WHERE id = ? AND goal_id = ? AND actor_id = ?')
     .get(runId, goalId, ownerId);
   if (!linked) throw httpError(404, 'Goal run not found');
   const run = getRun(runId);
@@ -55,8 +55,10 @@ export function getGoalRunEvidence(goalId, ownerId, runId) {
     WHERE s.run_id = ? ORDER BY s.step_index LIMIT 33`).all(runId);
   const statuses = new Map(run.steps.map((step) => [step.index, step.status]));
   const response = preview(linked.response);
+  const objective = preview(linked.objective);
   return {
     goalId, runId, status: run.status, objectiveStatus: run.objectiveStatus,
+    goalRevision: linked.goal_revision, objective: objective.text, objectiveTruncated: objective.truncated,
     response: response.text, responseTruncated: response.truncated,
     stepsTruncated: rows.length > 32,
     steps: rows.slice(0, 32).map((row) => {
@@ -97,13 +99,13 @@ export function updateGoalDraft(id, ownerId, input) {
   }
   const data = validateDraft(Object.fromEntries(Object.entries(input).filter(([key]) => key !== 'expectedRevision')));
   const current = getGoalDraft(id, ownerId);
-  if (current.status !== 'draft') throw httpError(409, 'Only draft goals can be revised');
+  if (!['draft', 'paused'].includes(current.status)) throw httpError(409, 'Pause the goal before revising its scope');
   const now = new Date().toISOString();
   const changed = getDb().prepare(`UPDATE goals SET objective = ?, completion_criteria = ?, constraints = ?,
     permitted_scope = ?, budgets = ?, revision = revision + 1, updated_at = ?
-    WHERE id = ? AND owner_id = ? AND status = 'draft' AND revision = ?`).run(data.objective,
+    WHERE id = ? AND owner_id = ? AND status = ? AND revision = ?`).run(data.objective,
     JSON.stringify(data.completionCriteria), JSON.stringify(data.constraints), JSON.stringify(data.permittedScope),
-    JSON.stringify(data.budgets), now, id, ownerId, input.expectedRevision);
+    JSON.stringify(data.budgets), now, id, ownerId, current.status, input.expectedRevision);
   if (changed.changes !== 1) throw httpError(409, 'Goal changed; reload before editing');
   return getGoalDraft(id, ownerId);
 }

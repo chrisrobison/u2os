@@ -108,6 +108,7 @@ export class U2Goals extends HTMLElement {
     this._form.maxModelCalls.value = '20';
     this._form.maxTokens.value = '50000';
     this.querySelector('.goal-form__title').textContent = 'New draft';
+    this._form.querySelector('[type="submit"]').textContent = 'Save draft';
     this.querySelector('.goal-reload').hidden = true;
     this.querySelector('.goal-run').hidden = true;
     this.querySelector('.goal-controls').hidden = true;
@@ -146,7 +147,8 @@ export class U2Goals extends HTMLElement {
           : button.dataset.goalControl === 'pause' ? goal.status === 'paused' : false;
         button.disabled = false;
       });
-      this._setDraftEditable(goal.status === 'draft');
+      this._setDraftEditable(['draft', 'paused'].includes(goal.status));
+      this._form.querySelector('[type="submit"]').textContent = goal.status === 'paused' ? 'Save revised goal' : 'Save draft';
       this.querySelector('.goal-form__state').textContent = `Manual only · Next wake-up: none · Spent: ${goal.spent.runs} runs, ${goal.spent.modelCalls} model calls, ${goal.spent.tokens} reported tokens${goal.spent.tokenUsageComplete ? '' : ' (usage incomplete)'}${goal.spent.monetaryCost.available ? '' : ' (cost unavailable)'}`;
       const runs = this.querySelector('.goal-runs');
       runs.replaceChildren();
@@ -196,7 +198,8 @@ export class U2Goals extends HTMLElement {
       if (generation !== (this._generation || 0)) return;
       this._renderList(goals);
       await this._select(goal.id);
-      if (this._goalId === goal.id) this._message.textContent = 'Draft saved. No work has started.';
+      if (this._goalId === goal.id) this._message.textContent = goal.status === 'paused'
+        ? 'Revision saved. Goal remains paused; spending and prior evidence retained.' : 'Draft saved. No work has started.';
     } catch (error) { if (generation === (this._generation || 0)) this._showError(`Couldn't save draft: ${error.message}${/changed|revision/i.test(error.message) ? ' Reload the saved draft to review the latest version.' : ''}`); }
     finally { button.disabled = !this._draftEditable; }
   }
@@ -234,6 +237,13 @@ export class U2Goals extends HTMLElement {
       const heading = document.createElement('h3');
       heading.textContent = `Run ${evidence.runId} · ${evidence.status} · objective ${evidence.objectiveStatus}`;
       panel.appendChild(heading);
+      if (evidence.objective != null) {
+        const label = document.createElement('p');
+        label.textContent = `Original goal revision ${evidence.goalRevision ?? 'unavailable'}${evidence.objectiveTruncated ? ' · objective truncated' : ''}`;
+        const objective = document.createElement('pre');
+        objective.textContent = evidence.objective;
+        panel.append(label, objective);
+      }
       if (evidence.response !== null) {
         const label = document.createElement('p');
         label.textContent = `Run response (not verified completion)${evidence.responseTruncated ? ' · truncated' : ''}`;
