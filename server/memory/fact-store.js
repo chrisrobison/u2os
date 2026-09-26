@@ -3,7 +3,7 @@ import { newId } from '../db/ids.js';
 
 const CLASSIFICATIONS = new Set(['public', 'personal', 'private', 'sensitive']);
 const EXPLICIT_SOURCES = new Set(['owner', 'user', 'memory-candidate-confirmation']);
-const EXPLICIT_SOURCE_PREFIXES = ['user:', 'correction:'];
+const EXPLICIT_SOURCE_PREFIXES = ['user:', 'correction:', 'vault:'];
 const DERIVED_SOURCE_PREFIXES = ['system:projector', 'projector:', 'agent:commitment_detection'];
 
 export function classifyFactOrigin({ source = '', inferred = false } = {}) {
