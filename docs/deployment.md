@@ -32,6 +32,15 @@ upgrading, because they do not participate in the new guard protocol.
 
 Sessions store only token hashes server-side. Cookies are `HttpOnly`, `SameSite=Strict`, `Path=/`, and become `Secure` for HTTPS or explicit/trusted-proxy configuration. Sensitive rate limits are in-process per IP/account, reset on restart, and are not distributed.
 
+HTTP access logs retain method, registered API route template, status and latency,
+not raw URLs, queries, fragments or dynamic path parameters. Unmatched and static
+requests use fixed labels; unknown method tokens are masked. Router error logs
+retain safe route/status metadata without raw exception messages, which may
+contain provider responses or private query/payload text. Use owner-visible
+durable action/connector health for actionable failure details. This redaction
+applies to new logs only: existing platform logs were not inspected or scrubbed.
+Review historical logs locally before sharing them, particularly OAuth callbacks.
+
 The realtime device bus (docs/devices.md) upgrades WebSocket connections at `/ws/devices` on the **same** port/process above -- no additional port to open or firewall. It requires a per-installation connect token, generated on first use at `<U2OS_HOME>/credentials/device-connect-token.key` (mode `0600`, same pattern as `master.key`); an authenticated browser session can also fetch it via `GET /api/devices/connect-token`. This token gates transport only, not device trust -- see `server/devices/realtime/device-token.js`.
 
 ## First run and recovery
