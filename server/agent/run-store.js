@@ -5,7 +5,7 @@ const TERMINAL = new Set(['executed', 'blocked', 'failed', 'cancelled', 'rejecte
 export const DEFAULT_RUN_STEP_LIMIT = 16;
 export const DEFAULT_RUN_ELAPSED_MS = 86_400_000;
 
-export function createRun({ correlationId, actorId, objective, voice, conversationId = null, goalId = null }) {
+export function createRun({ correlationId, actorId, objective, voice, conversationId = null, goalId = null, goalWakeId = null }) {
   const id = newId('run');
   const now = new Date().toISOString();
   withTransaction(getDb(), () => {
@@ -23,6 +23,12 @@ export function createRun({ correlationId, actorId, objective, voice, conversati
       }
       getDb().prepare("UPDATE goals SET status = 'active', updated_at = ? WHERE id = ?").run(now, goalId);
       goalRevision = goal.revision;
+    }
+    if (goalWakeId) {
+      const consumed = getDb().prepare(`UPDATE goal_wakes SET status = 'started', run_id = ?, updated_at = ?
+        WHERE id = ? AND goal_id = ? AND goal_revision = ? AND status = 'pending' AND fire_at <= ?`)
+        .run(id, now, goalWakeId, goalId, goalRevision, now);
+      if (consumed.changes !== 1) throw goalError(409, 'Goal wake is not due or has already been consumed');
     }
     getDb().prepare(`INSERT INTO agent_runs (id, correlation_id, actor_id, objective, conversation_id, goal_id, goal_revision, voice_confidence, deadline_at, status, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'planning', ?, ?)`).run(id, correlationId, actorId, objective, conversationId, goalId, goalRevision, voice ? voice.confidence : null,

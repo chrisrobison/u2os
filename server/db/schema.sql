@@ -381,8 +381,22 @@ CREATE TABLE IF NOT EXISTS conversations (
 );
 CREATE INDEX IF NOT EXISTS idx_conversations_owner ON conversations(owner_id, updated_at DESC);
 
--- Owner-authored goals can launch bounded, read-only runs on explicit request.
--- No scheduler consumes them and no row alone is a completion claim.
+-- Owner-authored goals launch bounded reads explicitly or via selected wakes.
+-- Wake consumption and individual run delivery are not completion claims.
+CREATE TABLE IF NOT EXISTS goal_wakes (
+  id TEXT PRIMARY KEY,
+  goal_id TEXT NOT NULL,
+  goal_revision INTEGER NOT NULL,
+  trigger_id TEXT NOT NULL UNIQUE,
+  fire_at TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  run_id TEXT UNIQUE,
+  blocker TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_goal_wake_pending ON goal_wakes(goal_id) WHERE status = 'pending';
+
 CREATE TABLE IF NOT EXISTS goals (
   id TEXT PRIMARY KEY,
   owner_id TEXT NOT NULL,

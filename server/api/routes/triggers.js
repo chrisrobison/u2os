@@ -80,6 +80,7 @@ export function registerTriggerRoutes(router) {
     const existing = getTrigger(req.params.id);
     if (!existing) return sendJson(res, 404, { error: 'Not Found' });
     const { enabled, name, config } = req.body || {};
+    if (existing.source === 'goal') return sendJson(res, 409, { error: 'Manage this wake from its goal' });
     try {
       if (config !== undefined) {
         await validateIncomingConfig(existing.kind, config);
@@ -94,6 +95,7 @@ export function registerTriggerRoutes(router) {
   router.delete('/api/triggers/:id', async (req, res) => {
     const existing = getTrigger(req.params.id);
     if (!existing) return sendJson(res, 404, { error: 'Not Found' });
+    if (existing.source === 'goal') return sendJson(res, 409, { error: 'Manage this wake from its goal' });
     deleteTrigger(req.params.id);
     sendJson(res, 200, { deleted: true, id: req.params.id });
   });

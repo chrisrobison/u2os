@@ -86,6 +86,11 @@ export function controlGoal(id, operation, expectedRevision) {
     body: JSON.stringify({ operation, expectedRevision }) });
 }
 
+export function scheduleGoalWake(id, fireAt, expectedRevision) {
+  return request(`/api/goals/${encodeURIComponent(id)}/wake`, { method: 'POST', headers: JSON_HEADERS,
+    body: JSON.stringify({ fireAt, expectedRevision }) });
+}
+
 export function saveConnectorConfig(endpoint, values) {
   return request(endpoint, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(values) });
 }

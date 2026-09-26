@@ -9,7 +9,7 @@
 //
 // Actions are a fixed, small, trusted set (never arbitrary code, same
 // "trusted primitives" boundary as tools/dashboards): notify, create_task,
-// evaluate. notify/create_task route through agent.evaluateAndMaybeExecute()
+// evaluate, and managed goal_run wakes. notify/create_task route through agent.evaluateAndMaybeExecute()
 // -- the SAME policy-gated, audited pipeline chat/voice messages use. This
 // module is a new *source* of proposed actions, never a bypass of that gate
 // -- it never calls a tool directly and never touches policy-engine.js.
@@ -25,6 +25,7 @@ import { getCachedCalendarEvent } from '../integrations/calendar-store.js';
 import { findEntities } from '../memory/entity-store.js';
 import { getFacts } from '../memory/fact-store.js';
 import { log } from '../logging/logger.js';
+import { runScheduledGoalWake } from '../agent/goal-wakes.js';
 
 const DEFAULT_TICK_MS = 60 * 1000;
 const DEFAULT_LEASE_MS = 5 * 60 * 1000;
@@ -258,6 +259,9 @@ export async function runAction(trigger, event, { eventBus, agent }) {
 
   try {
     switch (action.kind) {
+      case 'goal_run':
+        result = await runScheduledGoalWake(trigger, agent);
+        break;
       case 'notify':
         result = await agent.evaluateAndMaybeExecute({
           tool: 'notifications.send',
@@ -569,7 +573,8 @@ export function previewTrigger(id, { now = new Date() } = {}) {
   const actionKind = boundedHistoryText(trigger.config?.action?.kind) || 'evaluate';
   const action = {
     kind: actionKind,
-    target: actionKind === 'notify' ? 'notifications.send' : actionKind === 'create_task' ? 'tasks.create' : 'agent.evaluateEvent',
+    target: actionKind === 'notify' ? 'notifications.send' : actionKind === 'create_task' ? 'tasks.create'
+      : actionKind === 'goal_run' ? 'agent.handleMessage (bounded read-only goal)' : 'agent.evaluateEvent',
   };
   const preview = {
     triggerId: trigger.id,

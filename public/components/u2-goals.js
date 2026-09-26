@@ -10,7 +10,7 @@ export class U2Goals extends HTMLElement {
     this.innerHTML = `
       <div class="workspace__header">
         <div class="workspace__title">Goals</div>
-        <div class="workspace__subtitle">Owner-invoked read-only runs only. No automatic goal work is scheduled.</div>
+        <div class="workspace__subtitle">Bounded read-only runs. No automatic goal work is scheduled unless you select a wake.</div>
       </div>
       <div class="goal-layout">
         <section class="goal-list-panel" aria-label="Saved goal drafts">
@@ -35,6 +35,7 @@ export class U2Goals extends HTMLElement {
           <p class="goal-form__note">Manual runs use read-only tools in the selected domains. This does not authorize consequential actions or start automation.</p>
           <div class="goal-form__actions"><button type="submit" class="btn btn-primary">Save draft</button><button type="button" class="btn goal-run" hidden>Run once (read-only)</button><button type="button" class="btn goal-reload" hidden>Reload saved goal</button></div>
           <div class="goal-controls" hidden><button type="button" class="btn" data-goal-control="pause">Pause goal</button><button type="button" class="btn" data-goal-control="resume">Resume goal</button><button type="button" class="btn" data-goal-control="cancel">Cancel goal</button></div>
+          <section class="goal-schedule" hidden><label>One-time wake (local time) <input type="datetime-local" name="wakeAt"></label><button type="button" class="btn goal-schedule-save">Schedule one read-only pass</button><p class="goal-wake-status"></p></section>
           <p class="goal-message" role="status" aria-live="polite"></p>
           <div class="goal-runs" aria-label="Related runs"></div>
           <section class="goal-evidence" aria-label="Selected run evidence"></section>
@@ -46,6 +47,7 @@ export class U2Goals extends HTMLElement {
     this.querySelector('.goal-new').addEventListener('click', () => this._newDraft());
     this.querySelector('.goal-reload').addEventListener('click', () => this._select(this._goalId));
     this.querySelector('.goal-run').addEventListener('click', () => this._run());
+    this.querySelector('.goal-schedule-save').addEventListener('click', () => this._schedule());
     this.querySelectorAll('[data-goal-control]').forEach((button) => button.addEventListener('click', () => this._control(button.dataset.goalControl)));
     this._form.addEventListener('submit', (event) => { event.preventDefault(); this._save(); });
     this._setDraftEditable(false);
@@ -95,7 +97,7 @@ export class U2Goals extends HTMLElement {
 
   _setDraftEditable(editable) {
     this._draftEditable = editable;
-    this._form.querySelectorAll('textarea, input').forEach((field) => { field.disabled = !editable; });
+    this._form.querySelectorAll('textarea, input:not([name="wakeAt"])').forEach((field) => { field.disabled = !editable; });
     this._form.querySelector('[type="submit"]').disabled = !editable;
   }
 
@@ -112,6 +114,7 @@ export class U2Goals extends HTMLElement {
     this.querySelector('.goal-reload').hidden = true;
     this.querySelector('.goal-run').hidden = true;
     this.querySelector('.goal-controls').hidden = true;
+    this.querySelector('.goal-schedule').hidden = true;
     this._setDraftEditable(true);
     this.querySelector('.goal-form__state').textContent = 'Manual only · Next wake-up: none · Spent: 0 runs, 0 model calls, 0 tokens';
     this.querySelector('.goal-runs').replaceChildren();
@@ -149,7 +152,14 @@ export class U2Goals extends HTMLElement {
       });
       this._setDraftEditable(['draft', 'paused'].includes(goal.status));
       this._form.querySelector('[type="submit"]').textContent = goal.status === 'paused' ? 'Save revised goal' : 'Save draft';
-      this.querySelector('.goal-form__state').textContent = `Manual only · Next wake-up: none · Spent: ${goal.spent.runs} runs, ${goal.spent.modelCalls} model calls, ${goal.spent.tokens} reported tokens${goal.spent.tokenUsageComplete ? '' : ' (usage incomplete)'}${goal.spent.monetaryCost.available ? '' : ' (cost unavailable)'}`;
+      this.querySelector('.goal-form__state').textContent = `${goal.nextWakeAt ? 'One-time schedule' : 'Manual only'} · Next wake-up: ${goal.nextWakeAt || 'none'} · Spent: ${goal.spent.runs} runs, ${goal.spent.modelCalls} model calls, ${goal.spent.tokens} reported tokens${goal.spent.tokenUsageComplete ? '' : ' (usage incomplete)'}${goal.spent.monetaryCost.available ? '' : ' (cost unavailable)'}`;
+      this.querySelector('.goal-schedule').hidden = false;
+      const canSchedule = goal.manualRunAvailable && !goal.nextWakeAt;
+      this._form.wakeAt.disabled = !canSchedule;
+      this.querySelector('.goal-schedule-save').disabled = !canSchedule;
+      this.querySelector('.goal-wake-status').textContent = goal.lastWake
+        ? `Wake ${goal.lastWake.status} · revision ${goal.lastWake.goalRevision} · ${goal.lastWake.fireAt}${goal.lastWake.runId ? ` · inspect run ${goal.lastWake.runId}` : ''}${goal.lastWake.blocker ? ` · ${goal.lastWake.blocker}: review goal state, budgets and linked runs before scheduling again.` : ''}`
+        : 'No wake scheduled. Pause cancels pending wakes; resume does not rearm them.';
       const runs = this.querySelector('.goal-runs');
       runs.replaceChildren();
       this.querySelector('.goal-evidence').replaceChildren();
@@ -288,6 +298,23 @@ export class U2Goals extends HTMLElement {
         : `Goal ${operation === 'pause' ? 'paused' : 'cancelled'}. New work stopped; any in-flight outcome remains visible.`;
     } catch (error) { if (this._goalId === id) this._showError(`Couldn't change goal state: ${error.message}`); }
     finally { this.querySelectorAll('[data-goal-control]').forEach((button) => { button.disabled = false; }); }
+  }
+
+  async _schedule() {
+    const id = this._goalId;
+    if (!id) return;
+    const button = this.querySelector('.goal-schedule-save');
+    button.disabled = true;
+    try {
+      const time = new Date(this._form.wakeAt.value);
+      if (!Number.isFinite(time.getTime())) throw new Error('Choose a future local date and time');
+      await api.scheduleGoalWake(id, time.toISOString(), this._revision);
+      if (this._goalId !== id) return;
+      await this._select(id);
+      if (this._goalId === id) this._message.textContent = 'One read-only wake scheduled. Pause the goal to cancel it. No work started now.';
+    } catch (error) {
+      if (this._goalId === id) { this._showError(`Could not schedule wake: ${error.message}`); button.disabled = false; }
+    }
   }
 
   _showError(message) {

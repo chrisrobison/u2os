@@ -1,4 +1,4 @@
-import { getDb } from '../db/connection.js';
+import { getDb, withTransaction } from '../db/connection.js';
 import { newId } from '../db/ids.js';
 import { getRun } from './run-store.js';
 
@@ -101,11 +101,15 @@ export function updateGoalDraft(id, ownerId, input) {
   const current = getGoalDraft(id, ownerId);
   if (!['draft', 'paused'].includes(current.status)) throw httpError(409, 'Pause the goal before revising its scope');
   const now = new Date().toISOString();
-  const changed = getDb().prepare(`UPDATE goals SET objective = ?, completion_criteria = ?, constraints = ?,
+  const changed = withTransaction(getDb(), () => {
+    const result = getDb().prepare(`UPDATE goals SET objective = ?, completion_criteria = ?, constraints = ?,
     permitted_scope = ?, budgets = ?, revision = revision + 1, updated_at = ?
     WHERE id = ? AND owner_id = ? AND status = ? AND revision = ?`).run(data.objective,
     JSON.stringify(data.completionCriteria), JSON.stringify(data.constraints), JSON.stringify(data.permittedScope),
     JSON.stringify(data.budgets), now, id, ownerId, current.status, input.expectedRevision);
+    if (result.changes === 1) invalidateGoalWakes(id, 'goal_revised');
+    return result;
+  });
   if (changed.changes !== 1) throw httpError(409, 'Goal changed; reload before editing');
   return getGoalDraft(id, ownerId);
 }
@@ -124,11 +128,26 @@ export function controlGoal(id, ownerId, input) {
   if (current.status === 'cancelled') throw httpError(409, 'Cancelled goals cannot be resumed');
   if (current.revision !== input.expectedRevision) throw httpError(409, 'Goal changed; reload before changing its state');
   if (input.operation === 'resume' && current.status !== 'paused') throw httpError(409, 'Only paused goals can be resumed');
-  const changed = getDb().prepare(`UPDATE goals SET status = ?, revision = revision + 1, updated_at = ?
+  const changed = withTransaction(getDb(), () => {
+    const result = getDb().prepare(`UPDATE goals SET status = ?, revision = revision + 1, updated_at = ?
     WHERE id = ? AND owner_id = ? AND revision = ? AND status = ?`).run(target, new Date().toISOString(), id, ownerId,
       input.expectedRevision, current.status);
+    if (result.changes === 1) invalidateGoalWakes(id, 'goal_stopped');
+    return result;
+  });
   if (changed.changes !== 1) throw httpError(409, 'Goal changed; reload before changing its state');
   return getGoalDraft(id, ownerId);
+}
+
+function invalidateGoalWakes(id, reason) {
+  getDb().prepare(`UPDATE triggers SET enabled = 0, next_check_at = NULL WHERE id IN
+    (SELECT trigger_id FROM goal_wakes WHERE goal_id = ? AND status = 'pending')`).run(id);
+  getDb().prepare("UPDATE goal_wakes SET status = 'cancelled', blocker = ?, updated_at = ? WHERE goal_id = ? AND status = 'pending'")
+    .run(reason, new Date().toISOString(), id);
+}
+
+export function goalRunObjective(goal) {
+  return `${goal.objective}\nCompletion criteria:\n${goal.completionCriteria.map((item) => `- ${item}`).join('\n')}\nConstraints:\n${goal.constraints.map((item) => `- ${item}`).join('\n')}\nUse read-only tools within the intended domains. Do not claim objective completion without evidence.`;
 }
 
 function validateDraft(input) {
@@ -157,14 +176,18 @@ function present(row) {
     FROM agent_runs WHERE goal_id = ?`).get(row.id);
   const budgets = JSON.parse(row.budgets);
   const permittedScope = JSON.parse(row.permitted_scope);
+  const wake = getDb().prepare('SELECT * FROM goal_wakes WHERE goal_id = ? ORDER BY created_at DESC, id DESC LIMIT 1').get(row.id);
+  const pending = getDb().prepare("SELECT fire_at FROM goal_wakes WHERE goal_id = ? AND status = 'pending'").get(row.id);
   return {
     id: row.id, objective: row.objective, completionCriteria: JSON.parse(row.completion_criteria),
     constraints: JSON.parse(row.constraints), permittedScope,
     budgets, status: row.status, revision: row.revision,
     createdAt: row.created_at, updatedAt: row.updated_at,
-    executionEnabled: false, manualRunAvailable: ['draft', 'active'].includes(row.status) && permittedScope.domains.length > 0 && !usage.unfinished &&
+    executionEnabled: Boolean(pending), manualRunAvailable: ['draft', 'active'].includes(row.status) && permittedScope.domains.length > 0 && !usage.unfinished &&
       usage.runs < budgets.maxRuns && usage.model_calls < budgets.maxModelCalls && usage.tokens < budgets.maxTokens,
-    nextWakeAt: null,
+    nextWakeAt: pending?.fire_at || null,
+    lastWake: wake ? { id: wake.id, goalRevision: wake.goal_revision, fireAt: wake.fire_at, status: wake.status,
+      runId: wake.run_id, blocker: wake.blocker } : null,
     relatedRuns: linked.map((run) => ({ id: run.id, status: run.status, objectiveStatus: run.objective_status,
       createdAt: run.created_at, updatedAt: run.updated_at })),
     spent: { runs: usage.runs, modelCalls: usage.model_calls, tokens: usage.tokens,
