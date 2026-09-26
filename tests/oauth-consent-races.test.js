@@ -46,6 +46,7 @@ async function fixture(operation) {
       slot.complete = () => slot.reply.resolve({ ok: true, json: async () => ({ access_token: `fixture-access-${code}`, refresh_token: `fixture-refresh-${code}`, expires_in: 3600 }) });
       slots.set(code, slot);
       const response = nativeFetch(`${origin}/api/connectors/google/oauth/callback?state=${state}&code=${code}`, { redirect: 'manual' });
+      slot.ready = () => Promise.race([slot.reached.promise, response.then(() => { throw new Error('Callback returned before the expected fixture exchange'); })]);
       callbacks.push(response); slot.response = response; return slot;
     };
     const snapshot = () => {
@@ -74,7 +75,7 @@ for (const [label, change] of changes) for (const during of [false, true]) {
   test(`OAuth ${label} ${during ? 'during exchange' : 'during consent'} cannot reconnect or change selection`, () => fixture(async (f) => {
     const state = await f.start();
     let exchange;
-    if (during) { exchange = f.exchange(state); await exchange.reached.promise; }
+    if (during) { exchange = f.exchange(state); await exchange.ready(); }
     await change(f); const before = f.snapshot();
     if (!during) exchange = f.exchange(state);
     exchange.complete(); const response = await exchange.response;
@@ -88,7 +89,7 @@ for (const [label, change] of changes) for (const during of [false, true]) {
 
 test('OAuth exchange completing after consent expiry is discarded without writes', (context) => fixture(async (f) => {
   const state = await f.start(), exchange = f.exchange(state);
-  await exchange.reached.promise; const before = f.snapshot(), future = Date.now() + 600_001;
+  await exchange.ready(); const before = f.snapshot(), future = Date.now() + 600_001;
   context.mock.method(Date, 'now', () => future);
   exchange.complete(); const response = await exchange.response;
   assert.match(response.headers.get('location'), /error=connect_failed/); assert.deepEqual(f.snapshot(), before);
@@ -104,7 +105,7 @@ test('expired consent is rejected before starting any code exchange', (context) 
 
 test('first completed OAuth flow invalidates competing same-account consent before exchange', () => fixture(async (f) => {
   const firstState = await f.start(), secondState = await f.start();
-  const first = f.exchange(firstState, 'first'); await first.reached.promise; first.complete();
+  const first = f.exchange(firstState, 'first'); await first.ready(); first.complete();
   assert.match((await first.response).headers.get('location'), /connected=gmail/);
   const before = f.snapshot(), second = f.exchange(secondState, 'second'); second.complete();
   assert.match((await second.response).headers.get('location'), /error=connect_failed/);
@@ -114,7 +115,7 @@ test('first completed OAuth flow invalidates competing same-account consent befo
 test('first completed OAuth flow invalidates a same-account exchange already awaiting Google', () => fixture(async (f) => {
   const firstState = await f.start(), secondState = await f.start();
   const first = f.exchange(firstState, 'first'), second = f.exchange(secondState, 'second');
-  await Promise.all([first.reached.promise, second.reached.promise]); second.complete();
+  await Promise.all([first.ready(), second.ready()]); second.complete();
   assert.match((await second.response).headers.get('location'), /connected=gmail/);
   const before = f.snapshot(); first.complete();
   assert.match((await first.response).headers.get('location'), /error=connect_failed/); assert.deepEqual(f.snapshot(), before);
@@ -122,7 +123,7 @@ test('first completed OAuth flow invalidates a same-account exchange already awa
 
 test('label-only rename and unrelated account removal retain legitimate bound OAuth completion', () => fixture(async (f) => {
   const other = await (await f.api('/api/connectors/google/instances', { body: { label: 'Other fixture account' }, status: 201 })).json();
-  const state = await f.start(), exchange = f.exchange(state); await exchange.reached.promise;
+  const state = await f.start(), exchange = f.exchange(state); await exchange.ready();
   await f.api(`/api/connectors/google/instances/${f.account.id}`, { method: 'PATCH', body: { label: 'Renamed intended account' } });
   await f.api(`/api/connectors/google/instances/${other.id}`, { method: 'DELETE' });
   exchange.complete(); const response = await exchange.response;
