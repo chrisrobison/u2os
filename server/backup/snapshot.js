@@ -40,6 +40,9 @@ function timestampForFilename() {
 function tarOptions(stdio = 'inherit') {
   const env = { ...process.env };
   delete env.U2OS_BACKUP_PASSPHRASE;
+  // Archive application bytes, not macOS copyfile-generated AppleDouble
+  // sidecars. Legacy sidecars remain ordinary preserved offline files.
+  env.COPYFILE_DISABLE = '1';
   return { stdio, env };
 }
 

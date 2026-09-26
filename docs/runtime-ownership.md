@@ -89,3 +89,10 @@ database authorization, queues/runs and schedules, revokes archived sessions,
 and retains completed evidence and resource counters. It never activates the
 home or calls models/providers. Unsupported schemas are refused without
 migrations. See [database-work review](backups.md#preview-and-quarantine-unfinished-database-work).
+
+`npm run recovery:connectivity` uses the same guard after a verified stopped-work
+checkpoint. Its explicit `--apply` preserves archived credential/config bytes
+privately outside runtime lookup, disconnects account instances and revokes
+cached device trust. Every failure and successful checkpoint remains inactive;
+there is still no activation or original-retirement bypass. See
+[connectivity review](backups.md#preview-and-quarantine-archived-connectivity).
