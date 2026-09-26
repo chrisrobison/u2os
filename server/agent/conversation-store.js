@@ -35,7 +35,10 @@ export function appendTurn({ conversationId, ownerId, role, content, correlation
 
 export function listConversations(ownerId, limit = 20) {
   const bounded = Math.min(Math.max(Number(limit) || 20, 1), 50);
-  return getDb().prepare('SELECT id, created_at AS createdAt, updated_at AS updatedAt FROM conversations WHERE owner_id = ? ORDER BY updated_at DESC, id DESC LIMIT ?')
+  return getDb().prepare(`SELECT c.id, c.created_at AS createdAt, c.updated_at AS updatedAt,
+    (SELECT substr(m.content, 1, 80) FROM conversation_messages m
+      WHERE m.session_id = c.id AND m.role = 'user' ORDER BY m.created_at, m.rowid LIMIT 1) AS label
+    FROM conversations c WHERE c.owner_id = ? ORDER BY c.updated_at DESC, c.id DESC LIMIT ?`)
     .all(ownerId, bounded);
 }
 

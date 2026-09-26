@@ -35,6 +35,7 @@ test('owner-scoped conversations keep turns separate and survive restart', () =>
   assert.deepEqual(getConversationTurns(first, 'owner-a').map((turn) => turn.content), ['first secret']);
   assert.deepEqual(getConversationTurns(second, 'owner-a').map((turn) => turn.content), ['second secret']);
   assert.deepEqual(listConversations('owner-a').map((row) => row.id).sort(), [first, second].sort());
+  assert.equal(listConversations('owner-a').find((row) => row.id === first).label, 'first secret');
   assert.deepEqual(listConversations('owner-b').map((row) => row.id), [foreign]);
   assert.throws(() => getConversationTurns(foreign, 'owner-a'), { status: 404 });
   assert.throws(() => appendTurn({ conversationId: foreign, ownerId: 'owner-a', role: 'user', content: 'leak' }), { status: 404 });
@@ -112,6 +113,8 @@ test('conversation routes require owner session and expose only bounded owner hi
     assert.equal(history.status, 200);
     assert.deepEqual((await history.json()).turns.map((turn) => turn.content), ['private turn']);
     assert.equal((await fetch(`${base}/api/agent/conversations/missing/turns`, { headers: { cookie } })).status, 404);
-    assert.equal((await fetch(`${base}/api/agent/conversations`, { headers: { cookie } })).status, 200);
+    const listed = await fetch(`${base}/api/agent/conversations`, { headers: { cookie } });
+    assert.equal(listed.status, 200);
+    assert.equal((await listed.json()).conversations[0].label, 'private turn');
   } finally { handle.server.closeAllConnections(); await new Promise((resolve) => handle.server.close(resolve)); }
 }));
