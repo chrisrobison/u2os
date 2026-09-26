@@ -7,11 +7,18 @@ upgraded personal installation. A consolidated six-workflow personal-mode
 fresh/upgrade harness remains unfinished.
 
 The personal-mode API suite is repeatable with `npm run test:personal`:
-fourteen cases cover brief, grounded draft, meeting preparation, failed-provider
-continuation, multi-run research and pending approval/rejection on fresh and existing unmarked homes. They
+eighteen cases cover brief, grounded draft, meeting preparation, failed-provider
+continuation, multi-run research, pending approval/rejection and approved
+simulated sends with confirmed/uncertain recovery on fresh and existing unmarked homes. They
 use actual owner auth, runtime, configured model HTTP and Google/Brave adapters
 with isolated scripted transports and a controlled clock. Existing fixture
 records survive upgrade/restart.
+The default harness denies provider writes. Four explicitly opted-in cases
+intercept only the exact Gmail POST, original account token and approved MIME;
+no write reaches native provider networking. Confirmed receipts ground a
+dependent draft and final model continuation. Missing receipts require owner
+attention, without dependent work, further planning, requeue or replay after
+restart/wakes. These messages are new follow-ups, not proof of reply threading.
 This is not live model judgment, UI/OAuth onboarding, all historical schemas,
 or a consolidated proof of all six workflows.
 
@@ -86,8 +93,8 @@ exercise the first three workflows and calendar outage through authenticated
 personal APIs. Retrieved mail arrives older-first; the draft selects the latest
 observed timestamp and validated result references. Restart retains results
 without replaying reads/model calls. Outage blocks drafting and overrides an
-incorrect completion claim. Provider writes and unknown network destinations
-are denied by the fixture; no personal account or real model is contacted.
+incorrect completion claim. These read-only cases deny provider writes and
+unknown network destinations; no personal account or real model is contacted.
 
 Personal research cases additionally configure an encrypted selected Brave
 account and exercise the real adapter with scripted HTTP. Two explicit bounded
@@ -103,9 +110,16 @@ Personal pending-approval cases retrieve the intended message and availability,
 then inspect the exact account, recipient and reply payload. Switching active
 accounts and restarting preserve that captured proposal without replaying reads
 or model calls. Owner rejection durably blocks a dependent follow-up draft and
-continuation; no send is enqueued and no provider write occurs. This is not
-consolidated proof of approved delivery, interruption during an external effect,
-uncertain-outcome recovery or the personal browser approval UI.
+continuation; no send is enqueued and no provider write occurs.
+
+Four separate approved-send cases additionally prove strictly intercepted
+simulated delivery through personal owner APIs. Confirmed receipts permit a
+dependent draft and a final response grounded in those observed artifacts;
+uncertain acknowledgements require attention and retain blocked dependents
+without more planning. Repeated approval, explicit wakes and restart cannot
+repeat either send; original account/payload and existing records survive.
+These are not live delivery, threaded replies, process interruption during a
+running external effect, or personal browser approval proof.
 
 Local personal drafts leave their sender unset, including while disconnected;
 they are saved work, not simulated mail delivery. No sender address is inferred

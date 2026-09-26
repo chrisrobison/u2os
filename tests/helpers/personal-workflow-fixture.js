@@ -72,7 +72,7 @@ export async function withPersonalWorkflow({ existing = false, research = false,
     if (!['gmail.googleapis.com', 'www.googleapis.com'].includes(url.hostname)) {
       fixture.unexpectedNetwork.push(url.href); throw new Error('Unexpected network is prohibited by this fixture');
     }
-    if (simulatedGmailSend && url.hostname === 'gmail.googleapis.com' && url.pathname === '/gmail/v1/users/me/messages/send' && !url.search && init.method === 'POST') {
+    if (simulatedGmailSend && url.href === 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send' && init.method === 'POST') {
       // Never forward writes to native fetch. This narrowly scripted exception
       // requires the test to establish the exact expected owner-approved MIME.
       assert.ok(fixture.expectedApprovedSend, 'fixture must establish the approved send before transport');
