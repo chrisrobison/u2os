@@ -47,6 +47,47 @@ function mapGoogleEvent(gEvent, instance) {
   };
 }
 
+// Read evidence is untrusted. Validate the entire returned page before cache
+// writes; never manufacture an identity or silently substitute requested IDs.
+function usableTimestamp(value) {
+  if (typeof value !== 'string' || !value.trim() || !Number.isFinite(Date.parse(value))) return false;
+  const day = /^(\d{4}-\d{2}-\d{2})(?:$|[tT])/.exec(value)?.[1];
+  // Date.parse rolls nonexistent civil days forward instead of rejecting.
+  return Boolean(day && new Date(`${day}T00:00:00Z`).toISOString().startsWith(day));
+}
+
+function mapReadEvent(event, instance, expectedId) {
+  if (!event || typeof event !== 'object' || Array.isArray(event) || typeof event.id !== 'string' || !event.id.trim()
+      || (expectedId !== undefined && event.id !== expectedId)) throw new Error('Invalid calendar event identity');
+  for (const key of ['summary', 'location', 'status']) {
+    if (event[key] != null && typeof event[key] !== 'string') throw new Error('Invalid calendar event field');
+  }
+  if (event.status != null && !['confirmed', 'tentative', 'cancelled'].includes(event.status)) throw new Error('Invalid calendar event status');
+  if (event.attendees != null && (!Array.isArray(event.attendees) || event.attendees.some((attendee) =>
+    !attendee || typeof attendee !== 'object' || Array.isArray(attendee) ||
+    ['displayName', 'email'].some((key) => attendee[key] != null && typeof attendee[key] !== 'string')))) {
+    throw new Error('Invalid calendar attendees');
+  }
+  const row = mapGoogleEvent(event, instance);
+  if (!usableTimestamp(row.start_at) || !usableTimestamp(row.end_at)) {
+    throw new Error('Invalid calendar event timestamps');
+  }
+  // Do not compare zone-less dateTime strings in the server's time zone:
+  // Google permits different explicit timeZone fields at each endpoint.
+  const unambiguous = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value) || /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(value);
+  if (unambiguous(row.start_at) && unambiguous(row.end_at) && Date.parse(row.end_at) < Date.parse(row.start_at)) {
+    throw new Error('Invalid calendar event timestamps');
+  }
+  return row;
+}
+
+function readPageRows(json, instance) {
+  if (!json || typeof json !== 'object' || Array.isArray(json) || (json.items !== undefined && !Array.isArray(json.items))) {
+    throw new Error('Invalid calendar event page');
+  }
+  return (json.items || []).map((event) => mapReadEvent(event, instance));
+}
+
 function upsertRow(row) {
   const db = getDb();
   const now = new Date().toISOString();
@@ -87,19 +128,20 @@ export async function listEvents({ from, to } = {}, { fetchImpl = globalThis.fet
     if (!res.ok) throw new Error(`google-calendar: list failed (status ${res.status})`);
     const json = await res.json();
     check();
-    return (json.items || []).map((gEvent) => upsertRow(mapGoogleEvent(gEvent, instance)));
+    return readPageRows(json, instance).map((row) => upsertRow(row));
   });
 }
 
 export async function getEvent(localId, { fetchImpl = globalThis.fetch, dataDir, instance, timeoutMs, timers } = {}) {
   return withGoogleRead({ fetchImpl, timeoutMs, timers }, async ({ fetchImpl, check }) => {
+    const upstreamId = toGoogleId(localId, instance);
     const headers = await authHeaders(fetchImpl, dataDir, instance);
-    const res = await fetchImpl(`${API_BASE}/${encodeURIComponent(toGoogleId(localId, instance))}`, { headers });
+    const res = await fetchImpl(`${API_BASE}/${encodeURIComponent(upstreamId)}`, { headers });
     if (res.status === 404) return null;
     if (!res.ok) throw new Error(`google-calendar: getEvent failed (status ${res.status})`);
     const gEvent = await res.json();
     check();
-    return upsertRow(mapGoogleEvent(gEvent, instance));
+    return upsertRow(mapReadEvent(gEvent, instance, upstreamId));
   });
 }
 
@@ -153,10 +195,9 @@ export async function syncChanges({ db, eventBus, correlationId, fetchImpl = glo
     if (!res.ok) throw new Error(`google-calendar: syncChanges failed (status ${res.status})`);
     const json = await res.json();
     check();
-    const items = json.items || [];
+    const items = readPageRows(json, instance);
     let count = 0;
-    for (const gEvent of items) {
-      const mapped = mapGoogleEvent(gEvent, instance);
+    for (const mapped of items) {
       const existing = (db || getDb()).prepare('SELECT * FROM calendar_events WHERE id = ?').get(mapped.id);
       const after = upsertRow(mapped);
       if (!existing) {

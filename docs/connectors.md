@@ -178,6 +178,20 @@ retained, not treated as fresh sync success. Create/reschedule are deliberately
 outside this read boundary; their cautious uncertain-outcome handling is
 unchanged. Gmail and Contacts use the same read boundary below.
 
+Calendar reads validate the page and every mapped event before that page's
+cache/event writes. IDs must be nonempty strings; get must return the exact
+requested upstream ID. Malformed mapped title/location/status/attendees or
+unusable timestamps fail with sanitized unavailable state, preserving prior
+cache rather than inventing evidence. Timed/all-day values and existing account
+or grandfathered ID formats remain unchanged. Explicit-offset/all-day ranges
+cannot end before they start; zero duration is retained. Zone-less strings with
+Google's separate endpoint `timeZone` fields are not compared using the server's
+zone or normalized by this change; see the [event reference](https://developers.google.com/workspace/calendar/api/v3/reference/events).
+Minimal cancelled tombstones without usable timestamps fail honestly rather
+than invent dates or claim successful deletion reconciliation. This validation
+is read-only: create/reschedule acknowledgements remain separate work. No
+pagination or exhaustive-calendar coverage is claimed.
+
 - List: `GET https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=&timeMax=&singleEvents=true&orderBy=startTime`
 - Create: `POST .../events`
 - Reschedule: `PATCH .../events/{googleEventId}` with new `start`/`end`
