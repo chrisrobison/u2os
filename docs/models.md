@@ -70,6 +70,17 @@ Embedding providers identify their authoritative destination just like planning 
 
 For bounded multi-step planning, `Planner` filters `context.observations` independently for each resolved provider, including when a run resumes from a persisted checkpoint. The real-provider payload places allowed, bounded tool results under `tool_observations` (untrusted data), never in the trusted system instruction or owner objective. Account-backed results default to `private`; a configured remote model therefore receives no such content under the default policy unless the owner changes that policy. Restricted observation metadata is audited without result text. A plan may request `continue: true` after its actions have known successful outcomes, up to three persisted model calls per run. Approval can wake a waiting checkpoint; after restart or a later queue completion the owner can explicitly resume it. Later actions use explicit `resultRefs` (argument name to `{stepIndex,itemIndex,path}`) for values drawn from observed results; invalid or withheld references fail before any action in that plan executes.
 
+Owner run-result reads summarize incomplete work from current authoritative
+steps, not stale proposal-time response counts. Approval, queued/running,
+not-attempted and failed/attention states are distinct; uncertain delivery
+explicitly requires checking the originally bound account/provider without
+automatic retry. This is deterministic status reporting, with no model call,
+provider error/result text or effect replay. Old stored responses remain intact;
+delayed completion replaces their runtime-generated approval counts, while
+grounded confirmed final responses and actionless clarification/budget
+explanations remain. Cancellation and budget stops are labeled. Individual
+completed actions still do not verify objective completion.
+
 Saved conversation turns are distinct from established memory and current-run observations. For a follow-up, at most six previous user/assistant turns from the same conversation are included, each capped at 500 characters with source turn/run IDs. They are `private` by default, re-filtered for the selected provider and any fallback, and omitted for remote models under the default policy. Allowed recent turns enter `conversation_history` as untrusted data; prior requests do not gain current-instruction authority.
 
 An additional `conversation_summary` is a deterministic extractive view of up

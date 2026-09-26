@@ -21,6 +21,7 @@ import { getAgentAction, updateAgentAction } from '../policy/policy-engine.js';
 import { appendTurn, requireConversation, getPriorTurnsForModel, getEarlierTurnsForSummary, getPriorReadArtifacts } from './conversation-store.js';
 import { getGoalPriorReadArtifacts } from './goal-context.js';
 import { getGoalForRun } from './goal-store.js';
+import { summarizeIncompleteActions } from './action-result-summary.js';
 
 const MAX_MODEL_CALLS_PER_MESSAGE = 3;
 
@@ -625,18 +626,6 @@ function captureProposedAccount(toolName, args, tool, sourceAccountBinding) {
   } catch (error) {
     return { binding: null, error: error.message };
   }
-}
-
-function summarizeIncompleteActions(results) {
-  const incomplete = results.filter((result) => result.status !== 'executed');
-  if (!incomplete.length) return null;
-  const completed = results.length - incomplete.length;
-  const pending = incomplete.filter((result) => result.status === 'pending');
-  const notAttempted = incomplete.filter((result) => ['skipped', 'blocked', 'rejected', 'waiting_dependency'].includes(result.status));
-  const failed = incomplete.length - pending.length - notAttempted.length;
-  const recipients = pending.filter((result) => result.tool === 'email.send' && typeof result.arguments?.to === 'string')
-    .map((result) => result.arguments.to.slice(0, 120));
-  return `${completed} action(s) completed; ${pending.length} awaiting approval${recipients.length ? ` (email to ${recipients.join(', ')})` : ''}; ${notAttempted.length} not attempted; ${failed} failed or needing attention. The objective is not verified.`;
 }
 
 function canonicalArguments(value) {
