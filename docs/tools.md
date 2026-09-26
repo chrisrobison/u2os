@@ -28,7 +28,7 @@ class Tool {
 | Tool | Domain | Category | Args | Effect / emitted event |
 |---|---|---|---|---|
 | `email.search` | email | read | `{ query?, folder? }` | selected account; bounded Gmail provider search or recent synchronized IMAP inbox, not exhaustive |
-| `email.read` | email | read | `{ id }` | reads one email via active provider, marks read |
+| `email.read` | email | read | `{ id }` | reads one email via bound provider, marks read |
 | `email.draft` | email | draft | `{ to, subject, body, inReplyTo? }` | real local draft row, no send/event/provider call; personal sender unset until a later send proposal binds its account; fictional sender only in explicit demo |
 | `email.send` | email | consequential | `{ to, subject, body, inReplyTo?, draftId? }` | provider/account captured at proposal → `email.sent` |
 | `calendar.list` | calendar | read | `{ from?, to? }` | active provider (mock or real Google Calendar) |

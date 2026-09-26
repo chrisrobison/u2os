@@ -1,5 +1,7 @@
 # Dependable personal agent progress
 
+Latest slice (#349): email search/read expose conservative `sender_address` alongside unchanged `from_addr`, inside existing bounded/private observations. Common single bare or named ASCII mailboxes retain exact address bytes; ambiguous/unsupported source values yield null and cannot resolve recipient references. No guessed recipients, authenticated-sender claim, Reply-To selection, threaded replies, migration, weakened send preflight or live access. Thirty-seven Node cases cover syntax/injection, existing privacy/reference enforcement and configured Gmail search/read after account switching. All eighteen personal-browser workflow checks now use a realistic quoted named sender through original-account approval/restart, receipt/uncertainty/rejection and no replay. Full Node suite: 1284 tests; browser suite: 351 tests. Other asynchronous root-view navigation races, durable input blockers, artifact continuity, recovery activation and owner-driven quality validation remain unfinished.
+
 Tracking issue: [#172](https://github.com/chrisrobison/u2os/issues/172). This record distinguishes code, fixture evidence, and owner-account validation. Update it after each merged slice.
 
 | Area | Implemented | Fixture tested | Live validated | Remaining |
