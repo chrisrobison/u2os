@@ -10,7 +10,7 @@ test('owner edits durable goal drafts without claiming work has started', async 
     await page.locator('form button[type="submit"]').click();
     await page.locator('u2-nav a[data-route="#/goals"]').click();
     const goals = page.locator('u2-goals');
-    await expect(goals).toContainText('No goal work is scheduled or running yet');
+    await expect(goals).toContainText('No automatic goal work is scheduled');
     await goals.locator('[name="objective"]').fill('Find <script>evil()</script> research roles');
     await goals.locator('[name="criteria"]').fill('Report three relevant open roles with links');
     await goals.locator('[name="constraints"]').fill('Remote or Bay Area only');
@@ -37,6 +37,32 @@ test('owner edits durable goal drafts without claiming work has started', async 
     await expect(goals.locator('.goal-message')).toContainText('Reload the saved draft');
     await goals.locator('.goal-reload').click();
     await expect(goals.locator('[name="objective"]')).toHaveValue('Another tab revision');
-    await expect(goals).toContainText('Execution unavailable · Next wake-up: none · Spent: 0 runs, 0 tokens');
+    await expect(goals).toContainText('Manual only · Next wake-up: none · Spent: 0 runs, 0 model calls, 0 reported tokens');
+  } finally { await stopDedicatedServer(page, dedicated); }
+});
+
+test('owner invokes one read-only goal run and sees durable spending without a completion claim', async ({ page }) => {
+  const dedicated = await startDedicatedServer();
+  try {
+    await createOwner(dedicated.baseURL, 'correct horse battery staple');
+    await page.goto(dedicated.baseURL);
+    await page.getByLabel('Passphrase').fill('correct horse battery staple');
+    await page.locator('form button[type="submit"]').click();
+    await page.locator('u2-nav a[data-route="#/goals"]').click();
+    const goals = page.locator('u2-goals');
+    await goals.locator('[name="objective"]').fill('Find suitable research roles');
+    await goals.locator('[name="criteria"]').fill('Report relevant roles with links');
+    await goals.locator('[name="domain"][value="web"]').check();
+    await goals.locator('[name="maxRuns"]').fill('1');
+    await goals.locator('[type="submit"]').click();
+    await expect(goals.locator('.goal-run')).toBeVisible();
+    await goals.locator('.goal-run').click();
+    await expect(goals.locator('.goal-message')).toContainText('objective is not automatically verified');
+    await expect(goals.locator('.goal-form__state')).toContainText('Spent: 1 runs');
+    await expect(goals.locator('.goal-runs')).toContainText('objective unverified');
+    await expect(goals.locator('.goal-run')).toBeHidden();
+    await page.reload();
+    await expect(goals.locator('.goal-form__state')).toContainText('Spent: 1 runs');
+    await expect(goals.locator('.goal-runs')).toContainText('objective unverified');
   } finally { await stopDedicatedServer(page, dedicated); }
 });

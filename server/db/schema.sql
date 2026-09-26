@@ -202,6 +202,7 @@ CREATE TABLE IF NOT EXISTS agent_runs (
   actor_id TEXT NOT NULL,
   objective TEXT NOT NULL,
   conversation_id TEXT,
+  goal_id TEXT,
   status TEXT NOT NULL,
   objective_status TEXT NOT NULL DEFAULT 'unverified',
   model_call_count INTEGER NOT NULL DEFAULT 0,
@@ -225,6 +226,7 @@ CREATE TABLE IF NOT EXISTS agent_runs (
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_agent_runs_created ON agent_runs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_goal ON agent_runs(goal_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS agent_run_steps (
   run_id TEXT NOT NULL REFERENCES agent_runs(id),
@@ -378,8 +380,8 @@ CREATE TABLE IF NOT EXISTS conversations (
 );
 CREATE INDEX IF NOT EXISTS idx_conversations_owner ON conversations(owner_id, updated_at DESC);
 
--- Owner-authored goal drafts are intent records only. No scheduler or model
--- consumes them until a later, separately reviewed execution slice.
+-- Owner-authored goals can launch bounded, read-only runs on explicit request.
+-- No scheduler consumes them and no row alone is a completion claim.
 CREATE TABLE IF NOT EXISTS goals (
   id TEXT PRIMARY KEY,
   owner_id TEXT NOT NULL,

@@ -185,7 +185,7 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   registerModelRoutes(router);
   registerHealthRoutes(router, { dataDir, dbPath, startTime });
   registerAgentRoutes(router, { agent });
-  registerGoalRoutes(router);
+  registerGoalRoutes(router, { agent });
   registerActionRoutes(router, { agent, eventBus });
   registerEventRoutes(router, { db, sseHub });
   registerCalendarRoutes(router);

@@ -10,7 +10,7 @@ export class U2Goals extends HTMLElement {
     this.innerHTML = `
       <div class="workspace__header">
         <div class="workspace__title">Goals</div>
-        <div class="workspace__subtitle">Draft objectives only. No goal work is scheduled or running yet.</div>
+        <div class="workspace__subtitle">Owner-invoked read-only runs only. No automatic goal work is scheduled.</div>
       </div>
       <div class="goal-layout">
         <section class="goal-list-panel" aria-label="Saved goal drafts">
@@ -19,7 +19,7 @@ export class U2Goals extends HTMLElement {
         </section>
         <form class="goal-form dashboard-card">
           <h2 class="goal-form__title">New draft</h2>
-          <p class="goal-form__state">Execution unavailable · Next wake-up: none · Spent: 0 runs, 0 tokens</p>
+          <p class="goal-form__state">Manual only · Next wake-up: none · Spent: 0 runs, 0 model calls, 0 tokens</p>
           <label>Objective <textarea name="objective" maxlength="2000" required rows="3"></textarea></label>
           <label>Observable completion criteria <textarea name="criteria" maxlength="2400" required rows="3" placeholder="One criterion per line"></textarea></label>
           <label>Constraints <textarea name="constraints" maxlength="3000" rows="2" placeholder="One constraint per line"></textarea></label>
@@ -32,9 +32,10 @@ export class U2Goals extends HTMLElement {
             <label>Maximum model calls <input type="number" name="maxModelCalls" min="1" max="300" required value="20"></label>
             <label>Maximum tokens <input type="number" name="maxTokens" min="1000" max="1000000" required value="50000"></label>
           </div>
-          <p class="goal-form__note">Scope and budgets record intent only. They do not authorize tools or start automation.</p>
-          <div class="goal-form__actions"><button type="submit" class="btn btn-primary">Save draft</button><button type="button" class="btn goal-reload" hidden>Reload saved draft</button></div>
+          <p class="goal-form__note">Manual runs use read-only tools in the selected domains. This does not authorize consequential actions or start automation.</p>
+          <div class="goal-form__actions"><button type="submit" class="btn btn-primary">Save draft</button><button type="button" class="btn goal-run" hidden>Run once (read-only)</button><button type="button" class="btn goal-reload" hidden>Reload saved goal</button></div>
           <p class="goal-message" role="status" aria-live="polite"></p>
+          <div class="goal-runs" aria-label="Related runs"></div>
         </form>
       </div>`;
     this._list = this.querySelector('.goal-list');
@@ -42,6 +43,7 @@ export class U2Goals extends HTMLElement {
     this._message = this.querySelector('.goal-message');
     this.querySelector('.goal-new').addEventListener('click', () => this._newDraft());
     this.querySelector('.goal-reload').addEventListener('click', () => this._select(this._goalId));
+    this.querySelector('.goal-run').addEventListener('click', () => this._run());
     this._form.addEventListener('submit', (event) => { event.preventDefault(); this._save(); });
     this._load();
   }
@@ -85,6 +87,12 @@ export class U2Goals extends HTMLElement {
     });
   }
 
+  _setDraftEditable(editable) {
+    this._draftEditable = editable;
+    this._form.querySelectorAll('textarea, input').forEach((field) => { field.disabled = !editable; });
+    this._form.querySelector('[type="submit"]').disabled = !editable;
+  }
+
   _newDraft() {
     this._generation = (this._generation || 0) + 1;
     this._goalId = null;
@@ -95,6 +103,10 @@ export class U2Goals extends HTMLElement {
     this._form.maxTokens.value = '50000';
     this.querySelector('.goal-form__title').textContent = 'New draft';
     this.querySelector('.goal-reload').hidden = true;
+    this.querySelector('.goal-run').hidden = true;
+    this._setDraftEditable(true);
+    this.querySelector('.goal-form__state').textContent = 'Manual only · Next wake-up: none · Spent: 0 runs, 0 model calls, 0 tokens';
+    this.querySelector('.goal-runs').replaceChildren();
     this._message.textContent = '';
     this._message.classList.remove('is-error');
     this._markSelected();
@@ -116,8 +128,18 @@ export class U2Goals extends HTMLElement {
       this._form.maxRuns.value = String(goal.budgets.maxRuns);
       this._form.maxModelCalls.value = String(goal.budgets.maxModelCalls);
       this._form.maxTokens.value = String(goal.budgets.maxTokens);
-      this.querySelector('.goal-form__title').textContent = `Draft · revision ${goal.revision}`;
+      this.querySelector('.goal-form__title').textContent = `${goal.status === 'draft' ? 'Draft' : 'Active (manual only)'} · revision ${goal.revision}`;
       this.querySelector('.goal-reload').hidden = false;
+      this.querySelector('.goal-run').hidden = !goal.manualRunAvailable;
+      this._setDraftEditable(goal.status === 'draft');
+      this.querySelector('.goal-form__state').textContent = `Manual only · Next wake-up: none · Spent: ${goal.spent.runs} runs, ${goal.spent.modelCalls} model calls, ${goal.spent.tokens} reported tokens${goal.spent.tokenUsageComplete ? '' : ' (usage incomplete)'}${goal.spent.monetaryCost.available ? '' : ' (cost unavailable)'}`;
+      const runs = this.querySelector('.goal-runs');
+      runs.replaceChildren();
+      for (const run of goal.relatedRuns) {
+        const line = document.createElement('p');
+        line.textContent = `Run ${run.id} · ${run.status} · objective ${run.objectiveStatus}`;
+        runs.appendChild(line);
+      }
       this._message.textContent = '';
       this._message.classList.remove('is-error');
       this._markSelected();
@@ -157,7 +179,27 @@ export class U2Goals extends HTMLElement {
       await this._select(goal.id);
       if (this._goalId === goal.id) this._message.textContent = 'Draft saved. No work has started.';
     } catch (error) { if (generation === (this._generation || 0)) this._showError(`Couldn't save draft: ${error.message}${/changed|revision/i.test(error.message) ? ' Reload the saved draft to review the latest version.' : ''}`); }
-    finally { button.disabled = false; }
+    finally { button.disabled = !this._draftEditable; }
+  }
+
+  async _run() {
+    if (!this._goalId) return;
+    const id = this._goalId;
+    const button = this.querySelector('.goal-run');
+    button.disabled = true;
+    this._message.textContent = 'Running one bounded read-only pass…';
+    this._message.classList.remove('is-error');
+    try {
+      const result = await api.runGoalOnce(id);
+      if (this._goalId !== id) return;
+      await this._select(id);
+      if (this._goalId === id) this._message.textContent = `Run ${result.runId} returned. Review its status; the goal objective is not automatically verified.`;
+    } catch (error) {
+      if (this._goalId === id) {
+        await this._select(id);
+        this._showError(`Run did not complete: ${error.message}. Review the linked run before retrying.`);
+      }
+    } finally { button.disabled = false; }
   }
 
   _showError(message) {

@@ -73,6 +73,10 @@ export function updateGoalDraft(id, payload) {
   return request(`/api/goals/${encodeURIComponent(id)}`, { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify(payload) });
 }
 
+export function runGoalOnce(id) {
+  return request(`/api/goals/${encodeURIComponent(id)}/runs`, { method: 'POST', headers: JSON_HEADERS, body: '{}' });
+}
+
 export function saveConnectorConfig(endpoint, values) {
   return request(endpoint, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(values) });
 }
