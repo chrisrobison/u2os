@@ -505,27 +505,33 @@ export class U2App extends HTMLElement {
   }
 
   async _renderCalendar() {
+    const generation = this._routeGeneration;
     this._setWorkspace(this._header('Calendar', 'Upcoming events'), this._loading('Loading calendar...'));
     try {
       const { events, cache } = await api.getCalendarEvents('upcoming');
+      if (!this._isCurrentRoute(generation)) return;
       const el = document.createElement('u2-schedule');
       el.events = events;
       const content = document.createElement('div');
       content.append(cacheNote(cache), el);
       this._setWorkspace(this._header('Calendar', 'Upcoming events'), content);
     } catch (err) {
+      if (!this._isCurrentRoute(generation)) return;
       this._setWorkspace(this._header('Calendar'), this._error(err));
     }
   }
 
   async _renderTasks() {
+    const generation = this._routeGeneration;
     this._setWorkspace(this._header('Tasks'), this._loading('Loading tasks...'));
     try {
       const { tasks } = await api.getTasks();
+      if (!this._isCurrentRoute(generation)) return;
       const el = document.createElement('u2-task-list');
       el.tasks = tasks;
       this._setWorkspace(this._header('Tasks'), el);
     } catch (err) {
+      if (!this._isCurrentRoute(generation)) return;
       this._setWorkspace(this._header('Tasks'), this._error(err));
     }
   }
@@ -564,18 +570,24 @@ export class U2App extends HTMLElement {
     this._setWorkspace('', document.createElement('u2-diagnostics'));
   }
 
-  async _renderMemory() {
+  _isCurrentRoute(generation) {
+    return this.isConnected && generation === this._routeGeneration;
+  }
+
+  async _renderMemory(generation = this._routeGeneration) {
+    if (!this._isCurrentRoute(generation)) return;
     this._setWorkspace(this._header('Memory'), this._loading('Loading...'));
     try {
       const [{ entities }, { candidates }] = await Promise.all([api.getMemoryEntities(), api.getMemoryCandidates()]);
+      if (!this._isCurrentRoute(generation)) return;
       const wrap = document.createElement('div');
       if (candidates.length) {
         const heading = document.createElement('div'); heading.className = 'entity-detail__section-title'; heading.textContent = 'Pending memories'; wrap.appendChild(heading);
         for (const candidate of candidates) {
           const card = document.createElement('form'); card.className = 'dashboard-card';
           card.innerHTML = `<p>${escapeHtml(candidate.content)}</p><label>Attach to <select name="entityId" required>${entities.map((e) => `<option value="${escapeHtml(e.id)}">${escapeHtml(e.name || e.id)}</option>`).join('')}</select></label><label>Fact key <input name="key" required placeholder="preference"></label><button type="submit">Accept</button> <button type="button" data-reject>Reject</button>`;
-          card.addEventListener('submit', async (event) => { event.preventDefault(); await api.acceptMemoryCandidate(candidate.id, { entityId: card.elements.entityId.value, key: card.elements.key.value }); this._renderMemory(); });
-          card.querySelector('[data-reject]').addEventListener('click', async () => { await api.rejectMemoryCandidate(candidate.id); this._renderMemory(); });
+          card.addEventListener('submit', async (event) => { event.preventDefault(); if (!this._isCurrentRoute(generation)) return; await api.acceptMemoryCandidate(candidate.id, { entityId: card.elements.entityId.value, key: card.elements.key.value }); this._renderMemory(generation); });
+          card.querySelector('[data-reject]').addEventListener('click', async () => { if (!this._isCurrentRoute(generation)) return; await api.rejectMemoryCandidate(candidate.id); this._renderMemory(generation); });
           wrap.appendChild(card);
         }
       }
@@ -587,13 +599,15 @@ export class U2App extends HTMLElement {
       }
       if (!entities.length) list.innerHTML = '<div class="empty-state">Nothing here yet.</div>';
       wrap.appendChild(list); this._setWorkspace(this._header('Memory'), wrap);
-    } catch (err) { this._setWorkspace(this._header('Memory'), this._error(err)); }
+    } catch (err) { if (this._isCurrentRoute(generation)) this._setWorkspace(this._header('Memory'), this._error(err)); }
   }
 
   async _renderEntityList({ title, linkBase, type }) {
+    const generation = this._routeGeneration;
     this._setWorkspace(this._header(title), this._loading('Loading...'));
     try {
       const { entities } = await api.getMemoryEntities(type ? { type } : {});
+      if (!this._isCurrentRoute(generation)) return;
       const list = document.createElement('div');
       list.className = 'entity-list';
 
@@ -616,11 +630,13 @@ export class U2App extends HTMLElement {
 
       this._setWorkspace(this._header(title), list);
     } catch (err) {
+      if (!this._isCurrentRoute(generation)) return;
       this._setWorkspace(this._header(title), this._error(err));
     }
   }
 
-  async _renderEntityDetail(id) {
+  async _renderEntityDetail(id, generation = this._routeGeneration) {
+    if (!this._isCurrentRoute(generation)) return;
     this._memoryDrafts ||= new Map();
     for (const row of this._workspace?.querySelectorAll('.fact-row[data-fact-id]') || []) {
       const input = row.querySelector('[data-correct] input[name="value"]');
@@ -629,6 +645,7 @@ export class U2App extends HTMLElement {
     this._setWorkspace('', this._loading('Loading...'));
     try {
       const { entity, facts, relationships } = await api.getMemoryEntity(id);
+      if (!this._isCurrentRoute(generation)) return;
       const wrap = document.createElement('div');
 
       const back = document.createElement('a');
@@ -703,21 +720,25 @@ export class U2App extends HTMLElement {
       for (const draftId of this._memoryDrafts.keys()) if (!currentIds.has(draftId)) this._memoryDrafts.delete(draftId);
 
       wrap.querySelector('[data-delete-entity]').addEventListener('click', async () => {
+        if (!this._isCurrentRoute(generation)) return;
         const error = wrap.querySelector('[data-entity-delete-error]'); error.textContent = '';
         try {
           const preview = await api.getMemoryEntityDeletionPreview(id);
+          if (!this._isCurrentRoute(generation)) return;
           const { facts, relationships: relationCount, tasks, calendarEvents } = preview.counts;
           const message = `Delete ${entity.name}? This hides the entity but retains audit history and linked records. Impact: ${facts} facts, ${relationCount} relationships, ${tasks} tasks, ${calendarEvents} calendar events.`;
           if (!window.confirm(message)) return;
           await api.deleteMemoryEntity(id, preview.token);
+          if (!this._isCurrentRoute(generation)) return;
           window.location.hash = '#/memory';
         } catch (err) { error.textContent = err.message; }
       });
 
       for (const row of wrap.querySelectorAll('[data-relationship-id]')) {
         row.querySelector('[data-delete-relationship]').addEventListener('click', async () => {
+          if (!this._isCurrentRoute(generation)) return;
           if (!window.confirm('Delete this relationship? Its audit history will be retained.')) return;
-          try { await api.deleteMemoryRelationship(row.dataset.relationshipId); await this._renderEntityDetail(id); }
+          try { await api.deleteMemoryRelationship(row.dataset.relationshipId); await this._renderEntityDetail(id, generation); }
           catch (err) { wrap.querySelector('[data-entity-delete-error]').textContent = err.message; }
         });
       }
@@ -725,8 +746,9 @@ export class U2App extends HTMLElement {
       for (const row of wrap.querySelectorAll('[data-fact-id]')) {
         const factId = row.dataset.factId;
         const run = async (operation) => {
+          if (!this._isCurrentRoute(generation)) return;
           const error = row.querySelector('.fact-row__error'); error.textContent = '';
-          try { await operation(); await this._renderEntityDetail(id); } catch (err) { error.textContent = err.message; }
+          try { await operation(); await this._renderEntityDetail(id, generation); } catch (err) { error.textContent = err.message; }
         };
         row.querySelector('[data-confirm]')?.addEventListener('click', () => run(() => api.confirmMemoryFact(factId)));
         row.querySelector('[data-classification]').addEventListener('submit', (event) => {
@@ -738,12 +760,14 @@ export class U2App extends HTMLElement {
           run(() => api.updateMemoryFact(factId, { value }));
         });
         row.querySelector('[data-delete]').addEventListener('click', () => {
+          if (!this._isCurrentRoute(generation)) return;
           if (window.confirm('Delete this fact? Its audit history will be retained.')) run(() => api.deleteMemoryFact(factId));
         });
       }
 
       this._setWorkspace('', wrap);
     } catch (err) {
+      if (!this._isCurrentRoute(generation)) return;
       this._setWorkspace(this._header('Memory'), this._error(err));
     }
   }
