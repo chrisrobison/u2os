@@ -17,6 +17,66 @@ import { isDeepStrictEqual } from 'node:util';
 
 const AUTH_BASE_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const trustedTokenFailures = new WeakSet();
+
+function tokenFailure(operation, kind, status) {
+  const messages = {
+    timeout: 'timed out; check provider availability and retry refresh or start a new connection',
+    authorization: 'failed: authorization rejected; review OAuth client and reconnect the selected account',
+    rate_limit: 'failed: rate limited; retry later',
+    unavailable: 'failed: unavailable; check provider availability and selected account configuration',
+  };
+  const error = new Error(`google-oauth: ${operation} ${messages[kind]}`);
+  error.code = `GOOGLE_OAUTH_${kind.toUpperCase()}`;
+  if (Number.isInteger(status) && status >= 100 && status <= 599) error.status = status;
+  trustedTokenFailures.add(error);
+  return error;
+}
+
+function discardTokenBody(response) {
+  try { Promise.resolve(response?.body?.cancel()).catch(() => {}); }
+  catch { /* A locked body is interrupted by the request signal. */ }
+}
+
+async function requestTokens(operation, body, fetchImpl, { timeoutMs = 10_000, timers = globalThis } = {}) {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 10_000) throw tokenFailure(operation, 'unavailable');
+  const controller = new AbortController();
+  let response, timer, timedOut = false;
+  const deadline = new Promise((_, reject) => {
+    timer = timers.setTimeout(() => {
+      timedOut = true;
+      const error = tokenFailure(operation, 'timeout');
+      controller.abort(error); discardTokenBody(response); reject(error);
+    }, timeoutMs);
+  });
+  const read = async () => {
+    response = await fetchImpl(TOKEN_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(), signal: controller.signal,
+    });
+    if (timedOut) { discardTokenBody(response); throw tokenFailure(operation, 'timeout'); }
+    if (!response.ok) {
+      const status = response.status;
+      discardTokenBody(response);
+      throw tokenFailure(operation, [400, 401, 403].includes(status) ? 'authorization' : status === 429 ? 'rate_limit' : 'unavailable', status);
+    }
+    const json = await response.json();
+    if (timedOut) throw tokenFailure(operation, 'timeout');
+    if (!json || Array.isArray(json) || typeof json.access_token !== 'string' || !json.access_token.trim()
+        || (json.refresh_token !== undefined && (typeof json.refresh_token !== 'string' || !json.refresh_token.trim()))
+        || (json.expires_in !== undefined && (!Number.isFinite(json.expires_in) || json.expires_in < 0))) {
+      throw tokenFailure(operation, 'unavailable');
+    }
+    return json;
+  };
+  try { return await Promise.race([read(), deadline]); }
+  catch (error) {
+    controller.abort(); discardTokenBody(response);
+    if (timedOut) throw tokenFailure(operation, 'timeout');
+    if (trustedTokenFailures.has(error)) throw error;
+    throw tokenFailure(operation, 'unavailable');
+  } finally { timers.clearTimeout(timer); }
+}
 
 export const GOOGLE_SCOPES = {
   calendar: ['https://www.googleapis.com/auth/calendar'],
@@ -38,7 +98,8 @@ export function buildAuthUrl({ clientId, redirectUri, scope, state }) {
 
 export async function exchangeCodeForTokens(
   { clientId, clientSecret, redirectUri, code },
-  fetchImpl = globalThis.fetch
+  fetchImpl = globalThis.fetch,
+  options = {}
 ) {
   const body = new URLSearchParams({
     client_id: clientId,
@@ -47,15 +108,7 @@ export async function exchangeCodeForTokens(
     code,
     grant_type: 'authorization_code',
   });
-  const res = await fetchImpl(TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(),
-  });
-  if (!res.ok) {
-    throw new Error(`google-oauth: code exchange failed (status ${res.status})`);
-  }
-  const json = await res.json();
+  const json = await requestTokens('code exchange', body, fetchImpl, options);
   return {
     access_token: json.access_token,
     refresh_token: json.refresh_token,
@@ -63,22 +116,14 @@ export async function exchangeCodeForTokens(
   };
 }
 
-export async function refreshAccessToken({ clientId, clientSecret, refreshToken }, fetchImpl = globalThis.fetch) {
+export async function refreshAccessToken({ clientId, clientSecret, refreshToken }, fetchImpl = globalThis.fetch, options = {}) {
   const body = new URLSearchParams({
     client_id: clientId,
     client_secret: clientSecret,
     refresh_token: refreshToken,
     grant_type: 'refresh_token',
   });
-  const res = await fetchImpl(TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(),
-  });
-  if (!res.ok) {
-    throw new Error('google-oauth: token refresh failed');
-  }
-  const json = await res.json();
+  const json = await requestTokens('token refresh', body, fetchImpl, options);
   return {
     access_token: json.access_token,
     expires_in: json.expires_in,
@@ -140,7 +185,7 @@ export function hasTokens(vaultKey, service, dataDir) {
  * error (no secret values) if this service has never been connected under
  * this vaultKey.
  */
-export async function getValidAccessToken(vaultKey, service, { dataDir, fetchImpl = globalThis.fetch } = {}) {
+export async function getValidAccessToken(vaultKey, service, { dataDir, fetchImpl = globalThis.fetch, timeoutMs, timers } = {}) {
   const stored = readEncryptedFile(vaultKey, dataDir);
   const token = stored?.tokens?.[service];
   if (!token || !token.refresh_token) {
@@ -158,7 +203,8 @@ export async function getValidAccessToken(vaultKey, service, { dataDir, fetchImp
   }
   const refreshed = await refreshAccessToken(
     { clientId, clientSecret, refreshToken: token.refresh_token },
-    fetchImpl
+    fetchImpl,
+    { timeoutMs, timers }
   );
   // Refresh is an asynchronous read, not permission to restore removed or
   // superseded credentials. Check immediately before the synchronous write;
