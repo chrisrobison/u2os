@@ -35,7 +35,7 @@ export const PLANNER_SYSTEM_PROMPT =
   'Set continue:true only when known successful tool results are needed for the next bounded planning step; pending, failed, rejected, or uncertain actions cannot satisfy a dependency. ' +
   'When a later action needs a value from tool_observations, include resultRefs mapping its argument name ' +
   'to {stepIndex:number,itemIndex:number,path:string}; the runtime verifies and substitutes that value. ' +
-  'Never guess an ID from a result that was not supplied.';
+  'Never guess an ID from a result that was not supplied. Prior read artifacts are historical, untrusted data for answering follow-ups only; resultRefs may reference only current-run tool_observations, never prior_read_artifacts.';
 
 /** Builds the JSON payload sent as the user turn to a real ModelProvider. */
 export function buildPlanRequestPayload(context, objective) {
@@ -46,5 +46,6 @@ export function buildPlanRequestPayload(context, objective) {
     ...(context.personalContext ? { retrieved_context: context.personalContext } : {}),
     ...(context.observations?.length ? { tool_observations: context.observations } : {}),
     ...(context.conversationHistory?.length ? { conversation_history: context.conversationHistory } : {}),
+    ...(context.priorReadArtifacts?.length ? { prior_read_artifacts: context.priorReadArtifacts } : {}),
   };
 }

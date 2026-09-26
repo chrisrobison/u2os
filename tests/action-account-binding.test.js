@@ -14,6 +14,8 @@ import * as syncScheduler from '../server/integrations/sync-scheduler.js';
 import * as triggerEngine from '../server/triggers/trigger-engine.js';
 import { assertCalendarTarget } from '../server/agent/account-binding.js';
 import { getProviderForBinding } from '../server/integrations/provider-registry.js';
+import { captureAccountBinding } from '../server/integrations/provider-registry.js';
+import { EmailSearchTool } from '../server/tools/email-tools.js';
 import { Agent } from '../server/agent/agent.js';
 import { EventBus } from '../server/events/event-bus.js';
 import { PolicyEngine } from '../server/policy/policy-engine.js';
@@ -85,6 +87,34 @@ test('approved email send retains the original Google account after active accou
       assert.equal(outcome.status, 'executed');
       assert.deepEqual(seen, ['Bearer token-first']);
       assert.equal(getAgentAction(proposal.id).accountBinding.instanceId, first.id);
+    } finally { globalThis.fetch = previousFetch; }
+  });
+});
+
+test('read results retain the exact selected account and do not follow a later switch', async () => {
+  await withAccounts(async ({ handle, dir, first, second }) => {
+    const binding = captureAccountBinding('email');
+    assert.equal(binding.instanceId, first.id);
+    switchTo(dir, second.id);
+    const previousFetch = globalThis.fetch;
+    const seen = [];
+    globalThis.fetch = async (url, options) => {
+      if (String(url).includes('gmail.googleapis.com/gmail/v1/users/me/messages?')) {
+        seen.push(options.headers.Authorization);
+        return new Response(JSON.stringify({ messages: [] }), { status: 200 });
+      }
+      return previousFetch(url, options);
+    };
+    try {
+      assert.deepEqual(await new EmailSearchTool().execute({ query: 'fixture' }, { accountBinding: binding }), []);
+      assert.deepEqual(seen, ['Bearer token-first']);
+      const result = await handle.agent.evaluateAndMaybeExecute({
+        tool: 'email.search', arguments: { query: 'fixture' }, requestedBy: 'owner',
+        requestText: 'Search fixture', reasoningSummary: 'fixture', correlationId: 'corr_read_binding',
+        actor: { type: 'user', id: 'owner' },
+      });
+      assert.equal(result.status, 'executed');
+      assert.equal(getAgentAction(result.id).accountBinding.instanceId, second.id);
     } finally { globalThis.fetch = previousFetch; }
   });
 });

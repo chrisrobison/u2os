@@ -2,6 +2,7 @@ import { DataProcessingPolicy } from '../policy/data-processing-policy.js';
 import { filterPersonalContextForDestination } from './context-privacy-filter.js';
 import { filterObservationsForDestination } from './observation-filter.js';
 import { filterConversationHistoryForDestination } from './conversation-history-filter.js';
+import { filterPriorArtifactsForDestination } from './prior-artifacts-filter.js';
 
 /**
  * Planner: turns an objective plus assembled context into a structured
@@ -49,6 +50,7 @@ export class Planner {
     this.lastOmittedObservations = [];
     this.lastAllowedObservations = [];
     this.lastAllowedHistory = [];
+    this.lastAllowedPriorArtifacts = [];
   }
 
   /**
@@ -89,12 +91,15 @@ export class Planner {
     this.lastOmittedContext = omitted;
     const { observations, omitted: omittedObservations } = filterObservationsForDestination(context.observations, destination, this.dataProcessingPolicy);
     const { history, omitted: omittedHistory } = filterConversationHistoryForDestination(context.conversationHistory, destination, this.dataProcessingPolicy);
+    const { artifacts: priorReadArtifacts, omitted: omittedPriorArtifacts } = filterPriorArtifactsForDestination(context.priorReadArtifacts, destination, this.dataProcessingPolicy);
     this.lastOmittedObservations = omittedObservations;
     this.lastAllowedObservations = observations;
     this.lastAllowedHistory = history;
+    this.lastAllowedPriorArtifacts = priorReadArtifacts;
     this.lastProvenanceRefs = [
       ...(filteredPersonalContext?.provenanceRefs || []),
       ...history.filter((turn) => turn.turnId).map((turn) => ({ type: 'conversation_turn', id: turn.turnId })),
+      ...priorReadArtifacts.filter((item) => item.actionId).map((item) => ({ type: 'prior_read_action', id: item.actionId })),
     ];
 
     if (omitted.length && context.eventBus) {
@@ -125,9 +130,17 @@ export class Planner {
       });
     }
 
+    if (omittedPriorArtifacts.length && context.eventBus) {
+      context.eventBus.publish({
+        type: 'agent.prior_artifact_restricted', source: 'agent', actor: context.actor,
+        data: { destination, providerId: provider.id, omitted: omittedPriorArtifacts },
+        metadata: { correlationId: context.correlationId, provenance: 'planner:prior-artifact-policy' },
+      });
+    }
+
     context.onModelCall?.();
-    const { onModelCall, conversationHistory, ...providerContext } = context;
-    return provider.plan({ ...providerContext, personalContext: filteredPersonalContext, observations, conversationHistory: history }, objective);
+    const { onModelCall, conversationHistory, priorReadArtifacts: _priorReadArtifacts, ...providerContext } = context;
+    return provider.plan({ ...providerContext, personalContext: filteredPersonalContext, observations, conversationHistory: history, priorReadArtifacts }, objective);
   }
 }
 

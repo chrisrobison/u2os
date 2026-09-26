@@ -34,7 +34,7 @@ export function filterObservationsForDestination(observations, destination, poli
         omitted.push({ ...source, index, reason: 'item-limit', destination });
         continue;
       }
-      const classification = classifyObservation(tool, item);
+      const classification = classifyObservation(tool, item, observation.historical === true);
       const decision = policy.evaluate({ classification, destination });
       if (decision.decision !== 'allow') {
         omitted.push({ ...source, index, classification, destination, decision: decision.decision, rule: decision.rule });
@@ -54,10 +54,10 @@ export function filterObservationsForDestination(observations, destination, poli
   return { observations: allowed, omitted };
 }
 
-function classifyObservation(tool, item) {
+function classifyObservation(tool, item, historical = false) {
   // Only public web search gets a permissive floor; account-backed or
   // unknown results default private if the source does not classify them.
-  const floor = tool === 'web.search' ? 'public' : 'private';
+  const floor = tool === 'web.search' && !historical ? 'public' : 'private';
   const declared = item && typeof item === 'object' ? item.classification : null;
   if (!CLASSIFICATIONS.includes(declared)) return floor;
   return CLASSIFICATIONS[Math.max(CLASSIFICATIONS.indexOf(floor), CLASSIFICATIONS.indexOf(declared))];

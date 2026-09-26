@@ -18,7 +18,7 @@ import * as defaultRunStore from './run-store.js';
 import { resolveActionReferences } from './result-references.js';
 import { validatePlan } from './plan-validator.js';
 import { getAgentAction, updateAgentAction } from '../policy/policy-engine.js';
-import { appendTurn, requireConversation, getPriorTurnsForModel } from './conversation-store.js';
+import { appendTurn, requireConversation, getPriorTurnsForModel, getPriorReadArtifacts } from './conversation-store.js';
 
 const MAX_MODEL_CALLS_PER_MESSAGE = 3;
 
@@ -110,6 +110,7 @@ export class Agent {
   async _handleRunMessage({ text, actorId, voice, correlationId, actor, runId, conversationId = null, resume = false, previousObservations = [], previousResults = [], previousAttempted = new Set() }) {
     const planContext = await this.contextAssembler.assemble({ correlationId, actor, objective: text });
     const conversationHistory = conversationId ? getPriorTurnsForModel(conversationId, actorId, runId) : [];
+    const priorReadArtifacts = conversationId ? getPriorReadArtifacts(conversationId, actorId, runId) : [];
 
     if (!resume) this.eventBus.publish({
       type: 'agent.message.received', source: 'user', actor, data: { text },
@@ -144,7 +145,7 @@ export class Agent {
       }
       let proposedPlan;
       try {
-        proposedPlan = await this.planner.plan({ ...planContext, observations, conversationHistory,
+        proposedPlan = await this.planner.plan({ ...planContext, observations, conversationHistory, priorReadArtifacts,
           onModelCall: () => this.runStore.beginModelCall(runId, MAX_MODEL_CALLS_PER_MESSAGE),
           onUsage: (usage) => this.runStore.recordModelUsage(runId, usage),
         }, text);
@@ -178,9 +179,9 @@ export class Agent {
       // Reject an unverified reference anywhere in this plan before the
       // first step can cause an external effect or request approval.
       const resolvedActions = plan.actions.map((action) => resolveActionReferences(
-        action, this.planner.lastAllowedObservations || [], this.toolRegistry, { continuation: round > 0 },
+        action, this.planner.lastAllowedObservations || [], this.toolRegistry, { continuation: round > 0 || (this.planner.lastAllowedPriorArtifacts || []).length > 0 },
       ));
-      const accountContexts = resolvedActions.map((action) => captureProposedAccount(action.tool, action.arguments));
+      const accountContexts = resolvedActions.map((action) => captureProposedAccount(action.tool, action.arguments, this.toolRegistry.get(action.tool)));
       const baseIndex = this.runStore.recordRunPlan(runId, { ...plan, actions: resolvedActions }, contextProvenance, accountContexts, this._describeModel());
       acceptedPlan = plan;
       const roundResults = [];
@@ -314,7 +315,7 @@ export class Agent {
   async evaluateAndMaybeExecute({ actionId, tool: toolName, arguments: args, requestedBy, requestText, reasoningSummary, correlationId, actor, voice, contextProvenance, accountContext, modelIdentity, runId }) {
     const tool = this.actionEvaluator.resolve(toolName);
     const rawEvaluation = this.actionEvaluator.evaluate({ tool, arguments: args });
-    const accountState = accountContext === undefined ? captureProposedAccount(toolName, args) : accountContext;
+    const accountState = accountContext === undefined ? captureProposedAccount(toolName, args, tool) : accountContext;
     const accountBinding = accountState?.binding || null;
     const bindingError = accountState?.error || null;
     // Additive-only voice gate (server/voice/authorize.js): a no-op unless
@@ -572,8 +573,8 @@ export class Agent {
   }
 }
 
-function captureProposedAccount(toolName, args) {
-  const domain = accountDomainForAction(toolName);
+function captureProposedAccount(toolName, args, tool) {
+  const domain = tool?.requiresAccountBinding && tool?.category === 'read' ? tool.domain : accountDomainForAction(toolName);
   if (!domain) return null;
   try {
     const binding = captureAccountBinding(domain);
