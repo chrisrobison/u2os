@@ -70,7 +70,25 @@ Embedding providers identify their authoritative destination just like planning 
 
 For bounded multi-step planning, `Planner` filters `context.observations` independently for each resolved provider, including when a run resumes from a persisted checkpoint. The real-provider payload places allowed, bounded tool results under `tool_observations` (untrusted data), never in the trusted system instruction or owner objective. Account-backed results default to `private`; a configured remote model therefore receives no such content under the default policy unless the owner changes that policy. Restricted observation metadata is audited without result text. A plan may request `continue: true` after its actions have known successful outcomes, up to three persisted model calls per run. Approval can wake a waiting checkpoint; after restart or a later queue completion the owner can explicitly resume it. Later actions use explicit `resultRefs` (argument name to `{stepIndex,itemIndex,path}`) for values drawn from observed results; invalid or withheld references fail before any action in that plan executes.
 
-Saved conversation turns are distinct from established memory and current-run observations. For a follow-up, at most six previous user/assistant turns from the same conversation are included, each capped at 500 characters with source turn/run IDs. They are `private` by default, re-filtered for the selected provider and any fallback, and omitted for remote models under the default policy. Allowed turns enter only `conversation_history` as untrusted data; prior requests do not gain current-instruction authority. No full-transcript dump or automatic summary is sent.
+Saved conversation turns are distinct from established memory and current-run observations. For a follow-up, at most six previous user/assistant turns from the same conversation are included, each capped at 500 characters with source turn/run IDs. They are `private` by default, re-filtered for the selected provider and any fallback, and omitted for remote models under the default policy. Allowed recent turns enter `conversation_history` as untrusted data; prior requests do not gain current-instruction authority.
+
+An additional `conversation_summary` is a deterministic extractive view of up
+to six authored turns immediately before that recent window, with excerpts
+capped at 160 characters and source turn/run/status references. It is explicitly
+incomplete historical working context, not semantic synthesis, established facts,
+verified completion or new authorization. Missing details require clarification;
+summary source IDs are not executable result references. No full transcript,
+unlinked legacy/current-run rows, or separate conversation's temporary context
+is sent. Goal runs use their own scope and do not borrow conversation summaries.
+
+Earlier sources are read in one bounded owner-scoped SQLite query, then filtered
+with the same private/sensitive floor before constructing each actual model-bound
+summary. Every fallback and continuation rebuilds it for the actual destination;
+raw source/prebuilt summary fields never pass through to a provider. Restricted
+source text and IDs are absent from the model request and its seen-source
+provenance; omission events contain metadata only. Durable source turns survive
+restart; there is no opaque summary cache, extra model/embedding call, fact
+promotion or migration. Input still consumes the normal planning token budget.
 
 The planner may also receive up to four successful prior read actions from the same conversation under `prior_read_artifacts`. Each is bounded by the observation filter, has a private classification floor, and is re-filtered for fallback destinations. Account-backed legacy results without an exact account binding are omitted. `resultRefs` still resolve solely against current-run `tool_observations`. For a prior email search/read, task list, or calendar list item, the model may propose `priorResultRefs` on `email.read.id`, `tasks.complete.id`, or `calendar.reschedule.eventId`: `{actionId,itemIndex,path:"id"}`. The runtime requires that exact item to have been visible to this provider, checks the permitted source tool, and pins email/calendar actions to its stored account binding before normal policy. Other historical references and guessed literal IDs fail verification.
 

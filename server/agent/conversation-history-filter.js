@@ -45,3 +45,18 @@ export function filterConversationHistoryForDestination(history, destination, po
   }
   return { history: allowed, omitted };
 }
+
+/** Deterministic extractive summary, built only from allowed source turns.
+ * Never reuse a local summary for a remote fallback. Rebuild per call so
+ * policy changes also apply to persisted-run continuation after restart. */
+export function summarizeEarlierTurnsForDestination(sources, destination, policy) {
+  const { history, omitted } = filterConversationHistoryForDestination(sources, destination, policy);
+  const entries = history.filter((turn) => turn.turnId).map(({ content, truncated, ...source }) => ({
+    ...source, excerpt: content.slice(0, 160), truncated: truncated || content.length > 160,
+  }));
+  return { summary: entries.length ? {
+    kind: 'extractive',
+    coverage: 'Up to six authored turns before recent history; excerpts only, not the full conversation or established facts.',
+    entries,
+  } : null, omitted };
+}

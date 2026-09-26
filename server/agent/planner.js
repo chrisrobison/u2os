@@ -1,7 +1,7 @@
 import { DataProcessingPolicy } from '../policy/data-processing-policy.js';
 import { filterPersonalContextForDestination } from './context-privacy-filter.js';
 import { filterObservationsForDestination } from './observation-filter.js';
-import { filterConversationHistoryForDestination } from './conversation-history-filter.js';
+import { filterConversationHistoryForDestination, summarizeEarlierTurnsForDestination } from './conversation-history-filter.js';
 import { filterPriorArtifactsForDestination } from './prior-artifacts-filter.js';
 
 // Runtime-only association. Model JSON cannot create or overwrite it, and
@@ -100,6 +100,7 @@ export class Planner {
     this.lastOmittedContext = omitted;
     const { observations, omitted: omittedObservations } = filterObservationsForDestination(context.observations, destination, this.dataProcessingPolicy);
     const { history, omitted: omittedHistory } = filterConversationHistoryForDestination(context.conversationHistory, destination, this.dataProcessingPolicy);
+    const { summary: conversationSummary, omitted: omittedSummary } = summarizeEarlierTurnsForDestination(context.conversationSummarySources, destination, this.dataProcessingPolicy);
     const { artifacts: priorReadArtifacts, omitted: omittedPriorArtifacts } = filterPriorArtifactsForDestination(context.priorReadArtifacts, destination, this.dataProcessingPolicy);
     this.lastOmittedObservations = omittedObservations;
     this.lastAllowedObservations = observations;
@@ -108,6 +109,7 @@ export class Planner {
     const provenanceRefs = [
       ...(filteredPersonalContext?.provenanceRefs || []),
       ...history.filter((turn) => turn.turnId).map((turn) => ({ type: 'conversation_turn', id: turn.turnId })),
+      ...(conversationSummary?.entries || []).map((turn) => ({ type: 'conversation_turn', id: turn.turnId })),
       ...priorReadArtifacts.filter((item) => item.actionId).map((item) => ({ type: 'prior_read_action', id: item.actionId })),
     ];
     this.lastProvenanceRefs = provenanceRefs;
@@ -132,10 +134,10 @@ export class Planner {
       });
     }
 
-    if (omittedHistory.length && context.eventBus) {
+    if ((omittedHistory.length || omittedSummary.length) && context.eventBus) {
       context.eventBus.publish({
         type: 'agent.history_restricted', source: 'agent', actor: context.actor,
-        data: { destination, providerId, omitted: omittedHistory },
+        data: { destination, providerId, omitted: [...omittedHistory, ...omittedSummary.map((item) => ({ ...item, source: 'earlier_summary' }))] },
         metadata: { correlationId: context.correlationId, provenance: 'planner:conversation-history-policy' },
       });
     }
@@ -149,13 +151,14 @@ export class Planner {
     }
 
     context.onModelCall?.();
-    const { onModelCall, conversationHistory, priorReadArtifacts: _priorReadArtifacts, ...providerContext } = context;
-    const proposed = await provider.plan({ ...providerContext, personalContext: filteredPersonalContext, observations, conversationHistory: history, priorReadArtifacts }, objective);
+    const { onModelCall, conversationHistory, conversationSummarySources: _summarySources,
+      conversationSummary: _untrustedSummary, priorReadArtifacts: _priorReadArtifacts, ...providerContext } = context;
+    const proposed = await provider.plan({ ...providerContext, personalContext: filteredPersonalContext, observations, conversationHistory: history, conversationSummary, priorReadArtifacts }, objective);
     // Allocate a distinct object even if a fixture/provider reuses its JSON
     // plan object. Malformed primitive/array results still reach validation.
     if (!proposed || typeof proposed !== 'object' || Array.isArray(proposed)) return proposed;
     const plan = { ...proposed };
-    planContexts.set(plan, { providerId, observations, priorReadArtifacts, provenanceRefs });
+    planContexts.set(plan, { providerId, observations, priorReadArtifacts, conversationSummary, provenanceRefs });
     return plan;
   }
 }
