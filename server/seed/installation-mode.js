@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { getDataDir } from '../db/connection.js';
+import { isOwnedGuardArtifact } from '../runtime/home-guard.js';
 
 export function installationModePath(dataDir = getDataDir()) {
   return path.join(dataDir, 'config', 'installation.json');
@@ -24,6 +25,7 @@ export function ensureInstallationMode(requestedMode = null, dataDir = getDataDi
     return savedMode;
   }
   const hadData = fs.existsSync(dataDir) && fs.readdirSync(dataDir).some((name) => {
+    if (isOwnedGuardArtifact(dataDir, name)) return false;
     if (name !== 'config') return true;
     const configDir = path.join(dataDir, name);
     return !fs.statSync(configDir).isDirectory() || fs.readdirSync(configDir).length > 0;

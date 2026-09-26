@@ -24,7 +24,7 @@ export async function startServer(options = {}) {
   // normal Server.close semantics while draining the queue before callback.
   const close = handle.server.close.bind(handle.server);
   handle.server.close = (callback) => close((...args) => {
-    handle.stopActionQueue().then(() => callback?.(...args));
+    handle.closed.then(() => callback?.(...args));
   });
   return handle;
 }

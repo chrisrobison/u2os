@@ -8,7 +8,7 @@ import { closeAllForTests, getDb } from '../server/db/connection.js';
 import { ensureInstallationMode, installationModePath } from '../server/seed/installation-mode.js';
 import { createEntity } from '../server/memory/entity-store.js';
 
-async function close(handle) { await new Promise((resolve) => handle.server.close(resolve)); closeAllForTests(); }
+async function close(handle) { await new Promise((resolve) => handle.server.close(resolve)); await handle.closed; closeAllForTests(); }
 function tempHome() { return fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-mode-')); }
 
 test('personal startup stays free of demo records and setup creates only the owner entity', async () => {
@@ -44,6 +44,8 @@ test('demo mode is explicit, persistent, and cannot take over a personal home', 
     assert.equal(JSON.parse(fs.readFileSync(installationModePath(dir))).mode, 'demo');
     assert.equal(getDb().prepare('SELECT COUNT(*) AS count FROM entities').get().count, count);
     assert.equal(handle.auth.ownerEntity().id, linkedId);
+    await assert.rejects(startServer({ port: 0, mode: 'personal' }), { code: 'HOME_IN_USE' });
+    await close(handle); handle = null;
     await assert.rejects(startServer({ port: 0, mode: 'personal' }), /already demo/);
   } finally { if (handle) await close(handle); delete process.env.U2OS_HOME; fs.rmSync(dir, { recursive: true, force: true }); }
 
