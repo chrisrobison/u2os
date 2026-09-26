@@ -14,14 +14,15 @@ import { storeTokens } from '../../server/integrations/oauth/google-oauth.js';
 import { installationModePath, readInstallationMode } from '../../server/seed/installation-mode.js';
 import { writeEncryptedFile } from '../../server/security/vault.js';
 
-export async function withPersonalWorkflow({ existing = false, research = false, modelPlan }, operation) {
+export async function withPersonalWorkflow({ existing = false, research = false, simulatedGmailSend, modelPlan }, operation) {
+  assert.ok(simulatedGmailSend === undefined || ['accepted', 'uncertain'].includes(simulatedGmailSend), 'only explicit scripted send modes are allowed');
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-personal-workflow-'));
   const previousHome = process.env.U2OS_HOME, nativeFetch = globalThis.fetch;
   process.env.U2OS_HOME = home;
   let handle, cookie, csrf, previousRecord, previousContact;
   const day = new Date(); day.setHours(0, 0, 0, 0);
   const start = new Date(day); start.setHours(10); const end = new Date(day); end.setHours(11);
-  const fixture = { home, network: [], unexpectedNetwork: [], externalWrites: [], modelRequests: [], modelErrors: [], calendarDown: false, searchDown: false,
+  const fixture = { home, network: [], unexpectedNetwork: [], externalWrites: [], simulatedSends: [], modelRequests: [], modelErrors: [], calendarDown: false, searchDown: false,
     searchPasses: 0, roles: [
       { title: 'Fixture Atlas research engineer', url: 'https://jobs.example.test/atlas', snippet: 'Remote senior research engineer. Posting date unavailable.' },
       { title: 'Fixture Birch analyst', url: 'https://jobs.example.test/birch', snippet: 'On-site analyst in London. Experience requirements unavailable.' },
@@ -70,6 +71,17 @@ export async function withPersonalWorkflow({ existing = false, research = false,
     }
     if (!['gmail.googleapis.com', 'www.googleapis.com'].includes(url.hostname)) {
       fixture.unexpectedNetwork.push(url.href); throw new Error('Unexpected network is prohibited by this fixture');
+    }
+    if (simulatedGmailSend && url.href === 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send' && init.method === 'POST') {
+      // Never forward writes to native fetch. This narrowly scripted exception
+      // requires the test to establish the exact expected owner-approved MIME.
+      assert.ok(fixture.expectedApprovedSend, 'fixture must establish the approved send before transport');
+      assert.equal(new Headers(init.headers).get('authorization'), 'Bearer fixture-primary-gmail', 'approved original account survives selection changes');
+      const request = JSON.parse(init.body); assert.deepEqual(Object.keys(request), ['raw']);
+      const mime = Buffer.from(request.raw, 'base64url').toString(), expected = fixture.expectedApprovedSend;
+      assert.equal(mime, `To: ${expected.to}\r\nSubject: ${expected.subject}\r\n\r\n${expected.body}`);
+      fixture.simulatedSends.push({ path: url.pathname, mime });
+      return Response.json(simulatedGmailSend === 'accepted' ? { id: 'fixture_send_receipt', threadId: 'fixture_send_thread' } : {});
     }
     if ((init.method || 'GET') !== 'GET') { fixture.externalWrites.push(url.href); throw new Error('External writes are prohibited by this fixture'); }
     const service = url.hostname === 'gmail.googleapis.com' ? 'gmail' : 'calendar';
@@ -135,7 +147,10 @@ export async function withPersonalWorkflow({ existing = false, research = false,
     assert.equal((await fixture.api('/api/model')).plannerStatus, 'configured'); assert.equal(handle.auth.ownerEntity().id, fixture.ownerEntityId);
     await operation(fixture);
     assert.equal(fixture.externalWrites.length, 0); assert.equal(fixture.unexpectedNetwork.length, 0); assert.deepEqual(fixture.modelErrors, []);
-    assert.equal(getDb().prepare("SELECT count(*) n FROM emails WHERE folder='sent'").get().n, 0);
+    const expectedSends = simulatedGmailSend === 'accepted' ? 1 : 0;
+    assert.equal(fixture.simulatedSends.length, simulatedGmailSend ? 1 : 0);
+    assert.equal(getDb().prepare("SELECT count(*) n FROM emails WHERE folder='sent'").get().n, expectedSends);
+    assert.equal(getDb().prepare("SELECT count(*) n FROM events WHERE type='email.sent' AND source='gmail'").get().n, expectedSends);
     assert.equal(getDb().prepare("SELECT count(*) n FROM events WHERE type IN ('email.sent','calendar.event_added','calendar.event_changed') AND source='agent'").get().n, 0);
     if (existing) {
       assert.deepEqual(getDb().prepare("SELECT * FROM emails WHERE id='previous_fixture_mail'").get(), previousRecord);
