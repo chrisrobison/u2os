@@ -145,12 +145,35 @@ export async function getEvent(localId, { fetchImpl = globalThis.fetch, dataDir,
   });
 }
 
-async function acknowledgedWrite(url, request, { fetchImpl, instance, expectedId, startAt, endAt }) {
-  let response;
+function validateWriteDeadline(timeoutMs) {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 30_000) {
+    throw new Error('google-calendar: invalid write deadline; no calendar change was attempted');
+  }
+}
+
+async function acknowledgedWrite(url, request, { fetchImpl, instance, expectedId, startAt, endAt, timeoutMs, timers }) {
+  const controller = new AbortController();
+  let response, timer, timedOut = false, finished = false;
+  const discard = (value) => {
+    try { Promise.resolve(value?.body?.cancel()).catch(() => {}); } catch { /* Locked native body. */ }
+  };
+  const check = () => { if (timedOut || finished) throw new Error('Calendar acknowledgement no longer available'); };
+  const deadline = new Promise((_, reject) => {
+    timer = timers.setTimeout(() => {
+      timedOut = true; controller.abort(); discard(response);
+      reject(new Error('Calendar acknowledgement deadline expired'));
+    }, timeoutMs);
+  });
   try {
-    response = await fetchImpl(url, request);
+    const transport = Promise.resolve().then(() => { check(); return fetchImpl(url, { ...request, signal: controller.signal }); }).then((value) => {
+      if (timedOut || finished) { discard(value); check(); }
+      return value;
+    });
+    response = await Promise.race([transport, deadline]);
     if (!response.ok) throw new Error('No successful calendar acknowledgement');
-    const event = await response.json(), row = mapValidatedEvent(event, instance, expectedId);
+    const event = await Promise.race([Promise.resolve().then(() => { check(); return response.json(); }), deadline]);
+    check();
+    const row = mapValidatedEvent(event, instance, expectedId);
     // Timed write requests have no separate timeZone field. An offset-less
     // acknowledgement cannot establish the requested instant; never guess.
     const matches = (actual, intended) => usableTimestamp(intended) &&
@@ -161,20 +184,22 @@ async function acknowledgedWrite(url, request, { fetchImpl, instance, expectedId
     }
     return upsertRow(row);
   } catch {
-    try { Promise.resolve(response?.body?.cancel()).catch(() => {}); } catch { /* Locked native body. */ }
     const status = Number.isInteger(response?.status) && response.status >= 100 && response.status <= 599 ? response.status : undefined;
-    const error = new Error(`google-calendar: write outcome uncertain${status === undefined ? '' : ` (status ${status})`}; check the originally bound calendar account/event before any new proposal; no automatic retry`);
+    const error = new Error(`google-calendar: write outcome uncertain${timedOut ? ' (acknowledgement timed out)' : ''}${status === undefined ? '' : ` (status ${status})`}; check the originally bound calendar account/event before any new proposal; no automatic retry`);
     error.code = 'GOOGLE_CALENDAR_WRITE_OUTCOME_UNCERTAIN';
     error.actionErrorClass = 'outcome_uncertain'; error.ownerAttentionRequired = true; error.safeToRetry = false;
     if (status !== undefined) error.status = status;
     throw error;
+  } finally {
+    finished = true; timers.clearTimeout(timer); controller.abort(); discard(response);
   }
 }
 
 export async function createEvent(
   { title, startAt, endAt, attendees = [], location = null },
-  { fetchImpl = globalThis.fetch, dataDir, instance } = {}
+  { fetchImpl = globalThis.fetch, dataDir, instance, timeoutMs = 30_000, timers = globalThis } = {}
 ) {
+  validateWriteDeadline(timeoutMs);
   const headers = await authHeaders(fetchImpl, dataDir, instance);
   const body = {
     summary: title,
@@ -183,10 +208,11 @@ export async function createEvent(
     location: location || undefined,
     attendees: attendees.map((a) => (typeof a === 'string' && a.includes('@') ? { email: a } : { displayName: a })),
   };
-  return acknowledgedWrite(API_BASE, { method: 'POST', headers, body: JSON.stringify(body) }, { fetchImpl, instance, startAt, endAt });
+  return acknowledgedWrite(API_BASE, { method: 'POST', headers, body: JSON.stringify(body) }, { fetchImpl, instance, startAt, endAt, timeoutMs, timers });
 }
 
-export async function rescheduleEvent(localId, { newStartAt, newEndAt }, { fetchImpl = globalThis.fetch, dataDir, instance } = {}) {
+export async function rescheduleEvent(localId, { newStartAt, newEndAt }, { fetchImpl = globalThis.fetch, dataDir, instance, timeoutMs = 30_000, timers = globalThis } = {}) {
+  validateWriteDeadline(timeoutMs);
   const before = getRowById(localId);
   if (!before) return null;
   const headers = await authHeaders(fetchImpl, dataDir, instance);
@@ -195,7 +221,7 @@ export async function rescheduleEvent(localId, { newStartAt, newEndAt }, { fetch
     method: 'PATCH',
     headers,
     body: JSON.stringify({ start: { dateTime: newStartAt }, end: { dateTime: newEndAt } }),
-  }, { fetchImpl, instance, expectedId, startAt: newStartAt, endAt: newEndAt });
+  }, { fetchImpl, instance, expectedId, startAt: newStartAt, endAt: newEndAt, timeoutMs, timers });
   return { before, after };
 }
 
