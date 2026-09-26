@@ -141,6 +141,7 @@ export class U2App extends HTMLElement {
   }
 
   disconnectedCallback() {
+    this._routeGeneration = (this._routeGeneration || 0) + 1;
     window.removeEventListener('error', this._onUnexpectedError);
     window.removeEventListener('unhandledrejection', this._onUnexpectedError);
     window.removeEventListener('u2-connection-state', this._onConnectionState);
@@ -210,6 +211,7 @@ export class U2App extends HTMLElement {
   // ---- routing ----
 
   _route() {
+    this._routeGeneration = (this._routeGeneration || 0) + 1;
     const hash = window.location.hash || '#/home';
     const pathOnly = hash.replace(/^#\/?/, '').split('?')[0];
     const parts = pathOnly.split('/').filter(Boolean);
@@ -305,9 +307,11 @@ export class U2App extends HTMLElement {
   // ---- views ----
 
   async _renderDashboard() {
+    const generation = this._routeGeneration;
     this._setWorkspace('', this._loading('Loading briefing...'));
     try {
       const schema = await api.getDashboard();
+      if (!this.isConnected || generation !== this._routeGeneration) return;
       const dashboardEl = document.createElement('u2-dashboard');
       dashboardEl.refreshLoader = () => api.getDashboard();
       dashboardEl.schema = schema;
@@ -344,6 +348,7 @@ export class U2App extends HTMLElement {
       wrap.append(start, dashboardEl);
       this._setWorkspace('', wrap);
     } catch (err) {
+      if (!this.isConnected || generation !== this._routeGeneration) return;
       this._setWorkspace(this._header('Briefing'), this._error(err));
     }
   }

@@ -14,7 +14,9 @@ import { storeTokens } from '../../server/integrations/oauth/google-oauth.js';
 import { installationModePath, readInstallationMode } from '../../server/seed/installation-mode.js';
 import { writeEncryptedFile } from '../../server/security/vault.js';
 
-export async function withPersonalWorkflow({ existing = false, research = false, simulatedGmailSend, modelPlan }, operation) {
+export const PERSONAL_FIXTURE_PASSPHRASE = 'fixture-only personal owner passphrase';
+
+export async function withPersonalWorkflow({ existing = false, research = false, simulatedGmailSend, modelPlan, closeConnectionsForTests = true }, operation) {
   assert.ok(simulatedGmailSend === undefined || ['accepted', 'uncertain'].includes(simulatedGmailSend), 'only explicit scripted send modes are allowed');
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-personal-workflow-'));
   const previousHome = process.env.U2OS_HOME, nativeFetch = globalThis.fetch;
@@ -22,7 +24,7 @@ export async function withPersonalWorkflow({ existing = false, research = false,
   let handle, cookie, csrf, previousRecord, previousContact;
   const day = new Date(); day.setHours(0, 0, 0, 0);
   const start = new Date(day); start.setHours(10); const end = new Date(day); end.setHours(11);
-  const fixture = { home, network: [], unexpectedNetwork: [], externalWrites: [], simulatedSends: [], modelRequests: [], modelErrors: [], calendarDown: false, searchDown: false,
+  const fixture = { home, get baseURL() { return `http://127.0.0.1:${handle.port}`; }, network: [], unexpectedNetwork: [], externalWrites: [], simulatedSends: [], modelRequests: [], modelErrors: [], calendarDown: false, searchDown: false,
     searchPasses: 0, roles: [
       { title: 'Fixture Atlas research engineer', url: 'https://jobs.example.test/atlas', snippet: 'Remote senior research engineer. Posting date unavailable.' },
       { title: 'Fixture Birch analyst', url: 'https://jobs.example.test/birch', snippet: 'On-site analyst in London. Experience requirements unavailable.' },
@@ -98,7 +100,11 @@ export async function withPersonalWorkflow({ existing = false, research = false,
     if (service === 'gmail' && message) return Response.json(message);
     fixture.unexpectedNetwork.push(url.href); throw new Error('Unsupported fixture provider request');
   };
-  const stop = async () => { if (handle) { await handle.shutdown(); handle = null; closeAllForTests(); } };
+  // Playwright shares a module-level SQLite cache with its global harness.
+  // Its fixtures must not close unrelated connections; match e2e/helpers.js's
+  // bounded test-process-only orphan handling. Node tests retain full cleanup.
+  const closeConnections = () => { if (closeConnectionsForTests) closeAllForTests(); };
+  const stop = async () => { if (handle) { await handle.shutdown(); handle = null; closeConnections(); } };
   fixture.stop = stop;
   fixture.processQueue = () => handle.agent.actionQueueWorker.processNext();
   fixture.restart = async () => { await stop(); handle = await startServer({ port: 0 }); };
@@ -114,7 +120,7 @@ export async function withPersonalWorkflow({ existing = false, research = false,
     handle = await startServer({ port: 0 });
     for (const table of ['entities', 'emails', 'calendar_events', 'tasks', 'triggers']) assert.equal(getDb().prepare(`SELECT count(*) n FROM ${table}`).get().n, 0, 'personal startup cannot seed fixtures');
     assert.equal(readInstallationMode(), 'personal');
-    const setup = await nativeFetch(`http://127.0.0.1:${handle.port}/api/auth/setup`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passphrase: 'fixture-only personal owner passphrase' }) });
+    const setup = await nativeFetch(`http://127.0.0.1:${handle.port}/api/auth/setup`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passphrase: PERSONAL_FIXTURE_PASSPHRASE }) });
     assert.equal(setup.status, 201); cookie = setup.headers.get('set-cookie').split(';')[0]; csrf = (await setup.json()).csrfToken;
     fixture.ownerEntityId = handle.auth.ownerEntity().id;
     assert.equal((await fixture.api('/api/model')).plannerStatus, 'configuration-required');
@@ -163,7 +169,7 @@ export async function withPersonalWorkflow({ existing = false, research = false,
     }
   } finally {
     await stop(); modelServer.closeAllConnections(); await new Promise((resolve) => modelServer.close(resolve));
-    closeAllForTests(); globalThis.fetch = nativeFetch;
+    closeConnections(); globalThis.fetch = nativeFetch;
     if (previousHome === undefined) delete process.env.U2OS_HOME; else process.env.U2OS_HOME = previousHome;
     fs.rmSync(home, { recursive: true, force: true });
   }
