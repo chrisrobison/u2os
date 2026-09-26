@@ -1,6 +1,7 @@
 import { sendJson } from '../router.js';
 import { controlGoal, createGoalDraft, getGoalDraft, getGoalRunEvidence, goalRunObjective, listGoalDrafts, updateGoalDraft } from '../../agent/goal-store.js';
 import { scheduleGoalWake } from '../../agent/goal-wakes.js';
+import { listGoalFindings, reviewGoalFinding } from '../../agent/goal-findings.js';
 
 /** Owner-scoped goals. Listing/editing never starts work; only an explicit
  * run or an owner-selected persisted wake calls the bounded agent. */
@@ -35,6 +36,12 @@ export function registerGoalRoutes(router, { agent }) {
   });
   router.post('/api/goals/:id/wake', async (req, res) => {
     sendJson(res, 201, scheduleGoalWake(req.params.id, req.owner.id, req.body));
+  });
+  router.get('/api/goals/:id/findings', async (req, res) => {
+    sendJson(res, 200, listGoalFindings(req.params.id, req.owner.id, req.query.limit, req.query.offset), { 'Cache-Control': 'no-store' });
+  });
+  router.put('/api/goals/:id/findings/:findingId', async (req, res) => {
+    sendJson(res, 200, reviewGoalFinding(req.params.id, req.owner.id, req.params.findingId, req.body), { 'Cache-Control': 'no-store' });
   });
   router.get('/api/goals/:id/runs/:runId', async (req, res) => {
     sendJson(res, 200, getGoalRunEvidence(req.params.id, req.owner.id, req.params.runId), { 'Cache-Control': 'no-store' });

@@ -397,6 +397,37 @@ CREATE TABLE IF NOT EXISTS goal_wakes (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_goal_wake_pending ON goal_wakes(goal_id) WHERE status = 'pending';
 
+-- Derived search evidence and explicit owner review, never established facts.
+CREATE TABLE IF NOT EXISTS goal_findings (
+  id TEXT PRIMARY KEY,
+  goal_id TEXT NOT NULL,
+  url TEXT NOT NULL,
+  title TEXT NOT NULL,
+  snippet TEXT NOT NULL,
+  first_seen_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  review_status TEXT NOT NULL DEFAULT 'unreviewed',
+  review_goal_revision INTEGER,
+  revision INTEGER NOT NULL DEFAULT 1,
+  UNIQUE(goal_id, url)
+);
+CREATE TABLE IF NOT EXISTS goal_finding_sources (
+  finding_id TEXT NOT NULL,
+  action_id TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  goal_revision INTEGER,
+  observed_at TEXT NOT NULL,
+  account TEXT,
+  mock INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY(finding_id, action_id)
+);
+CREATE TABLE IF NOT EXISTS goal_finding_index (
+  action_id TEXT PRIMARY KEY,
+  goal_id TEXT NOT NULL,
+  status TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_goal_findings_seen ON goal_findings(goal_id, first_seen_at DESC);
+
 CREATE TABLE IF NOT EXISTS goals (
   id TEXT PRIMARY KEY,
   owner_id TEXT NOT NULL,

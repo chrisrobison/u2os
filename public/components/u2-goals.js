@@ -39,6 +39,7 @@ export class U2Goals extends HTMLElement {
           <p class="goal-message" role="status" aria-live="polite"></p>
           <div class="goal-runs" aria-label="Related runs"></div>
           <section class="goal-evidence" aria-label="Selected run evidence"></section>
+          <section class="goal-findings" aria-label="Research findings"></section>
         </form>
       </div>`;
     this._list = this.querySelector('.goal-list');
@@ -119,6 +120,7 @@ export class U2Goals extends HTMLElement {
     this.querySelector('.goal-form__state').textContent = 'Manual only · Next wake-up: none · Spent: 0 runs, 0 model calls, 0 tokens';
     this.querySelector('.goal-runs').replaceChildren();
     this.querySelector('.goal-evidence').replaceChildren();
+    this.querySelector('.goal-findings').replaceChildren();
     this._message.textContent = '';
     this._message.classList.remove('is-error');
     this._markSelected();
@@ -174,6 +176,7 @@ export class U2Goals extends HTMLElement {
       this._message.textContent = '';
       this._message.classList.remove('is-error');
       this._markSelected();
+      await this._loadFindings(goal.id);
     } catch (error) { if (generation === this._generation) this._showError(`Couldn't open draft: ${error.message}`); }
   }
 
@@ -314,6 +317,75 @@ export class U2Goals extends HTMLElement {
       if (this._goalId === id) this._message.textContent = 'One read-only wake scheduled. Pause the goal to cancel it. No work started now.';
     } catch (error) {
       if (this._goalId === id) { this._showError(`Could not schedule wake: ${error.message}`); button.disabled = false; }
+    }
+  }
+
+  async _loadFindings(goalId, offset = 0) {
+    const generation = this._generation;
+    const goalRevision = this._revision;
+    const request = this._findingRequest = (this._findingRequest || 0) + 1;
+    const panel = this.querySelector('.goal-findings');
+    panel.replaceChildren();
+    try {
+      const { findings, coverage } = await api.listGoalFindings(goalId, offset);
+      if (goalId !== this._goalId || generation !== this._generation || request !== this._findingRequest) return;
+      const title = document.createElement('h3');
+      title.textContent = 'Search findings · relevance and availability not verified';
+      const summary = document.createElement('p');
+      summary.textContent = `${coverage.totalFindings} distinct links · showing ${findings.length} · ${coverage.indexedActions}/${coverage.successfulSearches} successful searches indexed · ${coverage.pendingActions} awaiting indexing · ${coverage.limitedActions} limited/omitted results · up to ${coverage.maxResultsPerAction} links per search`;
+      const refresh = document.createElement('button');
+      refresh.type = 'button'; refresh.className = 'btn'; refresh.textContent = 'Refresh findings';
+      refresh.addEventListener('click', () => this._loadFindings(goalId, offset));
+      panel.append(title, summary, refresh);
+      for (const [label, start, disabled] of [['Previous findings', Math.max(0, offset - 20), offset === 0],
+        ['Next findings', offset + 20, offset + findings.length >= coverage.totalFindings]]) {
+        const button = document.createElement('button'); button.type = 'button'; button.className = 'btn';
+        button.textContent = label; button.disabled = disabled;
+        button.addEventListener('click', () => this._loadFindings(goalId, start));
+        panel.appendChild(button);
+      }
+      for (const finding of findings) {
+        const card = document.createElement('article');
+        card.className = 'dashboard-card goal-finding';
+        const link = document.createElement('a');
+        link.textContent = finding.title;
+        try {
+          const url = new URL(finding.url);
+          if (['https:', 'http:'].includes(url.protocol) && !url.username && !url.password) {
+            link.href = url.href; link.target = '_blank'; link.rel = 'noopener noreferrer';
+          }
+        } catch { /* An invalid result remains inert text. */ }
+        const snippet = document.createElement('p'); snippet.textContent = finding.snippet;
+        const state = document.createElement('p');
+        state.textContent = `${finding.reviewStatus}${finding.reviewGoalRevision ? ` · reviewed under goal revision ${finding.reviewGoalRevision}` : ''} · seen in ${finding.sourceCount} searches · first ${finding.firstSeenAt} · last ${finding.lastSeenAt}`;
+        card.append(link, snippet, state);
+        for (const source of finding.sources) {
+          const button = document.createElement('button'); button.type = 'button'; button.className = 'btn';
+          button.textContent = `${source.mock ? 'Demo result · ' : ''}Source ${source.actionId} · goal revision ${source.goalRevision ?? 'unavailable'} · ${source.observedAt}${source.account ? ` · ${source.account.label || source.account.providerId} (${source.account.providerId}/${source.account.instanceId || 'no instance'})` : ' · account provenance unavailable'}`;
+          button.addEventListener('click', () => this._openRun(goalId, source.runId));
+          card.appendChild(button);
+        }
+        for (const status of ['relevant', 'dismissed', 'unreviewed']) {
+          const button = document.createElement('button'); button.type = 'button'; button.className = 'btn';
+          button.textContent = { relevant: 'Mark relevant', dismissed: 'Dismiss finding', unreviewed: 'Reset review' }[status];
+          button.disabled = finding.reviewStatus === status;
+          button.addEventListener('click', async () => {
+            button.disabled = true;
+            try {
+              await api.reviewGoalFinding(goalId, finding.id, status, finding.revision, goalRevision);
+              if (this._goalId === goalId) await this._loadFindings(goalId, offset);
+            } catch (error) { if (this._goalId === goalId) { this._showError(`Could not review finding: ${error.message}`); button.disabled = false; } }
+          });
+          card.appendChild(button);
+        }
+        panel.appendChild(card);
+      }
+    } catch (error) {
+      if (goalId === this._goalId && generation === this._generation && request === this._findingRequest) {
+        const warning = document.createElement('p');
+        warning.textContent = `Could not load findings: ${error.message}. Reload the goal to retry.`;
+        panel.appendChild(warning);
+      }
     }
   }
 

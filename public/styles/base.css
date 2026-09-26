@@ -1219,6 +1219,9 @@ u2-device-panel .u2-card {
 .goal-runs { display: flex; flex-direction: column; gap: var(--space-2); }
 .goal-runs__item { text-align: left; padding: var(--space-2); border: var(--border-width) solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-page); color: var(--text-primary); overflow-wrap: anywhere; cursor: pointer; }
 .goal-evidence pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 18rem; overflow: auto; padding: var(--space-2); background: var(--bg-page); border-radius: var(--radius-sm); }
+.goal-findings, .goal-finding { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.goal-finding a, .goal-finding p, .goal-finding .btn { overflow-wrap: anywhere; }
+.goal-finding .btn { white-space: normal; text-align: left; }
 @media (max-width: 680px) { .goal-layout { grid-template-columns: 1fr; } .goal-budgets { grid-template-columns: 1fr; } }
 
 .trigger-create {

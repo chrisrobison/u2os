@@ -91,6 +91,15 @@ export function scheduleGoalWake(id, fireAt, expectedRevision) {
     body: JSON.stringify({ fireAt, expectedRevision }) });
 }
 
+export function listGoalFindings(id, offset = 0) {
+  return request(`/api/goals/${encodeURIComponent(id)}/findings?offset=${encodeURIComponent(offset)}`, { cache: 'no-store' });
+}
+
+export function reviewGoalFinding(goalId, findingId, reviewStatus, expectedRevision, expectedGoalRevision) {
+  return request(`/api/goals/${encodeURIComponent(goalId)}/findings/${encodeURIComponent(findingId)}`, {
+    method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify({ reviewStatus, expectedRevision, expectedGoalRevision }) });
+}
+
 export function saveConnectorConfig(endpoint, values) {
   return request(endpoint, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(values) });
 }
