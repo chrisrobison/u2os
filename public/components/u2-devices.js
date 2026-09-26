@@ -16,17 +16,18 @@ function capabilityChips(capabilities, debugEnabled) {
 
 function renderDeviceRow(device, ctx) {
   const isOpen = ctx.selectedId === device.id;
-  const dotClass = device.status === 'online' ? 'is-connected' : 'is-disconnected';
+  const dotClass = device.status === 'online' && device.adapterAvailable === true ? 'is-connected' : 'is-disconnected';
   const message = ctx.messages[device.id];
 
   return `
     <div class="device-row" data-device-row="${escapeHtml(device.id)}">
       <button type="button" class="device-row__summary" data-toggle-device="${escapeHtml(device.id)}">
-        <span class="status-dot ${dotClass}"></span>
+        <span class="status-dot ${dotClass}" title="Last observed ${escapeHtml(device.status)}; adapter ${device.adapterAvailable === true ? 'registered' : 'unavailable'}"></span>
         <span class="device-row__name">${escapeHtml(device.name)}</span>
         <span class="device-row__meta">${escapeHtml(humanizeKey(device.type))}${device.location ? ` · ${escapeHtml(device.location)}` : ''}</span>
         ${trustBadge(device.trust)}
       </button>
+      <p class="device-availability">${device.mock === true ? 'Demo device · ' : ''}${device.adapterAvailable === true ? 'Adapter registered' : 'Cached record: adapter unavailable'} · last observed ${escapeHtml(device.status)}</p>
       ${isOpen ? renderDeviceDetail(device, ctx) : ''}
       ${message ? `<div class="device-message${message.isError ? ' is-error' : ''}">${escapeHtml(message.text)}</div>` : ''}
     </div>

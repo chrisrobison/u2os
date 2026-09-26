@@ -12,6 +12,8 @@ export function registerDeviceRoutes(router, { deviceRegistry, capabilityRegistr
   const debugEnabled = developmentMode === true && process.env.NODE_ENV !== 'production';
   const denyDebug = (res) => sendJson(res, 403, { code: 'device_debug_disabled', attempted: false,
     error: 'Direct device execution is disabled outside explicit development mode. Use normal authorized tools.' });
+  const presentDevice = (device) => ({ ...device, adapterAvailable: Boolean(deviceRegistry.getAdapter(device.adapter)),
+    mock: device.adapter === 'mock' });
   // Phase 8 (docs/devices.md): metadata/reference-only stream discovery
   // and open/close -- never a media transport. GET is pure discovery
   // (what streams does this device claim to have); POST .../open actually
@@ -59,13 +61,13 @@ export function registerDeviceRoutes(router, { deviceRegistry, capabilityRegistr
 
   router.get('/api/devices', async (req, res) => {
     const { type, owner, location, status, trust, capability } = req.query;
-    sendJson(res, 200, { devices: deviceRegistry.listDevices({ type, owner, location, status, trust, capability }), debugActionsEnabled: debugEnabled });
+    sendJson(res, 200, { devices: deviceRegistry.listDevices({ type, owner, location, status, trust, capability }).map(presentDevice), debugActionsEnabled: debugEnabled });
   });
 
   router.get('/api/devices/:id', async (req, res) => {
     const device = deviceRegistry.getDevice(req.params.id);
     if (!device) return sendJson(res, 404, { error: 'Not Found' });
-    sendJson(res, 200, device);
+    sendJson(res, 200, presentDevice(device));
   });
 
   // Phase 6 management actions (docs/devices.md): Rename / Set location /
@@ -127,7 +129,7 @@ export function registerDeviceRoutes(router, { deviceRegistry, capabilityRegistr
     if (!capabilityRegistry.has(req.params.capability)) {
       return sendJson(res, 404, { error: `Unknown capability: ${req.params.capability}` });
     }
-    sendJson(res, 200, { capability: req.params.capability, providers: deviceRegistry.findProvidersFor(req.params.capability) });
+    sendJson(res, 200, { capability: req.params.capability, providers: deviceRegistry.findProvidersFor(req.params.capability).map(presentDevice) });
   });
 
   // Debug/inspection: "why was/would this device be chosen?" -- per
