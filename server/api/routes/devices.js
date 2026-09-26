@@ -8,7 +8,10 @@ import { newId } from '../../db/ids.js';
 import { explainResolution } from '../../devices/capability-resolver.js';
 import { invokeCapability, invokeDeviceCapability } from '../../devices/capabilities.js';
 
-export function registerDeviceRoutes(router, { deviceRegistry, capabilityRegistry, eventBus, deviceConnectToken, streamRegistry }) {
+export function registerDeviceRoutes(router, { deviceRegistry, capabilityRegistry, eventBus, deviceConnectToken, streamRegistry, developmentMode = false }) {
+  const debugEnabled = developmentMode === true && process.env.NODE_ENV !== 'production';
+  const denyDebug = (res) => sendJson(res, 403, { code: 'device_debug_disabled', attempted: false,
+    error: 'Direct device execution is disabled outside explicit development mode. Use normal authorized tools.' });
   // Phase 8 (docs/devices.md): metadata/reference-only stream discovery
   // and open/close -- never a media transport. GET is pure discovery
   // (what streams does this device claim to have); POST .../open actually
@@ -24,6 +27,7 @@ export function registerDeviceRoutes(router, { deviceRegistry, capabilityRegistr
   });
 
   router.post('/api/devices/:id/streams/:name/open', async (req, res) => {
+    if (!debugEnabled) return denyDebug(res);
     try {
       const opened = await streamRegistry.open(req.params.id, req.params.name);
       sendJson(res, 200, opened);
@@ -55,7 +59,7 @@ export function registerDeviceRoutes(router, { deviceRegistry, capabilityRegistr
 
   router.get('/api/devices', async (req, res) => {
     const { type, owner, location, status, trust, capability } = req.query;
-    sendJson(res, 200, { devices: deviceRegistry.listDevices({ type, owner, location, status, trust, capability }) });
+    sendJson(res, 200, { devices: deviceRegistry.listDevices({ type, owner, location, status, trust, capability }), debugActionsEnabled: debugEnabled });
   });
 
   router.get('/api/devices/:id', async (req, res) => {
@@ -101,9 +105,10 @@ export function registerDeviceRoutes(router, { deviceRegistry, capabilityRegistr
   // "Test capability": directly invokes ONE specific device the owner
   // picked in the management UI -- bypasses the resolver on purpose (see
   // server/devices/capabilities.js's invokeDeviceCapability() header for
-  // why this, like the raw invoke route above, is an owner-only debug
+  // why this, like the raw invoke route above, is a development-only debug
   // primitive, never something an agent's planning loop reaches).
   router.post('/api/devices/:id/test', async (req, res) => {
+    if (!debugEnabled) return denyDebug(res);
     const { capability, args } = req.body || {};
     if (!capability) return sendJson(res, 400, { error: 'capability is required' });
     try {
@@ -145,12 +150,13 @@ export function registerDeviceRoutes(router, { deviceRegistry, capabilityRegistr
   // delegates to that device's adapter. See server/devices/capabilities.js
   // for what is (and, per docs/devices.md, is NOT yet) enforced here.
   //
-  // SECURITY (known gap, tracked in docs/devices.md): unlike
+  // SECURITY (development only): unlike
   // presentation.present/presentation.notify (server/tools/presentation-tools.js,
   // reached through Agent.evaluateAndMaybeExecute()), this route calls
   // invokeCapability() DIRECTLY -- it is gated by session auth + CSRF like
   // any private write route, but NOT by PolicyEngine/autonomy level, and
-  // produces no agent_actions audit row. Treat this as a trusted-owner-only
+  // produces no agent_actions audit row. Normal operation denies it before
+  // adapter access; explicit development mode exposes an authenticated
   // debug/direct-control surface, not something an agent's own planning
   // loop should ever be given access to call.
   //
@@ -166,6 +172,7 @@ export function registerDeviceRoutes(router, { deviceRegistry, capabilityRegistr
   // Binding `audience` to the authenticated owner is expected to land
   // alongside the semantic present() API (docs/devices.md Phase 5).
   router.post('/api/capabilities/:capability/invoke', async (req, res) => {
+    if (!debugEnabled) return denyDebug(res);
     if (!capabilityRegistry.has(req.params.capability)) {
       return sendJson(res, 404, { error: `Unknown capability: ${req.params.capability}` });
     }

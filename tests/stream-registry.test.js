@@ -181,7 +181,7 @@ test('stream routes: discover, open, list, close', async () => {
   let handle;
   try {
     const { startServer } = await import('../server/index.js');
-    handle = await startServer({ port: 0 });
+    handle = await startServer({ port: 0, mode: 'demo', developmentMode: true });
     const origin = `http://127.0.0.1:${handle.port}`;
     const setup = await fetch(`${origin}/api/auth/setup`, {
       method: 'POST',

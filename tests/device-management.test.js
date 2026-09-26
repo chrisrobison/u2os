@@ -143,7 +143,7 @@ test('device management routes: rename, trust transition, test capability, delet
   const dir = tempHome();
   let handle;
   try {
-    handle = await startServer({ port: 0 });
+    handle = await startServer({ port: 0, mode: 'demo', developmentMode: true });
     const origin = base(handle);
     const setup = await fetch(`${origin}/api/auth/setup`, {
       method: 'POST',

@@ -9,9 +9,9 @@ function trustBadge(trust) {
   return `<span class="device-trust device-trust--${escapeHtml(trust)}">${escapeHtml(TRUST_LABELS[trust] || trust)}</span>`;
 }
 
-function capabilityChips(capabilities) {
+function capabilityChips(capabilities, debugEnabled) {
   if (!capabilities?.length) return '<span class="empty-state">No capabilities advertised</span>';
-  return `<div class="device-capabilities">${capabilities.map((c) => `<span class="device-capability-chip" data-test-capability="${escapeHtml(c)}" title="Test ${escapeHtml(c)}">${escapeHtml(c)}</span>`).join('')}</div>`;
+  return `<div class="device-capabilities">${capabilities.map((c) => `<button type="button" class="device-capability-chip" data-test-capability="${escapeHtml(c)}" ${debugEnabled ? '' : 'disabled'} title="${debugEnabled ? 'Development test' : 'Direct testing disabled'} ${escapeHtml(c)}">${escapeHtml(c)}</button>`).join('')}</div>`;
 }
 
 function renderDeviceRow(device, ctx) {
@@ -57,8 +57,8 @@ function renderDeviceDetail(device, ctx) {
       </dl>
 
       <div class="device-detail__section">
-        <div class="u2-card__title">Capabilities (click to test)</div>
-        ${capabilityChips(device.capabilities)}
+        <div class="u2-card__title">Capabilities ${ctx.debugEnabled ? '(development tests)' : '(inspection only)'}</div>
+        ${capabilityChips(device.capabilities, ctx.debugEnabled)}
       </div>
 
       <div class="device-detail__section">
@@ -97,6 +97,7 @@ export class U2Devices extends HTMLElement {
     this._events = {}; // deviceId -> events[] once loaded
     this._busyIds = new Set();
     this._messages = {}; // deviceId -> { text, isError }
+    this._debugEnabled = false;
 
     this._onClick = this._onClick.bind(this);
     this._onChange = this._onChange.bind(this);
@@ -115,8 +116,9 @@ export class U2Devices extends HTMLElement {
   async _load() {
     this.innerHTML = '<div class="empty-state">Loading devices...</div>';
     try {
-      const { devices } = await api.getDevices();
+      const { devices, debugActionsEnabled } = await api.getDevices();
       this._devices = devices;
+      this._debugEnabled = debugActionsEnabled === true;
       this._render();
     } catch (err) {
       this.innerHTML = `<div class="load-error">Couldn't load devices: ${escapeHtml(err.message)}</div>`;
@@ -125,12 +127,13 @@ export class U2Devices extends HTMLElement {
 
   _render() {
     const devices = this._devices || [];
-    const ctx = { selectedId: this._selectedId, events: this._events, busyIds: this._busyIds, messages: this._messages };
+    const ctx = { selectedId: this._selectedId, events: this._events, busyIds: this._busyIds, messages: this._messages, debugEnabled: this._debugEnabled };
     this.innerHTML = `
       <div class="workspace__header">
         <div class="workspace__title">Devices</div>
         <div class="workspace__subtitle">${devices.length} known device${devices.length === 1 ? '' : 's'}</div>
       </div>
+      <p class="device-debug-status">${this._debugEnabled ? 'Development debug execution enabled; direct tests bypass normal action policy and audit.' : 'Direct device tests are disabled. Use normal authorized tools for execution.'}</p>
       ${devices.length ? `<div class="device-list">${devices.map((d) => renderDeviceRow(d, ctx)).join('')}</div>` : '<div class="empty-state">No devices registered yet.</div>'}
     `;
   }
@@ -205,6 +208,7 @@ export class U2Devices extends HTMLElement {
   }
 
   _testCapability(id, capability) {
+    if (!this._debugEnabled) return;
     return this._withBusy(id, async () => {
       const result = await api.testDeviceCapability(id, capability, {});
       this._messages[id] = { text: `${capability}: ${JSON.stringify(result.result)}`, isError: false };

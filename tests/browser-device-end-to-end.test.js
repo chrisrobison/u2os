@@ -44,7 +44,7 @@ test('U2OS can present/notify/prompt a connected browser device through the capa
   let handle;
   let ws;
   try {
-    handle = await startServer({ port: 0 });
+    handle = await startServer({ port: 0, mode: 'demo', developmentMode: true });
     const origin = base(handle);
 
     const setup = await fetch(`${origin}/api/auth/setup`, {
@@ -143,7 +143,7 @@ test('a freshly-connected (still untrusted) browser device can receive default (
   let handle;
   let ws;
   try {
-    handle = await startServer({ port: 0 });
+    handle = await startServer({ port: 0, mode: 'demo', developmentMode: true });
     const origin = base(handle);
     const setup = await fetch(`${origin}/api/auth/setup`, {
       method: 'POST',
@@ -188,7 +188,7 @@ test('a private/sensitive request never routes to a shared mock device, only to 
   let handle;
   let ws;
   try {
-    handle = await startServer({ port: 0 });
+    handle = await startServer({ port: 0, mode: 'demo', developmentMode: true });
     const origin = base(handle);
     const setup = await fetch(`${origin}/api/auth/setup`, {
       method: 'POST',
