@@ -357,7 +357,7 @@ function currentStepStatus(step) {
   if (step.action_status === 'blocked') return 'blocked';
   if (step.action_status === 'executed') return 'executed';
   if (step.queue_status === 'completed') return 'executed';
-  if (step.queue_error_class === 'recovery_review_required' || step.action_rejected_by === 'system:recovery') return 'outcome_uncertain';
+  if (['recovery_review_required', 'outcome_uncertain'].includes(step.queue_error_class) || step.action_rejected_by === 'system:recovery') return 'outcome_uncertain';
   if (step.action_status === 'cancelled' && step.expired_attempt) return 'outcome_uncertain';
   if (step.action_status === 'cancelled' && (!step.queue_status || step.queue_status === 'cancelled')) return 'cancelled';
   if (step.action_status === 'approved' && !step.queue_status) return 'needs_attention';
