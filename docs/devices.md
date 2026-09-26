@@ -15,6 +15,16 @@ exposed through the same capability model as a physical device). See
 
 ## Why this exists
 
+Personal startup registers no mock devices, including with development debug
+enabled. Explicit demo homes register the five reproducible mock fixtures.
+Existing device records are never automatically deleted: legacy mock records
+and real devices whose adapter is absent remain cached, with owner edits and
+trust preserved, but cannot be selected for capability delivery. List, detail
+and provider APIs expose `mock` and `adapterAvailable`; the native view labels
+demo provenance, adapter availability and last-observed status separately.
+An adapter being registered is not proof of a live connection or configured
+connector. Failed real invocations remain failures, never mock successes.
+
 U2OS should not expose arbitrary hardware/service APIs directly to an LLM.
 Instead:
 

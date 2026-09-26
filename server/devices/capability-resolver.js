@@ -41,7 +41,7 @@ export function explainResolution(capabilityId, request = {}, { deviceRegistry, 
   const candidates = deviceRegistry.findProvidersFor(capabilityId);
 
   const evaluated = candidates
-    .map((device) => evaluateCandidate(device, normalizedRequest))
+    .map((device) => evaluateCandidate(device, normalizedRequest, Boolean(deviceRegistry.getAdapter(device.adapter))))
     .sort((a, b) => Number(b.eligible) - Number(a.eligible) || b.score - a.score);
 
   const chosen = evaluated.find((c) => c.eligible) || null;
@@ -60,7 +60,7 @@ export function resolveCapability(capabilityId, request, deps) {
   return explanation.chosen ? deps.deviceRegistry.getDevice(explanation.chosen) : null;
 }
 
-function evaluateCandidate(device, request) {
+function evaluateCandidate(device, request, adapterAvailable) {
   // A revoked device is ineligible for anything, unconditionally -- no
   // other rule below may ever override this (docs/devices.md's trust
   // lifecycle invariant).
@@ -70,6 +70,11 @@ function evaluateCandidate(device, request) {
 
   const reasons = [];
   let eligible = true;
+
+  if (!adapterAvailable) {
+    eligible = false;
+    reasons.push('adapter is unavailable; device record is cached');
+  }
 
   if (device.status !== 'online') {
     eligible = false;

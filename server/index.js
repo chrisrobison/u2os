@@ -89,15 +89,14 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   // Device/capability subsystem, Phase 1 (docs/devices.md): a persisted
   // device registry plus an in-memory capability catalog, the same
   // registry/catalog split as `triggers` (persisted) vs `ToolRegistry`
-  // (in-memory, code-defined). MockDeviceAdapter is always registered --
-  // same "always available, zero configuration" posture as the mock
-  // connector providers -- so the registry is never empty even with no
-  // real hardware adapters configured. Constructed before toolRegistry
+  // (in-memory, code-defined). MockDeviceAdapter belongs only to an isolated
+  // demo home; personal operation never substitutes fictional devices.
+  // Constructed before toolRegistry
   // below so the Phase 5 presentation.* tools can be given a real
   // deviceRegistry/capabilityRegistry at registration time.
   const capabilityRegistry = createCapabilityRegistry();
   const deviceRegistry = new DeviceRegistry({ db, eventBus, capabilityRegistry });
-  await deviceRegistry.registerAdapter(new MockDeviceAdapter());
+  if (installationMode === 'demo') await deviceRegistry.registerAdapter(new MockDeviceAdapter());
   // Service-provider unification proof of concept (Phase 9): wraps the
   // EXISTING notifications connector (server/integrations/provider-registry.js)
   // as a device-model provider of the notification.send capability -- see

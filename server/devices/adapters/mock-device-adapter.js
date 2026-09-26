@@ -1,9 +1,8 @@
 // MockDeviceAdapter: virtual devices with no real hardware behind them, so
 // the device/capability subsystem is testable and demoable offline -- the
 // exact same role server/integrations/mock-*-provider.js modules play for
-// connectors. Registered by default (server/index.js), the same way mock
-// connector providers are always available regardless of what real
-// connectors are configured.
+// connectors. Registered only in explicit demo homes (server/index.js)
+// or isolated tests, never as a fallback for personal device execution.
 //
 // Devices here are trusted local test fixtures (trust: 'trusted') since
 // they are virtual, not real hardware that would need a pairing/approval
