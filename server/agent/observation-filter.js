@@ -6,7 +6,7 @@ const MAX_ITEMS = 12;
 const MAX_STRING = 1_024;
 const MAX_DEPTH = 4;
 const MAX_TOTAL_CHARS = 24_000;
-const SECRET_KEY = /(?:api[-_]?key|secret|password|authorization|cookie|access[-_]?token|refresh[-_]?token)/i;
+const SECRET_KEY = /(?:api[-_]?key|secret|password|authorization|cookie|credential|access[-_]?token|refresh[-_]?token)/i;
 
 /** Tool output is untrusted data. A provider-supplied classification may tighten,
  * but never lower, the server's conservative floor for that tool. */
@@ -58,9 +58,25 @@ function classifyObservation(tool, item, historical = false) {
   // Only public web search gets a permissive floor; account-backed or
   // unknown results default private if the source does not classify them.
   const floor = tool === 'web.search' && !historical ? 'public' : 'private';
-  const declared = item && typeof item === 'object' ? item.classification : null;
-  if (!CLASSIFICATIONS.includes(declared)) return floor;
-  return CLASSIFICATIONS[Math.max(CLASSIFICATIONS.indexOf(floor), CLASSIFICATIONS.indexOf(declared))];
+  // Wrapped results (e.g. web.search.results[]) may classify individual
+  // entries. Conservatively tighten the entire item for any nested label;
+  // nesting must never erase a more restrictive classification.
+  let rank = CLASSIFICATIONS.indexOf(floor);
+  const pending = [item];
+  const seen = new WeakSet();
+  let inspected = 0;
+  while (pending.length) {
+    if (++inspected > 5000) return 'sensitive';
+    const value = pending.pop();
+    if (!value || typeof value !== 'object' || seen.has(value)) continue;
+    seen.add(value);
+    rank = Math.max(rank, CLASSIFICATIONS.indexOf(value.classification));
+    if (rank === 3) return 'sensitive';
+    const children = Object.values(value).slice(0, 5001);
+    if (pending.length + children.length + inspected > 5000) return 'sensitive';
+    pending.push(...children);
+  }
+  return CLASSIFICATIONS[rank];
 }
 
 function boundedClone(value, depth = 0, seen = new WeakSet()) {
