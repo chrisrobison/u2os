@@ -14,6 +14,7 @@ import './u2-timeline.js';
 import './u2-voice.js';
 import './u2-devices.js';
 import './u2-operations.js';
+import './u2-goals.js';
 import './u2-triggers.js';
 import './u2-diagnostics.js';
 
@@ -227,6 +228,9 @@ export class U2App extends HTMLElement {
         break;
       case 'operations':
         this._renderOperations();
+        break;
+      case 'goals':
+        this._renderGoals();
         break;
       case 'automation':
         this._renderTriggers();
@@ -541,6 +545,10 @@ export class U2App extends HTMLElement {
 
   _renderOperations() {
     this._setWorkspace('', document.createElement('u2-operations'));
+  }
+
+  _renderGoals() {
+    this._setWorkspace('', document.createElement('u2-goals'));
   }
 
   _renderDiagnostics() {
