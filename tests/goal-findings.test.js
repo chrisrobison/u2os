@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { getDb, closeAllForTests } from '../server/db/connection.js';
 import { createGoalDraft, controlGoal, updateGoalDraft } from '../server/agent/goal-store.js';
-import { listGoalFindings, reviewGoalFinding } from '../server/agent/goal-findings.js';
+import { getGoalResearchUpdate, listGoalFindings, reviewGoalFinding } from '../server/agent/goal-findings.js';
 import { createRun, recordRunPlan } from '../server/agent/run-store.js';
 import { recordAudit } from '../server/policy/policy-engine.js';
 import { startServer } from './helpers/authed-server.js';
@@ -21,14 +21,15 @@ async function withHome(fn) {
   try { await fn(); }
   finally { closeAllForTests(); delete process.env.U2OS_HOME; fs.rmSync(dir, { recursive: true, force: true }); }
 }
-function search(goal, ownerId, results, status = 'executed', mock = false) {
+function search(goal, ownerId, results, status = 'executed', mock = false, existingRunId = null) {
   const correlationId = `finding_fixture_${++fixtureSequence}`;
-  const runId = createRun({ correlationId, actorId: ownerId, objective: goal.objective, goalId: goal.id });
-  recordRunPlan(runId, { reasoning_summary: 'fixture', actions: [{ tool: 'web.search', arguments: { query: 'roles' } }] });
+  const runId = existingRunId || createRun({ correlationId, actorId: ownerId, objective: goal.objective, goalId: goal.id });
+  const stepIndex = recordRunPlan(runId, { reasoning_summary: 'fixture', actions: [{ tool: 'web.search', arguments: { query: 'roles' } }] });
   const action = recordAudit({ requestedBy: ownerId, tool: 'web.search', arguments: { query: 'roles' }, status, correlationId,
     accountBinding: { providerId: 'brave-search', instanceId: 'account_fixture', label: 'Research account', apiKey: 'must not leak' } });
-  getDb().prepare('UPDATE agent_actions SET result = ? WHERE id = ?').run(JSON.stringify({ query: 'roles', results, mock }), action.id);
-  getDb().prepare('UPDATE agent_run_steps SET status = ?, action_id = ? WHERE run_id = ?').run(status, action.id, runId);
+  getDb().prepare('UPDATE agent_actions SET result = ?, updated_at = ? WHERE id = ?')
+    .run(JSON.stringify({ query: 'roles', results, mock }), new Date(Date.UTC(2020, 0, 1) + fixtureSequence * 1000).toISOString(), action.id);
+  getDb().prepare('UPDATE agent_run_steps SET status = ?, action_id = ? WHERE run_id = ? AND step_index = ?').run(status, action.id, runId, stepIndex);
   getDb().prepare("UPDATE agent_runs SET status = 'completed' WHERE id = ?").run(runId);
   return { runId, actionId: action.id };
 }
@@ -65,6 +66,67 @@ test('successful search links deduplicate across runs, with durable owner review
   assert.equal(list.findings[0].sources[0].goalRevision, 1);
   assert.throws(() => reviewGoalFinding(goal.id, 'owner', finding.id,
     { reviewStatus: 'relevant', expectedRevision: reviewed.revision, expectedGoalRevision: 1 }), { status: 409 });
+}));
+
+test('per-run research updates distinguish new links from repeats without resetting reviews', () => withHome(async () => {
+  const goal = createGoalDraft('owner', draft);
+  const first = search(goal, 'owner', [item, item], 'executed', true);
+  const initial = getGoalResearchUpdate(goal.id, 'owner', first.runId);
+  assert.equal(initial.newCount, 1); assert.equal(initial.repeatedCount, 0);
+  assert.equal(initial.newFindings[0].sources[0].actionId, first.actionId);
+  assert.equal(initial.newFindings[0].sources[0].mock, true);
+  reviewGoalFinding(goal.id, 'owner', initial.newFindings[0].id,
+    { reviewStatus: 'dismissed', expectedRevision: 1, expectedGoalRevision: 1 });
+  const nextItem = { ...item, title: 'Another role', url: 'https://example.test/new' };
+  const second = search(goal, 'owner', [item, nextItem]);
+  search(goal, 'owner', [item, nextItem], 'executed', false, second.runId);
+  const update = getGoalResearchUpdate(goal.id, 'owner', second.runId);
+  assert.equal(update.newCount, 1); assert.equal(update.repeatedCount, 1);
+  assert.deepEqual(update.newFindings.map((finding) => finding.title), ['Another role']);
+  assert.equal(update.coverage.successfulSearches, 2);
+  assert.equal(update.newFindings[0].sourceCount, 2);
+  assert.equal(listGoalFindings(goal.id, 'owner').findings.find((finding) => finding.url.includes('id=2')).reviewStatus, 'dismissed');
+  closeAllForTests(); getDb();
+  assert.deepEqual(getGoalResearchUpdate(goal.id, 'owner', second.runId), update);
+  assert.equal(getGoalResearchUpdate(goal.id, 'owner', first.runId).newCount, 1);
+  controlGoal(goal.id, 'owner', { operation: 'pause', expectedRevision: 1 });
+  updateGoalDraft(goal.id, 'owner', { ...draft, constraints: ['Local only'], expectedRevision: 2 });
+  assert.equal(getGoalResearchUpdate(goal.id, 'owner', first.runId).goalRevision, 1);
+  assert.equal(getGoalResearchUpdate(goal.id, 'owner', first.runId).newFindings[0].reviewGoalRevision, 1);
+}));
+
+test('research updates enforce exact goal/run/owner isolation and successful outcomes', () => withHome(async () => {
+  const goal = createGoalDraft('owner', draft);
+  const other = createGoalDraft('owner', draft);
+  const first = search(goal, 'owner', [item]);
+  for (const status of ['failed', 'pending', 'needs_attention']) {
+    const run = search(goal, 'owner', [item], status);
+    const update = getGoalResearchUpdate(goal.id, 'owner', run.runId);
+    assert.equal(update.newCount, 0); assert.equal(update.repeatedCount, 0);
+    assert.equal(update.coverage.successfulSearches, 0);
+  }
+  assert.throws(() => getGoalResearchUpdate(goal.id, 'other', first.runId), { status: 404 });
+  assert.throws(() => getGoalResearchUpdate(other.id, 'owner', first.runId), { status: 404 });
+  assert.throws(() => getGoalResearchUpdate(goal.id, 'owner', 'missing'), { status: 404 });
+}));
+
+test('research updates expose bounded previews, incomplete indexing and limited results', () => withHome(async () => {
+  const goal = createGoalDraft('owner', draft);
+  for (let index = 0; index < 20; index++) search(goal, 'owner', [item]);
+  const recent = search(goal, 'owner', Array.from({ length: 31 }, (_, index) => ({ ...item, url: `https://example.test/new/${index}` })));
+  const pending = getGoalResearchUpdate(goal.id, 'owner', recent.runId);
+  assert.equal(pending.coverage.pendingGoalActions, 1);
+  assert.equal(pending.coverage.pendingSearches, 1);
+  assert.equal(pending.newCount, 0);
+  const update = getGoalResearchUpdate(goal.id, 'owner', recent.runId);
+  assert.equal(update.newCount, 30); assert.equal(update.newFindings.length, 20);
+  assert.equal(update.findingsTruncated, true);
+  assert.equal(update.coverage.limitedSearches, 1);
+  assert.equal(update.coverage.pendingGoalActions, 0);
+  getDb().exec('DROP TABLE goal_finding_sources; DROP TABLE goal_finding_index; DROP TABLE goal_findings');
+  closeAllForTests(); getDb();
+  getGoalResearchUpdate(goal.id, 'owner', recent.runId);
+  assert.equal(getGoalResearchUpdate(goal.id, 'owner', recent.runId).newCount, 30);
 }));
 
 test('failed pending uncertain reads and unsafe URLs never become findings', () => withHome(async () => {
@@ -124,6 +186,20 @@ test('finding API requires owner auth and uses no-store for listing and review',
     const result = await fetch(`${base}/api/goals/${goal.id}/findings`);
     assert.equal(result.headers.get('cache-control'), 'no-store');
     const finding = (await result.json()).findings[0];
+    const runId = finding.sources[0].runId;
+    assert.equal((await nativeFetch(`${base}/api/goals/${goal.id}/runs/${runId}`)).status, 401);
+    const evidence = await fetch(`${base}/api/goals/${goal.id}/runs/${runId}`);
+    assert.equal(evidence.headers.get('cache-control'), 'no-store');
+    assert.equal((await evidence.json()).researchUpdate.newCount, 1);
+    getDb().exec(`CREATE TRIGGER research_update_failure BEFORE INSERT ON goal_finding_sources
+      BEGIN SELECT RAISE(ABORT, 'private fixture storage error'); END`);
+    const another = search(goal, owner, [{ ...item, url: 'https://example.test/next' }]);
+    const unavailable = await (await fetch(`${base}/api/goals/${goal.id}/runs/${another.runId}`)).json();
+    assert.deepEqual(unavailable.researchUpdate, { unavailable: true });
+    assert.equal(unavailable.status, 'completed');
+    assert.ok(!JSON.stringify(unavailable).includes('private fixture storage error'));
+    getDb().exec('DROP TRIGGER research_update_failure');
+    assert.equal((await (await fetch(`${base}/api/goals/${goal.id}/runs/${another.runId}`)).json()).researchUpdate.newCount, 1);
     const reviewed = await fetch(`${base}/api/goals/${goal.id}/findings/${finding.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ reviewStatus: 'relevant', expectedRevision: 1, expectedGoalRevision: 1 }) });
     assert.equal(reviewed.status, 200);
