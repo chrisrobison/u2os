@@ -132,6 +132,14 @@ lazy fetch, in-flight/SSE preservation, stale records, single-flight refresh and
 inert private text ([saved review suite](../tests/e2e/saved-approval-review.spec.js)).
 These are not configured personal-model browser delivery or live-provider proof.
 
+For fresh personal setup, open Model and explicitly supply a trusted endpoint and
+installed model name. Saving does not send a test prompt. Restart the server and
+reload the browser before use; saved configuration alone is not connectivity or
+quality validation. Advanced provider roles remain read-only in this form. The
+[model setup browser suite](../tests/e2e/model-setup.spec.js) uses unreachable
+fixture endpoints and fake encrypted keys; it proves setup, stale-save protection
+and restart presentation, not successful real-model planning.
+
 Two further fresh/existing-home cases fork the real server, send an authenticated
 approval through native HTTP and gate on the exact original-account Gmail POST
 at an isolated loopback provider fixture. SIGKILL occurs while the durable attempt

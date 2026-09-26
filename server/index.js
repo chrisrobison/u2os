@@ -234,7 +234,7 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
   const router = new Router({ auth, publicOrigin });
   const startTime = Date.now();
   registerAuthRoutes(router, { auth, agent, demoOwnerEntityId });
-  registerModelRoutes(router);
+  registerModelRoutes(router, { modelRouter });
   registerHealthRoutes(router, { dataDir, dbPath, startTime });
   registerAgentRoutes(router, { agent });
   registerGoalRoutes(router, { agent });

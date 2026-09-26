@@ -30,6 +30,8 @@ export class U2Agent extends HTMLElement {
   }
 
   connectedCallback() {
+    if (!this._onModelSaved) this._onModelSaved = () => { this._disablePlanner(); this._loadPlannerStatus(); };
+    window.addEventListener('u2-model-configuration-saved', this._onModelSaved);
     if (this._built) return;
     this._built = true;
     this._render();
@@ -37,21 +39,32 @@ export class U2Agent extends HTMLElement {
     this._loadPlannerStatus();
   }
 
+  disconnectedCallback() { window.removeEventListener('u2-model-configuration-saved', this._onModelSaved); }
+
+  _disablePlanner() {
+    this._plannerUnavailable = true;
+    this._input.disabled = true; this._sendBtn.disabled = true; this._micBtn.disabled = true;
+    if (this._voiceMode) this._stopVoice();
+  }
+
   async _loadPlannerStatus() {
+    const generation = this._modelStatusGeneration = (this._modelStatusGeneration || 0) + 1;
     try {
       const model = await getModelStatus();
-      if (model.plannerStatus === 'configuration-required') {
-        this._plannerUnavailable = true;
-        this._notice.textContent = 'Planner unavailable. Configure a local or remote model via /api/model or config/config.json, then restart U2OS.';
+      if (!this.isConnected || generation !== this._modelStatusGeneration) return;
+      if (model.restartRequired || (model.runtimePlannerStatus || model.plannerStatus) === 'configuration-required') {
+        this._disablePlanner();
+        this._notice.textContent = model.restartRequired ? 'Model settings changed. Restart U2OS before planning with saved settings. Review ' : 'Planner unavailable. Configure a local or remote model in ';
+        const setup = document.createElement('a'); setup.href = '#/model'; setup.textContent = 'Model setup';
+        this._notice.append(setup, ', then restart U2OS.');
         this._notice.hidden = false;
-        this._input.disabled = true;
-        this._sendBtn.disabled = true;
-        this._micBtn.disabled = true;
       } else if (model.plannerStatus === 'demo') {
         this._notice.textContent = 'Demo planner: responses and actions use deterministic fixtures, not personal reasoning.';
         this._notice.hidden = false;
       }
     } catch {
+      if (!this.isConnected || generation !== this._modelStatusGeneration) return;
+      this._disablePlanner();
       this._notice.textContent = 'Planner status unavailable; check the server connection before sending a request.';
       this._notice.hidden = false;
     }
@@ -240,7 +253,7 @@ export class U2Agent extends HTMLElement {
 
   async _onVoiceTranscript({ text, speaker }) {
     await this._restorePromise;
-    if (!text) return;
+    if (!text || this._plannerUnavailable) return;
     const generation = this._restoreGeneration || 0;
     this._appendBubble('user', text);
     this._pipeline.setBusy('thinking');

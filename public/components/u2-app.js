@@ -17,6 +17,7 @@ import './u2-operations.js';
 import './u2-goals.js';
 import './u2-triggers.js';
 import './u2-diagnostics.js';
+import './u2-model.js';
 
 // Dashboard contexts the #/dashboards picker offers, per PROMPT.md section
 // 10's examples + docs/dashboards.md's Phase 2 contexts. 'before-meeting'
@@ -257,6 +258,9 @@ export class U2App extends HTMLElement {
         break;
       case 'connectors':
         this._renderConnectors();
+        break;
+      case 'model':
+        this._setWorkspace('', document.createElement('u2-model'));
         break;
       case 'voice':
         this._renderVoice();

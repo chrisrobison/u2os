@@ -7,7 +7,24 @@ Explicit demo homes default to the deterministic `MockModelProvider`; personal h
 
 In both cases the model is planning infrastructure only: returned JSON is validated by the shared `validatePlan()` against the registered tool names and argument schemas (server/agent/plan-validator.js) before anything reaches the policy engine, and every consequential proposal still passes through that same policy engine regardless of which provider produced it.
 
-## Configuring providers (current HTTP API)
+## Owner setup
+
+Open **Model** in the native browser navigation, or **Model setup** in the
+unavailable-planner notice. Explicitly choose the existing OpenAI-compatible or
+Anthropic adapter, installed model name, endpoint and timeout. Setup does not
+probe an endpoint or send a prompt. URL credentials/query/fragments are refused
+by this form; supply keys only through its password field. Keys use the existing
+encrypted vault, are never prefilled or stored by the UI, and the field clears
+on submission or leaving the view. Blank keeps a selected provider's existing key.
+
+Saving requires an explicit server restart followed by browser reload; it is
+not hot reload or proof of connectivity/model quality. The composer remains
+disabled when saved settings await restart, including after browser reload or a
+lost save confirmation discovered through metadata. Advanced multi-provider
+configurations have a read-only role summary here; use the API/config file below
+to edit them. No roles/fallbacks are replaced by the simple form.
+
+## Configuring providers (HTTP API)
 
 `POST /api/model`:
 
@@ -29,7 +46,16 @@ or, for Anthropic:
 
 The endpoint and model name are stored in `U2OS_HOME/config/config.json`; a supplied API key is encrypted in the existing credential vault under `model-<provider>` and is never returned by `GET /api/model`. Restart U2OS after changing providers. Only an isolated demo home may select `{ "provider": "mock" }`; personal homes reject that choice.
 
-`GET /api/model` reports `plannerStatus` as `configuration-required`, `configured`, or `demo`. In a personal home with no configured real/local planner, chat and voice planning return HTTP 503 with an actionable message, no action is proposed, and the agent panel disables its composer. This is a configuration check, not a live model-endpoint probe: a configured provider can still be unavailable at request time, in which case a sanitized error is reported rather than retrying through a mock.
+`GET /api/model` reports saved `plannerStatus` as `configuration-required`, `configured`, or `demo`, plus the booted router's `runtimePlannerStatus` and `restartRequired`. Any successful API save (including key-only changes), or changed non-secret model settings on disk, reports restart required until the server restarts. This metadata is not endpoint reachability. In a personal home with no configured running real/local planner, chat and voice planning return HTTP 503 with an actionable message, no action is proposed, and the agent panel disables its composer. A configured provider can still be unavailable at request time, in which case a sanitized error is reported rather than retrying through a mock.
+
+The response also includes a non-secret `configurationRevision`. Sending it in
+either POST shape makes the save conditional: a stale/malformed revision returns
+409 before config/vault writes. The browser always uses it. It hashes redacted
+model configuration, not secret values or the whole config file, so key-only
+changes do not alter it; restart state still changes. Legacy API callers may omit
+it and retain unconditional behavior. The UI does not expose key deletion or
+concurrent-secret reconciliation. API runtime planning behavior remains unchanged;
+the browser's pending-restart guard is not a new server execution/policy boundary.
 
 The same endpoint also accepts the multi-provider shape shown below. Provider API keys may be supplied inside their provider entries; they are removed from `config.json` and encrypted in the vault. Changes currently require a restart.
 

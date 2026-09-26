@@ -324,6 +324,7 @@ u2-app {
 .operation-review { margin-bottom: var(--space-5); padding: var(--space-4); border: var(--border-width) solid var(--border-color); background: var(--bg-card); overflow-wrap: anywhere; }
 .operation-review h2 { font-size: var(--text-sm); }
 .operation-review > button { margin: var(--space-2) 0; }
+.model-form { max-width: 640px; display: grid; gap: var(--space-3); }
 
 @media (max-width: 600px) {
   .operation-card { grid-template-columns: 1fr; gap: var(--space-1); }
