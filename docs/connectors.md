@@ -176,7 +176,7 @@ authorization, rate-limit, timeout and unavailable failures are sanitized and
 actionable. There is no retry or mock fallback. Existing cached evidence is
 retained, not treated as fresh sync success. Create/reschedule are deliberately
 outside this read boundary; their cautious uncertain-outcome handling is
-unchanged. Gmail/Contacts operation deadlines remain separate work.
+unchanged. Gmail and Contacts use the same read boundary below.
 
 - List: `GET https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=&timeMax=&singleEvents=true&orderBy=startTime`
 - Create: `POST .../events`
@@ -207,8 +207,23 @@ invented cache identities. Sending remains outside the read deadline boundary.
 
 ## Google Contacts provider — real API calls
 
+Search/sync have one 30-second read deadline including OAuth, headers and JSON
+parsing. Late replies cannot import entities/facts, publish successful sync or
+persist refreshed credentials. Verified timeout/auth/rate-limit/unavailable
+failures remain actionable in account-specific sync health without forwarding
+provider text. No retry, mock fallback or provider write is performed.
+
+The entire fetched page is validated before import: missing/blank/non-string
+resource identities or malformed name/email/phone fields fail without invented
+records. Search filters display names case-insensitively within that one page;
+unnamed contacts cannot match a name query. This is not provider-side free-text
+search or exhaustive pagination. Successful sync describes only the fetched
+page, not all contacts or proof that previously imported facts remain current.
+Existing records and fact IDs are retained, including facts omitted from later
+responses; no removal reconciliation or identity-format migration occurs.
+
 - `GET https://people.googleapis.com/v1/people/me/connections?personFields=names,emailAddresses,phoneNumbers`
-- Map each connection → an `entities` row (`type: 'Person'`), upserted by `resourceName` (id convention: `gc_<resourceName-sanitized>`), plus `facts` rows for email/phone with `source: 'google-contacts'`, `inferred: false`, `confidence: 1.0`.
+- Map each connection → an `entities` row (`type: 'Person'`), upserted by `resourceName` (new-account ID: `gc_<instanceId>_<resourceName-sanitized>`; migrated legacy account retains `gc_<resourceName-sanitized>`), plus `facts` rows for email/phone with `source: 'google-contacts'`, `inferred: false`, `confidence: 1.0`.
 
 ## Local email drafts
 
