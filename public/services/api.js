@@ -161,6 +161,10 @@ export function createConversation() {
   return request('/api/agent/conversations', { method: 'POST', headers: JSON_HEADERS, body: '{}' });
 }
 
+export function listConversations() {
+  return request('/api/agent/conversations');
+}
+
 export function getConversationTurns(id) {
   return request(`/api/agent/conversations/${encodeURIComponent(id)}/turns`);
 }

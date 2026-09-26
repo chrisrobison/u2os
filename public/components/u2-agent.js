@@ -1,4 +1,4 @@
-import { getModelStatus, createConversation, getConversationTurns, sendAgentMessage, sendVoiceMessage } from '../services/api.js';
+import { getModelStatus, createConversation, listConversations, getConversationTurns, sendAgentMessage, sendVoiceMessage } from '../services/api.js';
 import { AudioPipeline } from '../services/audio.js';
 import { VoiceprintService } from '../services/voiceprint.js';
 import './u2-approval.js';
@@ -80,6 +80,7 @@ export class U2Agent extends HTMLElement {
       <div class="agent-panel">
         <div class="agent-panel__header">
           <span class="agent-panel__title">Agent</span>
+          <select class="agent-panel__conversations" aria-label="Saved conversations"><option value="">New conversation</option></select>
           <button type="button" class="btn agent-panel__new-chat" title="Start a new conversation">New chat</button>
           <u2-agent-status></u2-agent-status>
         </div>
@@ -100,6 +101,7 @@ export class U2Agent extends HTMLElement {
     this._sendBtn = this.querySelector('button[type="submit"]');
     this._micBtn = this.querySelector('[data-action="mic-toggle"]');
     this._newChatBtn = this.querySelector('.agent-panel__new-chat');
+    this._conversationPicker = this.querySelector('.agent-panel__conversations');
     this._form = this.querySelector('.agent-panel__composer');
 
     this._setupMicSupport();
@@ -117,13 +119,11 @@ export class U2Agent extends HTMLElement {
     });
 
     this._micBtn.addEventListener('click', () => this._toggleVoice());
-    this._newChatBtn.addEventListener('click', () => {
-      this._restoreGeneration = (this._restoreGeneration || 0) + 1;
-      this._conversationId = null;
-      try { localStorage.removeItem(CONVERSATION_KEY); } catch { /* storage may be disabled */ }
-      this._pendingActionIds.clear();
-      this._transcript.replaceChildren();
-      this._setStatus('idle');
+    this._newChatBtn.addEventListener('click', () => this._startNewChat());
+    this._conversationPicker.addEventListener('change', () => {
+      const id = this._conversationPicker.value;
+      if (id) this._restorePromise = this._openConversation(id);
+      else this._startNewChat();
     });
 
     // Optimistic: the moment an approval button is pressed, something is
@@ -176,6 +176,7 @@ export class U2Agent extends HTMLElement {
       const res = await sendAgentMessage(text, conversationId);
       if (generation !== (this._restoreGeneration || 0)) return;
       this._renderAgentResponse(res);
+      this._loadConversations();
       if (res.conversationSaved === false) this._appendBubble('system', 'The action result was returned, but this reply could not be saved to conversation history.');
       this._setStatus((res.pendingActionIds || []).length ? 'waiting-for-approval' : 'idle');
     } catch (err) {
@@ -183,9 +184,11 @@ export class U2Agent extends HTMLElement {
       this._appendBubble('system', `Something went wrong: ${err.message}`);
       this._setStatus('idle');
     } finally {
-      this._sendBtn.disabled = Boolean(this._plannerUnavailable);
-      this._input.disabled = Boolean(this._plannerUnavailable);
-      if (!this._plannerUnavailable) this._input.focus();
+      if (generation === (this._restoreGeneration || 0)) {
+        this._sendBtn.disabled = Boolean(this._plannerUnavailable);
+        this._input.disabled = Boolean(this._plannerUnavailable);
+        if (!this._plannerUnavailable) this._input.focus();
+      }
     }
   }
 
@@ -255,6 +258,7 @@ export class U2Agent extends HTMLElement {
       const res = await sendVoiceMessage(text, speaker, conversationId);
       if (generation !== (this._restoreGeneration || 0)) return;
       this._renderAgentResponse(res);
+      this._loadConversations();
       if (res.conversationSaved === false) this._appendBubble('system', 'The reply could not be saved to conversation history.');
 
       const hasPending = (res.pendingActionIds || []).length > 0;
@@ -304,25 +308,78 @@ export class U2Agent extends HTMLElement {
     if (generation === (this._restoreGeneration || 0)) {
       this._conversationId = created.conversationId;
       try { localStorage.setItem(CONVERSATION_KEY, this._conversationId); } catch { /* storage may be disabled */ }
+      this._loadConversations();
     }
     return created.conversationId;
+  }
+
+  _startNewChat() {
+    this._restoreGeneration = (this._restoreGeneration || 0) + 1;
+    this._conversationId = null;
+    try { localStorage.removeItem(CONVERSATION_KEY); } catch { /* storage may be disabled */ }
+    this._pendingActionIds.clear();
+    this._transcript.replaceChildren();
+    this._setStatus('idle');
+    this._sendBtn.disabled = Boolean(this._plannerUnavailable);
+    this._input.disabled = Boolean(this._plannerUnavailable);
+    this._conversationPicker.disabled = false;
+    this._conversationPicker.value = '';
+    this._loadConversations();
   }
 
   async _restoreConversation() {
     let id;
     try { id = localStorage.getItem(CONVERSATION_KEY); } catch { return; }
-    if (!id) return;
-    const generation = this._restoreGeneration || 0;
+    if (!id) { await this._loadConversations(); return; }
+    await this._openConversation(id);
+    await this._loadConversations();
+  }
+
+  async _openConversation(id) {
+    const previousId = this._conversationId;
+    const generation = this._restoreGeneration = (this._restoreGeneration || 0) + 1;
+    this._conversationPicker.disabled = true;
     try {
       const { turns } = await getConversationTurns(id);
-      if (generation !== (this._restoreGeneration || 0)) return;
+      if (generation !== this._restoreGeneration) return;
       this._conversationId = id;
+      try { localStorage.setItem(CONVERSATION_KEY, id); } catch { /* storage may be disabled */ }
+      this._pendingActionIds.clear();
+      this._setStatus('idle');
+      this._sendBtn.disabled = Boolean(this._plannerUnavailable);
+      this._input.disabled = Boolean(this._plannerUnavailable);
       this._transcript.replaceChildren();
       for (const turn of turns) this._appendBubble(turn.role === 'assistant' ? 'agent' : turn.role, turn.content + (turn.truncated ? '…' : ''));
+      this._conversationPicker.value = id;
+      if (this._notice.textContent.startsWith('That conversation is unavailable.')) this._notice.hidden = true;
     } catch {
+      if (generation !== this._restoreGeneration) return;
+      this._conversationPicker.value = previousId || '';
+      if (!previousId) {
+        try { localStorage.removeItem(CONVERSATION_KEY); } catch { /* storage may be disabled */ }
+        this._conversationId = null;
+      }
+      this._notice.textContent = 'That conversation is unavailable. Choose another saved conversation.';
+      this._notice.hidden = false;
+      await this._loadConversations();
+    } finally {
+      if (generation === this._restoreGeneration) this._conversationPicker.disabled = false;
+    }
+  }
+
+  async _loadConversations() {
+    const generation = this._restoreGeneration || 0;
+    try {
+      const { conversations } = await listConversations();
       if (generation !== (this._restoreGeneration || 0)) return;
-      try { localStorage.removeItem(CONVERSATION_KEY); } catch { /* storage may be disabled */ }
-      this._conversationId = null;
+      this._conversationPicker.replaceChildren(new Option('New conversation', ''));
+      for (const conversation of conversations) {
+        const label = String(conversation.label || 'Untitled conversation').replace(/\s+/g, ' ').slice(0, 80);
+        this._conversationPicker.add(new Option(label, conversation.id));
+      }
+      this._conversationPicker.value = this._conversationId || '';
+    } catch {
+      // A list outage must not discard the current conversation or transcript.
     }
   }
 
