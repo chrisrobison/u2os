@@ -96,9 +96,11 @@ const warnedOnce = new Set();
  * not per-connector. Every real provider module's isConnected(vaultKey,
  * dataDir) takes an explicit vault key (no default), matching
  * oauth/google-oauth.js's existing convention -- see that file's header. */
-function isProviderInstanceConnected(providerId, instance, dataDir) {
+export function isProviderInstanceConnected(providerId, instance, dataDir) {
   const real = REAL_PROVIDERS[providerId];
-  if (!real || typeof real.isConnected !== 'function' || !instance) return false;
+  // Retained credentials are evidence, not permission to enable an account.
+  // Fail closed for unknown future statuses as well as pending/disconnected.
+  if (!real || typeof real.isConnected !== 'function' || !instance || instance.deleted_at || instance.status !== 'connected') return false;
   try {
     return !!real.isConnected(instance.vault_key, dataDir);
   } catch {

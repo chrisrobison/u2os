@@ -80,7 +80,7 @@ test('queued notification binding survives SQLite reopen and does not send twice
   assert.equal(getQueuedActionByActionId(proposal.id).attempt_count, 1);
 }));
 
-for (const invalidation of ['deleted', 'disconnected', 'reconnected', 'legacy missing binding']) {
+for (const invalidation of ['deleted', 'disconnected', 'retained credentials with disconnected status', 'reconnected', 'legacy missing binding']) {
   test(`queued notification with ${invalidation} stops without attempting delivery`, () => withAccounts(async ({ agent, db, dir, first, second, select, seen, propose, queue }) => {
     const proposal = await propose();
     queue(proposal);
@@ -88,6 +88,7 @@ for (const invalidation of ['deleted', 'disconnected', 'reconnected', 'legacy mi
     const row = findInstance(db, 'webhook', first.id);
     if (invalidation === 'deleted') deleteConnectionInstance(db, { row, dataDir: dir });
     if (invalidation === 'disconnected') deleteEncryptedFile(row.vault_key, dir);
+    if (invalidation === 'retained credentials with disconnected status') db.prepare("UPDATE connection_instances SET status = 'disconnected' WHERE id = ?").run(row.id);
     if (invalidation === 'reconnected') updateConnectionInstance(db, { row, credentials: { webhookUrl: 'https://notify.example.test/replaced-token', format: 'json' }, dataDir: dir });
     if (invalidation === 'legacy missing binding') db.prepare('UPDATE agent_actions SET account_binding = NULL WHERE id = ?').run(proposal.id);
     const result = await agent.actionQueueWorker.processAction(proposal.id);
