@@ -74,3 +74,11 @@ bypass exists. Explicit original-instance retirement and restored-action
 reconciliation are subsequent work; do not remove the marker to start a copy.
 See [offline verification](backups.md). Stop older releases before upgrading: they do not participate
 in this guard protocol. No live owner-account or hardware validation was used.
+
+Installation initialization also assigns a stable random ID in existing
+`config/installation.json`. Additive private atomic writes happen under this
+guard; read-only identity inspection never assigns one. This is separate from
+owner/account identity, carries no authority and is not a cross-path lock.
+Inactive restore records the archived ID (or honest legacy absence) for the
+future explicit original-instance retirement workflow. See [identity and
+metadata compatibility](backups.md#installation-identity-prerequisite).
