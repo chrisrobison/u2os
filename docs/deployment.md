@@ -11,9 +11,10 @@ background drain; it does not close HTTP or cancel in-flight request handlers.
 Local initialization and additive migrations may still occur before binding.
 The [local runtime ownership guard](runtime-ownership.md) prevents simultaneous
 executors for one canonical home and retains ownership through started-handler
-and background drain. Setup-owner, seed and maintenance commands use the same
-lock and require a stopped runtime. It is not yet a backup or restored-copy lock;
-coordinated backup/recovery remains unfinished. Stop older releases before
+and background drain. Setup-owner, seed, maintenance and backup creation use
+the same lock and require a stopped runtime. Coherent offline snapshot creation
+is supported; encrypted archives and isolated inactive recovery remain unfinished.
+The guard is not a restored-copy lock. Stop older releases before
 upgrading, because they do not participate in the new guard protocol.
 
 ## Configuration
@@ -60,7 +61,11 @@ A new non-loopback instance refuses startup until an owner exists. Initialize a 
 
 Systemd and launchd templates under `deploy/` retain loopback. Change the bind only after setup and intentionally. mDNS is disabled on loopback and best-effort on LAN binds. Use a firewall and carefully configured TLS reverse proxy for intentional remote access.
 
-`npm run backup` creates a full snapshot; `npm run restore -- /path/to/archive.tar.gz` restores it. Authenticated `GET /api/export` produces portable JSON without connector secrets. U2OS has no built-in TLS termination, supported public-internet recipe, Windows service, distributed limiter, or production rollback system.
+Stop the runtime and wait for shutdown before `npm run backup`. Creation holds the canonical-home guard through staging and publication, excluding supported runtime/maintenance writers. SQLite is captured without source migrations through the [supported backup API](https://www.sqlite.org/backup.html), including committed WAL data and row IDs; the staged database passes integrity checking and is self-contained. SQLite backup requires Node.js 22.16+ ([Node API](https://nodejs.org/api/sqlite.html#sqlitebackupsource-db-path-options)). Configuration, policies, encrypted credential files/master key, cache and other regular files are staged under the same guard. Links/special files are refused instead of following external targets. Runtime lock files and raw application SQLite sidecars are excluded.
+
+The completed archive is mode 0600, published without overwriting an existing file, and must be outside the source home (including parent-directory aliases). This is an offline cooperative consistency strategy, not support for arbitrary external writers, older releases or network filesystems. Partial staging is cleaned on normal failure; after process interruption an owner may review private `.u2os-backup-stage-*` directories in the output parent. These can contain credentials. Never delete an active staging directory or runtime guard.
+
+Current `.tar.gz` archives remain outer-unencrypted and include the credential master key. Keep them as private as the live home. Encryption and recovery are subsequent slices. `npm run restore -- /path/to/archive.tar.gz` is still the legacy extraction path: do not merge into a populated destination or run original/restored copies concurrently. Use an isolated destination for validation; no automatic inactive-copy safeguard exists yet. Authenticated `GET /api/export` produces portable JSON without connector secrets. U2OS has no built-in TLS termination, supported public-internet recipe, Windows service, distributed limiter, or production rollback system.
 
 `npm run maintain` runs SQLite and event-log integrity checks. `npm run maintain -- --retention-days 365` previews event pruning; add `--apply` only after taking a backup. Applied retention writes a `system.event_retention_applied` audit event before removing older rows. Retention is intentionally manual rather than an automatic background deletion policy.
 

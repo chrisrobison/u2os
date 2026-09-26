@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Full-fidelity backup/restore of U2OS_HOME. Per docs/deployment.md §7.
+// Coordinated offline snapshots and legacy tar restore of U2OS_HOME.
 //
 // IMPLEMENTATION CHOICE (tar vs. a custom archive format): this shells out
 // to the system `tar` binary via node:child_process rather than
@@ -13,11 +13,9 @@
 //     (macOS and Linux -- see docs/deployment.md's "what this phase
 //     deliberately does not do": Windows Service packaging is future
 //     work, so Windows' lack of a bundled `tar` is out of scope here).
-//   - System tar preserves permissions, symlinks, and every other bit of
-///    filesystem metadata "for free" -- a hand-rolled format would need to
-//     reimplement that fidelity itself, for a one-off local backup tool
-//     where the extra dependency-free code isn't worth the risk of getting
-//     an edge case wrong.
+//   - Creation archives private staged regular files only, not the live
+//     directory. Source links/special files are rejected; SQLite is captured
+//     through its backup API and runtime locks/sidecars are excluded.
 //
 // SECURITY: the resulting .tar.gz contains U2OS_HOME in full, including
 // credentials/*.enc.json AND the master key that decrypts them (a backup
@@ -29,6 +27,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { getDataDir } from '../db/connection.js';
+import { canonicalDataHome } from '../runtime/home-guard.js';
+import { withOfflineHome } from '../runtime/offline-home.js';
+import { canonicalOutputPath, stageSnapshot } from './stage.js';
 
 function timestampForFilename() {
   return new Date().toISOString().replace(/[:.]/g, '-');
@@ -46,29 +47,47 @@ function assertTarAvailable() {
 }
 
 /**
- * Creates a timestamped .tar.gz snapshot of the entire U2OS_HOME directory
- * tree (config/, policies/, db/, credentials/, cache/). Returns the
- * resolved output path.
+ * Creates a timestamped .tar.gz of an exclusively owned offline home.
+ * SQLite and related regular files are staged and checked before atomic,
+ * no-clobber publication. Returns the resolved requested output path.
  */
-export function createBackup({ dataDir = getDataDir(), outputPath } = {}) {
+export async function createBackup({ dataDir = getDataDir(), outputPath } = {}) {
   assertTarAvailable();
 
   if (!fs.existsSync(dataDir)) {
     throw new Error(`snapshot: U2OS_HOME "${dataDir}" does not exist -- nothing to back up.`);
   }
 
-  const resolvedOutputPath = path.resolve(
-    outputPath || `u2os-backup-${timestampForFilename()}.tar.gz`
-  );
-
-  fs.mkdirSync(path.dirname(resolvedOutputPath), { recursive: true });
-
-  // Archive the *contents* of dataDir at the archive root (not the
-  // enclosing directory name), so restore can extract into a U2OS_HOME of
-  // any name/location.
-  execFileSync('tar', ['-czf', resolvedOutputPath, '-C', dataDir, '.'], { stdio: 'inherit' });
-
-  return resolvedOutputPath;
+  const home = canonicalDataHome(dataDir);
+  return withOfflineHome(async () => {
+    const requestedOutputPath = path.resolve(outputPath || `u2os-backup-${timestampForFilename()}.tar.gz`);
+    const resolvedOutputPath = canonicalOutputPath(requestedOutputPath);
+    if (resolvedOutputPath === home || resolvedOutputPath.startsWith(`${home}${path.sep}`)) {
+      throw new Error('snapshot: backup output must be outside the source data home');
+    }
+    if (fs.existsSync(resolvedOutputPath)) throw new Error('snapshot: backup output already exists; choose a new filename');
+    const parent = path.dirname(resolvedOutputPath);
+    fs.mkdirSync(parent, { recursive: true });
+    const staging = fs.mkdtempSync(path.join(parent, '.u2os-backup-stage-'));
+    try {
+      fs.chmodSync(staging, 0o700);
+      const payload = path.join(staging, 'payload');
+      await stageSnapshot(home, payload);
+      const archive = path.join(staging, 'snapshot.tar.gz');
+      const fd = fs.openSync(archive, 'wx', 0o600); fs.closeSync(fd);
+      execFileSync('tar', ['-czf', archive, '-C', payload, '.'], { stdio: 'inherit' });
+      fs.chmodSync(archive, 0o600);
+      const archiveFd = fs.openSync(archive, 'r');
+      try { fs.fsyncSync(archiveFd); } finally { fs.closeSync(archiveFd); }
+      // Same-filesystem atomic publication, without replacing a prior archive.
+      try { fs.linkSync(archive, resolvedOutputPath); }
+      catch (error) {
+        if (error.code === 'EEXIST') throw new Error('snapshot: backup output already exists; choose a new filename');
+        throw error;
+      }
+      return requestedOutputPath;
+    } finally { fs.rmSync(staging, { recursive: true, force: true }); }
+  }, { dataDir: home });
 }
 
 /**
@@ -101,13 +120,18 @@ export function restoreBackup({ archivePath, dataDir = getDataDir(), force = fal
 }
 
 function printUsage() {
-  console.log(`U2OS backup/restore -- full-fidelity snapshot of U2OS_HOME.
+  console.log(`U2OS backup/restore -- offline snapshot of U2OS_HOME.
 
 Usage:
   node server/backup/snapshot.js backup [outputPath]
   node server/backup/snapshot.js restore <archivePath> [--force]
 
-  backup    Creates a timestamped .tar.gz of the entire U2OS_HOME directory
+  backup    Requires a stopped runtime and Node.js 22.16 or newer for SQLite.
+            Creates a private .tar.gz from a coherent staged U2OS_HOME snapshot.
+            Output must be outside the source home and must not already exist.
+            Links/special files are refused. Runtime locks and SQLite sidecars
+            are excluded; committed WAL data is captured through SQLite backup.
+            Includes the data directory regular files
             (config, policies, db, and credentials -- including the
             encrypted secrets AND the master key needed to decrypt them).
 
@@ -140,7 +164,7 @@ async function main() {
   const positional = rest.filter((arg) => !arg.startsWith('--'));
 
   if (mode === 'backup') {
-    const outputPath = createBackup({ outputPath: positional[0] });
+    const outputPath = await createBackup({ outputPath: positional[0] });
     console.log(`Backup written to ${outputPath}`);
     console.log(
       'WARNING: this archive contains your full U2OS data directory, including encrypted ' +

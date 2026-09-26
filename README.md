@@ -146,7 +146,7 @@ Seed an empty data directory:
 npm run seed
 ```
 
-Create a full-fidelity backup of `U2OS_HOME`:
+Stop the runtime, then create a coherent offline snapshot of `U2OS_HOME` (SQLite backup requires Node.js 22.16+):
 
 ```sh
 npm run backup
@@ -158,7 +158,7 @@ Restore a backup:
 npm run restore -- /path/to/u2os-backup.tar.gz
 ```
 
-Backups include the credential master key and are as sensitive as the live data directory. A portable, credential-free JSON export is also available from `GET /api/export`.
+Backup output is private, outside the source home and never overwrites an existing archive. Committed SQLite WAL data is captured through its backup API; source links/special files are refused. Current archives are **not outer-encrypted**: they include the credential master key and are as sensitive as the live directory. Restore safety and inactive-copy execution safeguards remain unfinished; only restore to an isolated destination and do not run original/restored copies simultaneously. A portable, credential-free JSON export is also available from `GET /api/export`.
 
 ## Deployment
 
