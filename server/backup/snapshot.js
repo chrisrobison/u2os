@@ -17,27 +17,34 @@
 //     directory. Source links/special files are rejected; SQLite is captured
 //     through its backup API and runtime locks/sidecars are excluded.
 //
-// SECURITY: the resulting .tar.gz contains U2OS_HOME in full, including
-// credentials/*.enc.json AND the master key that decrypts them (a backup
-// that can't decrypt its own credentials on restore isn't useful). The
-// archive is therefore exactly as sensitive as the live data directory --
-// store and transmit it accordingly. This is documented here and in the
-// CLI's own usage text below.
+// SECURITY: plaintext payloads include credentials AND their master key.
+// Opt-in authenticated encryption protects that payload with an independent
+// secret kept outside the archive; legacy plaintext output remains explicitly
+// UNENCRYPTED. All staging remains private, including before authentication.
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { getDataDir } from '../db/connection.js';
 import { canonicalDataHome } from '../runtime/home-guard.js';
 import { withOfflineHome } from '../runtime/offline-home.js';
 import { canonicalOutputPath, stageSnapshot } from './stage.js';
+import { archiveFormat, encryptArchive, decryptArchive, validateBackupPassphrase } from './encryption.js';
+import { readBackupPassphrase } from './passphrase.js';
 
 function timestampForFilename() {
   return new Date().toISOString().replace(/[:.]/g, '-');
 }
 
+function tarOptions(stdio = 'inherit') {
+  const env = { ...process.env };
+  delete env.U2OS_BACKUP_PASSPHRASE;
+  return { stdio, env };
+}
+
 function assertTarAvailable() {
   try {
-    execFileSync('tar', ['--version'], { stdio: 'ignore' });
+    execFileSync('tar', ['--version'], tarOptions('ignore'));
   } catch {
     throw new Error(
       'snapshot: the system "tar" binary is required for backup/restore but was not found on PATH. ' +
@@ -47,12 +54,15 @@ function assertTarAvailable() {
 }
 
 /**
- * Creates a timestamped .tar.gz of an exclusively owned offline home.
+ * Creates a timestamped .tar.gz (or authenticated .tar.gz.enc) of an
+ * exclusively owned offline home. A supplied passphrase implies encryption.
  * SQLite and related regular files are staged and checked before atomic,
  * no-clobber publication. Returns the resolved requested output path.
  */
-export async function createBackup({ dataDir = getDataDir(), outputPath } = {}) {
+export async function createBackup({ dataDir = getDataDir(), outputPath, encrypted = false, passphrase } = {}) {
   assertTarAvailable();
+  const useEncryption = encrypted || passphrase !== undefined;
+  if (useEncryption) validateBackupPassphrase(passphrase);
 
   if (!fs.existsSync(dataDir)) {
     throw new Error(`snapshot: U2OS_HOME "${dataDir}" does not exist -- nothing to back up.`);
@@ -60,7 +70,7 @@ export async function createBackup({ dataDir = getDataDir(), outputPath } = {}) 
 
   const home = canonicalDataHome(dataDir);
   return withOfflineHome(async () => {
-    const requestedOutputPath = path.resolve(outputPath || `u2os-backup-${timestampForFilename()}.tar.gz`);
+    const requestedOutputPath = path.resolve(outputPath || `u2os-backup-${timestampForFilename()}.tar.gz${useEncryption ? '.enc' : ''}`);
     const resolvedOutputPath = canonicalOutputPath(requestedOutputPath);
     if (resolvedOutputPath === home || resolvedOutputPath.startsWith(`${home}${path.sep}`)) {
       throw new Error('snapshot: backup output must be outside the source data home');
@@ -75,12 +85,14 @@ export async function createBackup({ dataDir = getDataDir(), outputPath } = {}) 
       await stageSnapshot(home, payload);
       const archive = path.join(staging, 'snapshot.tar.gz');
       const fd = fs.openSync(archive, 'wx', 0o600); fs.closeSync(fd);
-      execFileSync('tar', ['-czf', archive, '-C', payload, '.'], { stdio: 'inherit' });
+      execFileSync('tar', ['-czf', archive, '-C', payload, '.'], tarOptions());
       fs.chmodSync(archive, 0o600);
-      const archiveFd = fs.openSync(archive, 'r');
+      const publishedArchive = useEncryption ? path.join(staging, 'snapshot.tar.gz.enc') : archive;
+      if (useEncryption) await encryptArchive(archive, publishedArchive, passphrase);
+      const archiveFd = fs.openSync(publishedArchive, 'r');
       try { fs.fsyncSync(archiveFd); } finally { fs.closeSync(archiveFd); }
       // Same-filesystem atomic publication, without replacing a prior archive.
-      try { fs.linkSync(archive, resolvedOutputPath); }
+      try { fs.linkSync(publishedArchive, resolvedOutputPath); }
       catch (error) {
         if (error.code === 'EEXIST') throw new Error('snapshot: backup output already exists; choose a new filename');
         throw error;
@@ -96,7 +108,7 @@ export async function createBackup({ dataDir = getDataDir(), outputPath } = {}) 
  * `force: true` is passed, so a restore can never silently clobber
  * existing live data.
  */
-export function restoreBackup({ archivePath, dataDir = getDataDir(), force = false } = {}) {
+export async function restoreBackup({ archivePath, dataDir = getDataDir(), force = false, encrypted = false, passphrase } = {}) {
   assertTarAvailable();
 
   const resolvedArchivePath = path.resolve(archivePath);
@@ -104,6 +116,22 @@ export function restoreBackup({ archivePath, dataDir = getDataDir(), force = fal
     throw new Error(`snapshot: archive "${resolvedArchivePath}" does not exist.`);
   }
 
+  const format = archiveFormat(resolvedArchivePath);
+  if (format !== 'encrypted' && (encrypted || passphrase !== undefined || resolvedArchivePath.endsWith('.enc'))) {
+    throw new Error('snapshot: expected an encrypted archive; no extraction was attempted');
+  }
+  if (format === 'plaintext') return extractArchive(resolvedArchivePath, dataDir, force);
+  validateBackupPassphrase(passphrase);
+  const staging = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-backup-decrypt-'));
+  try {
+    fs.chmodSync(staging, 0o700);
+    const plaintext = path.join(staging, 'authenticated.tar.gz');
+    await decryptArchive(resolvedArchivePath, plaintext, passphrase);
+    return extractArchive(plaintext, dataDir, force);
+  } finally { fs.rmSync(staging, { recursive: true, force: true }); }
+}
+
+function extractArchive(resolvedArchivePath, dataDir, force) {
   const alreadyExists = fs.existsSync(dataDir);
   const isNonEmpty = alreadyExists && fs.readdirSync(dataDir).length > 0;
   if (isNonEmpty && !force) {
@@ -114,7 +142,7 @@ export function restoreBackup({ archivePath, dataDir = getDataDir(), force = fal
   }
 
   fs.mkdirSync(dataDir, { recursive: true });
-  execFileSync('tar', ['-xzf', resolvedArchivePath, '-C', dataDir], { stdio: 'inherit' });
+  execFileSync('tar', ['-xzf', resolvedArchivePath, '-C', dataDir], tarOptions());
 
   return dataDir;
 }
@@ -124,7 +152,8 @@ function printUsage() {
 
 Usage:
   node server/backup/snapshot.js backup [outputPath]
-  node server/backup/snapshot.js restore <archivePath> [--force]
+  node server/backup/snapshot.js backup --encrypt [outputPath]
+  node server/backup/snapshot.js restore <archivePath> [--encrypt] [--force]
 
   backup    Requires a stopped runtime and Node.js 22.16 or newer for SQLite.
             Creates a private .tar.gz from a coherent staged U2OS_HOME snapshot.
@@ -138,14 +167,25 @@ Usage:
               ** WARNING: the resulting archive is exactly as sensitive as
               ** your live U2OS_HOME directory. Store and transmit it
               ** accordingly -- never upload it to a shared/public location.
+            --encrypt wraps the tar payload in authenticated encryption.
+            Supply an independent backup passphrase through masked terminal
+            input (with confirmation) or U2OS_BACKUP_PASSPHRASE, never arguments.
+            Without --encrypt creation remains explicitly UNENCRYPTED.
 
   restore   Extracts an archive created by "backup" back into U2OS_HOME.
             Refuses to run into a non-empty U2OS_HOME unless --force is
             passed, to avoid silently clobbering existing live data.
+            Encrypted archives authenticate fully in private staging before
+            extraction. --encrypt requires encrypted input; legacy .tar.gz
+            remains supported and is labeled UNENCRYPTED. Restore ownership
+            and inactive-copy safeguards are still unfinished.
 
 Environment:
   U2OS_HOME   The data directory to back up from / restore into.
               Defaults to ~/.u2os.
+  U2OS_BACKUP_PASSPHRASE  Explicit noninteractive backup secret (12+ characters).
+              Removed from this CLI environment before spawning children.
+              Prefer masked terminal input. No account/owner secret is reused.
 `);
 }
 
@@ -161,13 +201,23 @@ async function main() {
   const forceIndex = rest.indexOf('--force');
   const force = forceIndex !== -1;
   if (force) rest.splice(forceIndex, 1);
+  const encryptIndex = rest.indexOf('--encrypt');
+  const encrypted = encryptIndex !== -1;
+  if (encrypted) rest.splice(encryptIndex, 1);
+  if (rest.some((arg) => arg.startsWith('--')) || rest.length > 1) {
+    throw new Error('snapshot: unsupported arguments; use --help. Never pass a passphrase as an argument');
+  }
   const positional = rest.filter((arg) => !arg.startsWith('--'));
 
   if (mode === 'backup') {
-    const outputPath = await createBackup({ outputPath: positional[0] });
+    const passphrase = encrypted ? await readBackupPassphrase({ confirm: true }) : undefined;
+    // A supplied environment secret must not reach tar even in plaintext mode.
+    delete process.env.U2OS_BACKUP_PASSPHRASE;
+    const outputPath = await createBackup({ outputPath: positional[0], encrypted, passphrase });
     console.log(`Backup written to ${outputPath}`);
     console.log(
-      'WARNING: this archive contains your full U2OS data directory, including encrypted ' +
+      `${encrypted ? 'ENCRYPTED archive: keep the independent passphrase outside the archive.' : 'UNENCRYPTED archive: protect it like the live home.'} ` +
+      'This archive contains your full U2OS data directory, including encrypted ' +
         'credentials AND the master key needed to decrypt them. Treat it as sensitive as your ' +
         'live data -- store and transmit it accordingly.'
     );
@@ -178,7 +228,13 @@ async function main() {
       process.exit(1);
       return;
     }
-    const dataDir = restoreBackup({ archivePath, force });
+    const format = archiveFormat(path.resolve(archivePath));
+    const expectsEncryption = encrypted || archivePath.endsWith('.enc') || format === 'encrypted' || process.env.U2OS_BACKUP_PASSPHRASE !== undefined;
+    if (expectsEncryption && format !== 'encrypted') throw new Error('snapshot: expected an encrypted archive; no extraction was attempted');
+    const passphrase = expectsEncryption ? await readBackupPassphrase() : undefined;
+    delete process.env.U2OS_BACKUP_PASSPHRASE;
+    if (!expectsEncryption) console.log('UNENCRYPTED legacy archive: no authentication or confidentiality guarantee.');
+    const dataDir = await restoreBackup({ archivePath, force, encrypted: expectsEncryption, passphrase });
     console.log(`Restored ${archivePath} into ${dataDir}`);
   } else {
     printUsage();
