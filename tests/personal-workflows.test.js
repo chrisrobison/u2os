@@ -48,6 +48,51 @@ function researchPlan(payload) {
 
 for (const existing of [false, true]) {
   const label = existing ? 'existing unmarked personal home' : 'fresh personal home';
+  test(`${label}: exact personal send proposal survives account switch/restart and rejection blocks dependent work`, run({ existing, modelPlan: (payload, fixture) => {
+    if (!payload.tool_observations) return reads(fixture);
+    assert.equal(fixture.modelRequests.length, 2, 'pending/rejected proposal must not trigger further planning');
+    const { mail, mailItemIndex, event } = observed(payload);
+    return { reasoning_summary: 'Propose reply from observed mail and availability; wait for authorization', continue: true,
+      response: 'Reply proposed for review, not sent. Follow-up drafting must wait for delivery.', actions: [
+        { tool: 'email.send', arguments: { to: 'placeholder', subject: `Re: ${mail.subject}`, body: `I am busy until ${event.end_at}; please suggest a later time.`, inReplyTo: 'placeholder' },
+          resultRefs: { to: { stepIndex: 0, itemIndex: mailItemIndex, path: 'from_addr' }, inReplyTo: { stepIndex: 0, itemIndex: mailItemIndex, path: 'id' } } },
+        { tool: 'email.draft', arguments: { to: 'recruiter@example.test', subject: 'Follow-up after authorized reply', body: 'Fixture follow-up, only after delivery.' }, dependsOn: [0] },
+      ] };
+  } }, async (fixture) => {
+    const result = await fixture.api('/api/agent/message', { text: 'Find the latest recruiter message, check availability and propose a reply. Require approval before sending; draft follow-up only after it is sent.' });
+    const send = result.actions.find((action) => action.tool === 'email.send');
+    assert.ok(send); assert.equal(send.status, 'pending');
+    assert.equal(send.accountBinding.instanceId, fixture.primary.id); assert.equal(send.accountBinding.label, 'Selected fixture account');
+    assert.equal(send.arguments.to, 'recruiter@example.test'); assert.equal(send.arguments.subject, 'Re: Remote engineering role follow-up');
+    assert.equal(send.arguments.inReplyTo, `gmail_${fixture.primary.id}_latest`);
+    assert.match(send.arguments.body, new RegExp(fixture.calendarEvent.end.dateTime));
+    assert.equal(getRun(result.runId).status, 'waiting_for_approval'); assert.equal(getRun(result.runId).objectiveStatus, 'unverified');
+    assert.deepEqual(getRun(result.runId).steps.map((step) => step.status), ['executed', 'executed', 'pending', 'waiting_dependency']);
+    assert.match(result.response, /not sent|approval/i);
+    const proposal = await fixture.api(`/api/actions/${send.id}`);
+    const pending = await fixture.api('/api/actions/pending'); assert.ok(pending.actions.some((action) => action.id === send.id));
+    assert.doesNotMatch(JSON.stringify({ proposal, pending }), /fixture-primary-gmail|fixture-primary-refresh|fixture-other-gmail|vault_key/);
+    const networkBefore = fixture.network.length, modelBefore = fixture.modelRequests.length;
+    await fixture.api('/api/connectors/email/active', { connectorId: 'google', instanceId: fixture.other.id, providerId: 'gmail' });
+    await fixture.restart();
+    const restored = await fixture.api(`/api/actions/${send.id}`);
+    assert.deepEqual(restored.arguments, proposal.arguments); assert.deepEqual(restored.accountBinding, proposal.accountBinding); assert.equal(restored.status, 'pending');
+    assert.equal((await fixture.api(`/api/agent/runs/${result.runId}`)).status, 'waiting_for_approval');
+    assert.equal(fixture.network.length, networkBefore); assert.equal(fixture.modelRequests.length, modelBefore);
+    assert.equal(getDb().prepare("SELECT count(*) n FROM action_queue WHERE tool='email.send'").get().n, 0);
+    assert.equal(getDb().prepare("SELECT count(*) n FROM emails WHERE folder IN ('drafts','sent')").get().n, 0);
+    const rejected = await fixture.api(`/api/actions/${send.id}/reject`, {}); assert.equal(rejected.status, 'rejected');
+    const stopped = await fixture.api(`/api/agent/runs/${result.runId}`);
+    assert.deepEqual(stopped.steps.map((step) => step.status), ['executed', 'executed', 'rejected', 'skipped']);
+    assert.equal(stopped.status, 'failed'); assert.equal(stopped.objectiveStatus, 'unverified');
+    assert.equal(getDb().prepare("SELECT count(*) n FROM agent_actions WHERE tool='email.draft'").get().n, 0);
+    assert.equal(getDb().prepare("SELECT count(*) n FROM action_queue WHERE tool='email.send'").get().n, 0);
+    assert.equal(getDb().prepare("SELECT count(*) n FROM emails WHERE folder IN ('drafts','sent')").get().n, 0);
+    await fixture.restart();
+    assert.equal((await fixture.api(`/api/actions/${send.id}`)).status, 'rejected');
+    assert.equal((await fixture.api(`/api/agent/runs/${result.runId}`)).status, 'failed');
+    assert.equal(fixture.network.length, networkBefore); assert.equal(fixture.modelRequests.length, 2); assert.deepEqual(fixture.externalWrites, []);
+  }));
   test(`${label}: personal research retains criteria/reviews, deduplicates across restart and obeys cumulative budgets/lifecycle`, run({ existing, research: true, modelPlan: researchPlan }, async (fixture) => {
     const goal = await fixture.api('/api/goals', researchDraft, 201);
     assert.equal(fixture.modelRequests.length, 0); assert.equal(fixture.network.length, 0);
