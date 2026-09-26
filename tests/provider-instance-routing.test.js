@@ -279,6 +279,8 @@ test('google-contacts through getProvider("contacts") resolves the active instan
     const instanceId = created.body.id;
     const row = db.prepare('SELECT * FROM connection_instances WHERE id = ?').get(instanceId);
     storeTokens(row.vault_key, 'contacts', { access_token: 'AT', refresh_token: 'RT', expires_in: 3600 }, dir);
+    // Mirror the successful OAuth callback's explicit account transition.
+    db.prepare("UPDATE connection_instances SET status = 'connected' WHERE id = ?").run(instanceId);
 
     const activate = await post(origin, '/api/connectors/contacts/active', {
       connectorId: 'google', instanceId, providerId: 'google-contacts',

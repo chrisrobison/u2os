@@ -24,7 +24,7 @@ async function homes(count, run) {
 }
 function account({ dir, db }, label) {
   process.env.U2OS_HOME = dir;
-  const created = createConnectionInstance(db, { connectorId: 'google', label });
+  const created = createConnectionInstance(db, { connectorId: 'google', label, status: 'connected' });
   const instance = findInstance(db, 'google', created.id);
   for (const service of ['gmail', 'calendar']) storeTokens(instance.vault_key, service,
     { access_token: `fixture-${label}`, refresh_token: `fixture-refresh-${label}`, expires_in: 3600 }, dir);

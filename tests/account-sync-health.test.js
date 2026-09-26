@@ -23,7 +23,7 @@ function withHome(run) {
 }
 
 function googleAccount(db, dir, label) {
-  const created = createConnectionInstance(db, { connectorId: 'google', label });
+  const created = createConnectionInstance(db, { connectorId: 'google', label, status: 'connected' });
   const row = findInstance(db, 'google', created.id);
   const tokens = { access_token: `fixture-${label}`, refresh_token: `refresh-${label}`, expires_in: 3600 };
   storeTokens(row.vault_key, 'gmail', tokens, dir);

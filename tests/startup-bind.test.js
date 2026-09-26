@@ -43,7 +43,7 @@ async function fixture(t, run) {
 }
 function configureSync(dir) {
   const db = getDb();
-  const created = createConnectionInstance(db, { connectorId: 'google', label: 'Fixture sync account' });
+  const created = createConnectionInstance(db, { connectorId: 'google', label: 'Fixture sync account', status: 'connected' });
   const instance = findInstance(db, 'google', created.id);
   storeTokens(instance.vault_key, 'gmail', { access_token: 'fixture-bind-only', refresh_token: 'fixture-refresh', expires_in: 3600 }, dir);
   const config = loadConnectorsConfig(dir);

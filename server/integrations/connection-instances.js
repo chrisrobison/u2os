@@ -445,15 +445,18 @@ export function createConnectionInstance(db, { connectorId, label, credentials =
  * vault entry untouched, while any other value (already
  * validated/merged/normalized by the caller) overwrites it entirely via
  * the row's existing vault_key -- callers that want a partial credential
- * update must read-merge-validate themselves before calling this. */
+ * update must read-merge-validate themselves before calling this. A credential
+ * write advances the revision and updates connected/pending status; a label
+ * change alone never enables an account. */
 export function updateConnectionInstance(db, { row, label, credentials, dataDir } = {}) {
   if (credentials !== undefined) {
     writeEncryptedFile(row.vault_key, credentials, dataDir);
   }
   const nextLabel = label !== undefined ? label : row.label;
   const now = new Date().toISOString();
-  db.prepare('UPDATE connection_instances SET label = ?, credential_revision = credential_revision + ?, updated_at = ? WHERE id = ?')
-    .run(nextLabel, credentials !== undefined ? 1 : 0, now, row.id);
+  const nextStatus = credentials !== undefined ? (looksConnected(row.connector_id, credentials) ? 'connected' : 'pending') : row.status;
+  db.prepare('UPDATE connection_instances SET label = ?, status = ?, credential_revision = credential_revision + ?, updated_at = ? WHERE id = ?')
+    .run(nextLabel, nextStatus, credentials !== undefined ? 1 : 0, now, row.id);
   return toInstanceApiShape(db, db.prepare('SELECT * FROM connection_instances WHERE id = ?').get(row.id));
 }
 

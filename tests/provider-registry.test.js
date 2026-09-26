@@ -72,7 +72,7 @@ test('health reports connected real providers independently of the active provid
     // connectedProviders now scans every live instance of a connector
     // (regardless of which one, if any, is the domain's active instance).
     const db = getDb();
-    const instance = createConnectionInstance(db, { connectorId: 'google', label: 'Test account', status: 'pending' });
+    const instance = createConnectionInstance(db, { connectorId: 'google', label: 'Test account', status: 'connected' });
     const vaultKey = db.prepare('SELECT vault_key FROM connection_instances WHERE id = ?').get(instance.id).vault_key;
     storeTokens(vaultKey, 'gmail', { access_token: 'test-access', refresh_token: 'test-refresh', expires_in: 3600 });
     storeTokens(vaultKey, 'contacts', { access_token: 'test-access', refresh_token: 'test-refresh', expires_in: 3600 });

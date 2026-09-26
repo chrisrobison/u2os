@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { readInstallationMode } from '../../seed/installation-mode.js';
 import { sendJson } from '../router.js';
-import { getHealth, resolveConnectedRealProvider, resolveInstanceForDomain, getRealProviderModule } from '../../integrations/provider-registry.js';
+import { getHealth, resolveConnectedRealProvider, resolveInstanceForDomain, getRealProviderModule, isProviderInstanceConnected } from '../../integrations/provider-registry.js';
 import {
   setActiveProvider,
   validProviderIdsFor,
@@ -338,7 +338,7 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
       return mod?.isConnected?.(instance.vault_key);
     });
     db.prepare('UPDATE connection_instances SET status = ?, credential_revision = credential_revision + 1, updated_at = ? WHERE id = ?')
-      .run(stillConnected ? 'connected' : 'pending', new Date().toISOString(), instanceId);
+      .run(instance.status === 'connected' ? (stillConnected ? 'connected' : 'pending') : instance.status, new Date().toISOString(), instanceId);
     const target = GOOGLE_PROVIDER_TARGETS[service];
     const config = loadConnectorsConfig();
     if (config[target.domain]?.activeInstanceId === instanceId) {
@@ -360,15 +360,13 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
 
   // --- Connection instances: multiple accounts per connector (#163 PR 2) --
 
-  // GET never touches the vault -- listInstances() is a pure
-  // connection_instances read, so it is structurally impossible for a
-  // secret to leak from this route. For 'google' specifically, this also
+  // listInstances() is a pure metadata read. For 'google', this also
   // enriches each instance with a `services` map ({calendar, gmail,
   // contacts} -> boolean) so the multi-account setup dialog (issue #163 PR 5)
   // can render each account's per-service connect/disconnect state
-  // independently -- computed via each real provider module's isConnected()
-  // (a boolean-only check against the instance's own vault_key), never by
-  // reading or returning any decrypted token value.
+  // independently -- computed through shared persisted-status eligibility
+  // and a boolean-only credential check against the instance's vault key.
+  // No decrypted token value is included in a response.
   router.get('/api/connectors/:connectorId/instances', async (req, res) => {
     const { connectorId } = req.params;
     const instances = listInstances(db, connectorId);
@@ -379,8 +377,7 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
         instance.services = {};
         for (const service of GOOGLE_SERVICES) {
           const providerId = GOOGLE_PROVIDER_TARGETS[service].providerId;
-          const mod = getRealProviderModule(providerId);
-          instance.services[service] = Boolean(row && mod?.isConnected?.(row.vault_key));
+          instance.services[service] = isProviderInstanceConnected(providerId, row);
         }
       }
     }
@@ -514,8 +511,7 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
       if (!instance) {
         return sendJson(res, 400, { error: `No connected instance "${instanceId}" for connector "${connectorId}"` });
       }
-      const real = getRealProviderModule(providerId);
-      if (!real?.isConnected?.(instance.vault_key)) {
+      if (!isProviderInstanceConnected(providerId, instance)) {
         return sendJson(res, 400, { error: `Account "${instance.label}" is disconnected for "${providerId}"` });
       }
       const config = loadConnectorsConfig();

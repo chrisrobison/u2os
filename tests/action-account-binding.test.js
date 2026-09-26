@@ -32,7 +32,7 @@ async function withAccounts(run) {
     handle = await startServer({ port: 0 });
     const db = getDb();
     const create = (label, token) => {
-      const account = createConnectionInstance(db, { connectorId: 'google', label, status: 'pending' });
+      const account = createConnectionInstance(db, { connectorId: 'google', label, status: 'connected' });
       const row = findInstance(db, 'google', account.id);
       storeTokens(row.vault_key, 'gmail', { access_token: token, refresh_token: `refresh-${token}`, expires_in: 3600 }, dir);
       return row;
