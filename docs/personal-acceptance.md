@@ -7,8 +7,8 @@ upgraded personal installation. A consolidated six-workflow personal-mode
 fresh/upgrade harness remains unfinished.
 
 The personal-mode API suite is repeatable with `npm run test:personal`:
-twelve cases cover brief, grounded draft, meeting preparation, failed-provider
-continuation and multi-run research on fresh and existing unmarked homes. They
+fourteen cases cover brief, grounded draft, meeting preparation, failed-provider
+continuation, multi-run research and pending approval/rejection on fresh and existing unmarked homes. They
 use actual owner auth, runtime, configured model HTTP and Google/Brave adapters
 with isolated scripted transports and a controlled clock. Existing fixture
 records survive upgrade/restart.
@@ -71,7 +71,7 @@ never silently substitute a demo pass for a personal failure.
 | Relevant mail and grounded reply | Choose one connected account. Ask to find the latest message from a named sender, read it, check availability and draft only. Verify sender/message, time zone, actual conflicting events and draft text. No invented IDs or send. | [Continuation](../tests/agent-continuation.test.js), [Gmail](../tests/gmail-provider.test.js), [IMAP](../tests/imap-provider.test.js); Gmail provider query and bounded IMAP cached coverage differ. These fixtures do not prove real-model judgment. |
 | Meeting preparation | In the dashboard context selector choose **Before a meeting**, then the intended event. Check topic, date/time, attendees, relevant contacts/history and provenance. Unknown attendees must not become invented personal facts. | [Event-based dashboard tests](../tests/dashboard-generation.test.js); locally synchronized data, not a live-provider completeness guarantee. |
 | Persistent research | Follow the [job research walkthrough](job-research-walkthrough.md). Save actual criteria, inspect two bounded passes, review one finding, reload/restart, verify deduplication and cumulative spending, then pause. No applications or outreach. | [Personal provider-interface fixtures](../tests/personal-workflows.test.js), [two-pass browser fixture](../tests/e2e/job-research.spec.js), [finite schedule fixtures](../tests/goal-research-schedules.test.js); current openings and fit quality need owner validation. |
-| Exact approval | In fixtures, inspect account, recipient and complete proposed change before approval; switch active account and verify the approved identity cannot change. In personal mode, inspect a proposal without approving delivery; reject it when finished. IMAP must identify its associated SMTP sender. | [Account-binding tests](../tests/action-account-binding.test.js), [notification binding](../tests/notification-account-binding.test.js). Any real send/event mutation requires a separately explicit owner-driven test with exact account, recipient/change and timing. |
+| Exact approval | In fixtures, inspect account, recipient and complete proposed change before approval; switch active account and verify the approved identity cannot change. In personal mode, inspect a proposal without approving delivery; reject it when finished. IMAP must identify its associated SMTP sender. | [Personal pending/rejection acceptance](../tests/personal-workflows.test.js), [account-binding tests](../tests/action-account-binding.test.js), [notification binding](../tests/notification-account-binding.test.js). Any real send/event mutation requires a separately explicit owner-driven test with exact account, recipient/change and timing. |
 | Restart and outage | In fixtures, interrupt a run, resume, and check that completed effects are not repeated. Stalled search must fail clearly with retained evidence/spending, not mock success. In personal use, inspect durable runs/approvals after an ordinary restart; do not deliberately interrupt a live consequential action. | [Model checkpoints](../tests/agent-model-checkpoints.test.js), [queue worker](../tests/action-queue-worker.test.js), [search deadline](../tests/brave-search-deadline.test.js), [inactive recovery comparison](../tests/recovery-compare.test.js). Recovery comparison is recorded evidence, not delivery proof or activation. |
 
 Action success is not objective success. Inspect completed, pending, failed,
@@ -98,6 +98,14 @@ provider calls. A provider outage retains failed evidence with no invented
 findings; restart does not retry it, and an explicit owner retry can recover
 within the remaining budget. These cases do not prove scheduled personal-browser
 operation, real search quality/current openings or successful outreach.
+
+Personal pending-approval cases retrieve the intended message and availability,
+then inspect the exact account, recipient and reply payload. Switching active
+accounts and restarting preserve that captured proposal without replaying reads
+or model calls. Owner rejection durably blocks a dependent follow-up draft and
+continuation; no send is enqueued and no provider write occurs. This is not
+consolidated proof of approved delivery, interruption during an external effect,
+uncertain-outcome recovery or the personal browser approval UI.
 
 Local personal drafts leave their sender unset, including while disconnected;
 they are saved work, not simulated mail delivery. No sender address is inferred
