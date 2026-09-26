@@ -5,6 +5,7 @@ import { getDb } from '../db/connection.js';
 import { newId } from '../db/ids.js';
 import { hasTokens, getValidAccessToken } from './oauth/google-oauth.js';
 import { scopedLocalId } from './connector-instance-ids.js';
+import { withGoogleRead } from './google-read-deadline.js';
 
 export const id = 'google-contacts';
 
@@ -53,36 +54,59 @@ function upsertFact(entityId, key, value) {
   ).run(newId('fact'), entityId, key, JSON.stringify(value), id, 1.0, 0, now, now, JSON.stringify({}), now);
 }
 
-export async function searchContacts({ query } = {}, { fetchImpl = globalThis.fetch, dataDir, instance } = {}) {
-  const token = await getValidAccessToken(instance.vault_key, 'contacts', { dataDir, fetchImpl });
-  const res = await fetchImpl(API_URL, { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) throw new Error(`google-contacts: searchContacts failed (status ${res.status})`);
-  const json = await res.json();
-  const connections = json.connections || [];
-  const results = [];
+function connectionsFrom(json) {
+  if (!json || typeof json !== 'object' || Array.isArray(json)) throw new Error('Invalid contacts page');
+  const connections = json.connections === undefined ? [] : json.connections;
+  if (!Array.isArray(connections)) throw new Error('Invalid contacts page');
+  // Validate the whole fetched page before importing any of it. Provider
+  // fields are untrusted; missing identities must never become local IDs.
   for (const person of connections) {
-    const name = person.names?.[0]?.displayName || null;
-    if (query && name && !name.toLowerCase().includes(query.toLowerCase())) continue;
-    const entityId = upsertEntity({ resourceName: person.resourceName, name }, instance);
-    for (const email of person.emailAddresses || []) {
-      upsertFact(entityId, 'email', email.value);
+    if (!person || typeof person.resourceName !== 'string' || !person.resourceName.trim()) {
+      throw new Error('Invalid contact identity');
     }
-    for (const phone of person.phoneNumbers || []) {
-      upsertFact(entityId, 'phone', phone.value);
+    if (person.names !== undefined && (!Array.isArray(person.names) || person.names.some((name) =>
+      !name || typeof name !== 'object' || Array.isArray(name) ||
+      (name.displayName !== undefined && typeof name.displayName !== 'string')))) {
+      throw new Error('Invalid contact names');
     }
-    const db = getDb();
-    const row = db.prepare('SELECT * FROM entities WHERE id = ?').get(entityId);
-    results.push({ ...row, attributes: JSON.parse(row.attributes || '{}') });
+    for (const field of ['emailAddresses', 'phoneNumbers']) {
+      if (person[field] !== undefined && (!Array.isArray(person[field]) || person[field].some((entry) =>
+        !entry || typeof entry.value !== 'string' || !entry.value.trim()))) {
+        throw new Error('Invalid contact facts');
+      }
+    }
   }
-  return results;
+  return connections;
+}
+
+export async function searchContacts({ query } = {}, { fetchImpl = globalThis.fetch, dataDir, instance, timeoutMs, timers } = {}) {
+  return withGoogleRead({ fetchImpl, timeoutMs, timers }, async ({ fetchImpl: boundedFetch, check }) => {
+    const token = await getValidAccessToken(instance.vault_key, 'contacts', { dataDir, fetchImpl: boundedFetch });
+    const res = await boundedFetch(API_URL, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) throw new Error('Contacts read unavailable');
+    const connections = connectionsFrom(await res.json());
+    check();
+    const results = [];
+    for (const person of connections) {
+      const name = person.names?.[0]?.displayName || null;
+      if (query && (!name || !name.toLowerCase().includes(query.toLowerCase()))) continue;
+      check();
+      const entityId = upsertEntity({ resourceName: person.resourceName, name }, instance);
+      for (const email of person.emailAddresses || []) upsertFact(entityId, 'email', email.value);
+      for (const phone of person.phoneNumbers || []) upsertFact(entityId, 'phone', phone.value);
+      const row = getDb().prepare('SELECT * FROM entities WHERE id = ?').get(entityId);
+      results.push({ ...row, attributes: JSON.parse(row.attributes || '{}') });
+    }
+    return results;
+  });
 }
 
 /** Polled by sync-scheduler.js -- contacts have no distinct "changed" event
  * type in docs/events.md, so syncChanges just re-runs the same upsert with
  * no query filter and returns a count; consumers reading entities/facts
  * directly pick up the refreshed data. */
-export async function syncChanges({ eventBus, correlationId, fetchImpl = globalThis.fetch, dataDir, instance } = {}) {
-  const results = await searchContacts({}, { fetchImpl, dataDir, instance });
+export async function syncChanges({ eventBus, correlationId, fetchImpl = globalThis.fetch, dataDir, instance, timeoutMs, timers } = {}) {
+  const results = await searchContacts({}, { fetchImpl, dataDir, instance, timeoutMs, timers });
   eventBus?.publish({
     type: 'contacts.synced',
     source: id,
