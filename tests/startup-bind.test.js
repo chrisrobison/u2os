@@ -73,7 +73,8 @@ test('successful bind starts configured workers and ordinary close clears their 
   configureSync(dir);
   const handle = await startServer({ port: 0 }); handles.push(handle);
   // 5000 is the owned-vault polling watcher (ADR 0007), started first so memory is indexed before triggers act.
-  assert.deepEqual(timers.map((item) => item.ms), [30000, 5000, 300000, 1234, 4321]);
+  // 60000 is the vault routine runner's schedule tick.
+  assert.deepEqual(timers.map((item) => item.ms), [30000, 5000, 300000, 1234, 4321, 60000]);
   assert.ok(timers.every((item) => !item.cleared));
   await new Promise((resolve) => handle.server.close(resolve)); handles.pop();
   await handle.stopBackgroundWorkers();

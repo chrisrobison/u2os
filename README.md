@@ -73,6 +73,7 @@ Key documentation:
 
 - [Overview](docs/overview.md) — what U2OS is, why it exists, and how it's meant to be used (start here)
 - [The vault](docs/vault.md) — your digital self as Markdown files you own
+- [Routines](docs/routines.md) — standing instructions U2OS carries out on your behalf
 - [Architecture](docs/architecture.md)
 - [Architecture decisions](docs/adr/README.md)
 - [Events](docs/events.md)

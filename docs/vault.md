@@ -22,6 +22,8 @@ vault/
   routines/        # standing instructions (see routines.md)
 ```
 
+Routine files are described in [routines](routines.md). The rest of this page covers identity and memory files.
+
 ## File format
 
 Each file is Markdown with optional YAML frontmatter:
