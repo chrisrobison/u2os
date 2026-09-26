@@ -13,6 +13,7 @@ import * as emailProvider from '../integrations/mock-email-provider.js';
 import * as tasksProvider from '../integrations/mock-tasks-provider.js';
 import { createTrigger } from '../triggers/trigger-engine.js';
 import { ensureInstallationMode } from './installation-mode.js';
+import { withOfflineHome } from '../runtime/offline-home.js';
 
 export function runSeed({ eventBus } = {}) {
   ensureDefaultPolicies();
@@ -227,7 +228,14 @@ function ensureConfigFile() {
 
 const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
 if (isMain) {
-  if (ensureInstallationMode() !== 'demo') throw new Error('Refusing to seed a personal home; use npm run demo with an isolated home');
-  runSeed({});
-  console.log('Seed complete.');
+  try {
+    await withOfflineHome(() => {
+      if (ensureInstallationMode() !== 'demo') throw new Error('Refusing to seed a personal home; use npm run demo with an isolated home');
+      runSeed({});
+      console.log('Seed complete.');
+    });
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+  }
 }

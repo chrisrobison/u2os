@@ -49,9 +49,21 @@ whether an action was not attempted, completed or outcome-uncertain. Acquiring
 runtime ownership does not approve actions, reset leases or replay uncertain
 non-idempotent effects.
 
-Limitations: this guard coordinates supported local runtimes, not arbitrary
+`npm run setup-owner`, `npm run seed` and `npm run maintain` acquire the same
+guard before opening/migrating application SQLite or changing initialization
+mode. Stop the server and wait for shutdown before running them, including
+maintenance previews: opening storage may apply additive migrations. They fail
+immediately without application changes while a runtime or another offline
+operation owns the home. Owner setup holds ownership through its prompt and
+asynchronous hashing; success and failure release only after work settles.
+Demo seeding still refuses personal homes. Low-level imported store helpers
+are not independently guarded; runtime-owned callers must not recursively
+acquire an offline guard.
+
+Limitations: this guard coordinates supported local runtimes and the three
+offline commands above, not arbitrary
 external database/config writers, network filesystems, cross-host copies or
-restored homes at different paths. Maintenance/backup CLI coordination,
+restored homes at different paths. Backup/restore CLI coordination,
 encrypted coherent archives and inactive-by-default isolated restore remain
 separate work. Stop older releases before upgrading: they do not participate
 in this guard protocol. No live owner-account or hardware validation was used.

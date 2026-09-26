@@ -11,7 +11,8 @@ background drain; it does not close HTTP or cancel in-flight request handlers.
 Local initialization and additive migrations may still occur before binding.
 The [local runtime ownership guard](runtime-ownership.md) prevents simultaneous
 executors for one canonical home and retains ownership through started-handler
-and background drain. It is not yet a maintenance or restored-copy lock;
+and background drain. Setup-owner, seed and maintenance commands use the same
+lock and require a stopped runtime. It is not yet a backup or restored-copy lock;
 coordinated backup/recovery remains unfinished. Stop older releases before
 upgrading, because they do not participate in the new guard protocol.
 

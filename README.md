@@ -108,7 +108,7 @@ Open <http://localhost:4000>.
 
 On first visit, create the required owner passphrase. Later visits show the login form before any private API or interface data is available.
 
-For headless/container initialization, `npm run setup-owner` creates the same owner record through a masked terminal prompt without opening the HTTP listener.
+For headless/container initialization, `npm run setup-owner` creates the same owner record through a masked terminal prompt without opening the HTTP listener. Stop any runtime using that home first; setup-owner, seed and maintenance commands acquire the same local ownership guard before storage access.
 
 On first start, U2OS creates its local data directory at `~/.u2os/`. Set `U2OS_HOME` to use another location. The directory contains configuration, policies, the SQLite database, encrypted connector credentials, and cache data. Real user data is not stored in the repository.
 
