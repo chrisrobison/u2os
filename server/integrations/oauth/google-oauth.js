@@ -13,6 +13,7 @@
 // globalThis.fetch) so tests can verify request construction with a fake
 // fetch instead of hitting real network.
 import { readEncryptedFile, writeEncryptedFile } from '../../security/vault.js';
+import { isDeepStrictEqual } from 'node:util';
 
 const AUTH_BASE_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -159,6 +160,16 @@ export async function getValidAccessToken(vaultKey, service, { dataDir, fetchImp
     { clientId, clientSecret, refreshToken: token.refresh_token },
     fetchImpl
   );
+  // Refresh is an asynchronous read, not permission to restore removed or
+  // superseded credentials. Check immediately before the synchronous write;
+  // unrelated services may change and must remain intact.
+  const current = readEncryptedFile(vaultKey, dataDir);
+  const currentClient = readEncryptedFile('google', dataDir) || {};
+  if (!isDeepStrictEqual(current?.tokens?.[service], token)
+      || (currentClient.clientId || current?.clientId) !== clientId
+      || (currentClient.clientSecret || current?.clientSecret) !== clientSecret) {
+    throw new Error('google-oauth: credentials changed during refresh; retry with the selected connected account');
+  }
   const next = storeTokens(vaultKey, service, { ...refreshed, refresh_token: token.refresh_token }, dataDir);
   return next.access_token;
 }
