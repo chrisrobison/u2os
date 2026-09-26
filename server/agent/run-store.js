@@ -250,7 +250,7 @@ export function getRun(runId) {
   const run = db.prepare('SELECT * FROM agent_runs WHERE id = ?').get(runId);
   if (!run) return null;
   const steps = db.prepare(`SELECT s.step_index, s.tool, s.depends_on, s.status, s.action_id,
-    a.status AS action_status, q.status AS queue_status,
+    a.status AS action_status, a.rejected_by AS action_rejected_by, q.status AS queue_status, q.error_class AS queue_error_class,
     EXISTS (SELECT 1 FROM action_attempts attempt WHERE attempt.queue_id = q.id AND attempt.error = 'lease expired') AS expired_attempt
     FROM agent_run_steps s
     LEFT JOIN agent_actions a ON a.id = s.action_id
@@ -357,6 +357,7 @@ function currentStepStatus(step) {
   if (step.action_status === 'blocked') return 'blocked';
   if (step.action_status === 'executed') return 'executed';
   if (step.queue_status === 'completed') return 'executed';
+  if (step.queue_error_class === 'recovery_review_required' || step.action_rejected_by === 'system:recovery') return 'outcome_uncertain';
   if (step.action_status === 'cancelled' && step.expired_attempt) return 'outcome_uncertain';
   if (step.action_status === 'cancelled' && (!step.queue_status || step.queue_status === 'cancelled')) return 'cancelled';
   if (step.action_status === 'approved' && !step.queue_status) return 'needs_attention';

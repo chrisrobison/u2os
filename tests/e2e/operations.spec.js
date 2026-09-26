@@ -25,3 +25,21 @@ test('owner can inspect durable action delivery without seeing action payloads',
     await stopDedicatedServer(page, dedicated);
   }
 });
+
+test('restored operation metadata explains unknown outcome without claiming failed delivery or exposing payloads', async ({ page }) => {
+  const dedicated = await startDedicatedServer({ mode: 'personal' });
+  try {
+    await createOwner(dedicated.baseURL, PASSPHRASE);
+    await page.route('**/api/actions/operations', (route) => route.fulfill({ json: {
+      items: [{ id: 'fixture-restored-operation', tool: 'notifications.send', status: 'failed', attemptCount: 1,
+        errorClass: 'recovery_review_required', arguments: { body: 'fixture private archived payload' } }], counts: { failed: 1 },
+    } }));
+    await page.goto(dedicated.baseURL); await page.getByLabel('Passphrase').fill(PASSPHRASE);
+    await page.locator('form button[type="submit"]').click(); await page.locator('u2-nav a[data-route="#/operations"]').click();
+    const card = page.locator('u2-operations .operation-card').first();
+    await expect(card).toContainText('outcome unknown from restored snapshot'); await expect(card).toContainText('1 recorded attempt');
+    await expect(card).toContainText('Archived approval cannot be retried'); await expect(card).not.toContainText('private archived payload');
+    await expect(card.locator('.operation-card__meta')).not.toContainText('failed');
+    // Rendering fixture only: recovery homes themselves still cannot start.
+  } finally { await stopDedicatedServer(page, dedicated); }
+});

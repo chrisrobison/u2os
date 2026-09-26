@@ -15,12 +15,16 @@ export function assertExecutableHome(home) {
 
 export function writeRecoveryState(home, state, { initial = false } = {}) {
   const file = path.join(home, RECOVERY_FILE);
-  const temporary = initial ? file : path.join(home, '.u2os-recovery.pending');
-  const fd = fs.openSync(temporary, 'wx', 0o600);
-  try { fs.writeFileSync(fd, `${JSON.stringify({ version: 1, ...state })}\n`); fs.fsyncSync(fd); }
-  finally { fs.closeSync(fd); }
-  if (!initial) fs.renameSync(temporary, file);
-  syncDirectory(home);
+  const staging = initial ? null : fs.mkdtempSync(path.join(home, '.u2os-recovery-stage-'));
+  try {
+    if (staging) fs.chmodSync(staging, 0o700);
+    const temporary = initial ? file : path.join(staging, 'marker.json');
+    const fd = fs.openSync(temporary, 'wx', 0o600);
+    try { fs.writeFileSync(fd, `${JSON.stringify({ version: 1, ...state })}\n`); fs.fsyncSync(fd); }
+    finally { fs.closeSync(fd); }
+    if (!initial) fs.renameSync(temporary, file);
+    syncDirectory(home);
+  } finally { if (staging) fs.rmSync(staging, { recursive: true, force: true }); }
 }
 
 export function syncDirectory(directory) {

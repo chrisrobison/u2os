@@ -145,7 +145,7 @@ export async function readArchive(archive, destination, overrides = {}) {
         if (pending?.size !== undefined) size = sizeDecimal(pending.size);
         pending = null; longName = null;
         name = safePath(name, type === '5', limits);
-        if (/^\.runtime-lock\.sqlite(?:$|[-/])/.test(name) || /^\.u2os-recovery(?:\.|$)/.test(name) || /^db\/u2os\.sqlite-(?:wal|shm|journal)(?:$|\/)/.test(name)) throw invalid('archive contains reserved runtime or recovery metadata');
+        if (/^\.runtime-lock\.sqlite(?:$|[-/])/.test(name) || /^\.u2os-recovery(?:[.-]|$)/.test(name) || /^db\/u2os\.sqlite-(?:wal|shm|journal)(?:$|\/)/.test(name)) throw invalid('archive contains reserved runtime or recovery metadata');
         if (type === '5' && size !== 0) throw invalid('archive directory data is unsupported');
         if (size > limits.maxBytes - bytes) throw invalid('archive exceeds the restored byte limit');
         if (name) {

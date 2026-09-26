@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { acquireHomeGuard, canonicalDataHome, isOwnedGuardArtifact } from '../runtime/home-guard.js';
 import { readArchive } from './archive-reader.js';
@@ -40,7 +41,7 @@ export async function restoreValidatedArchive(archive, dataDir, { force = false 
     guard = acquireHomeGuard(home);
     if (fs.readdirSync(home).some((name) => !isOwnedGuardArtifact(home, name))) throw new Error('snapshot: refusing to restore into a non-empty home; choose an isolated empty destination');
     fs.chmodSync(home, 0o700);
-    const state = { status: 'incomplete', restoredAt: new Date().toISOString(), installationId, database, ...counts };
+    const state = { status: 'incomplete', recoveryId: randomUUID(), restoredAt: new Date().toISOString(), installationId, database, ...counts };
     writeRecoveryState(home, state, { initial: true });
     function publish(source, destination) {
       for (const name of fs.readdirSync(source)) {
