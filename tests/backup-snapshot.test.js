@@ -25,7 +25,7 @@ test('backup-snapshot: full round trip -- snapshot a seeded U2OS_HOME, restore i
     fs.writeFileSync(path.join(sourceHome, 'credentials', 'master.key'), 'fake-master-key-bytes');
 
     const outputPath = path.join(archiveDir, 'snapshot.tar.gz');
-    const written = createBackup({ dataDir: sourceHome, outputPath });
+    const written = await createBackup({ dataDir: sourceHome, outputPath });
     assert.equal(written, outputPath);
     assert.ok(fs.existsSync(outputPath), 'archive file should exist after backup');
     assert.ok(fs.statSync(outputPath).size > 0, 'archive should not be empty');
@@ -61,7 +61,7 @@ test('backup-snapshot: restore refuses a non-empty target without --force, and p
     fs.writeFileSync(path.join(sourceHome, 'db', 'marker.txt'), 'fresh-content');
 
     const outputPath = path.join(archiveDir, 'snapshot.tar.gz');
-    createBackup({ dataDir: sourceHome, outputPath });
+    await createBackup({ dataDir: sourceHome, outputPath });
 
     // Make the destination non-empty with unrelated pre-existing content.
     fs.writeFileSync(path.join(destHome, 'pre-existing.txt'), 'do-not-clobber-me-silently');
