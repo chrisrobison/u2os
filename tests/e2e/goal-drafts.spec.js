@@ -19,6 +19,7 @@ test('owner edits durable goal drafts without claiming work has started', async 
     const goals = page.locator('u2-goals');
     await expect(goals).toContainText('No automatic goal work is scheduled');
     await expect(goals.locator('[name="objective"]')).toBeDisabled();
+    await expect(goals.locator('.goal-job-draft')).toBeDisabled();
     releaseInitialList();
     await expect(goals.locator('[name="objective"]')).toBeEnabled();
     await goals.locator('[name="objective"]').fill('Find <script>evil()</script> research roles');

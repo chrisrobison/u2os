@@ -15,6 +15,7 @@ export class U2Goals extends HTMLElement {
       <div class="goal-layout">
         <section class="goal-list-panel" aria-label="Saved goal drafts">
           <button type="button" class="btn goal-new">New draft</button>
+          <button type="button" class="btn goal-job-draft">Job research draft</button>
           <div class="goal-list"></div>
         </section>
         <form class="goal-form dashboard-card">
@@ -46,6 +47,7 @@ export class U2Goals extends HTMLElement {
     this._form = this.querySelector('.goal-form');
     this._message = this.querySelector('.goal-message');
     this.querySelector('.goal-new').addEventListener('click', () => this._newDraft());
+    this.querySelector('.goal-job-draft').addEventListener('click', () => this._newJobResearchDraft());
     this.querySelector('.goal-reload').addEventListener('click', () => this._select(this._goalId));
     this.querySelector('.goal-run').addEventListener('click', () => this._run());
     this.querySelector('.goal-schedule-save').addEventListener('click', () => this._schedule());
@@ -53,6 +55,7 @@ export class U2Goals extends HTMLElement {
     this._form.addEventListener('submit', (event) => { event.preventDefault(); this._save(); });
     this._setDraftEditable(false);
     this.querySelector('.goal-new').disabled = true;
+    this.querySelector('.goal-job-draft').disabled = true;
     this._load();
   }
 
@@ -66,7 +69,10 @@ export class U2Goals extends HTMLElement {
       else if (goals.length) await this._select(goals[0].id);
       else this._newDraft();
     } catch (error) { this._showError(`Couldn't load goal drafts: ${error.message}`); }
-    finally { this.querySelector('.goal-new').disabled = false; }
+    finally {
+      this.querySelector('.goal-new').disabled = false;
+      this.querySelector('.goal-job-draft').disabled = false;
+    }
   }
 
   _renderList(goals) {
@@ -124,6 +130,24 @@ export class U2Goals extends HTMLElement {
     this._message.textContent = '';
     this._message.classList.remove('is-error');
     this._markSelected();
+  }
+
+  _newJobResearchDraft() {
+    this._newDraft();
+    this._form.objective.value = 'Research suitable job opportunities against my stated role, location and experience preferences. Ask for clarification if these preferences are missing.';
+    this._form.criteria.value = [
+      'Report at most five candidate opportunities with source links and observed evidence.',
+      'Explain fit against my constraints using source excerpts; identify missing information and do not claim current availability from a snippet.',
+      'Distinguish previously reviewed or repeated links from new findings in indexed evidence.',
+    ].join('\n');
+    this._form.constraints.value = 'Research only. Do not apply, send messages or contact employers.';
+    this._form.querySelector('[name="domain"][value="web"]').checked = true;
+    this._form.maxRuns.value = '5';
+    this._form.maxModelCalls.value = '15';
+    this._form.maxTokens.value = '30000';
+    this.querySelector('.goal-form__title').textContent = 'New job research draft';
+    this._message.textContent = 'Add your preferred role, location and experience level to Constraints, then review scope and budgets before saving. Nothing is saved or started yet; availability and fit require evidence.';
+    this._form.constraints.focus();
   }
 
   async _select(id) {
