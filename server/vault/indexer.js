@@ -13,7 +13,8 @@ import { listMarkdownFiles, readVaultFile, fileSignature } from './markdown.js';
 // never modified.
 
 const CLASSIFICATIONS = new Set(['public', 'personal', 'private', 'sensitive']);
-const RESERVED_KEYS = new Set(['name', 'title', 'classification', 'sensitive_keys']);
+const RESERVED_KEYS = new Set(['id', 'name', 'title', 'classification', 'sensitive_keys']);
+const ENTITY_ID = /^ent_[A-Za-z0-9_]{1,64}$/;
 const COMMITMENT_ATTRIBUTE_KEYS = new Set(['status', 'due']);
 const MAX_KEY_LENGTH = 100;
 const MAX_VALUE_CHARS = 20_000;
@@ -39,6 +40,9 @@ export function indexVault({ eventBus = null, vaultDir = getVaultDir() } = {}) {
   const ownerEntityId = db.prepare('SELECT entity_id FROM owners WHERE entity_id IS NOT NULL LIMIT 1').get()?.entity_id || null;
   const report = { vaultDir, indexedAt: new Date().toISOString(), files: 0, changed: 0, unchanged: 0, removed: 0, errors: [], notes: [] };
   const present = new Set();
+  // path -> entity id for files applied in this pass. A file that failed to
+  // parse is present but unbound, so its previously indexed records are kept.
+  const bound = new Map();
 
   const sources = [];
   if (fileSignature(vaultDir, ME_FILE)) sources.push({ relativePath: ME_FILE, type: 'Person', owner: true });
@@ -56,9 +60,9 @@ export function indexVault({ eventBus = null, vaultDir = getVaultDir() } = {}) {
     try {
       const document = readVaultFile(vaultDir, source.relativePath);
       const desired = describe(source, document);
-      const changed = withTransaction(db, () => applyDocument(db, {
-        ...desired, entityId: source.owner ? ownerEntityId : vaultEntityId(source.relativePath), owner: source.owner, ownerEntityId,
-      }));
+      const entityId = source.owner ? ownerEntityId : resolveEntityId(db, desired, { ownerEntityId, bound });
+      const changed = withTransaction(db, () => applyDocument(db, { ...desired, entityId, owner: source.owner, ownerEntityId }));
+      bound.set(source.relativePath, entityId);
       if (changed) report.changed += 1; else report.unchanged += 1;
     } catch (error) {
       if (error.code !== 'VAULT_INVALID' && error.code !== 'ENOENT') throw error;
@@ -66,7 +70,7 @@ export function indexVault({ eventBus = null, vaultDir = getVaultDir() } = {}) {
     }
   }
 
-  report.removed = withTransaction(db, () => removeMissing(db, present, ownerEntityId));
+  report.removed = withTransaction(db, () => removeMissing(db, { present, bound, ownerEntityId }));
   lastReport = report;
   if (eventBus && (report.changed || report.removed)) {
     eventBus.publish({
@@ -83,6 +87,8 @@ function describe({ relativePath, type }, { frontmatter, body }) {
   const sensitiveKeys = frontmatter.sensitive_keys ?? [];
   if (!Array.isArray(sensitiveKeys) || sensitiveKeys.some((key) => typeof key !== 'string')) throw invalid('sensitive_keys must be a list of key names');
 
+  const boundId = frontmatter.id === undefined ? null : String(frontmatter.id);
+  if (boundId !== null && !ENTITY_ID.test(boundId)) throw invalid('id must be an existing record id such as ent_abc123');
   const name = scalarText(frontmatter.name) || scalarText(frontmatter.title) || body.match(/^#\s+(.+)$/m)?.[1]?.trim() || humanize(relativePath);
   const attributes = { vaultPath: relativePath };
   const facts = new Map();
@@ -103,17 +109,33 @@ function describe({ relativePath, type }, { frontmatter, body }) {
     attributes.status = attributes.status === undefined ? 'open' : String(attributes.status);
     attributes.description = name;
   }
-  return { relativePath, type, name, classification, attributes, facts };
+  return { relativePath, type, name, classification, attributes, facts, boundId };
 }
 
-function applyDocument(db, { relativePath, type, name, classification, attributes, facts, entityId, owner, ownerEntityId }) {
+/**
+ * A file with `id:` describes an existing record (for example one exported
+ * from the database, or imported from contacts) instead of creating a new
+ * one, so exporting memory to the vault never duplicates people.
+ */
+function resolveEntityId(db, { relativePath, boundId }, { ownerEntityId, bound }) {
+  const entityId = boundId || vaultEntityId(relativePath);
+  if (boundId) {
+    if (boundId === ownerEntityId) throw invalid('Describe yourself in me.md; id cannot name the owner');
+    if (!db.prepare('SELECT id FROM entities WHERE id = ?').get(boundId)) throw invalid(`id ${boundId} does not match a known record`);
+  }
+  if ([...bound.values()].includes(entityId)) throw invalid('Another vault file already describes this record');
+  return entityId;
+}
+
+function applyDocument(db, { relativePath, type, name, classification, attributes, facts, entityId, owner, ownerEntityId, boundId }) {
   const source = `vault:${relativePath}`;
   const now = new Date().toISOString();
   let changed = false;
 
   if (!owner) {
     const existing = db.prepare('SELECT * FROM entities WHERE id = ?').get(entityId);
-    const encoded = JSON.stringify(attributes);
+    // A bound record keeps attributes other sources gave it (e.g. contacts).
+    const encoded = JSON.stringify(boundId && existing ? { ...JSON.parse(existing.attributes || '{}'), ...attributes } : attributes);
     if (!existing) {
       db.prepare('INSERT INTO entities (id, type, name, attributes, status, classification, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)')
         .run(entityId, type, name, encoded, 'active', classification, now, now);
@@ -124,6 +146,11 @@ function applyDocument(db, { relativePath, type, name, classification, attribute
       changed = true;
     }
     if (type === 'Commitment' && ownerEntityId) changed = ensurePromised(db, { ownerEntityId, entityId, source, classification, now }) || changed;
+    // A record is described by exactly one file: retire what an earlier
+    // file (before a rename) said about it.
+    const retiredFacts = db.prepare("UPDATE facts SET status = 'deleted', deleted_at = ? WHERE entity_id = ? AND source LIKE 'vault:%' AND source != ? AND status IN ('current', 'disputed')").run(now, entityId, source);
+    const retiredRelationships = db.prepare("UPDATE relationships SET status = 'deleted', deleted_at = ? WHERE to_entity_id = ? AND source LIKE 'vault:%' AND source != ? AND status = 'active'").run(now, entityId, source);
+    if (retiredFacts.changes || retiredRelationships.changes) changed = true;
   }
 
   const existingFacts = db.prepare("SELECT * FROM facts WHERE entity_id = ? AND source = ? AND status IN ('current', 'disputed')").all(entityId, source);
@@ -154,10 +181,14 @@ function applyDocument(db, { relativePath, type, name, classification, attribute
 }
 
 function ensurePromised(db, { ownerEntityId, entityId, source, classification, now }) {
-  const existing = db.prepare("SELECT id, classification FROM relationships WHERE from_entity_id = ? AND to_entity_id = ? AND relation = 'promised' AND source = ? AND status = 'active'").get(ownerEntityId, entityId, source);
+  const active = db.prepare("SELECT id, source, classification FROM relationships WHERE from_entity_id = ? AND to_entity_id = ? AND relation = 'promised' AND status = 'active'").all(ownerEntityId, entityId);
+  const existing = active.find((relationship) => relationship.source === source);
   if (existing?.classification === classification) return false;
   if (existing) {
     db.prepare('UPDATE relationships SET classification = ? WHERE id = ?').run(classification, existing.id);
+  } else if (active.some((relationship) => !relationship.source.startsWith('vault:'))) {
+    // Already an open commitment of the owner's; never list it twice.
+    return false;
   } else {
     db.prepare(`INSERT INTO relationships (id, from_entity_id, relation, to_entity_id, attributes, source, confidence, inferred, observed_at, created_at, classification, status)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(newId('rel'), ownerEntityId, 'promised', entityId, '{}', source, 1, 0, now, now, classification, 'active');
@@ -165,16 +196,25 @@ function ensurePromised(db, { ownerEntityId, entityId, source, classification, n
   return true;
 }
 
-function removeMissing(db, present, ownerEntityId) {
+function removeMissing(db, { present, bound, ownerEntityId }) {
   const now = new Date().toISOString();
   let removed = 0;
-  const vaultEntities = db.prepare("SELECT id, attributes FROM entities WHERE substr(id, 1, 10) = 'ent_vault_' AND status != 'deleted'").all();
+  const vaultEntities = db.prepare("SELECT id, attributes FROM entities WHERE json_extract(attributes, '$.vaultPath') IS NOT NULL AND status != 'deleted'").all();
   for (const entity of vaultEntities) {
-    const vaultPath = JSON.parse(entity.attributes || '{}').vaultPath;
-    if (present.has(vaultPath)) continue;
-    db.prepare("UPDATE entities SET status = 'deleted', deleted_at = ?, updated_at = ? WHERE id = ?").run(now, now, entity.id);
+    const attributes = JSON.parse(entity.attributes || '{}');
+    const vaultPath = attributes.vaultPath;
+    if (bound.get(vaultPath) === entity.id) continue;
+    if (present.has(vaultPath) && !bound.has(vaultPath)) continue; // unreadable this pass: keep as is
     db.prepare("UPDATE facts SET status = 'deleted', deleted_at = ? WHERE entity_id = ? AND source LIKE 'vault:%' AND status IN ('current', 'disputed')").run(now, entity.id);
     db.prepare("UPDATE relationships SET status = 'deleted', deleted_at = ? WHERE to_entity_id = ? AND source LIKE 'vault:%' AND status = 'active'").run(now, entity.id);
+    if (entity.id.startsWith('ent_vault_')) {
+      db.prepare("UPDATE entities SET status = 'deleted', deleted_at = ?, updated_at = ? WHERE id = ?").run(now, now, entity.id);
+    } else {
+      // A pre-existing record the vault only described: keep the record and
+      // what other sources know about it, but it is no longer vault-backed.
+      delete attributes.vaultPath;
+      db.prepare('UPDATE entities SET attributes = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(attributes), now, entity.id);
+    }
     removed += 1;
   }
   if (ownerEntityId && !present.has(ME_FILE)) {
