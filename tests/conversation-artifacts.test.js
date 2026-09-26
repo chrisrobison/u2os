@@ -183,3 +183,29 @@ test('cross-run refs reject missing, filtered, wrong-source, and malformed items
   assert.equal(calendar.arguments.eventId, 'gcal_event');
   assert.equal(calendar.sourceAccountBinding, calendarBinding);
 });
+
+test('an approved prior-item action survives restart without repeating the effect', () => withHome(async () => {
+  const conversationId = createConversation('owner');
+  const source = storedAction({ conversationId, tool: 'tasks.list', account: null, result: [{ id: 'task_one' }, { id: 'task_two' }] });
+  let effects = 0;
+  const registry = new ToolRegistry();
+  registry.register({ name: 'tasks.complete', category: 'consequential', domain: 'tasks', schema: { properties: { id: { type: 'string' } }, required: ['id'] },
+    execute: async ({ id }) => { effects++; return { id }; } });
+  const makeAgent = () => {
+    const agent = new Agent({ modelProvider: { id: 'fixture', destination: 'local_model', plan: async () => ({ reasoning_summary: 'Complete',
+      actions: [{ tool: 'tasks.complete', arguments: { id: '' }, priorResultRefs: { id: { actionId: source.actionId, itemIndex: 1, path: 'id' } } }] }) },
+    policyEngine: new PolicyEngine({ policies: { tasks: { complete: 'confirm' } } }), toolRegistry: registry, eventBus: new EventBus(getDb()), dataProcessingPolicy: policy });
+    agent.contextAssembler.assemble = async () => ({ toolRegistry: registry });
+    return agent;
+  };
+  const pending = await makeAgent().handleMessage({ text: 'Use second', actorId: 'owner', conversationId });
+  const actionId = pending.actions[0].id;
+  assert.equal(getAgentAction(actionId).arguments.id, 'task_two');
+  closeAllForTests(); getDb();
+  const resumed = makeAgent();
+  const outcome = await resumed.approveAction(actionId, 'owner');
+  assert.equal(outcome.status, 'executed');
+  assert.equal(effects, 1);
+  await assert.rejects(resumed.approveAction(actionId, 'owner'), /not pending/);
+  assert.equal(effects, 1);
+}));
