@@ -25,4 +25,4 @@ The system also acted meaningfully only through the chat planner. Unattended tri
 - Backups become simpler to reason about: the vault is the irreplaceable part, and it is ordinary files.
 - Infrastructure hardening is deferred unless real use of the vault and routines surfaces a need.
 
-See the [milestone](https://github.com/chrisrobison/u2os/issues/355).
+See [the vault](../vault.md) and the [milestone](https://github.com/chrisrobison/u2os/issues/355).
