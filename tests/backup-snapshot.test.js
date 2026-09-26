@@ -52,7 +52,7 @@ test('backup-snapshot: full round trip -- snapshot a seeded U2OS_HOME, restore i
   }
 });
 
-test('backup-snapshot: restore refuses a non-empty target without --force, and proceeds with force: true', async () => {
+test('backup-snapshot: restore refuses a non-empty target, including force: true', async () => {
   const sourceHome = tempDir('u2os-backup-src2-');
   const destHome = tempDir('u2os-backup-dst2-');
   const archiveDir = tempDir('u2os-backup-archive2-');
@@ -74,10 +74,9 @@ test('backup-snapshot: restore refuses a non-empty target without --force, and p
     // The refusal must not have touched the pre-existing file/dir contents.
     assert.equal(fs.readFileSync(path.join(destHome, 'pre-existing.txt'), 'utf8'), 'do-not-clobber-me-silently');
 
-    // With --force, it proceeds and the archive's content lands.
-    const restoredInto = await restoreBackup({ archivePath: outputPath, dataDir: destHome, force: true });
-    assert.equal(restoredInto, destHome);
-    assert.equal(fs.readFileSync(path.join(destHome, 'db', 'marker.txt'), 'utf8'), 'fresh-content');
+    // Force-merging is no longer supported: preserve the original home.
+    await assert.rejects(restoreBackup({ archivePath: outputPath, dataDir: destHome, force: true }), /force restore is unsupported/);
+    assert.deepEqual(fs.readdirSync(destHome), ['pre-existing.txt']);
   } finally {
     fs.rmSync(sourceHome, { recursive: true, force: true });
     fs.rmSync(destHome, { recursive: true, force: true });

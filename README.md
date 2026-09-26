@@ -155,10 +155,10 @@ npm run backup
 Restore a backup:
 
 ```sh
-npm run restore -- /path/to/u2os-backup.tar.gz
+U2OS_HOME=/private/isolated-recovery npm run restore -- /path/to/u2os-backup.tar.gz
 ```
 
-Prefer `npm run backup -- --encrypt /private/backup-location/u2os.tar.gz.enc` for authenticated encryption with an independent masked passphrase. Default legacy `.tar.gz` creation is explicitly **UNENCRYPTED** and includes the credential master key. Output is private, outside the source home and never overwrites an existing archive; SQLite captures committed WAL data and source links/special files are refused. See [backup/encryption guidance](docs/backups.md). Restore safety and inactive-copy safeguards remain unfinished; use an isolated destination and never run original/restored copies simultaneously. A portable, credential-free JSON export is available from `GET /api/export`.
+Prefer `npm run backup -- --encrypt /private/backup-location/u2os.tar.gz.enc` for authenticated encryption with an independent masked passphrase. Default legacy `.tar.gz` creation is explicitly **UNENCRYPTED** and includes the credential master key. Output is private, outside the source home and never overwrites an existing archive; SQLite captures committed WAL data and source links/special files are refused. Restore validates bounded entries and SQLite integrity into an empty isolated home under ownership, never force-merges, and leaves it **INACTIVE**. Startup and mutation CLIs refuse recovery homes before migrations or work. Explicit activation/original-instance retirement remain unfinished; do not remove the marker or run original/restored copies simultaneously. See [backup and offline verification guidance](docs/backups.md). A portable, credential-free JSON export is available from `GET /api/export`.
 
 ## Deployment
 
