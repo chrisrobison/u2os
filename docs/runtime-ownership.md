@@ -64,7 +64,13 @@ Limitations: this guard coordinates supported local runtimes and the three
 offline commands above, not arbitrary
 external database/config writers, network filesystems, cross-host copies or
 restored homes at different paths. Backup creation also acquires this guard
-through private staging and publication; restore does not yet participate.
-Opt-in authenticated encrypted archives are supported, but inactive-by-default
-isolated restore remains separate work. Stop older releases before upgrading: they do not participate
+through private staging and publication. Restore validates privately before
+acquiring destination ownership and publishing into an empty isolated home.
+A durable `.u2os-recovery.json` marker precedes payload writes; any marker
+blocks runtime and offline mutation startup before migrations or reconciliation,
+even malformed metadata or an alleged active status. Interrupted publication
+remains incomplete; successful verification remains inactive. No activation
+bypass exists. Explicit original-instance retirement and restored-action
+reconciliation are subsequent work; do not remove the marker to start a copy.
+See [offline verification](backups.md). Stop older releases before upgrading: they do not participate
 in this guard protocol. No live owner-account or hardware validation was used.

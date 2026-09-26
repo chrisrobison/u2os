@@ -39,6 +39,8 @@ function writeAll(fd, buffer, position) {
 }
 
 export function archiveFormat(file) {
+  const stat = fs.lstatSync(file);
+  if (!stat.isFile() || stat.size > 4 * 1024 ** 3) throw new Error('snapshot: archive must be a bounded regular file; no extraction was attempted');
   const prefix = readPrefix(file, MAGIC.length);
   if (prefix.equals(MAGIC)) return 'encrypted';
   if (prefix[0] === 0x1f && prefix[1] === 0x8b) return 'plaintext';

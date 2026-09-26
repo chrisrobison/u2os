@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Coordinated offline snapshots and legacy tar restore of U2OS_HOME.
+// Coordinated offline snapshots and validated inactive restore of U2OS_HOME.
 //
 // IMPLEMENTATION CHOICE (tar vs. a custom archive format): this shells out
 // to the system `tar` binary via node:child_process rather than
@@ -31,6 +31,7 @@ import { withOfflineHome } from '../runtime/offline-home.js';
 import { canonicalOutputPath, stageSnapshot } from './stage.js';
 import { archiveFormat, encryptArchive, decryptArchive, validateBackupPassphrase } from './encryption.js';
 import { readBackupPassphrase } from './passphrase.js';
+import { restoreValidatedArchive } from './restore.js';
 
 function timestampForFilename() {
   return new Date().toISOString().replace(/[:.]/g, '-');
@@ -47,7 +48,7 @@ function assertTarAvailable() {
     execFileSync('tar', ['--version'], tarOptions('ignore'));
   } catch {
     throw new Error(
-      'snapshot: the system "tar" binary is required for backup/restore but was not found on PATH. ' +
+      'snapshot: the system "tar" binary is required for backup but was not found on PATH. ' +
         'tar ships by default on macOS and Linux, the documented U2OS deployment targets.'
     );
   }
@@ -103,14 +104,10 @@ export async function createBackup({ dataDir = getDataDir(), outputPath, encrypt
 }
 
 /**
- * Restores a snapshot created by createBackup() back into U2OS_HOME.
- * Refuses to extract into a non-empty target directory unless
- * `force: true` is passed, so a restore can never silently clobber
- * existing live data.
+ * Authenticates and validates a snapshot into an isolated empty home.
+ * Restored homes remain inactive; force-merging is never supported.
  */
 export async function restoreBackup({ archivePath, dataDir = getDataDir(), force = false, encrypted = false, passphrase } = {}) {
-  assertTarAvailable();
-
   const resolvedArchivePath = path.resolve(archivePath);
   if (!fs.existsSync(resolvedArchivePath)) {
     throw new Error(`snapshot: archive "${resolvedArchivePath}" does not exist.`);
@@ -120,31 +117,15 @@ export async function restoreBackup({ archivePath, dataDir = getDataDir(), force
   if (format !== 'encrypted' && (encrypted || passphrase !== undefined || resolvedArchivePath.endsWith('.enc'))) {
     throw new Error('snapshot: expected an encrypted archive; no extraction was attempted');
   }
-  if (format === 'plaintext') return extractArchive(resolvedArchivePath, dataDir, force);
+  if (format === 'plaintext') return restoreValidatedArchive(resolvedArchivePath, dataDir, { force });
   validateBackupPassphrase(passphrase);
   const staging = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-backup-decrypt-'));
   try {
     fs.chmodSync(staging, 0o700);
     const plaintext = path.join(staging, 'authenticated.tar.gz');
     await decryptArchive(resolvedArchivePath, plaintext, passphrase);
-    return extractArchive(plaintext, dataDir, force);
+    return await restoreValidatedArchive(plaintext, dataDir, { force });
   } finally { fs.rmSync(staging, { recursive: true, force: true }); }
-}
-
-function extractArchive(resolvedArchivePath, dataDir, force) {
-  const alreadyExists = fs.existsSync(dataDir);
-  const isNonEmpty = alreadyExists && fs.readdirSync(dataDir).length > 0;
-  if (isNonEmpty && !force) {
-    throw new Error(
-      `snapshot: refusing to restore into non-empty U2OS_HOME "${dataDir}" without --force. ` +
-        'Pass --force to overwrite/merge into the existing directory.'
-    );
-  }
-
-  fs.mkdirSync(dataDir, { recursive: true });
-  execFileSync('tar', ['-xzf', resolvedArchivePath, '-C', dataDir], tarOptions());
-
-  return dataDir;
 }
 
 function printUsage() {
@@ -153,7 +134,7 @@ function printUsage() {
 Usage:
   node server/backup/snapshot.js backup [outputPath]
   node server/backup/snapshot.js backup --encrypt [outputPath]
-  node server/backup/snapshot.js restore <archivePath> [--encrypt] [--force]
+  node server/backup/snapshot.js restore <archivePath> [--encrypt]
 
   backup    Requires a stopped runtime and Node.js 22.16 or newer for SQLite.
             Creates a private .tar.gz from a coherent staged U2OS_HOME snapshot.
@@ -172,13 +153,12 @@ Usage:
             input (with confirmation) or U2OS_BACKUP_PASSPHRASE, never arguments.
             Without --encrypt creation remains explicitly UNENCRYPTED.
 
-  restore   Extracts an archive created by "backup" back into U2OS_HOME.
-            Refuses to run into a non-empty U2OS_HOME unless --force is
-            passed, to avoid silently clobbering existing live data.
+  restore   Validates into an isolated empty recovery home. --force is refused.
             Encrypted archives authenticate fully in private staging before
             extraction. --encrypt requires encrypted input; legacy .tar.gz
-            remains supported and is labeled UNENCRYPTED. Restore ownership
-            and inactive-copy safeguards are still unfinished.
+            remains supported and is labeled UNENCRYPTED. Paths/types/limits
+            and SQLite integrity are checked before publication under ownership.
+            The restored home remains INACTIVE. Activation is not yet supported.
 
 Environment:
   U2OS_HOME   The data directory to back up from / restore into.
@@ -236,6 +216,7 @@ async function main() {
     if (!expectsEncryption) console.log('UNENCRYPTED legacy archive: no authentication or confidentiality guarantee.');
     const dataDir = await restoreBackup({ archivePath, force, encrypted: expectsEncryption, passphrase });
     console.log(`Restored ${archivePath} into ${dataDir}`);
+    console.log('INACTIVE verified recovery home: review offline only. Activation and original-instance retirement are not yet supported.');
   } else {
     printUsage();
     process.exit(1);

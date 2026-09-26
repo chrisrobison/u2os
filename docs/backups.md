@@ -41,7 +41,7 @@ Encrypted headers and `.enc` filenames request encryption automatically.
 An explicitly supplied passphrase also requires encrypted input. Wrong
 passphrases, corruption, truncation and unsupported formats fail without
 extraction or target changes. Partial decrypted bytes stay in private temporary
-staging until authentication succeeds, then are removed after extraction/failure.
+staging until authentication succeeds, then are removed after validation/failure.
 
 Without `--encrypt`, backup creation retains legacy plaintext `.tar.gz`
 compatibility and prints `UNENCRYPTED`. Existing plaintext archives remain
@@ -53,7 +53,7 @@ inside a plaintext tar archive for an encrypted backup.
 All staging directories are mode 0700 and completed archives mode 0600.
 Encryption/decryption streams the payload rather than buffering entire
 archives. Interrupted processes may leave private `.u2os-backup-stage-*` in
-the output parent or `u2os-backup-decrypt-*` in the OS temporary directory;
+the output parent or `u2os-backup-decrypt-*` / `u2os-restore-stage-*` in the OS temporary directory;
 these can contain plaintext credentials. Review only after confirming the
 operation stopped; never delete active staging or an ownership guard.
 
@@ -68,11 +68,46 @@ arbitrary KDF cost parameters. No passphrase or derived key is serialized.
 See [Node crypto](https://nodejs.org/api/crypto.html) and the
 [OWASP scrypt guidance](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html#scrypt).
 
-Encryption is not yet the complete recovery boundary. Restore still uses the
-legacy tar extraction path, lacks inactive-by-default recovery and does not
-coordinate original/restored executors. Do not force-merge into an existing
-home or run original/restored copies concurrently. Do not accept arbitrary
-untrusted archives. Safe entry validation, isolated restore verification and
-explicit activation/duplicate-effect safeguards are subsequent work. The
-local guard does not coordinate older releases, external editors or cross-host
-copies. No live owner backup/restore validation has been performed.
+## Isolated offline verification (not activation)
+
+Restore authenticates encrypted input, then streams tar/gzip through a strict
+regular-file/directory parser in private staging. No external extractor runs.
+Traversal, links, devices, duplicate files, unsafe paths, checksum/compression
+errors and unsupported metadata fail before destination changes. Supported
+PAX path/size and GNU long names undergo the same checks; binary macOS xattrs
+are discarded, never applied. Archive owners, modes, ACLs and timestamps do
+not grant authority: directories are 0700, files 0600. Current limits are
+4 GiB compressed input and restored file bytes, 100,000 entries, 64 KiB per
+metadata entry/end padding, 4096-byte paths and 64 path components. Sparse
+files, base-256 numeric fields and unknown extensions are unsupported.
+Oversized homes require a separately reviewed strategy, not a bypass.
+
+SQLite is checked read-only without migrations. Database absence is recorded
+honestly rather than called a usable installation. Raw application WAL/SHM/
+journal files and archived runtime/recovery metadata are rejected. Current
+snapshot creation makes the database self-contained and excludes locks.
+Legacy WAL-mode databases and live-directory archives containing sidecars need separate recovery
+review; they are not silently accepted.
+
+Choose a new, empty, private destination. Nonempty homes and `--force` are
+refused; nothing merges or overwrites owner records. Destination ownership is
+held throughout publication. Before any payload writes, restore fsyncs
+`.u2os-recovery.json` with `status: incomplete`. Completed publication and
+SQLite verification change it to `inactive` with counts and verification time.
+Failure/interruption may leave partial files, but cannot enable that home.
+Do not retry into it, delete its marker, or run maintenance/seed/setup there.
+Runtime and supported offline commands deny **any** recovery marker before
+migrations, action reconciliation or providers/workers start.
+
+For an owner-driven rehearsal, use an explicitly chosen backup and the isolated
+restore command above; confirm CLI reports `INACTIVE`, inspect the marker's
+database result and counts, and review expected records using read-only SQLite
+and offline file inspection. Startup refusal is intentional. The archive/source
+remain untouched; queued attempts/approvals remain historical, not permission
+to execute. Keep the original runtime unchanged during this verification.
+
+Explicit activation, original-instance retirement and stale/uncertain-action
+reconciliation are not yet supported. No safe failover is claimed by offline
+verification alone. The local guard does not coordinate older releases,
+external editors or cross-host copies. No live owner backup/restore validation
+has been performed.

@@ -32,6 +32,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { canonicalDataHome, acquireHomeGuard, waitForClosingRuntime } from './runtime/home-guard.js';
 import { requestLogMetadata } from './logging/request-metadata.js';
+import { assertExecutableHome } from './backup/recovery-state.js';
 
 import { registerHealthRoutes } from './api/routes/health.js';
 import { registerAgentRoutes } from './api/routes/agent.js';
@@ -61,6 +62,7 @@ export async function startServer(options = {}) {
   const guard = acquireHomeGuard(home);
   let preparedDevices = null;
   try {
+    assertExecutableHome(home);
     const handle = await initializeServer(options, (registry) => { preparedDevices = registry; });
     const closed = new Promise((resolve, reject) => {
       handle.server.once('close', () => {

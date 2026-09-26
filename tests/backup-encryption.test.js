@@ -20,7 +20,7 @@ async function fixture(t, run) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-encryption-test-'));
   const home = path.join(root, 'source'); fs.mkdirSync(home);
   const mktemp = fs.mkdtempSync;
-  t.mock.method(fs, 'mkdtempSync', (prefix, ...args) => mktemp(String(prefix).includes('u2os-backup-decrypt-') ? path.join(root, 'private-decrypt-') : prefix, ...args));
+  t.mock.method(fs, 'mkdtempSync', (prefix, ...args) => mktemp(/u2os-(?:backup-decrypt|restore-stage)-/.test(String(prefix)) ? path.join(root, 'private-decrypt-') : prefix, ...args));
   try { await run({ root, home, output: path.join(root, 'snapshot.tar.gz.enc') }); }
   finally { fs.rmSync(root, { recursive: true, force: true }); }
 }
