@@ -151,6 +151,21 @@ function validateWriteDeadline(timeoutMs) {
   }
 }
 
+function validateTimedWrite({ startAt, endAt, title, attendees, location }, creating = false) {
+  // This adapter writes dateTime without a separate timeZone. Support only
+  // explicit instants; do not infer an offset or repair approved values.
+  const timed = (value) => typeof value === 'string' &&
+    /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/i.test(value) && usableTimestamp(value);
+  const address = (value) => typeof value === 'string' && /^[^\s@<>;,\u0000-\u001f\u007f]+@[^\s@<>;,\u0000-\u001f\u007f]+$/.test(value);
+  if (!timed(startAt) || !timed(endAt) || Date.parse(endAt) <= Date.parse(startAt) ||
+      (creating && (typeof title !== 'string' || !title.trim() || (location != null && typeof location !== 'string') ||
+        !Array.isArray(attendees) || Array.from(attendees).some((value) => !address(value))))) {
+    const error = new Error('google-calendar: invalid timed event request; provide a nonempty title, explicit-offset start/end with end after start and resolved guest email addresses; no calendar change was attempted');
+    error.code = 'GOOGLE_CALENDAR_INVALID_REQUEST'; error.actionErrorClass = 'non_retryable'; error.safeToRetry = false;
+    throw error;
+  }
+}
+
 async function acknowledgedWrite(url, request, { fetchImpl, instance, expectedId, startAt, endAt, timeoutMs, timers }) {
   const controller = new AbortController();
   let response, timer, timedOut = false, finished = false;
@@ -177,6 +192,9 @@ async function acknowledgedWrite(url, request, { fetchImpl, instance, expectedId
     // Timed write requests have no separate timeZone field. An offset-less
     // acknowledgement cannot establish the requested instant; never guess.
     const matches = (actual, intended) => usableTimestamp(intended) &&
+      // Date.parse truncates sub-millisecond digits. Ignore only extra zeros,
+      // never accept a materially different provider instant by rounding.
+      !/[1-9]/.test((/\.(\d+)/.exec(actual)?.[1] || '').slice(3)) &&
       /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(actual) && /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(intended) &&
       Date.parse(actual) === Date.parse(intended);
     if (['cancelled', 'tentative'].includes(event.status) || !matches(row.start_at, startAt) || !matches(row.end_at, endAt)) {
@@ -200,6 +218,7 @@ export async function createEvent(
   { fetchImpl = globalThis.fetch, dataDir, instance, timeoutMs = 30_000, timers = globalThis } = {}
 ) {
   validateWriteDeadline(timeoutMs);
+  validateTimedWrite({ title, startAt, endAt, attendees, location }, true);
   const headers = await authHeaders(fetchImpl, dataDir, instance);
   const body = {
     summary: title,
@@ -215,6 +234,7 @@ export async function rescheduleEvent(localId, { newStartAt, newEndAt }, { fetch
   validateWriteDeadline(timeoutMs);
   const before = getRowById(localId);
   if (!before) return null;
+  validateTimedWrite({ startAt: newStartAt, endAt: newEndAt });
   const headers = await authHeaders(fetchImpl, dataDir, instance);
   const expectedId = toGoogleId(localId, instance);
   const after = await acknowledgedWrite(`${API_BASE}/${encodeURIComponent(expectedId)}`, {

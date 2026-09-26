@@ -196,14 +196,29 @@ ID for reschedule), usable mapped fields, confirmed/default status and acknowled
 start/end instants matching the approved request. Equivalent explicit offsets
 are accepted without normalizing source values. Offset-less acknowledgements
 cannot establish the requested instant and require review; no server-zone guess
-is made. This checks identity/time evidence, not every returned title/guest field
+is made. Nonzero sub-millisecond acknowledgement fractions cannot be verified
+by Date rounding; extra trailing zeros retain their source representation.
+This checks identity/time evidence, not every returned title/guest field
 against the proposal. Transport, HTTP, parsing, contradictory receipts or local
 cache failure after handoff produce fixed `outcome_uncertain` errors without
 provider text/retry hints. No successful event, dependent execution, requeue or
 automatic retry follows. Check the originally bound Calendar account/event
 before a new proposal, including after restart. Missing local reschedule sources
-remain not attempted. Early request validation remains separate work; action
-acknowledgement is not objective completion.
+remain not attempted. Action acknowledgement is not objective completion.
+
+Timed create/reschedule preflight rejects malformed or ambiguous timestamps
+before OAuth/transport. This adapter supports explicit-offset RFC3339 strings
+with real civil dates, at most millisecond precision and end after start, not all-day or separate `timeZone`
+requests. Create requires a nonempty string title, optional null/string location
+and a dense flat array of explicit guest address strings (or omitted guests).
+Unresolved names, nested/object/sparse guests, whitespace/header injection and
+display-name/multiple-address entries fail with a fixed not-attempted message;
+no address/timezone inference or approved-value repair occurs. Guest email and
+timed offset requirements follow the [Google insert contract](https://developers.google.com/workspace/calendar/api/v3/reference/events/insert).
+No RFC-complete address parser, contact-name resolution or leap-second support
+is claimed. Supported request bytes remain unchanged. Rejected approved
+execution is recorded as `non_retryable`, with dependents stopped and no
+automatic replay; existing cache and encrypted credentials remain untouched.
 
 Calendar writes have a separate 30-second POST/PATCH acknowledgement deadline
 covering headers and JSON parsing after OAuth's own bounded acquisition. Timeout
