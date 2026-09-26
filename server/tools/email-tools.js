@@ -7,12 +7,13 @@ export class EmailSearchTool extends Tool {
   get name() { return 'email.search'; }
   get domain() { return 'email'; }
   get category() { return 'read'; }
+  get requiresAccountBinding() { return true; }
   get description() { return 'Search the selected email account. Gmail returns at most 50 provider-ranked results; IMAP searches its recently synchronized inbox cache. An empty result is not proof that the whole mailbox has no match.'; }
   get schema() {
     return { type: 'object', properties: { query: { type: 'string' }, folder: { type: 'string' } } };
   }
-  async execute(args) {
-    const provider = getProvider('email');
+  async execute(args, context) {
+    const provider = context?.accountBinding ? getProviderForBinding('email', context.accountBinding) : getProvider('email');
     // The mock uses local fixture search. Real providers handle the query
     // within their selected account and retain the array result contract.
     if (provider.id === mockEmailProvider.id) {
@@ -26,11 +27,12 @@ export class EmailReadTool extends Tool {
   get name() { return 'email.read'; }
   get domain() { return 'email'; }
   get category() { return 'read'; }
+  get requiresAccountBinding() { return true; }
   get schema() {
     return { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] };
   }
-  async execute(args) {
-    const provider = getProvider('email');
+  async execute(args, context) {
+    const provider = context?.accountBinding ? getProviderForBinding('email', context.accountBinding) : getProvider('email');
     if (provider.id === mockEmailProvider.id) {
       const email = provider.markRead(args.id);
       if (!email) throw new Error(`No such email: ${args.id}`);

@@ -6,11 +6,12 @@ export class CalendarListTool extends Tool {
   get name() { return 'calendar.list'; }
   get domain() { return 'calendar'; }
   get category() { return 'read'; }
+  get requiresAccountBinding() { return true; }
   get schema() {
     return { type: 'object', properties: { from: { type: 'string' }, to: { type: 'string' } } };
   }
-  async execute(args) {
-    const provider = getProvider('calendar');
+  async execute(args, context) {
+    const provider = context?.accountBinding ? getProviderForBinding('calendar', context.accountBinding) : getProvider('calendar');
     return provider.listEvents(args);
   }
 }

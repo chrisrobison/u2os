@@ -72,6 +72,8 @@ For bounded multi-step planning, `Planner` filters `context.observations` indepe
 
 Saved conversation turns are distinct from established memory and current-run observations. For a follow-up, at most six previous user/assistant turns from the same conversation are included, each capped at 500 characters with source turn/run IDs. They are `private` by default, re-filtered for the selected provider and any fallback, and omitted for remote models under the default policy. Allowed turns enter only `conversation_history` as untrusted data; prior requests do not gain current-instruction authority. No full-transcript dump or automatic summary is sent.
 
+The planner may also receive up to four successful prior read actions from the same conversation under `prior_read_artifacts`. Each is bounded by the observation filter, has a private classification floor, and is re-filtered for fallback destinations. Account-backed legacy results without an exact account binding are omitted. These historical items are for answer grounding only; `resultRefs` still resolve solely against current-run `tool_observations`, and a literal ID action in a follow-up with visible prior artifacts fails verification. A fresh search/read continuation is required before acting on a historical choice.
+
 ## Known limitations
 
 - The browser UI still exposes only the single-provider form; multi-provider configuration currently uses the HTTP API or config file.

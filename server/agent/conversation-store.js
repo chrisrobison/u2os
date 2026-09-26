@@ -67,3 +67,31 @@ export function getPriorTurnsForModel(id, ownerId, currentRunId, limit = 6) {
     ORDER BY m.created_at DESC, m.rowid DESC LIMIT ?`)
     .all(id, currentRunId, bounded).reverse().map((turn) => ({ ...turn, truncated: Boolean(turn.truncated) }));
 }
+
+/** Read-only historical data for a follow-up, never an executable result-ref
+ * source. Account-backed legacy reads without a captured binding are omitted. */
+export function getPriorReadArtifacts(id, ownerId, currentRunId) {
+  requireConversation(id, ownerId);
+  const rows = getDb().prepare(`SELECT r.id AS runId, s.step_index AS stepIndex, s.tool,
+    a.id AS actionId, a.updated_at AS observedAt, substr(a.result, 1, 50000) AS result,
+    length(a.result) > 50000 AS truncated, a.account_binding AS accountBinding
+    FROM agent_runs r JOIN agent_run_steps s ON s.run_id = r.id
+    JOIN agent_actions a ON a.id = s.action_id
+    WHERE r.conversation_id = ? AND r.actor_id = ? AND r.id != ?
+      AND a.status = 'executed' AND s.tool IN
+      ('email.search', 'email.read', 'calendar.list', 'contacts.search', 'tasks.list', 'web.search')
+      AND (s.tool = 'tasks.list' OR a.account_binding IS NOT NULL)
+    ORDER BY r.created_at DESC, s.step_index DESC LIMIT 4`)
+    .all(id, ownerId, currentRunId);
+  return rows.flatMap((row) => {
+    try {
+      if (row.truncated) return [];
+      const binding = row.accountBinding ? JSON.parse(row.accountBinding) : null;
+      if (row.tool !== 'tasks.list' && (!binding || typeof binding.providerId !== 'string'
+        || (binding.instanceId !== null && typeof binding.instanceId !== 'string'))) return [];
+      const account = binding ? { providerId: binding.providerId, instanceId: binding.instanceId, label: binding.label } : null;
+      return [{ runId: row.runId, stepIndex: row.stepIndex, tool: row.tool, actionId: row.actionId, observedAt: row.observedAt,
+        status: 'executed', result: JSON.parse(row.result), account }];
+    } catch { return []; }
+  });
+}
