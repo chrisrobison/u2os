@@ -61,7 +61,23 @@ export function activateGoogleProvider(service, dataDir, instanceId) {
 // specific `google` connection instance it was started for -- see the
 // callback route below for why this is a *distinct* protection from the
 // state token's CSRF protection.
-const pendingOauthStates = new Map(); // state -> { service, instanceId, expiresAt }
+const pendingOauthStates = new Map(); // state -> account/client snapshot + expiry
+
+function oauthClientIdentity(client) {
+  // Private in-memory fingerprint, never returned or logged.
+  return crypto.createHash('sha256').update(JSON.stringify([client.clientId, client.clientSecret])).digest('hex');
+}
+
+function currentOauthInstance(db, entry) {
+  const instance = findInstance(db, 'google', entry.instanceId);
+  const client = googleClientCredentials(db);
+  if (!instance || instance.credential_revision !== entry.credentialRevision
+      || instance.status !== entry.status || Date.now() >= entry.expiresAt
+      || oauthClientIdentity(client) !== entry.clientIdentity) {
+    throw new Error('Google connection changed or expired; start a new connection for the intended account');
+  }
+  return instance;
+}
 
 function pruneExpiredStates() {
   const now = Date.now();
@@ -200,16 +216,18 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
     if (!isNonEmptyString(instanceId)) {
       return sendJson(res, 400, { error: 'instanceId is required' });
     }
-    if (!findInstance(db, 'google', instanceId)) {
+    const instance = findInstance(db, 'google', instanceId);
+    if (!instance) {
       return sendJson(res, 404, { error: 'Not Found' });
     }
     const stored = googleClientCredentials(db);
-    if (!stored?.clientId) {
+    if (!stored?.clientId || !stored?.clientSecret) {
       return sendJson(res, 400, { error: 'Google OAuth client credentials are not configured yet' });
     }
     pruneExpiredStates();
     const state = crypto.randomBytes(24).toString('hex');
-    pendingOauthStates.set(state, { service, instanceId, expiresAt: Date.now() + OAUTH_STATE_TTL_MS });
+    pendingOauthStates.set(state, { service, instanceId, credentialRevision: instance.credential_revision,
+      status: instance.status, clientIdentity: oauthClientIdentity(stored), expiresAt: Date.now() + OAUTH_STATE_TTL_MS });
 
     const redirectUri = redirectUriFor(req);
     const url = buildAuthUrl({
@@ -243,14 +261,10 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
     // two different google accounts -- from ever writing tokens to the
     // wrong instance: the callback has no way to attach tokens to any
     // instance other than the one this `state` token was minted for back in
-    // /oauth/start, and it re-validates that instance still exists (it may
-    // have been soft-deleted by a concurrent request mid-flow) before ever
-    // exchanging the code or writing anything to the vault.
+    // /oauth/start. It re-validates its revision/status/client/expiry both
+    // before exchange and after the asynchronous response, before any write.
     try {
-      const instance = findInstance(db, 'google', instanceId);
-      if (!instance) {
-        throw new Error(`connection instance "${instanceId}" no longer exists`);
-      }
+      const instance = currentOauthInstance(db, entry);
       const stored = googleClientCredentials(db);
       if (!stored?.clientId || !stored?.clientSecret) {
         throw new Error('Google OAuth client credentials are not configured');
@@ -262,6 +276,9 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
         redirectUri,
         code,
       });
+      // Owner changes during consent/exchange win over this late response.
+      // Validation and credential/selection writes below have no await gap.
+      currentOauthInstance(db, entry);
       // issue #163 PR 4: gmail-provider.js/google-calendar-provider.js/
       // google-contacts-provider.js are now instance-aware -- tokens live
       // ONLY at instance.vault_key, resolved per domain by
@@ -277,9 +294,9 @@ export function registerConnectorRoutes(router, { db, eventBus } = {}) {
       reconcileSyncScheduler({ db, eventBus });
       res.writeHead(302, { Location: `/#/connectors?connected=${encodeURIComponent(service)}` });
       res.end();
-    } catch (err) {
+    } catch {
       // SECURITY: never include token/credential values in this message.
-      console.error(`[connectors] google oauth callback failed for service "${service}"`, err.message);
+      console.error(`[connectors] google oauth callback failed for service "${service}"`);
       res.writeHead(302, { Location: `/#/connectors?error=${encodeURIComponent('connect_failed')}` });
       res.end();
     }

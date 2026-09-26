@@ -135,10 +135,10 @@ export class U2Connectors extends HTMLElement {
     const connected = params.get('connected');
     const error = params.get('error');
 
-    if (connected) {
+    if (['calendar', 'gmail', 'contacts'].includes(connected)) {
       this._banner = { variant: 'info', message: `Connected ${humanizeKey(connected)} successfully.` };
-    } else if (error) {
-      this._banner = { variant: 'warning', message: `Connection failed: ${humanizeKey(error)}.` };
+    } else if (error || connected) {
+      this._banner = { variant: 'warning', message: 'Google connection was not confirmed. Review the intended account and OAuth client configuration, then start Connect again if needed. Check account status first; there is no automatic retry.' };
     }
 
     if (connected || error) {
