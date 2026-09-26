@@ -6,6 +6,7 @@ import { withPersonalWorkflow } from './helpers/personal-workflow-fixture.js';
 import { getDb } from '../server/db/connection.js';
 import { getRun } from '../server/agent/run-store.js';
 import { getAgentAction } from '../server/policy/policy-engine.js';
+import { getQueuedActionByActionId, listActionAttempts, requeueAction } from '../server/agent/action-queue-store.js';
 import { validateDashboard } from '../server/api/dashboard-schema.js';
 
 const reads = (fixture) => ({ reasoning_summary: 'Read selected account evidence', continue: true, actions: [
@@ -48,6 +49,80 @@ function researchPlan(payload) {
 
 for (const existing of [false, true]) {
   const label = existing ? 'existing unmarked personal home' : 'fresh personal home';
+  for (const acknowledgement of ['accepted', 'uncertain']) {
+    test(`${label}: approved simulated send ${acknowledgement} is account-bound, observed and never replayed after restart`, run({ existing, simulatedGmailSend: acknowledgement, modelPlan: (payload, fixture) => {
+      if (!payload.tool_observations) return reads(fixture);
+      if (fixture.modelRequests.length === 2) {
+        const { mail, mailItemIndex, event } = observed(payload);
+        return { reasoning_summary: 'Propose a new follow-up message from observed evidence, not a threaded reply', continue: true,
+          response: 'Follow-up message proposed, not sent. Dependent draft waits for acknowledged delivery.', actions: [
+            { tool: 'email.send', arguments: { to: 'placeholder', subject: 'Role discussion follow-up', body: `I am busy until ${event.end_at}; please suggest a later time.` },
+              resultRefs: { to: { stepIndex: 0, itemIndex: mailItemIndex, path: 'from_addr' } } },
+            { tool: 'email.draft', arguments: { to: mail.from_addr, subject: 'Follow-up after acknowledged delivery', body: 'Fixture draft, only after delivery.' }, dependsOn: [0] },
+          ] };
+      }
+      assert.equal(acknowledgement, 'accepted', 'uncertain delivery must never resume model planning');
+      assert.equal(fixture.modelRequests.length, 3);
+      const sent = payload.tool_observations.find((item) => item.tool === 'email.send');
+      const draft = payload.tool_observations.find((item) => item.tool === 'email.draft');
+      assert.equal(sent.status, 'executed'); assert.equal(draft.status, 'executed');
+      assert.equal(sent.items[0].data.id, `gmail_${fixture.primary.id}_fixture_send_receipt`);
+      assert.equal(sent.items[0].data.body, fixture.expectedApprovedSend.body);
+      assert.equal(draft.items[0].data.folder, 'drafts'); assert.equal(draft.items[0].data.from_addr, '');
+      assert.doesNotMatch(JSON.stringify(payload), /fixture-primary-gmail|fixture-primary-refresh|fixture-other-gmail/);
+      return { reasoning_summary: 'Report observed receipt and draft, not inferred objective completion', actions: [],
+        response: `Provider acknowledged message ${sent.items[0].data.id}; saved follow-up draft ${draft.items[0].data.id}. Objective completion not independently verified.` };
+    } }, async (fixture) => {
+      const result = await fixture.api('/api/agent/message', { text: 'Find the recruiter latest message, check availability and propose a new follow-up message. Require approval; draft another follow-up only after acknowledged delivery.' });
+      const send = result.actions.find((action) => action.tool === 'email.send'); assert.equal(send.status, 'pending');
+      fixture.expectedApprovedSend = { to: 'recruiter@example.test', subject: 'Role discussion follow-up', body: `I am busy until ${fixture.calendarEvent.end.dateTime}; please suggest a later time.` };
+      assert.deepEqual(send.arguments, fixture.expectedApprovedSend);
+      assert.equal(send.accountBinding.instanceId, fixture.primary.id); assert.equal(send.accountBinding.label, 'Selected fixture account');
+      const proposal = await fixture.api(`/api/actions/${send.id}`);
+      const readsBefore = fixture.network.length;
+      assert.equal(fixture.simulatedSends.length, 0); assert.equal(fixture.modelRequests.length, 2);
+      await fixture.api('/api/connectors/email/active', { connectorId: 'google', instanceId: fixture.other.id, providerId: 'gmail' });
+      await fixture.restart();
+      const restored = await fixture.api(`/api/actions/${send.id}`);
+      assert.deepEqual(restored.arguments, proposal.arguments); assert.deepEqual(restored.accountBinding, proposal.accountBinding);
+      assert.equal(restored.status, 'pending'); assert.equal(fixture.network.length, readsBefore);
+      const outcome = await fixture.api(`/api/actions/${send.id}/approve`, {});
+      assert.equal(fixture.simulatedSends.length, 1);
+      const queue = getQueuedActionByActionId(send.id); assert.equal(listActionAttempts(queue.id).length, 1);
+      const completed = await fixture.api(`/api/agent/runs/${result.runId}/result`);
+      assert.equal(completed.objectiveStatus, 'unverified');
+      if (acknowledgement === 'accepted') {
+        assert.equal(outcome.status, 'executed'); assert.equal(queue.status, 'completed');
+        assert.equal(completed.status, 'completed'); assert.deepEqual(completed.steps.map((step) => step.status), ['executed', 'executed', 'executed', 'executed']);
+        assert.match(completed.response, new RegExp(`gmail_${fixture.primary.id}_fixture_send_receipt`)); assert.match(completed.response, /draft.*not independently verified/);
+        assert.equal(getDb().prepare("SELECT count(*) n FROM emails WHERE folder='drafts'").get().n, 1);
+        const sent = getDb().prepare("SELECT * FROM emails WHERE folder='sent'").get();
+        assert.equal(sent.id, `gmail_${fixture.primary.id}_fixture_send_receipt`); assert.equal(sent.subject, fixture.expectedApprovedSend.subject);
+        assert.equal(sent.body, fixture.expectedApprovedSend.body); assert.deepEqual(JSON.parse(sent.to_addr), [fixture.expectedApprovedSend.to]);
+        assert.equal(fixture.modelRequests.length, 3);
+      } else {
+        assert.equal(outcome.status, 'failed'); assert.equal(outcome.errorClass, 'outcome_uncertain'); assert.match(outcome.error, /outcome uncertain.*Sent mail.*no automatic retry/);
+        assert.equal(queue.error_class, 'outcome_uncertain'); assert.equal(completed.status, 'needs_attention');
+        assert.deepEqual(completed.steps.map((step) => step.status), ['executed', 'executed', 'outcome_uncertain', 'waiting_dependency']);
+        assert.match(completed.response, /outcome uncertain/); assert.doesNotMatch(completed.response, /1 awaiting approval|0 failed or needing attention/); assert.equal(fixture.modelRequests.length, 2);
+        assert.equal(getDb().prepare("SELECT count(*) n FROM emails WHERE folder IN ('drafts','sent')").get().n, 0);
+        assert.throws(() => requeueAction(queue.id), /cannot be requeued/);
+        const operations = await fixture.api('/api/actions/operations');
+        assert.ok(operations.items.some((item) => item.actionId === send.id && item.errorClass === 'outcome_uncertain'));
+      }
+      assert.doesNotMatch(JSON.stringify({ outcome, completed, restored }), /fixture-primary-gmail|fixture-primary-refresh|fixture-other-gmail/);
+      await fixture.api(`/api/actions/${send.id}/approve`, {}, 400);
+      const modelBefore = fixture.modelRequests.length;
+      await fixture.api(`/api/agent/runs/${result.runId}/resume`, {}); await fixture.restart();
+      await fixture.api(`/api/agent/runs/${result.runId}/resume`, {});
+      const afterRestart = await fixture.api(`/api/agent/runs/${result.runId}/result`);
+      assert.equal(afterRestart.status, completed.status); assert.equal(afterRestart.objectiveStatus, 'unverified');
+      assert.deepEqual(afterRestart.steps.map((step) => step.status), completed.steps.map((step) => step.status));
+      assert.equal(fixture.modelRequests.length, modelBefore); assert.equal(fixture.network.length, readsBefore);
+      assert.equal(fixture.simulatedSends.length, 1); assert.equal(listActionAttempts(queue.id).length, 1);
+      assert.deepEqual(fixture.externalWrites, []);
+    }));
+  }
   test(`${label}: exact personal send proposal survives account switch/restart and rejection blocks dependent work`, run({ existing, modelPlan: (payload, fixture) => {
     if (!payload.tool_observations) return reads(fixture);
     assert.equal(fixture.modelRequests.length, 2, 'pending/rejected proposal must not trigger further planning');
