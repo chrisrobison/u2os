@@ -57,6 +57,22 @@ export function getModelStatus() {
   return request('/api/model');
 }
 
+export function listGoalDrafts() {
+  return request('/api/goals');
+}
+
+export function getGoalDraft(id) {
+  return request(`/api/goals/${encodeURIComponent(id)}`);
+}
+
+export function createGoalDraft(payload) {
+  return request('/api/goals', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(payload) });
+}
+
+export function updateGoalDraft(id, payload) {
+  return request(`/api/goals/${encodeURIComponent(id)}`, { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify(payload) });
+}
+
 export function saveConnectorConfig(endpoint, values) {
   return request(endpoint, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(values) });
 }

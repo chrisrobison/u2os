@@ -9,6 +9,7 @@ const ROUTES = [
   ['#/dashboards', 'Dashboards'],
   ['#/activity', 'Activity'],
   ['#/operations', 'Operations'],
+  ['#/goals', 'Goals'],
   ['#/automation', 'Automation'],
   ['#/diagnostics', 'Diagnostics'],
   ['#/connectors', 'Connectors'],
