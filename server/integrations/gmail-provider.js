@@ -162,12 +162,18 @@ export async function getEmail(localId, { fetchImpl = globalThis.fetch, dataDir,
 // attempted injection instead of surfacing it.
 function assertNoHeaderInjection(value, fieldName) {
   if (typeof value === 'string' && /[\r\n]/.test(value)) {
-    throw new Error(`gmail: "${fieldName}" must not contain line breaks`);
+    throw new Error(`gmail: "${fieldName}" must not contain line breaks; no message was attempted`);
   }
 }
 
 function buildRawMessage({ to, subject, body }) {
-  const toList = Array.isArray(to) ? to : [to];
+  const toList = Array.isArray(to) ? Array.from(to) : [to];
+  if (!toList.length || toList.some((addr) => typeof addr !== 'string' || !addr.trim())) {
+    throw new Error('gmail: "to" must be a nonempty string or nonempty flat array of nonempty strings; no message was attempted');
+  }
+  if (typeof subject !== 'string' || typeof body !== 'string') {
+    throw new Error('gmail: subject and body must be strings; no message was attempted');
+  }
   for (const addr of toList) assertNoHeaderInjection(addr, 'to');
   assertNoHeaderInjection(subject, 'subject');
   const toHeader = toList.join(', ');
@@ -176,8 +182,8 @@ function buildRawMessage({ to, subject, body }) {
 }
 
 export async function sendEmail({ to, subject, body }, { fetchImpl = globalThis.fetch, dataDir, instance } = {}) {
-  const headers = { ...(await authHeaders(fetchImpl, dataDir, instance)), 'Content-Type': 'application/json' };
   const raw = buildRawMessage({ to, subject, body });
+  const headers = { ...(await authHeaders(fetchImpl, dataDir, instance)), 'Content-Type': 'application/json' };
   const res = await fetchImpl(`${API_BASE}/messages/send`, { method: 'POST', headers, body: JSON.stringify({ raw }) });
   if (!res.ok) throw new Error(`gmail: sendEmail failed (status ${res.status})`);
   const sent = await res.json();
