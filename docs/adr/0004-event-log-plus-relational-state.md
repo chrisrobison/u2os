@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted; partially superseded by [0007](0007-owned-vault-is-the-digital-self.md), which makes the owned vault (not relational tables) authoritative for owner-authored knowledge.
 
 ## Context
 

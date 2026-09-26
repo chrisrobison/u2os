@@ -2,11 +2,32 @@
 
 This plan begins from the current pre-alpha implementation of Phases 1–7. Work is ordered by dependency and risk: secure the existing platform first, make its intelligence replaceable and useful second, then deepen interfaces, voice, integrations, and packaging.
 
+## Current priority — The owned digital self
+
+Tracking issue: [#355](https://github.com/chrisrobison/u2os/issues/355). See [ADR 0007](docs/adr/0007-owned-vault-is-the-digital-self.md).
+
+U2OS is a way to consolidate the owner's digital self into files they own, with a system that acts on their behalf. The agent is a tool that uses that information. Milestones 1–9 built trustworthy machinery (policy, durable queue, audit, privacy). This milestone puts that machinery to work for the actual product. Further recovery/backup/connector hardening is deferred unless real use of the vault and routines surfaces a need.
+
+- [ ] [#358](https://github.com/chrisrobison/u2os/issues/358) Re-centre documentation on the owned vault
+- [ ] [#356](https://github.com/chrisrobison/u2os/issues/356) Index the owner-authored Markdown vault into memory
+- [ ] [#357](https://github.com/chrisrobison/u2os/issues/357) Run owner-written routine files unattended through policy
+- [ ] [#359](https://github.com/chrisrobison/u2os/issues/359) Export existing database memory into vault files
+- [ ] [#360](https://github.com/chrisrobison/u2os/issues/360) Append observations and action outcomes to a vault journal
+- [ ] [#361](https://github.com/chrisrobison/u2os/issues/361) Write owner memory edits back to vault files
+- [ ] [#362](https://github.com/chrisrobison/u2os/issues/362) Move action policies into the vault
+
+### Acceptance criteria
+
+- The owner's identity, people, projects, commitments and routines are ordinary files that remain readable and useful without U2OS.
+- Deleting the SQLite database and restarting rebuilds vault-sourced memory from the files.
+- At least one owner-written routine runs unattended on schedule and on an event, with consequential actions still gated by policy.
+
 ## Guiding constraints
 
 - Preserve the event log as the system's connective tissue.
 - Keep authorization outside the model and tool providers.
 - Feedback may change ranking and presentation, never security policy.
+- The owner's digital self is a vault of plain files they own; SQLite is an index and runtime.
 - Keep core identity, memory, relationships, and policies local-first and portable.
 - Treat the browser and future satellites as untrusted clients of the persistent service.
 - Prefer standard protocols, native browser modules, small explicit interfaces, and few dependencies.
