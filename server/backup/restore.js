@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { acquireHomeGuard, canonicalDataHome, isOwnedGuardArtifact } from '../runtime/home-guard.js';
 import { readArchive } from './archive-reader.js';
 import { writeRecoveryState, syncDirectory } from './recovery-state.js';
+import { readInstallationIdentity } from '../seed/installation-mode.js';
 
 export function verifyDatabase(home) {
   const file = path.join(home, 'db', 'u2os.sqlite');
@@ -31,6 +32,7 @@ export async function restoreValidatedArchive(archive, dataDir, { force = false 
     const payload = path.join(staging, 'payload');
     const counts = await readArchive(archive, payload);
     const database = verifyDatabase(payload);
+    const installationId = readInstallationIdentity(payload);
     if (force) throw new Error('snapshot: force restore is unsupported; choose an isolated empty recovery home');
     // Before acquiring (and creating) a guard, preserve nonempty destinations.
     if (fs.existsSync(dataDir) && fs.readdirSync(dataDir).length) throw new Error('snapshot: refusing to restore into a non-empty home; choose an isolated empty destination');
@@ -38,7 +40,7 @@ export async function restoreValidatedArchive(archive, dataDir, { force = false 
     guard = acquireHomeGuard(home);
     if (fs.readdirSync(home).some((name) => !isOwnedGuardArtifact(home, name))) throw new Error('snapshot: refusing to restore into a non-empty home; choose an isolated empty destination');
     fs.chmodSync(home, 0o700);
-    const state = { status: 'incomplete', restoredAt: new Date().toISOString(), database, ...counts };
+    const state = { status: 'incomplete', restoredAt: new Date().toISOString(), installationId, database, ...counts };
     writeRecoveryState(home, state, { initial: true });
     function publish(source, destination) {
       for (const name of fs.readdirSync(source)) {

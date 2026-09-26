@@ -111,3 +111,27 @@ reconciliation are not yet supported. No safe failover is claimed by offline
 verification alone. The local guard does not coordinate older releases,
 external editors or cross-host copies. No live owner backup/restore validation
 has been performed.
+
+## Installation identity prerequisite
+
+`config/installation.json` now includes a canonical random UUIDv4
+`installationId`, assigned during normal initialization, retained across
+restart/home rename and independent of owner display name, personal entity
+or account credentials. Existing configurations gain only this root property;
+their unknown JSON fields, integer precision, escapes and formatting are
+preserved. Persistence is private and atomic, with file/directory fsync under
+the runtime/offline guard. Invalid metadata is preserved and rejected, not
+replaced with a guessed identity. Metadata must be valid UTF-8 JSON, at most
+1 MiB, and a regular single-link file under a real config directory. Review
+unsupported/corrupt metadata offline; do not erase an established ID to bypass
+validation. Interrupted writes can leave private `.installation-stage-*`
+directories under config; never remove an active operation's staging.
+
+Backup creation stays read-only with respect to installation metadata. An
+older stopped home or archive may have no ID; it is not initialized or guessed
+from its owner name/path. Validated recovery records the archived ID in its
+inactive marker, or `null` when absent. The ID is matching evidence, **not**
+permission to execute, authentication or distributed locking; copied IDs do
+not yet prevent two independent paths from running. Every recovery marker
+still blocks startup, even when a valid identity is present. Matching and
+explicit retirement/reconciliation belong to the subsequent activation flow.
