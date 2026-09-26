@@ -91,7 +91,7 @@ test('the OS-backed guard rejects a different process and releases after process
   const exited = once(first.processHandle, 'exit'); first.processHandle.kill('SIGKILL'); await exited;
   const restarted = await start();
   const result = await restarted.agent.actionQueueWorker.processAction(action.id);
-  assert.equal(result.errorClass, 'owner_attention_required');
+  assert.equal(result.errorClass, 'outcome_uncertain');
   assert.match(result.error, /uncertain/);
   assert.equal(getDb().prepare('SELECT COUNT(*) n FROM action_attempts WHERE queue_id = ?').get(queued.id).n, 1);
   assert.equal(getDb().prepare("SELECT COUNT(*) n FROM events WHERE type = 'notification.sent'").get().n, 0);
