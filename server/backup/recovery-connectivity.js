@@ -131,6 +131,19 @@ function checkFiles(home, dir, inventory) {
   }
 }
 
+/** Read-only checkpoint verification for separately guarded recovery tools.
+ * Matching this receipt is evidence of quarantine, never activation authority. */
+export function readConnectivityQuarantineCheckpoint(home, db, marker) {
+  if (!UUID.test(marker.recoveryId) || !UUID.test(marker.connectivityPreparation?.id)) throw refused();
+  const dir = privateDirectory(home, marker, false), inventory = readInventory(dir, marker);
+  checkFiles(home, dir, inventory);
+  const receipt = { version: 1, id: inventory.id, appliedAt: inventory.createdAt, counts: inventory.counts, scope: 'connectivity-only' };
+  const prior = db.prepare('SELECT CASE WHEN length(data) <= 65536 THEN data ELSE NULL END data FROM events WHERE type = ? AND source = ? AND subject_id = ? LIMIT 2').all(EVENT, 'system:recovery', marker.recoveryId);
+  if (prior.length !== 1 || prior[0].data !== JSON.stringify(receipt) || JSON.stringify(marker.connectivityQuarantine) !== JSON.stringify(receipt) ||
+      activeFiles(home).length || databaseState(db).hash !== inventory.afterHash) throw refused();
+  return receipt;
+}
+
 /** No decryption, providers, models or application migrations. Files remain
  * available privately for inspection; every exit leaves execution inactive. */
 export function reviewRecoveryConnectivity({ dataDir = getDataDir(), apply = false } = {}) {

@@ -254,3 +254,63 @@ Original-instance retirement, post-capture evidence/budget reconciliation and
 activation remain unsupported. These commands do not prove that the original
 has stopped or that an absent snapshot result was never delivered. No owner
 accounts, backups or device connections were used for validation.
+
+## Compare with the explicitly selected original
+
+Stop both supported runtimes and await complete request/background drain.
+After work and connectivity quarantine, explicitly select the existing original
+home for a read-only comparison:
+
+```sh
+U2OS_HOME=/private/isolated-recovery npm run recovery:compare -- --original /private/original-u2os
+```
+
+Both distinct, non-nested canonical homes must be owned by this command. It
+refuses an active runtime or aliased same home; it does not displace a process,
+initialize a missing directory, guess an original from archive content, assign
+legacy identity, migrate SQLite, or read original connector credentials. Known matching
+personal installation IDs and the same authenticated owner/entity link are
+required. Changing the person's display name does not affect that link. Unknown
+identity, incomplete/changed quarantine or unsupported storage is preserved
+and refused, not converted into an apparent successful recovery.
+Recovered offline-byte fingerprints are checked without decrypting credentials
+or exposing credential/master-key fingerprints.
+
+The original's committed SQLite/WAL state is copied consistently into a private
+temporary database while both guards remain held. Only that private copy is
+made self-contained. Its files use mode 0600 under a mode-0700 directory and
+are cleaned on success/failure. Original/recovered application records,
+credentials, configuration, marker and resource ledgers are unchanged. SQLite
+locking/read-mark metadata and the cooperative guard are not personal records
+and can change during inspection. This local boundary does not coordinate
+external editors or older releases.
+
+Output contains flags, counts and a comparison timestamp only:
+
+- Original-only actions/runs, recorded completions beyond the snapshot, new or
+  changed attempt evidence and original in-flight attempts.
+- Recorded additional model calls and measured input/output token counters,
+  including original-only runs. Unmetered calls and regressed counters remain
+  explicit; monetary cost is unavailable. These numbers do **not** reconcile
+  goal budgets or reset spending.
+- Original-only/missing goals, changed stored objective/criteria/constraints/
+  scope/budgets and cancellations beyond the snapshot. Stored values are
+  compared conservatively; formatting changes can require review too.
+- Owner-authentication and authorization/data-processing policy-byte change
+  flags, without hashes, passwords, policy contents or owner/entity IDs.
+
+No objectives, arguments, results, recipients, endpoints, identifiers, private
+file paths or secrets are printed. The supported comparison limits are 4 GiB
+combined main-database/sidecar bytes per home, 100,000 records per compared
+action/attempt/run/goal/owner table and 1 MiB per policy file. Missing or unsafe
+measurements and unsupported/executable schemas fail closed. There is no live
+provider or model validation in this operation.
+
+A completion in the original audit is **recorded evidence**, not an independent
+provider-delivery check. In-flight/absent snapshot outcomes are not proved
+failed or unattempted. `executionAuthorized`, `originalRetired`,
+`providerOutcomesVerified` and `resourceLedgerReconciled` remain false; recovery
+remains inactive. The original may progress again after the guards release.
+This comparison is neither a retirement receipt nor activation permission;
+post-capture reconciliation and explicit retirement/activation are still
+separate unfinished work. Fixtures, not owner accounts/backups, were used.

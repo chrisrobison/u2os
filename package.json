@@ -16,6 +16,7 @@
     "restore": "node server/backup/snapshot.js restore",
     "recovery:review": "node server/backup/recovery-review-cli.js",
     "recovery:connectivity": "node server/backup/recovery-connectivity-cli.js",
+    "recovery:compare": "node server/backup/recovery-compare-cli.js",
     "maintain": "node server/events/maintenance-cli.js",
     "imsg:read": "node server/integrations/imsg-cli.js",
     "setup-owner": "node server/security/setup-owner-cli.js"
