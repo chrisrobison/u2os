@@ -40,8 +40,9 @@ export async function withGoogleRead({ fetchImpl = globalThis.fetch, timeoutMs =
     const transport = Promise.resolve().then(() => { check(); return fetchImpl(input, { ...init, signal }); }).then((response) => {
       if (timedOut || finished) { discard(response); check(); }
       responses.add(response);
+      failedStatus = response.ok ? undefined : response.status;
       if (!response.ok) {
-        failedStatus = response.status; discard(response);
+        discard(response);
         // Existing get-404 and sync skip semantics can inspect metadata,
         // but an error body is never read or forwarded.
         if (response.status !== 404) throw failure([401, 403].includes(response.status) || (method === 'POST' && response.status === 400) ? 'authorization' : response.status === 429 ? 'rate_limit' : 'unavailable', response.status);

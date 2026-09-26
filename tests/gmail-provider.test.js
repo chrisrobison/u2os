@@ -82,7 +82,7 @@ test('Gmail search rejects malformed input and fails if a result cannot be fetch
       : new Response('', { status: 503 });
     await assert.rejects(listEmails({ query: 'x'.repeat(257) }, { fetchImpl, dataDir: dir, instance: TEST_INSTANCE }), /at most 256/);
     await assert.rejects(listEmails({ folder: 'inbox OR in:sent' }, { fetchImpl, dataDir: dir, instance: TEST_INSTANCE }), /folder must/);
-    await assert.rejects(listEmails({ query: 'x' }, { fetchImpl, dataDir: dir, instance: TEST_INSTANCE }), /message fetch failed/);
+    await assert.rejects(listEmails({ query: 'x' }, { fetchImpl, dataDir: dir, instance: TEST_INSTANCE }), (error) => error.code === 'GOOGLE_READ_UNAVAILABLE' && error.status === 503);
   } finally { cleanup(dir); }
 });
 
@@ -94,7 +94,7 @@ test('Gmail search locally caps an oversized provider page', async () => {
     const fetchImpl = async (url) => {
       if (url.includes('/messages?')) return new Response(JSON.stringify({ messages: Array.from({ length: 60 }, (_, index) => ({ id: `m${index}` })) }), { status: 200 });
       details += 1;
-      return new Response(JSON.stringify({ id: `m${details}`, labelIds: ['INBOX'], payload: { headers: [] } }), { status: 200 });
+      return new Response(JSON.stringify({ id: new URL(url).pathname.split('/').at(-1), labelIds: ['INBOX'], payload: { headers: [] } }), { status: 200 });
     };
     assert.equal((await listEmails({ query: 'x' }, { fetchImpl, dataDir: dir, instance: TEST_INSTANCE })).length, 50);
     assert.equal(details, 50);
