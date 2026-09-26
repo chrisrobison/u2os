@@ -27,7 +27,7 @@ const required = {
 };
 function refused(message) { const error = new Error(`Recovery review refused: ${message}. Preserve the home for offline review; activation is not supported`); error.code = 'RECOVERY_REVIEW_REFUSED'; return error; }
 
-function readMarker(home) {
+export function readInactiveRecoveryMarker(home) {
   const file = path.join(home, RECOVERY_FILE);
   try {
     const stat = fs.lstatSync(file);
@@ -40,7 +40,7 @@ function readMarker(home) {
   } catch { throw refused('verified inactive installation identity is missing or invalid'); }
 }
 
-function validateSchema(db) {
+export function validateRecoverySchema(db, additional = {}) {
   // Do not execute archive-supplied triggers/views/generated expressions or
   // custom constraints during operational-state updates. No migrations here.
   const objects = db.prepare('SELECT type, name, sql FROM sqlite_master LIMIT 1001').all();
@@ -55,7 +55,7 @@ function validateSchema(db) {
     if (db.prepare('SELECT cid FROM pragma_index_xinfo(?)').all(index.name).some((row) => row.cid === -2) ||
         (/\bwhere\b/.test(sql) && !partialIndexes.has(sql))) throw refused('custom executable index expressions are unsupported');
   }
-  for (const [table, columns] of Object.entries(required)) {
+  for (const [table, columns] of Object.entries({ ...required, ...additional })) {
     const actual = db.prepare(`PRAGMA table_xinfo(${table})`).all();
     if (actual.some((column) => column.hidden || /[()]/.test(column.dflt_value || '')) || columns.some((column) => !actual.some((entry) => entry.name === column))) throw refused('database schema is unsupported; no migrations were attempted');
   }
@@ -76,6 +76,31 @@ function counts(db) {
   };
 }
 
+export function readWorkQuarantineCheckpoint(db, marker) {
+  const prior = db.prepare('SELECT CASE WHEN length(data) <= 65536 THEN data ELSE NULL END data FROM events WHERE type = ? AND source = ? AND subject_id = ? LIMIT 2')
+    .all(EVENT_TYPE, 'system:recovery', marker.recoveryId ?? '');
+  if (prior.length > 1) throw refused('recovery checkpoint is ambiguous');
+  if (!prior.length) {
+    if (marker.workQuarantine) throw refused('recovery marker has no corresponding database checkpoint');
+    return null;
+  }
+  let receipt;
+  try { if (typeof prior[0].data !== 'string') throw new Error(); receipt = JSON.parse(prior[0].data); }
+  catch { throw refused('recovery checkpoint is invalid'); }
+  const fields = Object.keys(counts(db));
+  if (receipt.version !== 1 || !UUID.test(receipt.id) || receipt.scope !== 'database-work-only' || !receipt.counts ||
+      Object.keys(receipt).some((key) => !['version','id','appliedAt','counts','scope'].includes(key)) ||
+      Object.keys(receipt.counts).length !== fields.length || fields.some((key) => !Number.isSafeInteger(receipt.counts[key]) || receipt.counts[key] < 0) ||
+      !Number.isFinite(Date.parse(receipt.appliedAt)) || new Date(receipt.appliedAt).toISOString() !== receipt.appliedAt) throw refused('recovery checkpoint is invalid');
+  const current = counts(db);
+  if (Object.entries(current).some(([key, value]) => key !== 'heldQueueItems' && value !== 0) ||
+      db.prepare(`SELECT count(*) n FROM action_queue WHERE status != 'completed' AND
+        (status != 'failed' OR error_class IS NOT ? OR lease_owner IS NOT NULL OR lease_expires_at IS NOT NULL OR approval_reference IS NOT NULL OR policy_decision_reference IS NOT NULL)`).get(RECOVERY_ERROR_CLASS).n ||
+      db.prepare(`SELECT count(*) n FROM agent_actions WHERE status != 'executed' AND rejected_at IS NULL AND id IN
+        (SELECT action_id FROM action_queue WHERE status != 'completed')`).get().n) throw refused('quarantine checkpoint no longer matches stopped work');
+  return receipt;
+}
+
 /** Offline metadata-only preview/apply. Neither path starts providers or
  * interprets observations as permission. Every successful home stays inactive. */
 export function reviewRecoveryWork({ dataDir = getDataDir(), apply = false } = {}) {
@@ -86,41 +111,24 @@ export function reviewRecoveryWork({ dataDir = getDataDir(), apply = false } = {
   const guard = acquireHomeGuard(home);
   let db;
   try {
-    let marker = readMarker(home);
+    let marker = readInactiveRecoveryMarker(home);
     const file = path.join(home, 'db', 'u2os.sqlite');
     const databaseFile = fs.lstatSync(file);
     if (!fs.lstatSync(path.dirname(file)).isDirectory() || !databaseFile.isFile() || databaseFile.nlink !== 1) throw refused('application database is unavailable or linked');
     db = new DatabaseSync(file, { readOnly: !apply }); db.exec('PRAGMA trusted_schema = OFF;');
-    validateSchema(db);
-    const prior = db.prepare('SELECT data FROM events WHERE type = ? AND source = ? AND subject_id = ? LIMIT 2')
-      .all(EVENT_TYPE, 'system:recovery', marker.recoveryId ?? '');
-    if (prior.length > 1) throw refused('recovery checkpoint is ambiguous');
-    if (prior.length) {
-      let receipt;
-      try { if (prior[0].data.length > 65536) throw new Error(); receipt = JSON.parse(prior[0].data); }
-      catch { throw refused('recovery checkpoint is invalid'); }
-      const fields = Object.keys(counts(db));
-      if (receipt.version !== 1 || !UUID.test(receipt.id) || receipt.scope !== 'database-work-only' || !receipt.counts ||
-          Object.keys(receipt).some((key) => !['version','id','appliedAt','counts','scope'].includes(key)) ||
-          Object.keys(receipt.counts).length !== fields.length || fields.some((key) => !Number.isSafeInteger(receipt.counts[key]) || receipt.counts[key] < 0) ||
-          !Number.isFinite(Date.parse(receipt.appliedAt)) || new Date(receipt.appliedAt).toISOString() !== receipt.appliedAt) throw refused('recovery checkpoint is invalid');
-      const current = counts(db);
-      if (Object.entries(current).some(([key, value]) => key !== 'heldQueueItems' && value !== 0) ||
-          db.prepare(`SELECT count(*) n FROM action_queue WHERE status != 'completed' AND
-            (status != 'failed' OR error_class IS NOT ? OR lease_owner IS NOT NULL OR lease_expires_at IS NOT NULL OR approval_reference IS NOT NULL OR policy_decision_reference IS NOT NULL)`).get(RECOVERY_ERROR_CLASS).n ||
-          db.prepare(`SELECT count(*) n FROM agent_actions WHERE status != 'executed' AND rejected_at IS NULL AND id IN
-            (SELECT action_id FROM action_queue WHERE status != 'completed')`).get().n) throw refused('quarantine checkpoint no longer matches stopped work');
+    validateRecoverySchema(db);
+    const receipt = readWorkQuarantineCheckpoint(db, marker);
+    if (receipt) {
       if (apply && marker.workQuarantine?.id !== receipt.id) writeRecoveryState(home, { ...marker, workQuarantine: receipt });
       return apply ? { inactive: true, alreadyApplied: true, ...receipt } : { inactive: true, alreadyApplied: true, counts: receipt.counts };
     }
-    if (marker.workQuarantine) throw refused('recovery marker has no corresponding database checkpoint');
     const summary = counts(db);
     if (!apply) return { inactive: true, alreadyApplied: false, counts: summary };
     if (!marker.recoveryId) {
       marker = { ...marker, recoveryId: randomUUID() }; writeRecoveryState(home, marker);
     }
-    const receipt = { version: 1, id: randomUUID(), appliedAt: new Date().toISOString(), counts: summary, scope: 'database-work-only' };
-    const now = receipt.appliedAt;
+    const newReceipt = { version: 1, id: randomUUID(), appliedAt: new Date().toISOString(), counts: summary, scope: 'database-work-only' };
+    const now = newReceipt.appliedAt;
     db.exec('BEGIN IMMEDIATE;');
     try {
       // Revoke approval, retaining historical approval/result/attempt fields.
@@ -144,11 +152,11 @@ export function reviewRecoveryWork({ dataDir = getDataDir(), apply = false } = {
       db.exec('DELETE FROM sessions;');
       db.prepare(`INSERT INTO events (id,type,timestamp,source,actor_type,actor_id,subject_type,subject_id,data,metadata,created_at)
         VALUES (?,?,?,'system:recovery','system','recovery','recovery',?,?,'{"classification":"private"}',?)`)
-        .run(`recovery_${receipt.id}`, EVENT_TYPE, now, marker.recoveryId, JSON.stringify(receipt), now);
+        .run(`recovery_${newReceipt.id}`, EVENT_TYPE, now, marker.recoveryId, JSON.stringify(newReceipt), now);
       db.exec('COMMIT;');
     } catch { db.exec('ROLLBACK;'); throw refused('database quarantine failed; its transaction was rolled back'); }
-    writeRecoveryState(home, { ...marker, workQuarantine: receipt });
-    return { inactive: true, alreadyApplied: false, ...receipt };
+    writeRecoveryState(home, { ...marker, workQuarantine: newReceipt });
+    return { inactive: true, alreadyApplied: false, ...newReceipt };
   } catch (error) {
     if (error.code === 'RECOVERY_REVIEW_REFUSED') throw error;
     throw refused('review or checkpoint publication failed; the home remains inactive');

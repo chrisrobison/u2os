@@ -186,5 +186,71 @@ successful objective completion or definite failed delivery.
 
 This checkpoint covers **database work only**. Connector/model configuration,
 cached devices and credentials still require separate activation review.
-Original-instance retirement and activation remain unsupported; never remove
-the recovery marker to start this home. No live owner recovery was performed.
+
+## Preview and quarantine archived connectivity
+
+After completing database-work quarantine above, review a verified inactive
+home's connectivity counts without changing its files or records:
+
+```sh
+U2OS_HOME=/private/isolated-recovery npm run recovery:connectivity
+```
+
+Only after reviewing them, explicitly quarantine archived connectivity:
+
+```sh
+U2OS_HOME=/private/isolated-recovery npm run recovery:connectivity -- --apply
+```
+
+This is **not activation**. Startup remains denied. Neither command decrypts
+credentials, contacts a provider/model, or migrates application SQLite. The
+known identity, validated schema, stopped-work checkpoint and canonical-home
+ownership are required; normal homes and unsupported/changed storage fail
+closed. CLI output contains counts and inactive/progress flags, not account
+names, endpoints, filenames, hashes, tokens or personal content.
+
+Apply keeps the credential master key in place and preserves archived encrypted
+credential files (including legacy single-account files), the old device
+transport token, `config/config.json` and `config/connectors.yaml` byte-for-byte
+under private `recovery-review/<recovery-id>/<preparation-id>/` directories.
+Normal vault/config loaders never read this area. Whole runtime configuration
+is held, including unrelated settings, so defaults cannot silently reuse an
+archived endpoint; those settings remain available for offline inspection.
+Legacy macOS AppleDouble sidecars associated with these files are preserved
+there too, not interpreted. New backup creation suppresses tar-generated
+AppleDouble files; actual source sidecar bytes still remain source records.
+
+Live account instances become disconnected with new credential revisions and
+cleared IMAP/SMTP associations. Deleted instances remain deleted. Cached
+devices become offline/revoked; their names, capabilities and last-observed
+evidence remain. The old transport token is no longer available to runtime
+startup. Owner identity, personal records, completed results, uncertain attempt
+history and measured resource counters are retained. After a separately
+implemented activation, accounts/models and device trust will require explicit
+fresh owner configuration; do not copy held files back to bypass this review.
+
+A private bounded inventory records original byte fingerprints before files
+move. Each staged copy is verified and fsynced before its active source file is
+removed; the preserved copy remains recoverable in the review area. Under the
+cooperative guard, publication is synchronous and does not overwrite a known
+existing destination. Changed, missing, linked or unexpected files are refused,
+not replaced. The supported limits are 1 MiB per reviewed file/inventory,
+1,000 connectivity files, 64 MiB aggregate and 10,000 accounts/devices each.
+Encrypted files require a retained 32-byte master key; unsupported layouts or
+missing keys require offline inspection, not an invented successful recovery.
+
+Process interruption can leave preparation or partially moved files while the
+home stays inactive. Preview reports an in-progress inventory when available;
+explicit apply can finish that same verified inventory. A database transaction
+failure rolls back only database updates, not already preserved file moves.
+The metadata-only SQLite checkpoint prevents duplicate account revisions or
+audit events; retry repairs a failed final marker publication. Private
+`.inventory-stage-*`/`.copy-stage-*` directories may remain after interruption;
+preserve them for stopped-operation inspection, never remove active staging.
+Original source/archive bytes are untouched. This cooperative protocol does
+not coordinate external editors or older releases.
+
+Original-instance retirement, post-capture evidence/budget reconciliation and
+activation remain unsupported. These commands do not prove that the original
+has stopped or that an absent snapshot result was never delivered. No owner
+accounts, backups or device connections were used for validation.
