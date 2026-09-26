@@ -320,6 +320,10 @@ u2-app {
 .operation-card__account, .operation-card__sender { color: var(--text-secondary); font-size: var(--text-xs); }
 .operation-card[data-outcome="uncertain"] { border-left-color: var(--accent-pending); }
 .operation-card[data-outcome="uncertain"] .operation-card__attention { color: var(--accent-pending); }
+.operation-card__review { grid-column: 1 / -1; justify-self: start; }
+.operation-review { margin-bottom: var(--space-5); padding: var(--space-4); border: var(--border-width) solid var(--border-color); background: var(--bg-card); overflow-wrap: anywhere; }
+.operation-review h2 { font-size: var(--text-sm); }
+.operation-review > button { margin: var(--space-2) 0; }
 
 @media (max-width: 600px) {
   .operation-card { grid-template-columns: 1fr; gap: var(--space-1); }

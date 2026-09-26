@@ -120,6 +120,18 @@ without more planning. Repeated approval, explicit wakes and restart cannot
 repeat either send; original account/payload and existing records survive.
 These are not live delivery, threaded replies or personal browser approval proof.
 
+Saved approval review is available under Operations as well as the dashboard.
+After reload, open a waiting item's **Review approval** to fetch its original
+account, recipient and change. Only this explicit preview loads the private
+proposal; delivery metadata remains payload-free. Closing a preview does not
+cancel the action. Approve/reject still goes through the normal runtime checks;
+stale or missing account records cannot offer review controls. An uncertain
+outcome requires checking the original provider, not retrying. Browser fixtures
+exercise actual demo reload/rejection and personal-mode component responses for
+lazy fetch, in-flight/SSE preservation, stale records, single-flight refresh and
+inert private text ([saved review suite](../tests/e2e/saved-approval-review.spec.js)).
+These are not configured personal-model browser delivery or live-provider proof.
+
 Two further fresh/existing-home cases fork the real server, send an authenticated
 approval through native HTTP and gate on the exact original-account Gmail POST
 at an isolated loopback provider fixture. SIGKILL occurs while the durable attempt
