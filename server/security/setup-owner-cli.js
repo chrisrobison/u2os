@@ -1,17 +1,25 @@
 import readline from 'node:readline';
 import { getDb } from '../db/connection.js';
 import { AuthService } from './auth.js';
+import { withOfflineHome } from '../runtime/offline-home.js';
 
-const auth = new AuthService(getDb());
-if (auth.hasOwner()) {
-  console.error('Owner setup is already complete for this U2OS_HOME.');
+try {
+  await withOfflineHome(async () => {
+    const auth = new AuthService(getDb());
+    if (auth.hasOwner()) {
+      console.error('Owner setup is already complete for this U2OS_HOME.');
+      process.exitCode = 1;
+      return;
+    }
+    const passphrase = await maskedPrompt('New owner passphrase (minimum 12 characters): ');
+    const confirmation = await maskedPrompt('Confirm passphrase: ');
+    if (passphrase !== confirmation) throw new Error('Passphrases do not match');
+    await auth.setup(passphrase);
+    console.log('Owner created. The server may now bind to an explicitly configured non-loopback address.');
+  });
+} catch (error) {
+  console.error(error.message);
   process.exitCode = 1;
-} else {
-  const passphrase = await maskedPrompt('New owner passphrase (minimum 12 characters): ');
-  const confirmation = await maskedPrompt('Confirm passphrase: ');
-  if (passphrase !== confirmation) throw new Error('Passphrases do not match');
-  await auth.setup(passphrase);
-  console.log('Owner created. The server may now bind to an explicitly configured non-loopback address.');
 }
 
 async function maskedPrompt(prompt) {
