@@ -9,8 +9,11 @@ Worker-setup failure after binding closes the listener and drains partial setup.
 The internal server handle offers `stopBackgroundWorkers()` for an idempotent
 background drain; it does not close HTTP or cancel in-flight request handlers.
 Local initialization and additive migrations may still occur before binding.
-This safeguard is not a cross-process singleton or maintenance lock; coordinated
-backup/recovery and complete startup/shutdown handling remain unfinished.
+The [local runtime ownership guard](runtime-ownership.md) prevents simultaneous
+executors for one canonical home and retains ownership through started-handler
+and background drain. It is not yet a maintenance or restored-copy lock;
+coordinated backup/recovery remains unfinished. Stop older releases before
+upgrading, because they do not participate in the new guard protocol.
 
 ## Configuration
 

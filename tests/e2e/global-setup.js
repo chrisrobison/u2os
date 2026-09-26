@@ -23,6 +23,7 @@ export default async function globalSetup() {
 
   return async function globalTeardown() {
     await new Promise((resolve) => handle.server.close(resolve));
+    await handle.closed;
     closeAllForTests();
     delete process.env.U2OS_HOME;
     fs.rmSync(dataDir, { recursive: true, force: true });

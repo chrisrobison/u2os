@@ -30,6 +30,7 @@ import { generateOrLoadMasterKey } from './security/vault.js';
 import { AuthService } from './security/auth.js';
 import fs from 'node:fs';
 import path from 'node:path';
+import { canonicalDataHome, acquireHomeGuard, waitForClosingRuntime } from './runtime/home-guard.js';
 
 import { registerHealthRoutes } from './api/routes/health.js';
 import { registerAgentRoutes } from './api/routes/agent.js';
@@ -53,8 +54,45 @@ import { registerModelRoutes } from './api/routes/model.js';
 import { registerDeviceRoutes } from './api/routes/devices.js';
 import { registerDiagnosticsRoutes } from './api/routes/diagnostics.js';
 
-export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsoluteSeconds, mode = null,
-  developmentMode = process.env.U2OS_DEVELOPMENT_MODE === '1' } = {}) {
+export async function startServer(options = {}) {
+  const home = canonicalDataHome(getDataDir());
+  await waitForClosingRuntime(home);
+  const guard = acquireHomeGuard(home);
+  let preparedDevices = null;
+  try {
+    const handle = await initializeServer(options, (registry) => { preparedDevices = registry; });
+    const closed = new Promise((resolve, reject) => {
+      handle.server.once('close', () => {
+        const drain = (async () => {
+          await handle.stopBackgroundWorkers();
+          await handle.drainRequests();
+          guard.release();
+        })();
+        guard.markClosing(drain);
+        drain.then(resolve, reject);
+      });
+    });
+    closed.catch(() => { log.error('server', 'Runtime shutdown incomplete; ownership retained until process exit'); });
+    let shuttingDown = false;
+    const shutdown = () => {
+      if (!shuttingDown) {
+        shuttingDown = true;
+        handle.server.close();
+        handle.server.closeAllConnections();
+        handle.stopBackgroundWorkers().catch(() => {});
+      }
+      return closed;
+    };
+    return { ...handle, closed, shutdown };
+  } catch (error) {
+    await preparedDevices?.stopAll();
+    if (error.code !== 'STARTUP_CLEANUP_INCOMPLETE') guard.release();
+    throw error;
+  }
+}
+
+async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsoluteSeconds, mode = null,
+  developmentMode = process.env.U2OS_DEVELOPMENT_MODE === '1' } = {}, onPreparedDevices) {
 
   const installationMode = ensureInstallationMode(mode);
   const deviceDebugEnabled = developmentMode === true && process.env.NODE_ENV !== 'production';
@@ -96,6 +134,7 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   // deviceRegistry/capabilityRegistry at registration time.
   const capabilityRegistry = createCapabilityRegistry();
   const deviceRegistry = new DeviceRegistry({ db, eventBus, capabilityRegistry });
+  onPreparedDevices(deviceRegistry);
   if (installationMode === 'demo') await deviceRegistry.registerAdapter(new MockDeviceAdapter());
   // Service-provider unification proof of concept (Phase 9): wraps the
   // EXISTING notifications connector (server/integrations/provider-registry.js)
@@ -218,22 +257,37 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   // around the existing router/static dispatch. This only observes the
   // request/response lifecycle via res's 'finish' event -- it never
   // changes which handler runs or how it responds.
+  const activeRequests = new Set();
+  const drainRequests = async () => {
+    while (activeRequests.size) await Promise.allSettled([...activeRequests]);
+  };
   const server = http.createServer(async (req, res) => {
-    const startedAt = Date.now();
-    res.on('finish', () => {
-      log.info('http', `${req.method} ${req.url}`, {
-        method: req.method,
-        path: req.url,
-        status: res.statusCode,
-        duration_ms: Date.now() - startedAt,
+    let finishRequest;
+    const request = new Promise((resolve) => { finishRequest = resolve; });
+    activeRequests.add(request);
+    try {
+      const startedAt = Date.now();
+      res.on('finish', () => {
+        log.info('http', `${req.method} ${req.url}`, {
+          method: req.method,
+          path: req.url,
+          status: res.statusCode,
+          duration_ms: Date.now() - startedAt,
+        });
       });
-    });
 
-    setSecurityHeaders(res);
-    if (req.url.startsWith('/api/')) {
-      await router.handle(req, res);
-    } else {
-      serveStatic(req, res);
+      setSecurityHeaders(res);
+      if (req.url.startsWith('/api/')) {
+        await router.handle(req, res);
+      } else {
+        serveStatic(req, res);
+      }
+    } catch {
+      log.error('http', 'Request dispatch failed');
+      try { if (!res.headersSent) res.writeHead(500); res.end('Request failed'); } catch { /* disconnected client */ }
+    } finally {
+      activeRequests.delete(request);
+      finishRequest();
     }
   });
 
@@ -295,14 +349,21 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   } catch (error) {
     server.closeAllConnections();
     const closed = new Promise((resolve) => server.close(resolve));
-    await stopBackgroundWorkers().catch(() => { log.error('server', 'Failed startup cleanup incomplete'); });
+    let cleanupFailed = false;
+    await stopBackgroundWorkers().catch(() => { cleanupFailed = true; log.error('server', 'Failed startup cleanup incomplete'); });
     await closed;
+    await drainRequests();
+    if (cleanupFailed) {
+      const incomplete = new Error('Startup cleanup incomplete; ownership retained until process exit');
+      incomplete.code = 'STARTUP_CLEANUP_INCOMPLETE';
+      throw incomplete;
+    }
     throw error;
   }
 
   log.info('server', 'U2OS server listening', { bind: resolvedBind, port: boundPort, dataDir, dbPath });
 
-  return { server, port: boundPort, bind: resolvedBind, dataDir, dbPath, agent, eventBus, toolRegistry, policyEngine, auth, mdns: mdnsHandle, deviceRegistry, capabilityRegistry, streamRegistry, stopActionQueue, stopBackgroundWorkers };
+  return { server, port: boundPort, bind: resolvedBind, dataDir, dbPath, agent, eventBus, toolRegistry, policyEngine, auth, mdns: mdnsHandle, deviceRegistry, capabilityRegistry, streamRegistry, stopActionQueue, stopBackgroundWorkers, drainRequests };
 }
 
 function readConfig(dataDir) { try { return JSON.parse(fs.readFileSync(path.join(dataDir, 'config', 'config.json'), 'utf8')); } catch { return {}; } }
