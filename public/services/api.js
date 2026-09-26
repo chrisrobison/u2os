@@ -78,7 +78,7 @@ export function runGoalOnce(id) {
 }
 
 export function getGoalRunEvidence(goalId, runId) {
-  return request(`/api/goals/${encodeURIComponent(goalId)}/runs/${encodeURIComponent(runId)}`);
+  return request(`/api/goals/${encodeURIComponent(goalId)}/runs/${encodeURIComponent(runId)}`, { cache: 'no-store' });
 }
 
 export function saveConnectorConfig(endpoint, values) {

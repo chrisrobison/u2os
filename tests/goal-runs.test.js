@@ -210,6 +210,7 @@ test('authenticated goal run API links a bounded run and rejects unauthenticated
     assert.equal((await nativeFetch(`${base}/api/goals/${goal.id}/runs/${run.runId}`)).status, 401);
     const evidenceResponse = await fetch(`${base}/api/goals/${goal.id}/runs/${run.runId}`);
     assert.equal(evidenceResponse.status, 200);
+    assert.equal(evidenceResponse.headers.get('cache-control'), 'no-store');
     const evidence = await evidenceResponse.json();
     assert.equal(evidence.runId, run.runId);
     assert.equal(evidence.objectiveStatus, 'unverified');

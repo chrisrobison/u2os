@@ -24,6 +24,6 @@ export function registerGoalRoutes(router, { agent }) {
     sendJson(res, 200, { ...result, goalId: goal.id });
   });
   router.get('/api/goals/:id/runs/:runId', async (req, res) => {
-    sendJson(res, 200, getGoalRunEvidence(req.params.id, req.owner.id, req.params.runId));
+    sendJson(res, 200, getGoalRunEvidence(req.params.id, req.owner.id, req.params.runId), { 'Cache-Control': 'no-store' });
   });
 }
