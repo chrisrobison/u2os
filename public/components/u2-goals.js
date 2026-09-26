@@ -265,6 +265,27 @@ export class U2Goals extends HTMLElement {
         response.textContent = evidence.response;
         panel.appendChild(response);
       }
+      const update = evidence.researchUpdate;
+      if (update) {
+        const summary = document.createElement('p');
+        summary.className = 'goal-research-update';
+        summary.textContent = update.unavailable ? 'Research update unavailable. Run evidence is still available; reload to retry.'
+          : `Research update · ${update.newCount} new links in indexed evidence · ${update.repeatedCount} seen before · goal revision ${update.goalRevision ?? 'unavailable'} · ${update.coverage.indexedSearches}/${update.coverage.successfulSearches} successful searches indexed for this run · ${update.coverage.pendingSearches} pending · ${update.coverage.limitedSearches} limited/omitted · ${update.coverage.pendingGoalActions} goal searches awaiting indexing · ${update.coverage.limitedGoalActions} goal searches limited/omitted. Relevance, availability and goal completion not verified.`;
+        panel.appendChild(summary);
+        for (const finding of update.newFindings || []) {
+          const row = document.createElement('p');
+          row.className = 'goal-research-new';
+          row.appendChild(this._findingLink(finding));
+          const review = document.createElement('span');
+          review.textContent = ` · ${finding.reviewStatus}${finding.reviewGoalRevision ? ` under goal revision ${finding.reviewGoalRevision}` : ''} · first observed ${finding.firstSeenAt}${finding.sources.some((source) => source.mock) ? ' · includes demo evidence' : ''}`;
+          row.appendChild(review); panel.appendChild(row);
+        }
+        if (update.findingsTruncated) {
+          const warning = document.createElement('p');
+          warning.textContent = 'Showing at most 20 new links; inspect Search findings for more.';
+          panel.appendChild(warning);
+        }
+      }
       for (const step of evidence.steps) {
         const label = document.createElement('p');
         label.textContent = `Step ${step.index} · ${step.tool} · ${step.status}${step.actionId ? ` · action ${step.actionId}` : ''}`;
@@ -347,14 +368,7 @@ export class U2Goals extends HTMLElement {
       for (const finding of findings) {
         const card = document.createElement('article');
         card.className = 'dashboard-card goal-finding';
-        const link = document.createElement('a');
-        link.textContent = finding.title;
-        try {
-          const url = new URL(finding.url);
-          if (['https:', 'http:'].includes(url.protocol) && !url.username && !url.password) {
-            link.href = url.href; link.target = '_blank'; link.rel = 'noopener noreferrer';
-          }
-        } catch { /* An invalid result remains inert text. */ }
+        const link = this._findingLink(finding);
         const snippet = document.createElement('p'); snippet.textContent = finding.snippet;
         const state = document.createElement('p');
         state.textContent = `${finding.reviewStatus}${finding.reviewGoalRevision ? ` · reviewed under goal revision ${finding.reviewGoalRevision}` : ''} · seen in ${finding.sourceCount} searches · first ${finding.firstSeenAt} · last ${finding.lastSeenAt}`;
@@ -392,6 +406,18 @@ export class U2Goals extends HTMLElement {
   _showError(message) {
     this._message.textContent = message;
     this._message.classList.add('is-error');
+  }
+
+  _findingLink(finding) {
+    const link = document.createElement('a');
+    link.textContent = finding.title;
+    try {
+      const url = new URL(finding.url);
+      if (['https:', 'http:'].includes(url.protocol) && !url.username && !url.password) {
+        link.href = url.href; link.target = '_blank'; link.rel = 'noopener noreferrer';
+      }
+    } catch { /* An invalid result remains inert text. */ }
+    return link;
   }
 }
 

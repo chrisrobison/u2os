@@ -32,6 +32,40 @@ export function listGoalFindings(goalId, ownerId, limit = 20, offset = 0) {
       offset: start, totalFindings: db.prepare('SELECT COUNT(*) AS count FROM goal_findings WHERE goal_id = ?').get(goalId).count } };
 }
 
+/** Owner-only, deterministic change report. "New" means first sighting in
+ * indexed evidence, not a verified new job or completion of the objective. */
+export function getGoalResearchUpdate(goalId, ownerId, runId) {
+  getGoalDraft(goalId, ownerId);
+  const db = getDb();
+  const run = db.prepare('SELECT goal_revision FROM agent_runs WHERE id = ? AND goal_id = ? AND actor_id = ?')
+    .get(runId, goalId, ownerId);
+  if (!run) throw error(404, 'Goal run not found');
+  const { coverage } = listGoalFindings(goalId, ownerId, 1);
+  // Keep the existing successful-action predicate, with the additional run
+  // restriction. Derived rows never turn a failed/uncertain action into proof.
+  const actions = db.prepare(`SELECT COUNT(DISTINCT a.id) AS successful,
+    COUNT(DISTINCT i.action_id) AS indexed, COUNT(DISTINCT CASE WHEN i.status != 'indexed' THEN i.action_id END) AS limited
+    FROM agent_runs r JOIN agent_run_steps s ON s.run_id = r.id JOIN agent_actions a ON a.id = s.action_id
+    LEFT JOIN goal_finding_index i ON i.action_id = a.id AND i.goal_id = r.goal_id
+    WHERE r.id = ? AND r.goal_id = ? AND r.actor_id = ? AND s.tool = 'web.search' AND a.tool = s.tool AND a.status = 'executed'`)
+    .get(runId, goalId, ownerId);
+  const matched = `WITH matched AS (SELECT DISTINCT f.*, (SELECT first.run_id FROM goal_finding_sources first
+      JOIN agent_actions original ON original.id = first.action_id AND original.tool = 'web.search' AND original.status = 'executed'
+      WHERE first.finding_id = f.id ORDER BY first.observed_at, first.action_id LIMIT 1) = ? AS is_new
+    FROM goal_findings f JOIN goal_finding_sources source ON source.finding_id = f.id
+      JOIN agent_actions a ON a.id = source.action_id AND a.tool = 'web.search' AND a.status = 'executed'
+    WHERE f.goal_id = ? AND source.run_id = ?)`;
+  const counts = db.prepare(`${matched} SELECT COUNT(*) AS total, COALESCE(SUM(is_new), 0) AS fresh FROM matched`)
+    .get(runId, goalId, runId);
+  const rows = db.prepare(`${matched} SELECT * FROM matched WHERE is_new = 1 ORDER BY first_seen_at, id LIMIT 20`)
+    .all(runId, goalId, runId);
+  return { goalId, runId, goalRevision: run.goal_revision, newCount: counts.fresh, repeatedCount: counts.total - counts.fresh,
+    newFindings: rows.map(present), findingsTruncated: counts.fresh > rows.length,
+    coverage: { successfulSearches: actions.successful, indexedSearches: actions.indexed,
+      pendingSearches: actions.successful - actions.indexed, limitedSearches: actions.limited,
+      pendingGoalActions: coverage.pendingActions, limitedGoalActions: coverage.limitedActions } };
+}
+
 export function reviewGoalFinding(goalId, ownerId, findingId, input) {
   const goal = getGoalDraft(goalId, ownerId);
   if (!input || Object.keys(input).some((key) => !['reviewStatus', 'expectedRevision', 'expectedGoalRevision'].includes(key)) ||
