@@ -16,6 +16,8 @@ import {
   getQueuedActionByActionId,
   leaseActionByActionId,
   leaseNextAction,
+  requeueAction,
+  listActionAttempts,
 } from '../server/agent/action-queue-store.js';
 
 function withHome(fn) {
@@ -116,7 +118,11 @@ test('expired uncertain execution is not replayed without provider idempotency',
 
   const { worker: restartedWorker } = setup({ execute: async () => { calls += 1; } });
   const outcome = await restartedWorker.processAction(action.id);
-  assert.equal(outcome.errorClass, 'owner_attention_required');
+  assert.equal(outcome.errorClass, 'outcome_uncertain');
+  assert.match(outcome.error, /originally bound provider\/account.*no automatic retry/);
+  assert.equal(getQueuedActionByActionId(action.id).error_class, 'outcome_uncertain');
+  assert.equal(listActionAttempts(queue.id).length, 1);
+  assert.throws(() => requeueAction(queue.id), /cannot be requeued/);
   assert.equal(calls, 0, 'an uncertain non-idempotent side effect must not be repeated');
 }));
 

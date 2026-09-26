@@ -115,8 +115,9 @@ export class ActionQueueWorker {
     const priorAttempts = listActionAttempts(item.id);
     const recoveredUncertainAttempt = priorAttempts.at(-1)?.error === 'lease expired';
     if (recoveredUncertainAttempt && tool.supportsIdempotency !== true) {
-      updateAgentAction(action.id, { status: 'failed', result: { error: 'Prior external outcome is uncertain; owner review required' } });
-      return this._stop(item, 'failed', 'Prior external outcome is uncertain; owner review required', 'owner_attention_required', action);
+      const message = 'Prior external outcome is uncertain; check the originally bound provider/account before any fresh proposal; no automatic retry';
+      updateAgentAction(action.id, { status: 'failed', result: { error: message } });
+      return this._stop(item, 'failed', message, 'outcome_uncertain', action);
     }
 
     const attempt = beginActionAttempt({ queueId: item.id, leaseOwner: this.workerId });
