@@ -85,8 +85,10 @@ provider responses or diagnostic bundles. Use anonymous task labels. Each day:
 4. Count duplicate external effects, false completion claims and irrelevant
    notifications. Zero duplicates is a safety gate, not an average target.
 5. Record elapsed time to useful result and time waiting on approval/provider.
-   Record model calls, reported input/output tokens and measurement coverage.
-   Monetary cost remains unavailable; missing usage is unknown, not free.
+   Record planning-model calls, reported input/output tokens and measurement
+   coverage. Goal runs skip unmetered optional embeddings; ordinary chat's
+   optional embedding usage is not in that ledger. Monetary cost remains
+   unavailable; missing usage is unknown, not free.
 6. Inspect **Goals** for evidence, blockers, next wake and spending. Pause/cancel
    unwanted work and confirm no further pass starts. Retain useful evidence.
 

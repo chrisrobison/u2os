@@ -112,7 +112,7 @@ export class Agent {
   async _handleRunMessage({ text, actorId, voice, correlationId, actor, runId, conversationId = null, resume = false, previousObservations = [], previousResults = [], previousAttempted = new Set() }) {
     const linkedGoal = getGoalForRun(runId);
     const goalRun = Boolean(linkedGoal);
-    const planContext = await this.contextAssembler.assemble({ correlationId, actor, objective: text });
+    const planContext = await this.contextAssembler.assemble({ correlationId, actor, objective: text, allowEmbeddings: !goalRun });
     const conversationHistory = conversationId && !goalRun ? getPriorTurnsForModel(conversationId, actorId, runId) : [];
     const priorReadArtifacts = goalRun ? getGoalPriorReadArtifacts(linkedGoal.id, actorId, runId)
       : conversationId ? getPriorReadArtifacts(conversationId, actorId, runId) : [];
