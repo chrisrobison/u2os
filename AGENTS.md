@@ -1,3 +1,14 @@
+# Product direction (read first)
+
+U2OS consolidates the owner's digital self into **a vault of Markdown files they own**, and **acts on their behalf** through owner-written routines within policy. The agent is a tool that uses the vault; SQLite is its index and runtime store. See [ADR 0007](docs/adr/0007-owned-vault-is-the-digital-self.md), [PLAN.md](PLAN.md) and milestone #355.
+
+When choosing what to work on:
+
+1. Take the next open item in PLAN.md's current milestone, in order.
+2. Prefer work that makes the vault more complete, routines more capable, or daily use by the owner possible.
+3. Do not start speculative hardening of recovery, backup, connector or timeout edge cases unless it blocks a PLAN.md item, fixes a real reported bug, or closes a security/privacy regression. Record such ideas as issues under PLAN.md's "Later" section instead.
+4. Every issue states which milestone it serves.
+
 # GitHub Development Workflow
 
 Use GitHub Issues and Pull Requests as the normal development workflow for this repository.

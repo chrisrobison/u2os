@@ -1,6 +1,8 @@
-# U2OS Policy Engine — Phase 1
+# U2OS Policy Engine
 
 No LLM output executes a consequential tool without passing through this engine. The planner proposes; this evaluates; the tool layer (only after this returns `requiresApproval: false`, or after explicit user approval) executes.
+
+This engine is what makes it safe for U2OS to act **on the owner's behalf** ([ADR 0007](adr/0007-owned-vault-is-the-digital-self.md)). Every source of intent goes through it with the same result for the same action: chat, voice, [routines](routines.md) running unattended, triggers, goals, and proactive evaluators. A routine has exactly the authority policy grants and no more. With the default policy, a routine that wants to send email leaves a pending approval, just as chat does. Moving delegated authority into the vault as an owner-editable file is planned ([#362](https://github.com/chrisrobison/u2os/issues/362)).
 
 ## Autonomy levels
 
@@ -110,7 +112,7 @@ For `email.send`, `calendar.create`, and `calendar.reschedule`, the runtime also
 
 Everything above answers "may this tool execute?" A SEPARATE question, answered by `server/policy/data-processing-policy.js` and `~/.u2os/policies/data-processing.yaml`, is "may this DATA reach this DESTINATION?" -- e.g. a local model may be allowed to summarize a sensitive document while the same content is forbidden from ever reaching a remote inference API, independent of whether any tool is involved at all.
 
-Classifications (least to most restrictive): `public`, `personal`, `private`, `sensitive`. Every item type that can reach model-bound context carries one, deterministically, never from model output: `facts.classification`, `entities.classification`, `relationships.classification`, `calendar_events.classification`, `emails.classification`, and `tasks.classification` all default to `personal`. Derived items use the strongest contributing source classification: a standalone fact includes its entity identity, and a commitment includes both its relationship and entity content, so neither may become less restricted than either source. Event summaries inherit classification from the underlying email/calendar/task row where one exists. `calendar_events.category` is a distinct, unrelated policy-engine sub-category used only for action policy. Destinations: `local_model`, `configured_remote_model`, `external_tool`, `local_ui`; provider destinations come from authoritative endpoint configuration, never model output.
+Classifications (least to most restrictive): `public`, `personal`, `private`, `sensitive`. Vault files set them with frontmatter `classification` and `sensitive_keys` ([vault](vault.md)); an invalid value rejects the file rather than lowering privacy. Every item type that can reach model-bound context carries one, deterministically, never from model output: `facts.classification`, `entities.classification`, `relationships.classification`, `calendar_events.classification`, `emails.classification`, and `tasks.classification` all default to `personal`. Derived items use the strongest contributing source classification: a standalone fact includes its entity identity, and a commitment includes both its relationship and entity content, so neither may become less restricted than either source. Event summaries inherit classification from the underlying email/calendar/task row where one exists. `calendar_events.category` is a distinct, unrelated policy-engine sub-category used only for action policy. Destinations: `local_model`, `configured_remote_model`, `external_tool`, `local_ui`; provider destinations come from authoritative endpoint configuration, never model output.
 
 ```yaml
 sensitive:
@@ -122,8 +124,9 @@ sensitive:
 
 Enforcement points: `ContextAssembler` filters each candidate before sending text to a configured embedding provider, whose destination is known there. Later, `Planner._planWith()` filters the complete assembled context for the specific planning provider and repeats that work for a fallback with a different destination. `filterPersonalContextForDestination()` evaluates people, standalone `relevantFacts`, commitments, events, and facts nested under an allowed person independently. A `confirm` decision is treated as omit because no interactive mid-request confirmation path exists. Withheld items are recorded on `agent.context_restricted`, and filtered provenance references are removed so action explainability describes only context that actually reached the planner.
 
-## What Phase 1 deliberately does not do
+## What the policy engine deliberately does not do
 
+- Does not let routines, model output, or retrieved content change policy. A routine's instruction is an objective for the planner, not an authorization.
 - Does not let learned behavior change policy automatically (PROMPT.md explicitly forbids this: "Do not automatically modify security or authorization policies based on learned behavior").
 - HTTP rate limiting is in-process and intentionally not a distributed limiter.
 - `payments` domain exists in config only to show the shape for a future real integration; no payment tool exists in Phase 1.

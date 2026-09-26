@@ -2,6 +2,18 @@
 
 These two are built together because they're one mechanism: the trigger engine is the scheduler/rule-matcher that decides **when** to look at something; the proactive agent's event evaluation is what decides **what to do** once something's worth looking at. Neither is useful alone — PROMPT.md's own examples (`WHEN email.received IF sender==recruiter THEN notify owner`) are a single rule spanning both.
 
+## Routines, triggers and goals: which to use
+
+U2OS has three ways to act without a chat. **Routines are the primary one** ([ADR 0007](adr/0007-owned-vault-is-the-digital-self.md)):
+
+| Mechanism | Lives in | Does | Use for |
+|---|---|---|---|
+| [Routines](routines.md) | vault files (`routines/*.md`) | a plain-language instruction planned by the agent on a schedule or event | standing instructions: "brief me every weekday", "when a recruiter emails, draft a reply" |
+| Triggers (this document) | SQLite, managed through the Triggers view and API | a fixed trusted action (`notify`, `create_task`, `evaluate`) or a built-in condition watch | simple deterministic rules, and the condition watches that publish `calendar.event_approaching`, `task.overdue` and `contact.birthday_approaching` (which routines can react to) |
+| [Goals](goals.md) | SQLite, owner-scoped | bounded read-only research passes with budgets | finite research objectives |
+
+All three reach tools only through the same policy-gated `evaluateAndMaybeExecute()` path.
+
 ## Why this needs a real design doc
 
 Everything so far in U2OS only acts when the user is actively talking to it. This is the subsystem that makes it "operate when the user is not actively interacting with it" (PROMPT.md §9's opening line) — genuinely new capability, not a refinement of something that already existed.

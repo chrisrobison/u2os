@@ -31,9 +31,37 @@ The seeded recruiter email reaches the planner through bounded, privacy-filtered
 4. Stop U2OS with Ctrl-C. Restart with `npm run demo -- --reuse`, then log in again.
 5. Ask: **What do you remember about Jamie?** The answer is assembled from the confirmed fact persisted before restart.
 
+## Your vault and a routine
+
+The demo home has its own vault at `~/.u2os-demo/vault` ([vault](vault.md)). With U2OS running:
+
+1. Create `~/.u2os-demo/vault/people/priya-shah.md`:
+
+   ```markdown
+   ---
+   name: Priya Shah
+   relationship: college friend
+   favorite_coffee: oat flat white
+   ---
+   Moving to Lisbon in November.
+   ```
+
+   Within a few seconds, ask: **What do you remember about Priya?** The answer comes from your file. Edit the file and ask again: the file is the authority.
+2. Create `~/.u2os-demo/vault/routines/plants.md`:
+
+   ```markdown
+   ---
+   when:
+     every_minutes: 15
+   ---
+   remind me to water the plants
+   ```
+
+   Within about a minute, the routine runs unattended through the normal planner and policy path, and a "water the plants" task appears. No chat is involved. Check its status with `GET /api/routines`. The deterministic demo planner only understands a few phrasings such as "remind me to …"; a configured real model handles open-ended instructions ([routines](routines.md)).
+
 ## What the demo proves
 
-- Implemented: context retrieval and privacy filtering, strict plan validation, policy outside the model, durable action delivery, approval, explainability, memory confirmation, provenance, and restart persistence.
+- Implemented: vault indexing, unattended routines, context retrieval and privacy filtering, strict plan validation, policy outside the model, durable action delivery, approval, explainability, memory confirmation, provenance, and restart persistence.
 - Mock by default: planning, email, calendar, tasks, search, and notification providers. Mock side effects stay in the local demo database/event log.
 - Available when configured: OpenAI-compatible or Anthropic planning, Gmail, Google Calendar, Google Contacts, Brave Search, and webhooks.
 - Degraded safely: a disconnected/failed real connector reports unavailable rather than personal-mode mock success; cached views label their freshness. An uncertain non-idempotent Gmail/Calendar outcome stops for owner attention rather than replaying.

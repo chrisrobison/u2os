@@ -1,5 +1,7 @@
 # U2OS — Personal Digital Agent Platform
 
+> **Historical document.** This is the original implementation prompt. The current direction is that the owner's digital self is a vault of files they own, U2OS acts on their behalf through routines, and the agent is a tool. See [ADR 0007](docs/adr/0007-owned-vault-is-the-digital-self.md), [docs/overview.md](docs/overview.md) and [PLAN.md](PLAN.md). Where this prompt conflicts with those, they win.
+
 You are a senior software architect and implementation agent. Build a working application called **U2OS**.
 
 U2OS is a persistent personal digital agent inspired by James Burke’s description of an “online digital you” in the *Connections 3* episode **“Feedback.”**
