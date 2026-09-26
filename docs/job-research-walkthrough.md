@@ -20,6 +20,12 @@ Optional: choose **First wake (local time)** and **Schedule one read-only pass**
 
 Applications, employer messages, calendar changes and outreach remain separate consequential actions requiring their normal exact-account authorization and approval. The starter cannot authorize them, even if provider text requests them.
 
+A stalled real Brave search stops after a 10-second connection/body-read deadline,
+not a successful finding. Authorization, rate-limit and unavailable errors give
+sanitized next steps without exposing the query or key. There is no automatic
+search retry or demo fallback. Inspect the run and finite schedule blocker before
+choosing to run or schedule again; previous findings and spending remain intact.
+
 ## Repeatable fixture acceptance
 
 Run `npm test` and `npm run test:e2e` for the required suites. To focus on this workflow, run `npx playwright test -c tests/e2e/playwright.config.js job-research.spec.js` (Chromium, Firefox and WebKit).

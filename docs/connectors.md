@@ -184,6 +184,7 @@ REST v3, via native `fetch` (no `googleapis` SDK dependency):
 - `GET https://api.search.brave.com/res/v1/web/search?q=<query>` with header `X-Subscription-Token: <apiKey>`.
 - Map top results → `{ title, url, snippet }[]`, same shape `web.search`'s mock already returns, so `server/tools/web-tools.js` doesn't change its return contract at all.
 - If not configured in personal mode, web search reports unavailable. In explicit demo mode the mock's canned results stay labeled as mock in their response.
+- Real search has a 10-second deadline covering connection/headers and JSON-body parsing. Timeout aborts the read and discards late results, including non-cooperating transports. There is no automatic retry or mock substitution. Authorization failures ask for reconnection of the selected account; rate limits ask for a later retry. Transport/parser errors are sanitized without query, key, upstream message or response body. This deadline does not yet cover Google reads/OAuth or model requests; consequential delivery retains its separate uncertain-outcome rules.
 
 ## Notifications provider — generic webhook (ntfy.sh-compatible)
 
