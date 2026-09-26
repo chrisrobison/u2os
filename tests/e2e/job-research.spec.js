@@ -81,6 +81,9 @@ test('job research starter makes no writes and two bounded passes retain grounde
     expect(searches).toBe(2);
     expect(plannerContexts).toHaveLength(4);
     await goals.locator('[data-goal-control="pause"]').click();
+    // Clicking does not await the asynchronous state write. Reload only
+    // after the UI confirms the persisted pause, not while it can be aborted.
+    await expect(goals.locator('.goal-message')).toContainText('Goal paused. New work stopped');
     await page.reload();
     await expect(goals.locator('.goal-form__title')).toContainText('Paused');
     await expect(goals.locator('.goal-runs__item')).toHaveCount(2);
