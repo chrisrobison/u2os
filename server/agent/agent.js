@@ -172,7 +172,13 @@ export class Agent {
         break;
       }
       plan = validatePlan(proposedPlan, this.toolRegistry);
-      if (round > 0 && observations.length && !(this.planner.lastAllowedObservations || []).some((observation) => observation.items.length)) {
+      // Only the exact call's server metadata is reference authority. Shared
+      // last-call diagnostics can change while another run awaits its model.
+      const callContext = this.planner.getPlanContext?.(proposedPlan) || {};
+      const allowedObservations = callContext.observations || [];
+      const allowedPriorArtifacts = callContext.priorReadArtifacts || [];
+      const modelIdentity = callContext.providerId || 'unknown';
+      if (round > 0 && observations.length && !allowedObservations.some((observation) => observation.items.length)) {
         stopReason = 'Continuation stopped: the configured model cannot receive the required observations under the current privacy policy. The objective is not verified.';
         plan = acceptedPlan || plan;
         this.runStore.clearContinuation(runId);
@@ -180,15 +186,15 @@ export class Agent {
       }
       // Provenance is specific to the provider that produced this plan,
       // after destination-aware filtering (including any fallback).
-      const contextProvenance = this.planner.lastProvenanceRefs || [];
+      const contextProvenance = callContext.provenanceRefs || [];
       // Reject an unverified reference anywhere in this plan before the
       // first step can cause an external effect or request approval.
       const resolvedActions = plan.actions.map((action) => resolveActionReferences(
-        resolvePriorActionReferences(action, this.planner.lastAllowedPriorArtifacts || [], priorReadArtifacts, this.toolRegistry),
-        this.planner.lastAllowedObservations || [], this.toolRegistry, { continuation: goalRun || round > 0 || (this.planner.lastAllowedPriorArtifacts || []).length > 0 },
+        resolvePriorActionReferences(action, allowedPriorArtifacts, priorReadArtifacts, this.toolRegistry),
+        allowedObservations, this.toolRegistry, { continuation: goalRun || round > 0 || allowedPriorArtifacts.length > 0 },
       ));
       const accountContexts = resolvedActions.map((action) => captureProposedAccount(action.tool, action.arguments, this.toolRegistry.get(action.tool), action.sourceAccountBinding));
-      const baseIndex = this.runStore.recordRunPlan(runId, { ...plan, actions: resolvedActions }, contextProvenance, accountContexts, this._describeModel());
+      const baseIndex = this.runStore.recordRunPlan(runId, { ...plan, actions: resolvedActions }, contextProvenance, accountContexts, modelIdentity);
       acceptedPlan = plan;
       const roundResults = [];
       const observedBefore = observations.length;
@@ -243,7 +249,7 @@ export class Agent {
         const outcome = await this.evaluateAndMaybeExecute({
           actionId, tool: proposed.tool, arguments: proposed.arguments, requestedBy: actorId,
           requestText: text, reasoningSummary: plan.reasoning_summary, correlationId,
-          actor, voice, contextProvenance, accountContext: accountContexts[index], modelIdentity: this._describeModel(), runId,
+          actor, voice, contextProvenance, accountContext: accountContexts[index], modelIdentity, runId,
         });
         results.push(outcome); roundResults.push(outcome);
         this.runStore.recordRunStepOutcome(runId, stepIndex, outcome.status);
@@ -418,15 +424,10 @@ export class Agent {
     return evaluator.evaluate(event, evalContext);
   }
 
-  // Identifies which provider is recorded in the agent_actions audit trail
-  // for a given proposal. After a handleMessage() call, Planner.lastProviderId
-  // reflects the provider that actually produced that specific plan
-  // (including a fallback if one was used). Actions proposed outside a
-  // plan() call (e.g. evaluateEvent()'s builtin evaluators, or a direct
-  // evaluateAndMaybeExecute() call from an HTTP route) fall back to
-  // whichever provider the planner role currently resolves to -- a
-  // representative "currently configured model" identifier, not a claim
-  // that the model itself decided this specific action.
+  // Representative last-used/configured model identity for proposals that
+  // do not come from a plan (e.g. builtin evaluators/direct HTTP actions).
+  // Planned actions use getPlanContext(plan).providerId instead; this
+  // diagnostic identity is never reference or privacy authority.
   _describeModel() {
     if (this.planner.lastProviderId) return this.planner.lastProviderId;
     if (this.modelRouter) {

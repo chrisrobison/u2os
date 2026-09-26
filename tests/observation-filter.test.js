@@ -84,7 +84,9 @@ test('fallback to a remote provider re-filters original observations and audits 
     },
   }) });
   const planner = new Planner({ modelRouter: router, dataProcessingPolicy: policy });
-  await planner.plan({ observations: [{ stepIndex: 0, tool: 'email.search', status: 'executed', result: [{ id: 'mail_1', subject: 'Private message' }] }], eventBus: { publish: (event) => events.push(event) }, actor: { type: 'user', id: 'owner' }, correlationId: 'corr_test' }, 'Find mail');
+  const plan = await planner.plan({ observations: [{ stepIndex: 0, tool: 'email.search', status: 'executed', result: [{ id: 'mail_1', subject: 'Private message' }] }], eventBus: { publish: (event) => events.push(event) }, actor: { type: 'user', id: 'owner' }, correlationId: 'corr_test' }, 'Find mail');
+  assert.equal(planner.getPlanContext(plan).providerId, 'anthropic');
+  assert.deepEqual(planner.getPlanContext(plan).observations[0].items, []);
   assert.equal(received[0][0].items[0].data.subject, 'Private message');
   assert.deepEqual(received[1][0].items, []);
   assert.equal(events.find((event) => event.type === 'agent.observation_restricted').data.omitted[0].classification, 'private');

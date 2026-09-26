@@ -4,6 +4,10 @@ import { filterObservationsForDestination } from './observation-filter.js';
 import { filterConversationHistoryForDestination } from './conversation-history-filter.js';
 import { filterPriorArtifactsForDestination } from './prior-artifacts-filter.js';
 
+// Runtime-only association. Model JSON cannot create or overwrite it, and
+// overlapping calls cannot replace another returned plan's privacy context.
+const planContexts = new WeakMap();
+
 /**
  * Planner: turns an objective plus assembled context into a structured
  * candidate plan. It may call a model provider; it must never execute
@@ -53,6 +57,10 @@ export class Planner {
     this.lastAllowedPriorArtifacts = [];
   }
 
+  getPlanContext(plan) {
+    return plan && typeof plan === 'object' ? planContexts.get(plan) : undefined;
+  }
+
   /**
    * @returns {Promise<{reasoning_summary: string, actions: Array<{tool: string, arguments: object}>}>}
    */
@@ -82,6 +90,7 @@ export class Planner {
   }
 
   async _planWith(provider, context, objective) {
+    const providerId = provider.id;
     const destination = provider.destination || 'configured_remote_model';
     const { context: filteredPersonalContext, omitted } = filterPersonalContextForDestination(
       context.personalContext,
@@ -96,18 +105,19 @@ export class Planner {
     this.lastAllowedObservations = observations;
     this.lastAllowedHistory = history;
     this.lastAllowedPriorArtifacts = priorReadArtifacts;
-    this.lastProvenanceRefs = [
+    const provenanceRefs = [
       ...(filteredPersonalContext?.provenanceRefs || []),
       ...history.filter((turn) => turn.turnId).map((turn) => ({ type: 'conversation_turn', id: turn.turnId })),
       ...priorReadArtifacts.filter((item) => item.actionId).map((item) => ({ type: 'prior_read_action', id: item.actionId })),
     ];
+    this.lastProvenanceRefs = provenanceRefs;
 
     if (omitted.length && context.eventBus) {
       context.eventBus.publish({
         type: 'agent.context_restricted',
         source: 'agent',
         actor: context.actor,
-        data: { destination, providerId: provider.id, omitted },
+        data: { destination, providerId, omitted },
         metadata: { correlationId: context.correlationId, provenance: 'planner:data-processing-policy' },
       });
     }
@@ -117,7 +127,7 @@ export class Planner {
         type: 'agent.observation_restricted',
         source: 'agent',
         actor: context.actor,
-        data: { destination, providerId: provider.id, omitted: omittedObservations },
+        data: { destination, providerId, omitted: omittedObservations },
         metadata: { correlationId: context.correlationId, provenance: 'planner:observation-policy' },
       });
     }
@@ -125,7 +135,7 @@ export class Planner {
     if (omittedHistory.length && context.eventBus) {
       context.eventBus.publish({
         type: 'agent.history_restricted', source: 'agent', actor: context.actor,
-        data: { destination, providerId: provider.id, omitted: omittedHistory },
+        data: { destination, providerId, omitted: omittedHistory },
         metadata: { correlationId: context.correlationId, provenance: 'planner:conversation-history-policy' },
       });
     }
@@ -133,14 +143,20 @@ export class Planner {
     if (omittedPriorArtifacts.length && context.eventBus) {
       context.eventBus.publish({
         type: 'agent.prior_artifact_restricted', source: 'agent', actor: context.actor,
-        data: { destination, providerId: provider.id, omitted: omittedPriorArtifacts },
+        data: { destination, providerId, omitted: omittedPriorArtifacts },
         metadata: { correlationId: context.correlationId, provenance: 'planner:prior-artifact-policy' },
       });
     }
 
     context.onModelCall?.();
     const { onModelCall, conversationHistory, priorReadArtifacts: _priorReadArtifacts, ...providerContext } = context;
-    return provider.plan({ ...providerContext, personalContext: filteredPersonalContext, observations, conversationHistory: history, priorReadArtifacts }, objective);
+    const proposed = await provider.plan({ ...providerContext, personalContext: filteredPersonalContext, observations, conversationHistory: history, priorReadArtifacts }, objective);
+    // Allocate a distinct object even if a fixture/provider reuses its JSON
+    // plan object. Malformed primitive/array results still reach validation.
+    if (!proposed || typeof proposed !== 'object' || Array.isArray(proposed)) return proposed;
+    const plan = { ...proposed };
+    planContexts.set(plan, { providerId, observations, priorReadArtifacts, provenanceRefs });
+    return plan;
   }
 }
 
