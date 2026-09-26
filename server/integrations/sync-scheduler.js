@@ -15,12 +15,23 @@
 // very next tick, same as switching `active` itself always has.
 import { newId } from '../db/ids.js';
 import { loadConnectorsConfig, DOMAINS } from './connectors-config.js';
-import { resolveConnectedRealProvider, recordSyncSuccess, recordSyncError } from './provider-registry.js';
+import { resolveConnectedRealProvider, recordSyncSuccess, recordSyncError, safeSyncError } from './provider-registry.js';
 import { log } from '../logging/logger.js';
+import path from 'node:path';
+import fs from 'node:fs';
+import { getDataDir } from '../db/connection.js';
 
 const DEFAULT_INTERVAL_MINUTES = 5;
 
 let timers = new Map(); // domain -> interval handle
+const inFlight = new Map(); // canonical home/domain/provider/account -> shared operation
+let timerGeneration = 0;
+
+function clearTimers() {
+  timerGeneration++;
+  for (const handle of timers.values()) clearInterval(handle);
+  timers.clear();
+}
 
 function intervalMsFor(domain, config) {
   const minutes = config[domain]?.syncIntervalMinutes ?? DEFAULT_INTERVAL_MINUTES;
@@ -34,13 +45,16 @@ function intervalMsFor(domain, config) {
  * zero connectors configured: starts zero timers.
  */
 export function startAll({ db, eventBus, dataDir } = {}) {
-  stopAll();
+  clearTimers();
+  dataDir ??= getDataDir();
+  const generation = timerGeneration;
   const config = loadConnectorsConfig(dataDir);
   for (const domain of DOMAINS) {
     const provider = resolveConnectedRealProvider(domain, { dataDir });
     if (!provider || typeof provider.syncChanges !== 'function') continue;
     const intervalMs = intervalMsFor(domain, config);
     const handle = setInterval(() => {
+      if (generation !== timerGeneration) return;
       runSync(domain, { db, eventBus, dataDir }).catch(() => {
         // runSync already records the error via recordSyncError; swallow
         // here so a rejected promise inside setInterval never becomes an
@@ -58,24 +72,45 @@ export function reconcile(options = {}) {
   return startAll(options);
 }
 
-/** Clears every interval this module started. Call from tests' cleanup and
- * before the process exits so nothing keeps it alive. */
-export function stopAll() {
-  for (const handle of timers.values()) clearInterval(handle);
-  timers.clear();
+/** Clears intervals immediately, then drains already-started operations.
+ * Does not cancel provider work, or block later explicit owner requests.
+ * Timer reconciliation deliberately uses clearTimers instead: it preserves
+ * in-flight identity without waiting or launching a retry/catch-up burst. */
+export async function stopAll() {
+  clearTimers();
+  await Promise.allSettled([...inFlight.values()]);
 }
 
-async function runSync(domain, { db, eventBus, dataDir } = {}) {
+async function runSync(domain, { db, eventBus, dataDir = getDataDir() } = {}) {
   const provider = resolveConnectedRealProvider(domain, { dataDir });
   if (!provider || typeof provider.syncChanges !== 'function') {
     throw new Error(`sync-scheduler: no connected provider with syncChanges for domain "${domain}"`);
   }
+  const home = fs.realpathSync(path.resolve(dataDir));
+  const key = JSON.stringify([home, domain, provider.id, provider.connectionInstanceId]);
+  if (inFlight.has(key)) return inFlight.get(key);
+  // Install bookkeeping before entering provider code (including synchronous
+  // exceptions). No detached rejecting promise is created for cleanup.
+  const operation = Promise.resolve().then(() => executeSync(domain, provider, { db, eventBus, dataDir }))
+    .finally(() => { if (inFlight.get(key) === operation) inFlight.delete(key); });
+  inFlight.set(key, operation);
+  return operation;
+}
+
+async function executeSync(domain, provider, { db, eventBus, dataDir }) {
   try {
     const result = await provider.syncChanges({ db, eventBus, correlationId: newId('corr'), dataDir });
     recordSyncSuccess(domain, provider.connectionInstanceId, { db });
     return result;
   } catch (err) {
-    const safeError = recordSyncError(domain, provider.connectionInstanceId, err, { db });
+    const safeError = safeSyncError(err);
+    try {
+      recordSyncError(domain, provider.connectionInstanceId, err, { db });
+    } catch {
+      // Unavailable health storage must not replace sanitized
+      // failure with a raw database/provider exception or leak a flight.
+      log.error('sync-scheduler', 'Sync health checkpoint unavailable');
+    }
     // Unexpected provider messages may contain secrets. Only the allowlisted
     // or generic sanitized reason reaches health, logs, and the API.
     log.error('sync-scheduler', `sync failed for domain "${domain}"`, {

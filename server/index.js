@@ -278,7 +278,7 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   server.on('close', () => {
     stopActionQueue().catch(() => {});
     mdnsHandle?.stop();
-    stopSyncScheduler();
+    stopSyncScheduler().catch(() => { log.error('sync-scheduler', 'Sync shutdown drain failed'); });
     triggerEngine.stopAll().catch(() => {});
     deviceRegistry.stopAll().catch(() => {});
   });

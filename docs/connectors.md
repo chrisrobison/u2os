@@ -108,6 +108,16 @@ A provider module for a given domain must export the same function shape the moc
 
 Real providers additionally implement `async syncChanges({ db, eventBus, correlationId })` (calendar/email/contacts only — web/notifications are call-and-response, nothing to sync) called by `sync-scheduler.js`. `syncChanges` fetches recent upstream state, **upserts into the existing `calendar_events` / `emails` / `entities` tables** (no schema changes — see ID convention below), and publishes exactly the event types the mocks already publish (`calendar.event_added`, `calendar.event_changed`, `email.received`), with `source` set to the real provider id (`google-calendar`, `gmail`) instead of `mock-*`. Consumers (memory projector, dashboards, activity feed) do not need to know or care which source produced an event.
 
+Concurrent polling and **Sync now** calls for the same data home, domain,
+provider and account share one in-flight operation and its result or sanitized
+failure. Other accounts/domains remain independent; health is recorded for the
+account that actually ran. Timer reconciliation preserves in-flight work and
+does not start catch-up retries. `await syncScheduler.stopAll()` clears timers
+immediately, ignores stale timer callbacks and waits for already-started syncs
+to settle. It does not cancel provider work or prohibit later explicit calls.
+This drain is a shutdown prerequisite, not a coordinated backup guarantee:
+the current archive tool still requires separate consistency hardening.
+
 The scheduler reconciles its per-domain timers immediately after OAuth completion, disconnect, or an active-provider change. Connecting a provider at runtime therefore does not require a server restart before recurring sync begins. Each attempt records freshness and a sanitized error under the exact connection instance and domain that ran, even if the owner switches active accounts while a sync is in flight. Google Calendar, Gmail, and Contacts therefore keep separate health state even when they share one Google account instance. `GET /api/connectors` shows the selected connected account's state; the instance list includes per-domain `sync` status. A disconnected or deleted selection does not borrow an old success from another account.
 
 ### External action idempotency
