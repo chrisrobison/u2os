@@ -59,7 +59,9 @@ export class EmailDraftTool extends Tool {
     // Draft category: no send, no event, per docs/tools.md. Drafts are
     // always local-only (no real provider has a draft concept wired up this
     // phase), so this keeps using the mock/local store regardless of the
-    // active email provider. `context?.correlationId` is stored on the row
+    // active email provider. Personal sender identity is explicitly unset;
+    // the later send proposal binds its exact account before approval.
+    // `context?.correlationId` is stored on the row
     // as provenance/context (not used for edit-detection matching -- see
     // getDraftById()'s comment in mock-email-provider.js for why). The
     // returned draft's `id` is what a later email.send should pass back as

@@ -72,6 +72,11 @@ If an external outcome is uncertain, inspect the provider manually before
 making any fresh proposal. Never requeue an archived recovery action or repeat
 a request merely because the browser lost its response.
 
+Local personal drafts leave their sender unset, including while disconnected;
+they are saved work, not simulated mail delivery. No sender address is inferred
+from the owner's name. A later send proposal captures the exact account before
+approval. Older ambiguous drafts remain for review rather than being rewritten.
+
 ## Two-week private scorecard
 
 Keep the record locally; do not commit private prompts, recipients, credentials,
