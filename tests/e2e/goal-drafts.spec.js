@@ -3,14 +3,24 @@ import { startDedicatedServer, stopDedicatedServer, createOwner } from './helper
 
 test('owner edits durable goal drafts without claiming work has started', async ({ page }) => {
   const dedicated = await startDedicatedServer();
+  let releaseInitialList = () => {};
   try {
     await createOwner(dedicated.baseURL, 'correct horse battery staple');
     await page.goto(dedicated.baseURL);
     await page.getByLabel('Passphrase').fill('correct horse battery staple');
     await page.locator('form button[type="submit"]').click();
+    const initialList = new Promise((resolve) => { releaseInitialList = resolve; });
+    let firstList = true;
+    await page.route('**/api/goals', async (route) => {
+      if (route.request().method() === 'GET' && firstList) { firstList = false; await initialList; }
+      await route.continue();
+    });
     await page.locator('u2-nav a[data-route="#/goals"]').click();
     const goals = page.locator('u2-goals');
     await expect(goals).toContainText('No automatic goal work is scheduled');
+    await expect(goals.locator('[name="objective"]')).toBeDisabled();
+    releaseInitialList();
+    await expect(goals.locator('[name="objective"]')).toBeEnabled();
     await goals.locator('[name="objective"]').fill('Find <script>evil()</script> research roles');
     await goals.locator('[name="criteria"]').fill('Report three relevant open roles with links');
     await goals.locator('[name="constraints"]').fill('Remote or Bay Area only');
@@ -38,7 +48,7 @@ test('owner edits durable goal drafts without claiming work has started', async 
     await goals.locator('.goal-reload').click();
     await expect(goals.locator('[name="objective"]')).toHaveValue('Another tab revision');
     await expect(goals).toContainText('Manual only · Next wake-up: none · Spent: 0 runs, 0 model calls, 0 reported tokens');
-  } finally { await stopDedicatedServer(page, dedicated); }
+  } finally { releaseInitialList(); await stopDedicatedServer(page, dedicated); }
 });
 
 test('owner invokes one read-only goal run and sees durable spending without a completion claim', async ({ page }) => {
@@ -77,5 +87,17 @@ test('owner invokes one read-only goal run and sees durable spending without a c
     await expect(goals.locator('.goal-evidence')).toContainText('<script>bad()</script>');
     await expect(goals.locator('.goal-evidence')).toContainText('<img src=x onerror=bad()>');
     await expect(goals.locator('.goal-evidence script, .goal-evidence img')).toHaveCount(0);
+    await goals.locator('[data-goal-control="pause"]').click();
+    await expect(goals.locator('.goal-form__title')).toContainText('Paused');
+    await expect(goals.locator('.goal-run')).toBeHidden();
+    await goals.locator('[data-goal-control="resume"]').click();
+    await expect(goals.locator('.goal-message')).toContainText('No work automatically started');
+    await expect(goals.locator('.goal-form__state')).toContainText('Spent: 1 runs');
+    await goals.locator('[data-goal-control="cancel"]').click();
+    await expect(goals.locator('.goal-form__title')).toContainText('Cancelled');
+    await expect(goals.locator('.goal-controls')).toBeHidden();
+    await page.reload();
+    await expect(goals.locator('.goal-form__title')).toContainText('Cancelled');
+    await expect(goals.locator('.goal-runs')).toContainText('objective unverified');
   } finally { await stopDedicatedServer(page, dedicated); }
 });

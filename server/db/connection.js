@@ -105,6 +105,7 @@ export function getDb() {
   ensureColumn(db, 'agent_runs', 'model_call_count', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'agent_runs', 'conversation_id', 'TEXT');
   ensureColumn(db, 'agent_runs', 'goal_id', 'TEXT');
+  const goalRevisionAdded = ensureColumn(db, 'agent_runs', 'goal_revision', 'INTEGER');
   ensureColumn(db, 'agent_runs', 'token_limit', 'INTEGER NOT NULL DEFAULT 20000');
   ensureColumn(db, 'agent_runs', 'input_tokens', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'agent_runs', 'output_tokens', 'INTEGER NOT NULL DEFAULT 0');
@@ -140,6 +141,11 @@ export function getDb() {
   const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
   db.exec(schema);
 
+  // Before lifecycle controls shipped, active goal scope was immutable.
+  // Bind those existing runs once; later revisions must never rebind them.
+  if (goalRevisionAdded) db.exec(`UPDATE agent_runs SET goal_revision = (SELECT revision FROM goals WHERE goals.id = agent_runs.goal_id)
+    WHERE goal_id IS NOT NULL AND goal_revision IS NULL`);
+
   // Idempotent backfill for homes created before run budgets existed. Never
   // reset a counter that is already higher than the linked action count.
   for (const run of db.prepare('SELECT id, created_at, elapsed_limit_ms FROM agent_runs WHERE deadline_at IS NULL').all()) {
@@ -159,11 +165,13 @@ function ensureColumn(db, table, column, type) {
   // Table doesn't exist yet -- schema.sql (executed right after this
   // function returns) will create it from scratch with the column already
   // in place, so there is nothing to migrate.
-  if (!tableExists) return;
+  if (!tableExists) return false;
   const columns = db.prepare(`PRAGMA table_info(${table})`).all();
   if (!columns.some((c) => c.name === column)) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+    return true;
   }
+  return false;
 }
 
 export function withTransaction(db, fn) {

@@ -9,8 +9,9 @@ export function createRun({ correlationId, actorId, objective, voice, conversati
   const id = newId('run');
   const now = new Date().toISOString();
   withTransaction(getDb(), () => {
+    let goalRevision = null;
     if (goalId) {
-      const goal = getDb().prepare('SELECT owner_id, status, budgets, permitted_scope FROM goals WHERE id = ?').get(goalId);
+      const goal = getDb().prepare('SELECT owner_id, status, budgets, permitted_scope, revision FROM goals WHERE id = ?').get(goalId);
       if (!goal || goal.owner_id !== actorId) throw goalError(404, 'Goal not found');
       if (!['draft', 'active'].includes(goal.status)) throw goalError(409, 'Goal cannot start a run in its current state');
       if (!JSON.parse(goal.permitted_scope).domains.length) throw goalError(409, 'Select at least one intended domain before running this goal');
@@ -21,9 +22,10 @@ export function createRun({ correlationId, actorId, objective, voice, conversati
         throw goalError(409, 'Goal budget exhausted; revise or review the goal before another run');
       }
       getDb().prepare("UPDATE goals SET status = 'active', updated_at = ? WHERE id = ?").run(now, goalId);
+      goalRevision = goal.revision;
     }
-    getDb().prepare(`INSERT INTO agent_runs (id, correlation_id, actor_id, objective, conversation_id, goal_id, voice_confidence, deadline_at, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'planning', ?, ?)`).run(id, correlationId, actorId, objective, conversationId, goalId, voice ? voice.confidence : null,
+    getDb().prepare(`INSERT INTO agent_runs (id, correlation_id, actor_id, objective, conversation_id, goal_id, goal_revision, voice_confidence, deadline_at, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'planning', ?, ?)`).run(id, correlationId, actorId, objective, conversationId, goalId, goalRevision, voice ? voice.confidence : null,
         new Date(Date.now() + DEFAULT_RUN_ELAPSED_MS).toISOString(), now, now);
   });
   return id;
@@ -113,14 +115,14 @@ export function beginRunStep(runId, index) {
 }
 
 export function getBudgetStopReason(runId, now = new Date()) {
-  const row = getDb().prepare('SELECT step_count, step_limit, input_tokens, output_tokens, token_limit, deadline_at, goal_id FROM agent_runs WHERE id = ?').get(runId);
+  const row = getDb().prepare('SELECT step_count, step_limit, input_tokens, output_tokens, token_limit, deadline_at, goal_id, goal_revision FROM agent_runs WHERE id = ?').get(runId);
   if (!row) return 'run_unavailable';
   if (new Date(now).toISOString() >= row.deadline_at) return 'elapsed_limit';
   if (row.step_count >= row.step_limit) return 'step_limit';
   if (row.input_tokens + row.output_tokens >= row.token_limit) return 'token_limit';
   if (row.goal_id) {
-    const goal = getDb().prepare('SELECT budgets, status FROM goals WHERE id = ?').get(row.goal_id);
-    if (!goal || goal.status !== 'active') return 'goal_unavailable';
+    const goal = getDb().prepare('SELECT budgets, status, revision FROM goals WHERE id = ?').get(row.goal_id);
+    if (!goal || goal.status !== 'active' || goal.revision !== row.goal_revision) return 'goal_unavailable';
     const spent = goalUsage(row.goal_id);
     const budgets = JSON.parse(goal.budgets);
     if (spent.tokens >= budgets.maxTokens) return 'goal_token_limit';
@@ -129,10 +131,10 @@ export function getBudgetStopReason(runId, now = new Date()) {
 }
 
 function getGoalModelCallStopReason(runId) {
-  const row = getDb().prepare('SELECT goal_id FROM agent_runs WHERE id = ?').get(runId);
+  const row = getDb().prepare('SELECT goal_id, goal_revision FROM agent_runs WHERE id = ?').get(runId);
   if (!row?.goal_id) return null;
-  const goal = getDb().prepare('SELECT budgets, status FROM goals WHERE id = ?').get(row.goal_id);
-  if (!goal || goal.status !== 'active') return 'goal_unavailable';
+  const goal = getDb().prepare('SELECT budgets, status, revision FROM goals WHERE id = ?').get(row.goal_id);
+  if (!goal || goal.status !== 'active' || goal.revision !== row.goal_revision) return 'goal_unavailable';
   return goalUsage(row.goal_id).modelCalls >= JSON.parse(goal.budgets).maxModelCalls ? 'goal_model_call_limit' : null;
 }
 
@@ -271,6 +273,7 @@ export function getRun(runId) {
   return {
     id: run.id,
     goalId: run.goal_id,
+    goalRevision: run.goal_revision,
     correlationId: run.correlation_id,
     status,
     objectiveStatus: run.objective_status,

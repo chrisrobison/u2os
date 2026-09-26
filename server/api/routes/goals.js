@@ -1,5 +1,5 @@
 import { sendJson } from '../router.js';
-import { createGoalDraft, getGoalDraft, getGoalRunEvidence, listGoalDrafts, updateGoalDraft } from '../../agent/goal-store.js';
+import { controlGoal, createGoalDraft, getGoalDraft, getGoalRunEvidence, listGoalDrafts, updateGoalDraft } from '../../agent/goal-store.js';
 
 /** Owner-scoped goals. Only the explicit run route calls the bounded agent;
  * listing/editing never starts work and there is no background wake-up. */
@@ -15,6 +15,15 @@ export function registerGoalRoutes(router, { agent }) {
   });
   router.put('/api/goals/:id', async (req, res) => {
     sendJson(res, 200, updateGoalDraft(req.params.id, req.owner.id, req.body));
+  });
+  router.post('/api/goals/:id/control', async (req, res) => {
+    const goal = controlGoal(req.params.id, req.owner.id, req.body);
+    if (['paused', 'cancelled'].includes(goal.status)) {
+      for (const run of goal.relatedRuns) {
+        if (!['completed', 'failed', 'cancelled'].includes(run.status)) await agent.cancelRun(run.id, req.owner.id);
+      }
+    }
+    sendJson(res, 200, getGoalDraft(goal.id, req.owner.id));
   });
   router.post('/api/goals/:id/runs', async (req, res) => {
     if (Object.keys(req.body || {}).length) return sendJson(res, 400, { error: 'Run parameters are not supported; revise the draft before starting work' });
