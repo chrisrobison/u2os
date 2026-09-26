@@ -51,6 +51,8 @@ test('goal search findings deduplicate and retain owner review without rendering
     await expect(goals.locator('.goal-research-new')).toHaveCount(0);
     expect(goalContexts[0]).toEqual([]);
     expect(goalContexts[1][0].goalRevision).toBe(1);
+    expect(goalContexts[1][0].ownerReviewContext.reviews[0].reviewStatus).toBe('relevant');
+    expect(goalContexts[1][0].ownerReviewContext.reviews[0].appliesToCurrentRevision).toBe(true);
     expect(goalContexts[1][0].items[0].data.results[0].title).toContain('Research role');
     await expect(panel.locator('.goal-finding')).toHaveCount(1);
     await page.reload();

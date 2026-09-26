@@ -419,6 +419,7 @@ CREATE TABLE IF NOT EXISTS goal_finding_sources (
   observed_at TEXT NOT NULL,
   account TEXT,
   mock INTEGER NOT NULL DEFAULT 0,
+  classification TEXT NOT NULL DEFAULT 'sensitive',
   PRIMARY KEY(finding_id, action_id)
 );
 CREATE TABLE IF NOT EXISTS goal_finding_index (
