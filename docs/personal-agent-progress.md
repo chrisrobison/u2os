@@ -14,4 +14,6 @@ Tracking issue: [#172](https://github.com/chrisrobison/u2os/issues/172). This re
 
 Owner action required for [#150](https://github.com/chrisrobison/u2os/issues/150): connect a real Google account and perform an opt-in Calendar/Gmail smoke check. Automated tests use isolated fixtures and have not accessed personal accounts, sent real messages, or changed real events.
 
+Job research workflow (#250): an unsaved web-only starter and [owner walkthrough](job-research-walkthrough.md) exercise two bounded fixture passes with evidence-based fit/mismatch explanations, retained owner review, new/repeated indexed links, reload, cumulative spending and pause. These are deterministic orchestration tests, not live search validation or proof of real-model relevance quality. Recurring research remains unfinished.
+
 Deferred: native mobile/watch apps, broad connector catalog, hosted service, multi-device sync, and a coding runner. A coding runner needs its own scoped design with isolated workspace, filesystem and resource boundaries, Git, tests, and artifact handling.

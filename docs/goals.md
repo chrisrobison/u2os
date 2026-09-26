@@ -4,6 +4,8 @@ Goals sit above runs and actions. An owner can save a draft and explicitly start
 
 The native **Goals** view creates and edits drafts, shows real linked runs and resource usage, and offers **Run once (read-only)** while budget remains. Starting the first run makes the goal active and freezes its fields until paused. A stale revision asks the owner to reload instead of overwriting another edit.
 
+**Job research draft** fills only a new unsaved form with bounded evidence/relevance criteria, web-only scope and conservative budgets. Add your own role, location and experience preferences before saving; none are invented. It starts no work or schedule and never modifies another stored goal. Follow the [two-pass owner walkthrough](job-research-walkthrough.md); fixture-tested orchestration is distinct from live-provider/model relevance validation.
+
 The authenticated, CSRF-protected API supports `POST /api/goals`, `GET /api/goals`, `GET /api/goals/:id`, and full-replacement `PUT /api/goals/:id`. A draft contains:
 
 ```json
@@ -52,4 +54,4 @@ Goal search artifacts can carry separate, server-derived `ownerReviewContext`: a
 
 Every indexed finding source now retains a conservative historical classification. A review inherits the strictest source classification across that finding—not merely its latest/public source—and is filtered again for each exact model destination, continuation and fallback. The additive migration preserves findings, reviews and raw evidence; existing source rows with unknown classification default sensitive rather than becoming permissive. Such historical reviews can remain available to an allowed local model while withheld from a remote one. Review truncation/restriction audits contain IDs/rules only. Classification controls and broader review retrieval remain separate work.
 
-Next slices must add recurring research and grounded job-relevance workflows before goals can claim to handle ongoing responsibilities. Applications and outreach remain separate consequential actions requiring explicit authorization.
+The job-research starter and two-pass fixtures exercise grounded explanations, deduplication and retained reviews, not real-model quality or verified open roles. Recurring research and owner-driven validation remain before goals can claim to handle ongoing responsibilities. Applications and outreach remain separate consequential actions requiring explicit authorization.

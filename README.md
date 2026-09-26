@@ -87,6 +87,7 @@ Key documentation:
 - [Deployment](docs/deployment.md)
 - [Model providers](docs/models.md)
 - [Goal drafts and limitations](docs/goals.md)
+- [Two-pass job research walkthrough](docs/job-research-walkthrough.md)
 - [Contributing](CONTRIBUTING.md)
 
 ## Requirements
