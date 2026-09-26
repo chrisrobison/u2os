@@ -2,7 +2,7 @@
 
 The event log is the connective tissue of U2OS. Nothing important happens without an event being published. This document defines the envelope, the event taxonomy, and the persistence schema.
 
-**Architectural stance (PLAN.md Phase 10):** the event log is the immutable history/provenance/correlation/replay spine, not the primary read path for application state. SQLite's relational tables (entities, facts, relationships, tasks, calendar_events, agent_actions, ...) are the authoritative, directly-queried materialized state; routes and tools read/write those tables directly. An event and its corresponding row are written together from the same code path, not derived from one another. See docs/architecture.md's "Event log and operational state" for the full reasoning -- U2OS is deliberately not a pure event-sourced system.
+**Architectural stance (PLAN.md Phase 10):** the event log is the immutable history/provenance/correlation/replay spine, not the primary read path for application state. SQLite's relational tables (entities, facts, relationships, tasks, calendar_events, agent_actions, ...) are the directly-queried materialized state (for owner-authored knowledge, an index of the vault; see [ADR 0007](adr/0007-owned-vault-is-the-digital-self.md)); routes and tools read/write those tables directly. An event and its corresponding row are written together from the same code path, not derived from one another. See docs/architecture.md's "Event log and operational state" for the full reasoning -- U2OS is deliberately not a pure event-sourced system.
 
 ## Envelope
 
@@ -109,6 +109,17 @@ Derived/memory events (published by the memory projector after it updates entiti
 | `memory.fact_recorded` | a new fact was written |
 | `memory.relationship_recorded` | a new relationship edge was written |
 | `commitment.made` | the agent recognized a stated commitment ("I'll send the proposal") and created/linked a `Commitment` entity |
+
+Vault and routine events ([vault](vault.md), [routines](routines.md)). They carry counts, paths and identifiers only, never file contents or instructions:
+
+| Type | Emitted when | source |
+|---|---|---|
+| `vault.indexed` | an index pass changed or removed vault-sourced records. `data` holds `files`, `changed`, `removed` and `errors` counts. Individual vault facts do not emit `memory.fact_recorded`, because the file is their history. | `vault` |
+| `routine.fired` | a routine claimed a slot and is starting an agent run. `data` holds `routine` (vault path), `routineRunId`, `trigger` (`daily`/`every`/`event`/`manual`), `slot`, and `eventId` for event routines. | `routine` |
+| `routine.completed` | the routine's agent run returned. `data` holds `runId` and `pendingApprovals`; the run's own `agent.*` events carry the actions. | `routine` |
+| `routine.failed` | the run could not start or complete, or the hourly limit throttled it. `data.reason` is an error code, never provider text. | `routine` |
+
+Routines never react to `routine.*`, `agent.*`, `action.*`, `run.*` or `vault.*` events.
 
 Device/capability/stream events (docs/devices.md's device/capability subsystem -- `source` is `device-adapter:<adapterId>` for registry-driven transitions, `device:<id>` for device-initiated ones like a heartbeat-derived status change or a trust transition):
 

@@ -23,6 +23,10 @@ services:
       # section): same logical structure (config/, policies/, db/,
       # credentials/, cache/), just rooted at /data instead of ~/.u2os.
       - u2os-data:/data
+      # Optional: keep your vault (your digital self as Markdown files, see
+      # docs/vault.md) in a host directory you version and back up yourself,
+      # and add U2OS_VAULT=/vault to the environment above.
+      # - /home/me/digital-self:/vault
     restart: unless-stopped
     healthcheck:
       # node:22-slim ships a global fetch (Node 18+) but no curl/wget by

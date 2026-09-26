@@ -2,7 +2,9 @@
 
 U2OS is a persistent, single-owner pre-alpha service. Authentication exists, but it is not designed for direct public-internet exposure. Startup listens on `127.0.0.1` by default.
 
-Queue delivery, connector sync polling and trigger workers start only after a
+U2OS has two kinds of state: your **vault**, the Markdown files that are your digital self ([vault](vault.md)), and the **runtime home** (`U2OS_HOME`): database index, queue, sessions, credentials, caches. Treat the vault as the irreplaceable part.
+
+The vault watcher, queue delivery, connector sync polling, trigger and routine workers start only after a
 successful HTTP bind. A bind failure (for example an occupied port) cleans
 prepared device adapters and does not leave these execution workers running.
 Worker-setup failure after binding closes the listener and drains partial setup.
@@ -21,7 +23,10 @@ upgrading, because they do not participate in the new guard protocol.
 
 | Setting | Default | Purpose |
 |---|---:|---|
-| `U2OS_HOME` | `~/.u2os` | Identity store and data root |
+| `U2OS_HOME` | `~/.u2os` | Runtime home: database, credentials, config, caches |
+| `U2OS_VAULT` / `vaultDir` | `U2OS_HOME/vault` | Your vault; `vaultDir` in `config.json` may be relative to `U2OS_HOME` |
+| `U2OS_VAULT_POLL_MS` | `5000` | How often the vault is checked for changes |
+| `U2OS_ROUTINE_TICK_MS` | `60000` | How often scheduled routines are checked |
 | `PORT` / `port` | `4000` | HTTP port; `0` is valid for tests |
 | `U2OS_BIND` / `bind` | `127.0.0.1` | Listen address; non-loopback must be explicit and requires an owner |
 | `U2OS_SECURE_COOKIES` | off | Force `Secure` cookies |
@@ -45,9 +50,27 @@ Review historical logs locally before sharing them, particularly OAuth callbacks
 
 The realtime device bus (docs/devices.md) upgrades WebSocket connections at `/ws/devices` on the **same** port/process above -- no additional port to open or firewall. It requires a per-installation connect token, generated on first use at `<U2OS_HOME>/credentials/device-connect-token.key` (mode `0600`, same pattern as `master.key`); an authenticated browser session can also fetch it via `GET /api/devices/connect-token`. This token gates transport only, not device trust -- see `server/devices/realtime/device-token.js`.
 
+## Where to keep the vault
+
+The default `U2OS_HOME/vault` is included in `npm run backup`. Keeping it elsewhere (a git repository, an encrypted volume, a synced folder) makes it easier to version and edit, but you then back it up yourself. U2OS never follows symlinks inside the vault, and backups refuse symlinks anywhere in the home, so point `U2OS_VAULT` at the real directory instead of linking it in.
+
+With Docker, bind-mount a host directory and set `U2OS_VAULT`:
+
+```yaml
+    environment:
+      - U2OS_VAULT=/vault
+    volumes:
+      - u2os-data:/data
+      - /home/me/digital-self:/vault
+```
+
+U2OS creates the default folders and a `README.md` in the vault on first start, so the mounted directory must be writable by the container user.
+
+The vault holds personal data in plain text. Keep it on an encrypted disk, and treat any git remote or sync service as a destination for everything in it.
+
 ## First run and recovery
 
-Start on loopback and create the owner passphrase in the UI. There is no reset backdoor. If forgotten, restore a backup tied to a known passphrase or wipe `U2OS_HOME` and start over. Backups contain the owner hash, private data, encrypted credentials, and master key; protect them like the live identity store.
+Start on loopback and create the owner passphrase in the UI. There is no reset backdoor. If forgotten, restore a backup tied to a known passphrase, or wipe `U2OS_HOME` and start over. A vault kept outside `U2OS_HOME` survives this: point the new install at it, and vault-sourced memory is rebuilt from the files. Backups contain the owner hash, private data, encrypted credentials, and master key; protect them like the live identity store.
 
 ## Docker and service templates
 
