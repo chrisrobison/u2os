@@ -36,7 +36,7 @@ The seeded recruiter email reaches the planner through bounded, privacy-filtered
 - Implemented: context retrieval and privacy filtering, strict plan validation, policy outside the model, durable action delivery, approval, explainability, memory confirmation, provenance, and restart persistence.
 - Mock by default: planning, email, calendar, tasks, search, and notification providers. Mock side effects stay in the local demo database/event log.
 - Available when configured: OpenAI-compatible or Anthropic planning, Gmail, Google Calendar, Google Contacts, Brave Search, and webhooks.
-- Degraded safely: a disconnected real connector falls back for reads with a health warning; an uncertain non-idempotent Gmail/Calendar outcome stops for owner attention rather than replaying.
-- Not demonstrated as production-ready: internet exposure, strong voice authentication, distributed workers, or provider-backed idempotency for Gmail/Google Calendar.
+- Degraded safely: a disconnected/failed real connector reports unavailable rather than personal-mode mock success; cached views label their freshness. An uncertain non-idempotent Gmail/Calendar outcome stops for owner attention rather than replaying.
+- Not demonstrated as production-ready: internet exposure, distributed workers, or provider-backed idempotency for Gmail/Google Calendar. Voice similarity is not authentication; owner sessions remain required and confidence can only tighten policy.
 
 The automated equivalents are `tests/e2e/daily-driver-demo.spec.js` for the coherent browser flow and `tests/daily-driver-demo.test.js` for the close/reopen persistence proof.

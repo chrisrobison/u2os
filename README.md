@@ -86,8 +86,9 @@ Key documentation:
 - [Feedback](docs/feedback.md)
 - [Deployment](docs/deployment.md)
 - [Model providers](docs/models.md)
-- [Goal drafts and limitations](docs/goals.md)
+- [Bounded goals and finite research](docs/goals.md)
 - [Two-pass job research walkthrough](docs/job-research-walkthrough.md)
+- [Personal acceptance and two-week dogfooding](docs/personal-acceptance.md)
 - [Contributing](CONTRIBUTING.md)
 
 ## Requirements
@@ -130,7 +131,7 @@ npm run dev
 npm test
 ```
 
-The current suite contains 392 Node tests covering the event bus and deterministic projection replay, memory, policy enforcement, tools, durable action and scheduler leasing/recovery/idempotency and sanitized operational diagnostics/bug bundles, the complete approval vertical slice, dashboard generation including topic- and multi-attendee-aware meeting preparation, server-side source resolution, and bounded card provenance, connectors and OAuth security, encrypted credentials, bounded real webhook/ntfy notification delivery, deployment utilities, triggers with bounded execution history and side-effect-free previews, proactive decisions including calendar-conflict, birthday, subscription-renewal, important-message, and actionable project-activity detection, feedback, voice authorization, the Agent-refactor regression suite, model providers and routing, the strict plan schema, bounded cross-type context selection and inspectable hybrid retrieval, destination-aware embedding and planner privacy, prompt-injection containment, the daily-driver restart slice, explainability, audited fact/entity/relationship lifecycle management, fact-authority labeling, contradiction handling, and the device/capability subsystem (registry, resolver, the realtime WebSocket device bus, the browser-as-device flow, policy-gated presentation tools, device management, the trust lifecycle, streams, and service-provider unification — see [docs/devices.md](docs/devices.md)). The Playwright suite contains 67 real-browser scenarios, run in Chromium, Firefox, and WebKit, covering authentication, navigation, chat, approval/rejection, memory candidates and owner memory controls including impact-previewed deletion, trusted and live-updating dashboard components and card provenance, the coherent daily-driver story, SSE recovery, multi-tab synchronization, responsive/accessibility and keyboard-focus behavior, privacy-safe client error recovery, owner-facing explainability, notification connector configuration, structured trigger management, history, and dry runs, durable action operations, and the responsive live diagnostics and bundle-download flow.
+The Node suite covers deterministic policy/privacy, memory/provenance, real-provider fixtures, exact account binding, durable conversations/runs/goals, queue/scheduler interruption, device trust, backup encryption and inactive recovery. The Playwright suite runs native Web Component workflows across Chromium, Firefox and WebKit. Current counts and implemented/fixture/live/deferred distinctions are maintained in the [progress record](docs/personal-agent-progress.md). Passing fixtures do not establish real-model relevance, owner-account validation, complete objective verification or safe restored activation; use the [personal acceptance procedure](docs/personal-acceptance.md) to record those boundaries honestly.
 
 A small Playwright harness also covers real-browser smoke coverage (boots the actual server in-process, no frontend build step):
 

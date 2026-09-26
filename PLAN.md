@@ -168,7 +168,7 @@ Harden current adapters before expanding breadth.
 - Define signed/installable third-party skill packaging, compatibility, permission review, enable/disable, and upgrade behavior.
 - Add outbound network permission enforcement rather than treating manifest permissions as documentation only.
 
-The current foundation already includes encrypted connector credentials, Google Calendar/Gmail/Google Contacts and Brave Search adapters, bounded webhook/ntfy delivery, health-aware mock fallback, a connector UI, and notification-service capability unification. Those foundations do not satisfy the ecosystem acceptance criteria above on their own.
+The current foundation already includes encrypted connector credentials, named Google Calendar/Gmail/Google Contacts and Brave Search accounts, bounded webhook/ntfy delivery, exact account binding, a connector UI, and notification-service capability unification. Mock behavior is isolated to explicit demo mode; failed or disconnected real services never substitute personal-mode mock success. Those foundations do not satisfy the ecosystem acceptance criteria above on their own. See the [personal acceptance procedure and two-week scorecard](docs/personal-acceptance.md) for owner-driven validation, which has not yet been performed.
 
 ### Acceptance criteria
 
