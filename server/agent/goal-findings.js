@@ -1,6 +1,8 @@
 import { getDb, withTransaction } from '../db/connection.js';
 import { newId } from '../db/ids.js';
 import { getGoalDraft } from './goal-store.js';
+import { canonicalFindingUrl } from './goal-finding-url.js';
+import { classifyObservation } from './observation-filter.js';
 
 const MAX_ACTIONS = 20;
 const MAX_RESULTS = 30;
@@ -96,8 +98,9 @@ function indexAction(goalId, row) {
   }
   let status = result.results.length > MAX_RESULTS ? 'limited' : 'indexed';
   const account = accountPreview(row.account_binding);
+  const classification = classifyObservation('web.search', result, true);
   for (const item of result.results.slice(0, MAX_RESULTS)) {
-    const url = safeUrl(item?.url);
+    const url = canonicalFindingUrl(item?.url);
     if (!url) { status = 'limited'; continue; }
     const title = typeof item.title === 'string' ? item.title.slice(0, 300) : url.slice(0, 300);
     const snippet = typeof item.snippet === 'string' ? item.snippet.slice(0, 2000) : '';
@@ -108,9 +111,9 @@ function indexAction(goalId, row) {
       .run(id, goalId, url, title, snippet, row.updated_at, row.updated_at);
     const finding = getDb().prepare('SELECT id FROM goal_findings WHERE goal_id = ? AND url = ?').get(goalId, url);
     getDb().prepare(`INSERT OR IGNORE INTO goal_finding_sources
-      (finding_id, action_id, run_id, goal_revision, observed_at, account, mock) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      (finding_id, action_id, run_id, goal_revision, observed_at, account, mock, classification) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(finding.id, row.id, row.run_id, row.goal_revision, row.updated_at, account ? JSON.stringify(account) : null,
-        result.mock === true || item.mock === true || account?.providerId.startsWith('mock-') ? 1 : 0);
+        result.mock === true || item.mock === true || account?.providerId.startsWith('mock-') ? 1 : 0, classification);
     getDb().prepare('UPDATE goal_findings SET last_seen_at = MAX(last_seen_at, ?) WHERE id = ?').run(row.updated_at, finding.id);
   }
   getDb().prepare('INSERT INTO goal_finding_index (action_id, goal_id, status) VALUES (?, ?, ?)').run(row.id, goalId, status);
@@ -122,21 +125,6 @@ function accountPreview(raw) {
     if (typeof binding?.providerId !== 'string') return null;
     return { providerId: binding.providerId.slice(0, 80), instanceId: typeof binding.instanceId === 'string' ? binding.instanceId.slice(0, 80) : null,
       label: String(binding.label || '').slice(0, 80) };
-  } catch { return null; }
-}
-
-function safeUrl(raw) {
-  if (typeof raw !== 'string' || raw.length > 2048) return null;
-  try {
-    const url = new URL(raw);
-    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) return null;
-    if (/(?:token|password|secret|authorization|api[_-]?key|credential)[^=&#]*=/i.test(decodeURIComponent(url.hash))) return null;
-    for (const key of [...url.searchParams.keys()]) {
-      if (/(?:token|password|secret|authorization|api[_-]?key|credential)/i.test(key)) return null;
-      if (/^utm_/i.test(key) || ['gclid', 'fbclid'].includes(key.toLowerCase())) url.searchParams.delete(key);
-    }
-    url.searchParams.sort();
-    return url.href;
   } catch { return null; }
 }
 

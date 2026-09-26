@@ -137,6 +137,9 @@ export function getDb() {
   // and expired-worker recovery without rebuilding or discarding triggers.
   ensureColumn(db, 'triggers', 'lease_owner', 'TEXT');
   ensureColumn(db, 'triggers', 'lease_expires_at', 'TEXT');
+  // Unknown historical review provenance must not become permissive when
+  // source-bound owner choices are first added to model context.
+  ensureColumn(db, 'goal_finding_sources', 'classification', "TEXT NOT NULL DEFAULT 'sensitive'");
 
   const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
   db.exec(schema);

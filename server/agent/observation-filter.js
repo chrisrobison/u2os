@@ -54,7 +54,7 @@ export function filterObservationsForDestination(observations, destination, poli
   return { observations: allowed, omitted };
 }
 
-function classifyObservation(tool, item, historical = false) {
+export function classifyObservation(tool, item, historical = false) {
   // Only public web search gets a permissive floor; account-backed or
   // unknown results default private if the source does not classify them.
   const floor = tool === 'web.search' && !historical ? 'public' : 'private';

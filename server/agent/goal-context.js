@@ -21,5 +21,23 @@ export function getGoalPriorReadArtifacts(goalId, ownerId, currentRunId) {
       AND substr(s.tool, 1, instr(s.tool, '.') - 1) IN (${domains.map(() => '?').join(',')})
       AND (s.tool = 'tasks.list' OR a.account_binding IS NOT NULL)
     ORDER BY r.created_at DESC, r.id DESC, s.step_index DESC LIMIT 4`).all(goalId, ownerId, currentRunId, ...domains);
-  return presentPriorReadArtifacts(rows);
+  return presentPriorReadArtifacts(rows).map((artifact) => {
+    if (artifact.tool !== 'web.search' || !artifact.result || typeof artifact.result !== 'object' || Array.isArray(artifact.result)) return artifact;
+    // Reviews are working choices, not facts or instructions. Tie each one
+    // to this exact action; do not dump an unrelated/full finding ledger.
+    const reviews = getDb().prepare(`SELECT f.id, f.url, f.review_status, f.review_goal_revision,
+      CASE WHEN EXISTS (SELECT 1 FROM goal_finding_sources history WHERE history.finding_id = f.id
+        AND history.classification != 'private') THEN 'sensitive' ELSE 'private' END AS classification
+      FROM goal_findings f JOIN goal_finding_sources source ON source.finding_id = f.id
+      WHERE f.goal_id = ? AND source.action_id = ? AND f.review_status IN ('relevant', 'dismissed')
+      ORDER BY f.id LIMIT 13`).all(goal.id, artifact.actionId);
+    // Keep raw source classifications intact. Runtime review metadata is
+    // separate from any provider-supplied lookalike inside result data.
+    return { ...artifact, ownerReviewContext: {
+      reviews: reviews.slice(0, 12).map((review) => ({ findingId: review.id, url: review.url,
+        reviewStatus: review.review_status, reviewGoalRevision: review.review_goal_revision, classification: review.classification,
+        appliesToCurrentRevision: review.review_goal_revision === goal.revision })),
+      currentGoalRevision: goal.revision, truncated: reviews.length > 12,
+    } };
+  });
 }
