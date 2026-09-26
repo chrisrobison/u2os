@@ -106,6 +106,7 @@ export function requeueAction(queueId, {
   now = new Date(),
 } = {}) {
   if (getQueuedAction(queueId)?.error_class === 'recovery_review_required') throw new Error('Restored action requires owner review and a fresh proposal; archived authorization cannot be retried');
+  if (getQueuedAction(queueId)?.error_class === 'outcome_uncertain') throw new Error('Action delivery outcome is uncertain; reconcile the original outcome before any fresh proposal; this action cannot be requeued');
   const nowIso = toDate(now).toISOString();
   const result = getDb().prepare(`
     UPDATE action_queue
@@ -258,7 +259,7 @@ export function failActionAttempt(id, {
 
 export const ACTION_ERROR_CLASSES = Object.freeze([
   'retryable', 'non_retryable', 'authentication_required', 'owner_attention_required',
-  'recovery_review_required',
+  'recovery_review_required', 'outcome_uncertain',
 ]);
 
 export function retryDelayMs(attemptNumber, { baseDelayMs = 1_000, maxDelayMs = 60_000 } = {}) {

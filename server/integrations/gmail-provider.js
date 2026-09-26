@@ -2,7 +2,6 @@
 // mock-email-provider.js so email-tools.js never needs to know which one is
 // active. Per docs/connectors.md's "Gmail provider" section.
 import { getDb } from '../db/connection.js';
-import { newId } from '../db/ids.js';
 import { hasTokens, getValidAccessToken } from './oauth/google-oauth.js';
 import { scopedLocalId, unscopedUpstreamId } from './connector-instance-ids.js';
 import { withGoogleRead } from './google-read-deadline.js';
@@ -184,22 +183,36 @@ function buildRawMessage({ to, subject, body }) {
 export async function sendEmail({ to, subject, body }, { fetchImpl = globalThis.fetch, dataDir, instance } = {}) {
   const raw = buildRawMessage({ to, subject, body });
   const headers = { ...(await authHeaders(fetchImpl, dataDir, instance)), 'Content-Type': 'application/json' };
-  const res = await fetchImpl(`${API_BASE}/messages/send`, { method: 'POST', headers, body: JSON.stringify({ raw }) });
-  if (!res.ok) throw new Error(`gmail: sendEmail failed (status ${res.status})`);
-  const sent = await res.json();
-  const now = new Date().toISOString();
-  const row = {
-    id: toLocalId(sent.id || newId('gmail'), instance),
-    thread_id: sent.threadId || null,
-    from_addr: 'me',
-    to_addr: Array.isArray(to) ? to : [to],
-    subject,
-    body,
-    folder: 'sent',
-    is_read: true,
-    received_at: now,
-  };
-  return upsertRow(row);
+  let res;
+  try {
+    // From this handoff onward, failure is not proof that nothing was sent.
+    // Never invent a receipt ID or inherit upstream retry flags/codes/text.
+    res = await fetchImpl(`${API_BASE}/messages/send`, { method: 'POST', headers, body: JSON.stringify({ raw }) });
+    if (!res.ok) throw new Error('No successful send acknowledgement');
+    const sent = await res.json();
+    if (!sent || typeof sent !== 'object' || Array.isArray(sent) || typeof sent.id !== 'string' || !sent.id.trim() ||
+        (sent.threadId !== undefined && (typeof sent.threadId !== 'string' || !sent.threadId.trim()))) {
+      throw new Error('Invalid send acknowledgement');
+    }
+    const now = new Date().toISOString();
+    return upsertRow({
+      id: toLocalId(sent.id, instance),
+      thread_id: sent.threadId ?? null,
+      from_addr: 'me',
+      to_addr: Array.isArray(to) ? to : [to],
+      subject, body, folder: 'sent', is_read: true, received_at: now,
+    });
+  } catch {
+    try { Promise.resolve(res?.body?.cancel()).catch(() => {}); } catch { /* Locked native body. */ }
+    const status = Number.isInteger(res?.status) && res.status >= 100 && res.status <= 599 ? res.status : undefined;
+    const error = new Error(`gmail: send outcome uncertain${status === undefined ? '' : ` (status ${status})`}; check the selected account's Sent mail before any new send; no automatic retry`);
+    error.code = 'GMAIL_SEND_OUTCOME_UNCERTAIN';
+    error.actionErrorClass = 'outcome_uncertain';
+    error.ownerAttentionRequired = true;
+    error.safeToRetry = false;
+    if (status !== undefined) error.status = status;
+    throw error;
+  }
 }
 
 /** Polled by sync-scheduler.js: fetch recent inbox messages, upsert, publish
