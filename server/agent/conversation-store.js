@@ -20,14 +20,15 @@ export function requireConversation(id, ownerId) {
   throw error;
 }
 
-export function appendTurn({ conversationId, ownerId, role, content, correlationId = null, runId = null }) {
+export function appendTurn({ conversationId, ownerId, role, content, correlationId = null, runId = null, classification = 'private' }) {
   if (!['user', 'assistant', 'system'].includes(role)) throw new Error('Invalid conversation role');
+  if (!['private', 'sensitive'].includes(classification)) throw new Error('Invalid conversation classification');
   requireConversation(conversationId, ownerId);
   const id = newId('turn');
   const now = new Date().toISOString();
   withTransaction(getDb(), () => {
-    getDb().prepare(`INSERT INTO conversation_messages (id, session_id, role, content, correlation_id, run_id, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)`).run(id, conversationId, role, content, correlationId, runId, now);
+    getDb().prepare(`INSERT INTO conversation_messages (id, session_id, role, content, correlation_id, run_id, classification, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(id, conversationId, role, content, correlationId, runId, classification, now);
     getDb().prepare('UPDATE conversations SET updated_at = ? WHERE id = ? AND owner_id = ?').run(now, conversationId, ownerId);
   });
   return id;
@@ -69,7 +70,10 @@ export function getEarlierTurnsForSummary(id, ownerId, currentRunId) {
 function priorAuthoredTurns(id, ownerId, currentRunId, limit, offset) {
   requireConversation(id, ownerId);
   return getDb().prepare(`SELECT m.id AS turnId, m.role, substr(m.content, 1, 500) AS content,
-    length(m.content) > 500 AS truncated, m.classification, m.run_id AS runId,
+    length(m.content) > 500 AS truncated,
+    CASE WHEN m.classification = 'sensitive' OR
+      (m.role = 'assistant' AND COALESCE(r.output_classification, 'sensitive') != 'private')
+      THEN 'sensitive' ELSE 'private' END AS classification, m.run_id AS runId,
     r.status AS runStatus, r.objective_status AS objectiveStatus
     FROM conversation_messages m LEFT JOIN agent_runs r ON r.id = m.run_id
     WHERE m.session_id = ? AND m.role IN ('user', 'assistant')
