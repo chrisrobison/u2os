@@ -13,6 +13,9 @@ test.describe('safe action explanation component (#30)', () => {
     await page.getByLabel('Passphrase').fill(PASSPHRASE);
     await page.locator('form button[type="submit"]').click();
     await expect(page.locator('u2-nav')).toBeVisible();
+    // Dashboard completion replaces workspace contents; do not insert a
+    // component probe while that initial asynchronous render is still pending.
+    await expect(page.locator('#workspace u2-dashboard')).toBeVisible();
   });
 
   test.afterEach(async ({ page }) => {
