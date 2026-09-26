@@ -202,8 +202,16 @@ cache failure after handoff produce fixed `outcome_uncertain` errors without
 provider text/retry hints. No successful event, dependent execution, requeue or
 automatic retry follows. Check the originally bound Calendar account/event
 before a new proposal, including after restart. Missing local reschedule sources
-remain not attempted. Calendar write deadlines and early request validation
-remain separate work; action acknowledgement is not objective completion.
+remain not attempted. Early request validation remains separate work; action
+acknowledgement is not objective completion.
+
+Calendar writes have a separate 30-second POST/PATCH acknowledgement deadline
+covering headers and JSON parsing after OAuth's own bounded acquisition. Timeout
+aborts transport and returns uncertainty, not proof of no change. Late receipts
+cannot resume cache writes or success events, even after restart; no automatic
+retry follows. Shorter deadlines are internal runtime/test options, not
+model-controlled settings. Invalid values fail before OAuth/write as not
+attempted. Read deadlines remain distinct and cannot authorize writes.
 
 - List: `GET https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=&timeMax=&singleEvents=true&orderBy=startTime`
 - Create: `POST .../events`
@@ -232,7 +240,7 @@ invented cache identities. Sending remains outside the read deadline boundary.
 - Send: `POST .../messages/send` with `raw` = base64url of a minimal hand-built RFC 2822 message (`To:`, `Subject:`, blank line, body) — no MIME/attachment support this phase, documented as a simplification.
 - Send preflight accepts a nonempty recipient string or a nonempty flat array of nonempty strings, with string subject/body. Nested arrays, objects, empty/blank values and CRLF recipient/subject injection fail before OAuth or transport with a fixed not-attempted error. Valid inputs keep their exact header/body bytes; no general address parsing/normalization is claimed. A malformed approved proposal creates no sent success, blocks dependents and is not retried automatically.
 - Send success requires a nonempty string provider message ID and, if present, a nonempty string thread ID. No receipt ID is invented. Transport, HTTP, parsing, malformed acknowledgement or local-cache failure after the POST handoff becomes a sanitized `outcome_uncertain` queue error: no successful sent event, dependent execution or automatic retry. The run requires owner attention and remains unverified across restart; the unresolved action cannot be requeued. Check the originally bound account's Sent mail before any fresh proposal. Even an HTTP error after handoff is conservatively uncertain, not proof that delivery was never attempted. Proper reply threading remains separate work.
-- Sending has its own 30-second acknowledgement deadline covering POST headers and JSON parsing, after OAuth's separate bounded acquisition. Timeout aborts the transport and returns uncertainty, not proof of no external effect. Late/non-cooperating responses cannot resume sent-cache writes or publish success. This write boundary is distinct from retryable reads, has no automatic resend, and does not yet cover Calendar writes. Shorter deadline overrides are internal runtime/test options, not model-controlled settings; invalid values fail before OAuth/transport as not attempted.
+- Sending has its own 30-second acknowledgement deadline covering POST headers and JSON parsing, after OAuth's separate bounded acquisition. Timeout aborts the transport and returns uncertainty, not proof of no external effect. Late/non-cooperating responses cannot resume sent-cache writes or publish success. This write boundary is distinct from retryable reads, has no automatic resend, and is separate from Calendar's write boundary above. Shorter deadline overrides are internal runtime/test options, not model-controlled settings; invalid values fail before OAuth/transport as not attempted.
 - Map → `emails` row: `from_addr`, `to_addr`, `subject`, `body`, `folder` (`INBOX` label → `inbox`, else best-effort), `received_at` from the message's internal date.
 
 ## Google Contacts provider — real API calls
