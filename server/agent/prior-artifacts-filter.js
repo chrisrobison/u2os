@@ -1,7 +1,7 @@
 import { DataProcessingPolicy } from '../policy/data-processing-policy.js';
 import { filterObservationsForDestination } from './observation-filter.js';
 
-/** Historical reads are private conversation data even when the original
+/** Historical reads are private conversation/goal data even when the original
  * tool (such as public web search) normally has a lower classification. */
 export function filterPriorArtifactsForDestination(artifacts, destination, policy = new DataProcessingPolicy()) {
   if (!Array.isArray(artifacts) || !artifacts.length) return { artifacts: [], omitted: [] };
@@ -23,6 +23,7 @@ export function filterPriorArtifactsForDestination(artifacts, destination, polic
     const source = eligible.find((artifact) => artifact.actionId === observation.actionId);
     if (!source || (!observation.items.length && (!Array.isArray(source.result) || source.result.length))) return [];
     return [{ ...observation, runId: source.runId, observedAt: source.observedAt,
+      ...(source.goalId ? { goalId: source.goalId, goalRevision: source.goalRevision } : {}),
       account: source.account ? { providerId: source.account.providerId, instanceId: source.account.instanceId,
         label: String(source.account.label || '').slice(0, 80) } : null }];
   });

@@ -41,7 +41,7 @@ test('mixed observations are classified per item, conservatively floored, and fi
 test('observation payloads are bounded and credential-shaped keys are stripped', () => {
   const source = Array.from({ length: 10 }, (_, index) => ({
     stepIndex: index, tool: 'web.search', status: 'executed', result: Array.from({ length: 15 }, (_, item) => ({
-      id: `${index}-${item}`, title: 'x'.repeat(10_000), apiKey: 'do-not-send', nested: { refreshToken: 'do-not-send-either' },
+      id: `${index}-${item}`, title: 'x'.repeat(10_000), apiKey: 'do-not-send', credentials: 'do-not-send-third', nested: { refreshToken: 'do-not-send-either' },
     })),
   }));
   const filtered = filterObservationsForDestination(source, 'configured_remote_model', policy);
@@ -52,6 +52,21 @@ test('observation payloads are bounded and credential-shaped keys are stripped',
   assert.ok(filtered.omitted.some((item) => item.reason === 'observation-limit'));
   assert.ok(filtered.omitted.some((item) => item.reason === 'item-limit'));
   assert.ok(filtered.omitted.some((item) => item.reason === 'payload-limit'));
+});
+
+test('wrapped nested classifications tighten the whole observation and scans fail closed', () => {
+  const allowPrivate = new DataProcessingPolicy({ policies: {
+    public: { remote_models: 'allow' }, private: { remote_models: 'allow' }, sensitive: { remote_models: 'never' },
+  } });
+  const wrapped = { tool: 'web.search', status: 'executed', result: { results: [
+    { title: 'Visible public result', classification: 'public' }, { title: 'Restricted nested result', classification: 'sensitive' },
+  ] } };
+  const remote = filterObservationsForDestination([wrapped], 'configured_remote_model', allowPrivate);
+  assert.equal(remote.observations[0].items.length, 0);
+  assert.equal(remote.omitted[0].classification, 'sensitive');
+  assert.ok(!JSON.stringify(remote).includes('Restricted nested result'));
+  const large = filterObservationsForDestination([{ tool: 'web.search', status: 'executed', result: { values: Array(5001).fill('text') } }], 'configured_remote_model', allowPrivate);
+  assert.equal(large.omitted[0].classification, 'sensitive');
 });
 
 test('fallback to a remote provider re-filters original observations and audits metadata only', async () => {

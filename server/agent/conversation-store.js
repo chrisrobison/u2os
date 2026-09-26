@@ -83,6 +83,11 @@ export function getPriorReadArtifacts(id, ownerId, currentRunId) {
       AND (s.tool = 'tasks.list' OR a.account_binding IS NOT NULL)
     ORDER BY r.created_at DESC, s.step_index DESC LIMIT 4`)
     .all(id, ownerId, currentRunId);
+  return presentPriorReadArtifacts(rows);
+}
+
+/** Shared parsing boundary for owner/conversation or exact-goal queries. */
+export function presentPriorReadArtifacts(rows) {
   return rows.flatMap((row) => {
     try {
       if (row.truncated) return [];
@@ -91,6 +96,7 @@ export function getPriorReadArtifacts(id, ownerId, currentRunId) {
         || (binding.instanceId !== null && typeof binding.instanceId !== 'string'))) return [];
       const account = binding ? { providerId: binding.providerId, instanceId: binding.instanceId, label: binding.label } : null;
       return [{ runId: row.runId, stepIndex: row.stepIndex, tool: row.tool, actionId: row.actionId, observedAt: row.observedAt,
+        ...(row.goalId ? { goalId: row.goalId, goalRevision: row.goalRevision } : {}),
         status: 'executed', result: JSON.parse(row.result), account, accountBinding: binding }];
     } catch { return []; }
   });

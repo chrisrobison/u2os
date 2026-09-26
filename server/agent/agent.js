@@ -19,6 +19,7 @@ import { resolveActionReferences, resolvePriorActionReferences } from './result-
 import { validatePlan } from './plan-validator.js';
 import { getAgentAction, updateAgentAction } from '../policy/policy-engine.js';
 import { appendTurn, requireConversation, getPriorTurnsForModel, getPriorReadArtifacts } from './conversation-store.js';
+import { getGoalPriorReadArtifacts } from './goal-context.js';
 import { getGoalForRun } from './goal-store.js';
 
 const MAX_MODEL_CALLS_PER_MESSAGE = 3;
@@ -109,10 +110,12 @@ export class Agent {
   }
 
   async _handleRunMessage({ text, actorId, voice, correlationId, actor, runId, conversationId = null, resume = false, previousObservations = [], previousResults = [], previousAttempted = new Set() }) {
-    const goalRun = Boolean(getGoalForRun(runId));
+    const linkedGoal = getGoalForRun(runId);
+    const goalRun = Boolean(linkedGoal);
     const planContext = await this.contextAssembler.assemble({ correlationId, actor, objective: text });
-    const conversationHistory = conversationId ? getPriorTurnsForModel(conversationId, actorId, runId) : [];
-    const priorReadArtifacts = conversationId ? getPriorReadArtifacts(conversationId, actorId, runId) : [];
+    const conversationHistory = conversationId && !goalRun ? getPriorTurnsForModel(conversationId, actorId, runId) : [];
+    const priorReadArtifacts = goalRun ? getGoalPriorReadArtifacts(linkedGoal.id, actorId, runId)
+      : conversationId ? getPriorReadArtifacts(conversationId, actorId, runId) : [];
 
     if (!resume) this.eventBus.publish({
       type: 'agent.message.received', source: 'user', actor, data: { text },
@@ -182,7 +185,7 @@ export class Agent {
       // first step can cause an external effect or request approval.
       const resolvedActions = plan.actions.map((action) => resolveActionReferences(
         resolvePriorActionReferences(action, this.planner.lastAllowedPriorArtifacts || [], priorReadArtifacts, this.toolRegistry),
-        this.planner.lastAllowedObservations || [], this.toolRegistry, { continuation: round > 0 || (this.planner.lastAllowedPriorArtifacts || []).length > 0 },
+        this.planner.lastAllowedObservations || [], this.toolRegistry, { continuation: goalRun || round > 0 || (this.planner.lastAllowedPriorArtifacts || []).length > 0 },
       ));
       const accountContexts = resolvedActions.map((action) => captureProposedAccount(action.tool, action.arguments, this.toolRegistry.get(action.tool), action.sourceAccountBinding));
       const baseIndex = this.runStore.recordRunPlan(runId, { ...plan, actions: resolvedActions }, contextProvenance, accountContexts, this._describeModel());
