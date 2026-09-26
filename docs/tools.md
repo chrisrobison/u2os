@@ -54,3 +54,5 @@ The policy engine looks up `policies.yaml[domain][operationKey]` where `operatio
 ## Provenance
 
 Every proposed tool execution writes an `agent_actions` row (even autonomous ones, for audit). Authorized work is then persisted in `action_queue` before the registered tool runs; numbered attempts live in `action_attempts`. Every state-changing tool publishes an event whose `metadata.provenance` is `tool:<name>`, and committed delivery transitions publish metadata-only `agent.action.queue_updated` events.
+
+An executing worker renews its lease while a provider call is in flight. The lease-renewal test waits for a persisted heartbeat and checks a second worker against a controlled clock just past the original expiry; it does not depend on a short wall-clock sleep under CI load. If a process or event loop cannot renew before expiry, the existing uncertain-outcome/idempotency rules still govern recovery rather than assuming the external action did not happen.

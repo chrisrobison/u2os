@@ -15,6 +15,7 @@ import {
   enqueueAction,
   getQueuedActionByActionId,
   leaseActionByActionId,
+  leaseNextAction,
 } from '../server/agent/action-queue-store.js';
 
 function withHome(fn) {
@@ -27,7 +28,7 @@ function withHome(fn) {
   });
 }
 
-function setup({ execute, supportsIdempotency = false, policy = 'autonomous', maxActionAgeMs } = {}) {
+function setup({ execute, supportsIdempotency = false, policy = 'autonomous', maxActionAgeMs, leaseMs, leaseRenewalIntervalMs } = {}) {
   const eventBus = new EventBus(getDb());
   const tool = {
     name: 'delivery.send', domain: 'delivery', category: 'consequential', supportsIdempotency,
@@ -38,7 +39,7 @@ function setup({ execute, supportsIdempotency = false, policy = 'autonomous', ma
   const policyEngine = new PolicyEngine({ policies: { delivery: { send: policy } } });
   const evaluator = new ActionEvaluator({ toolRegistry: registry, policyEngine });
   const executor = new ActionExecutor({ eventBus });
-  const worker = new ActionQueueWorker({ actionEvaluator: evaluator, actionExecutor: executor, eventBus, workerId: 'worker-new', maxActionAgeMs });
+  const worker = new ActionQueueWorker({ actionEvaluator: evaluator, actionExecutor: executor, eventBus, workerId: 'worker-new', maxActionAgeMs, leaseMs, leaseRenewalIntervalMs });
   return { eventBus, tool, policyEngine, worker };
 }
 
@@ -169,20 +170,22 @@ test('retryable idempotent failures resume when due and duplicate calls do not d
 test('long-running execution renews its lease so another worker cannot reclaim it', () => withHome(async () => {
   let release;
   const gate = new Promise((resolve) => { release = resolve; });
-  const firstSetup = setup({ execute: async () => { await gate; return { ok: true }; } });
-  firstSetup.worker.leaseMs = 30;
+  const firstSetup = setup({ execute: async () => { await gate; return { ok: true }; }, leaseMs: 60_000, leaseRenewalIntervalMs: 10 });
   const action = queueAudit();
   const running = firstSetup.worker.processAction(action.id);
-  await new Promise((resolve) => setTimeout(resolve, 45));
+  try {
+    const initialExpiry = getQueuedActionByActionId(action.id).lease_expires_at;
+    // Wait for an actual heartbeat, not a guessed amount of wall time. The
+    // simulated competing clock is just past the original lease expiry.
+    const deadline = Date.now() + 5_000;
+    while (getQueuedActionByActionId(action.id).lease_expires_at === initialExpiry && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    assert.notEqual(getQueuedActionByActionId(action.id).lease_expires_at, initialExpiry, 'heartbeat renewed the lease');
 
-  const second = new ActionQueueWorker({
-    actionEvaluator: firstSetup.worker.actionEvaluator,
-    actionExecutor: firstSetup.worker.actionExecutor,
-    eventBus: firstSetup.eventBus,
-    workerId: 'worker-second',
-    leaseMs: 30,
-  });
-  assert.equal(await second.processNext(), null);
-  release();
+    assert.equal(leaseNextAction({ leaseOwner: 'worker-second', leaseMs: 60_000,
+      now: new Date(Date.parse(initialExpiry) + 1) }), null);
+    assert.equal(getQueuedActionByActionId(action.id).attempt_count, 1);
+  } finally { release(); }
   assert.equal((await running).status, 'executed');
 }));

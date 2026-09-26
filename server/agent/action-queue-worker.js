@@ -17,13 +17,14 @@ import { accountDomainForAction, assertCalendarTarget, assertSmtpIdentity } from
 import { findRunByAction, isCancellationRequested, isRunDeadlineExpired, markBudgetExhausted } from './run-store.js';
 
 export class ActionQueueWorker {
-  constructor({ actionEvaluator, actionExecutor, eventBus, workerId, maxActionAgeMs = 24 * 60 * 60 * 1000, leaseMs = 30_000 }) {
+  constructor({ actionEvaluator, actionExecutor, eventBus, workerId, maxActionAgeMs = 24 * 60 * 60 * 1000, leaseMs = 30_000, leaseRenewalIntervalMs } = {}) {
     this.actionEvaluator = actionEvaluator;
     this.actionExecutor = actionExecutor;
     this.eventBus = eventBus;
     this.workerId = workerId || newId('worker');
     this.maxActionAgeMs = maxActionAgeMs;
     this.leaseMs = leaseMs;
+    this.leaseRenewalIntervalMs = leaseRenewalIntervalMs ?? Math.max(10, Math.floor(leaseMs / 3));
   }
 
   async processAction(actionId) {
@@ -112,7 +113,7 @@ export class ActionQueueWorker {
     const attempt = beginActionAttempt({ queueId: item.id, leaseOwner: this.workerId });
     const heartbeat = setInterval(() => {
       renewActionLease(item.id, { leaseOwner: this.workerId, leaseMs: this.leaseMs });
-    }, Math.max(10, Math.floor(this.leaseMs / 3)));
+    }, this.leaseRenewalIntervalMs);
     heartbeat.unref?.();
     let outcome;
     try {
