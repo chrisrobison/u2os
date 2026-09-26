@@ -36,7 +36,7 @@ export class U2Goals extends HTMLElement {
           <p class="goal-form__note">Manual runs use read-only tools in the selected domains. This does not authorize consequential actions or start automation.</p>
           <div class="goal-form__actions"><button type="submit" class="btn btn-primary">Save draft</button><button type="button" class="btn goal-run" hidden>Run once (read-only)</button><button type="button" class="btn goal-reload" hidden>Reload saved goal</button></div>
           <div class="goal-controls" hidden><button type="button" class="btn" data-goal-control="pause">Pause goal</button><button type="button" class="btn" data-goal-control="resume">Resume goal</button><button type="button" class="btn" data-goal-control="cancel">Cancel goal</button></div>
-          <section class="goal-schedule" hidden><label>One-time wake (local time) <input type="datetime-local" name="wakeAt"></label><button type="button" class="btn goal-schedule-save">Schedule one read-only pass</button><p class="goal-wake-status"></p></section>
+          <section class="goal-schedule" hidden><label>One-time wake (local time) <input type="datetime-local" name="wakeAt"></label><button type="button" class="btn goal-schedule-save">Schedule one read-only pass</button><p class="goal-wake-status"></p><p class="goal-research-schedule-status"></p></section>
           <p class="goal-message" role="status" aria-live="polite"></p>
           <div class="goal-runs" aria-label="Related runs"></div>
           <section class="goal-evidence" aria-label="Selected run evidence"></section>
@@ -166,7 +166,7 @@ export class U2Goals extends HTMLElement {
       this._form.maxRuns.value = String(goal.budgets.maxRuns);
       this._form.maxModelCalls.value = String(goal.budgets.maxModelCalls);
       this._form.maxTokens.value = String(goal.budgets.maxTokens);
-      const stateLabel = { draft: 'Draft', active: 'Active (manual only)', paused: 'Paused', cancelled: 'Cancelled' }[goal.status] || goal.status;
+      const stateLabel = { draft: 'Draft', active: 'Active', paused: 'Paused', cancelled: 'Cancelled' }[goal.status] || goal.status;
       this.querySelector('.goal-form__title').textContent = `${stateLabel} · revision ${goal.revision}`;
       this.querySelector('.goal-reload').hidden = false;
       this.querySelector('.goal-run').hidden = !goal.manualRunAvailable;
@@ -178,14 +178,18 @@ export class U2Goals extends HTMLElement {
       });
       this._setDraftEditable(['draft', 'paused'].includes(goal.status));
       this._form.querySelector('[type="submit"]').textContent = goal.status === 'paused' ? 'Save revised goal' : 'Save draft';
-      this.querySelector('.goal-form__state').textContent = `${goal.nextWakeAt ? 'One-time schedule' : 'Manual only'} · Next wake-up: ${goal.nextWakeAt || 'none'} · Spent: ${goal.spent.runs} runs, ${goal.spent.modelCalls} model calls, ${goal.spent.tokens} reported tokens${goal.spent.tokenUsageComplete ? '' : ' (usage incomplete)'}${goal.spent.monetaryCost.available ? '' : ' (cost unavailable)'}`;
+      this.querySelector('.goal-form__state').textContent = `${goal.researchSchedule?.status === 'active' ? 'Finite research schedule' : goal.nextWakeAt ? 'One-time schedule' : 'Manual only'} · Next wake-up: ${goal.nextWakeAt || 'none'} · Spent: ${goal.spent.runs} runs, ${goal.spent.modelCalls} model calls, ${goal.spent.tokens} reported tokens${goal.spent.tokenUsageComplete ? '' : ' (usage incomplete)'}${goal.spent.monetaryCost.available ? '' : ' (cost unavailable)'}`;
       this.querySelector('.goal-schedule').hidden = false;
-      const canSchedule = goal.manualRunAvailable && !goal.nextWakeAt;
+      const canSchedule = goal.manualRunAvailable && !goal.nextWakeAt && goal.researchSchedule?.status !== 'active';
       this._form.wakeAt.disabled = !canSchedule;
       this.querySelector('.goal-schedule-save').disabled = !canSchedule;
       this.querySelector('.goal-wake-status').textContent = goal.lastWake
         ? `Wake ${goal.lastWake.status} · revision ${goal.lastWake.goalRevision} · ${goal.lastWake.fireAt}${goal.lastWake.runId ? ` · inspect run ${goal.lastWake.runId}` : ''}${goal.lastWake.blocker ? ` · ${goal.lastWake.blocker}: review goal state, budgets and linked runs before scheduling again.` : ''}`
         : 'No wake scheduled. Pause cancels pending wakes; resume does not rearm them.';
+      const research = goal.researchSchedule;
+      this.querySelector('.goal-research-schedule-status').textContent = research
+        ? `Research schedule ${research.status} · revision ${research.goalRevision} · every ${research.intervalHours} hours · ${research.scheduledPasses}/${research.maxPasses} passes scheduled · ${research.successfulPasses} confirmed successful read passes (not goal completion)${research.blocker ? ` · ${research.blocker}: inspect linked run, goal scope and budgets before explicitly scheduling again.` : ''}`
+        : 'No finite research schedule. One-time wakes do not repeat.';
       const runs = this.querySelector('.goal-runs');
       runs.replaceChildren();
       this.querySelector('.goal-evidence').replaceChildren();

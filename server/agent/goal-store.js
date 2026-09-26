@@ -140,6 +140,8 @@ export function controlGoal(id, ownerId, input) {
 }
 
 function invalidateGoalWakes(id, reason) {
+  getDb().prepare("UPDATE goal_research_schedules SET status = 'cancelled', blocker = ?, updated_at = ? WHERE goal_id = ? AND status = 'active'")
+    .run(reason, new Date().toISOString(), id);
   getDb().prepare(`UPDATE triggers SET enabled = 0, next_check_at = NULL WHERE id IN
     (SELECT trigger_id FROM goal_wakes WHERE goal_id = ? AND status = 'pending')`).run(id);
   getDb().prepare("UPDATE goal_wakes SET status = 'cancelled', blocker = ?, updated_at = ? WHERE goal_id = ? AND status = 'pending'")
@@ -178,14 +180,18 @@ function present(row) {
   const permittedScope = JSON.parse(row.permitted_scope);
   const wake = getDb().prepare('SELECT * FROM goal_wakes WHERE goal_id = ? ORDER BY created_at DESC, id DESC LIMIT 1').get(row.id);
   const pending = getDb().prepare("SELECT fire_at FROM goal_wakes WHERE goal_id = ? AND status = 'pending'").get(row.id);
+  const research = getDb().prepare("SELECT * FROM goal_research_schedules WHERE goal_id = ? ORDER BY (status = 'active') DESC, created_at DESC, id DESC LIMIT 1").get(row.id);
   return {
     id: row.id, objective: row.objective, completionCriteria: JSON.parse(row.completion_criteria),
     constraints: JSON.parse(row.constraints), permittedScope,
     budgets, status: row.status, revision: row.revision,
     createdAt: row.created_at, updatedAt: row.updated_at,
-    executionEnabled: Boolean(pending), manualRunAvailable: ['draft', 'active'].includes(row.status) && permittedScope.domains.length > 0 && !usage.unfinished &&
+    executionEnabled: Boolean(pending || research?.status === 'active'), manualRunAvailable: ['draft', 'active'].includes(row.status) && permittedScope.domains.length > 0 && !usage.unfinished &&
       usage.runs < budgets.maxRuns && usage.model_calls < budgets.maxModelCalls && usage.tokens < budgets.maxTokens,
     nextWakeAt: pending?.fire_at || null,
+    researchSchedule: research ? { id: research.id, goalRevision: research.goal_revision, intervalHours: research.interval_hours,
+      maxPasses: research.max_passes, scheduledPasses: research.scheduled_passes, successfulPasses: research.successful_passes,
+      wakeId: research.wake_id, status: research.status, blocker: research.blocker } : null,
     lastWake: wake ? { id: wake.id, goalRevision: wake.goal_revision, fireAt: wake.fire_at, status: wake.status,
       runId: wake.run_id, blocker: wake.blocker } : null,
     relatedRuns: linked.map((run) => ({ id: run.id, status: run.status, objectiveStatus: run.objective_status,

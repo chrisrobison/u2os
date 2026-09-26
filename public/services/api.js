@@ -91,6 +91,11 @@ export function scheduleGoalWake(id, fireAt, expectedRevision) {
     body: JSON.stringify({ fireAt, expectedRevision }) });
 }
 
+export function scheduleGoalResearch(id, input) {
+  return request(`/api/goals/${encodeURIComponent(id)}/research-schedule`, { method: 'POST', headers: JSON_HEADERS,
+    body: JSON.stringify(input) });
+}
+
 export function listGoalFindings(id, offset = 0) {
   return request(`/api/goals/${encodeURIComponent(id)}/findings?offset=${encodeURIComponent(offset)}`, { cache: 'no-store' });
 }
