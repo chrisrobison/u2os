@@ -180,16 +180,38 @@ function buildRawMessage({ to, subject, body }) {
   return Buffer.from(message, 'utf8').toString('base64url');
 }
 
-export async function sendEmail({ to, subject, body }, { fetchImpl = globalThis.fetch, dataDir, instance } = {}) {
+export async function sendEmail({ to, subject, body }, { fetchImpl = globalThis.fetch, dataDir, instance, timeoutMs = 30_000, timers = globalThis } = {}) {
   const raw = buildRawMessage({ to, subject, body });
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 30_000) {
+    throw new Error('gmail: invalid send deadline; no message was attempted');
+  }
   const headers = { ...(await authHeaders(fetchImpl, dataDir, instance)), 'Content-Type': 'application/json' };
-  let res;
+  const controller = new AbortController();
+  let res, timer, timedOut = false, finished = false;
+  const discard = (response) => {
+    try { Promise.resolve(response?.body?.cancel()).catch(() => {}); } catch { /* Locked native body. */ }
+  };
+  const check = () => { if (timedOut || finished) throw new Error('Send acknowledgement no longer available'); };
+  const deadline = new Promise((_, reject) => {
+    timer = timers.setTimeout(() => {
+      timedOut = true; controller.abort(); discard(res);
+      reject(new Error('Send acknowledgement deadline expired'));
+    }, timeoutMs);
+  });
   try {
     // From this handoff onward, failure is not proof that nothing was sent.
     // Never invent a receipt ID or inherit upstream retry flags/codes/text.
-    res = await fetchImpl(`${API_BASE}/messages/send`, { method: 'POST', headers, body: JSON.stringify({ raw }) });
+    const transport = Promise.resolve().then(() => {
+      check();
+      return fetchImpl(`${API_BASE}/messages/send`, { method: 'POST', headers, body: JSON.stringify({ raw }), signal: controller.signal });
+    }).then((response) => {
+      if (timedOut || finished) { discard(response); check(); }
+      return response;
+    });
+    res = await Promise.race([transport, deadline]);
     if (!res.ok) throw new Error('No successful send acknowledgement');
-    const sent = await res.json();
+    const sent = await Promise.race([Promise.resolve().then(() => { check(); return res.json(); }), deadline]);
+    check();
     if (!sent || typeof sent !== 'object' || Array.isArray(sent) || typeof sent.id !== 'string' || !sent.id.trim() ||
         (sent.threadId !== undefined && (typeof sent.threadId !== 'string' || !sent.threadId.trim()))) {
       throw new Error('Invalid send acknowledgement');
@@ -203,15 +225,16 @@ export async function sendEmail({ to, subject, body }, { fetchImpl = globalThis.
       subject, body, folder: 'sent', is_read: true, received_at: now,
     });
   } catch {
-    try { Promise.resolve(res?.body?.cancel()).catch(() => {}); } catch { /* Locked native body. */ }
     const status = Number.isInteger(res?.status) && res.status >= 100 && res.status <= 599 ? res.status : undefined;
-    const error = new Error(`gmail: send outcome uncertain${status === undefined ? '' : ` (status ${status})`}; check the selected account's Sent mail before any new send; no automatic retry`);
+    const error = new Error(`gmail: send outcome uncertain${timedOut ? ' (acknowledgement timed out)' : ''}${status === undefined ? '' : ` (status ${status})`}; check the selected account's Sent mail before any new send; no automatic retry`);
     error.code = 'GMAIL_SEND_OUTCOME_UNCERTAIN';
     error.actionErrorClass = 'outcome_uncertain';
     error.ownerAttentionRequired = true;
     error.safeToRetry = false;
     if (status !== undefined) error.status = status;
     throw error;
+  } finally {
+    finished = true; timers.clearTimeout(timer); controller.abort(); discard(res);
   }
 }
 
