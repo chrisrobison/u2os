@@ -74,6 +74,7 @@ export async function stopDedicatedServer(page, dedicated) {
   if (page) await page.goto('about:blank').catch(() => {});
   handle.server.closeAllConnections();
   await new Promise((resolve) => handle.server.close(resolve));
+  await handle.stopActionQueue();
   if (_savedHome === undefined) delete process.env.U2OS_HOME;
   else process.env.U2OS_HOME = _savedHome;
   fs.rmSync(_dataDir, { recursive: true, force: true });
