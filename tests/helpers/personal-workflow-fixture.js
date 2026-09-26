@@ -58,6 +58,7 @@ export async function withPersonalWorkflow({ existing = false, research = false,
     throw error;
   }
   const modelOrigin = `http://127.0.0.1:${modelServer.address().port}`;
+  fixture.modelOrigin = modelOrigin;
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(typeof input === 'string' ? input : input.url);
     if (url.origin === modelOrigin) return nativeFetch(input, init);
@@ -98,14 +99,17 @@ export async function withPersonalWorkflow({ existing = false, research = false,
     fixture.unexpectedNetwork.push(url.href); throw new Error('Unsupported fixture provider request');
   };
   const stop = async () => { if (handle) { await handle.shutdown(); handle = null; closeAllForTests(); } };
+  fixture.stop = stop;
+  fixture.processQueue = () => handle.agent.actionQueueWorker.processNext();
   fixture.restart = async () => { await stop(); handle = await startServer({ port: 0 }); };
-  fixture.api = async (route, body, expectedStatus = 200, method = body === undefined ? 'GET' : 'POST') => {
-    const origin = `http://127.0.0.1:${handle.port}`;
+  fixture.apiAt = async (port, route, body, expectedStatus = 200, method = body === undefined ? 'GET' : 'POST') => {
+    const origin = `http://127.0.0.1:${port}`;
     const response = await nativeFetch(`${origin}${route}`, { method,
       headers: { cookie, origin, 'x-u2os-csrf': csrf, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
     const result = await response.json(); assert.equal(response.status, expectedStatus, JSON.stringify(result)); return result;
   };
+  fixture.api = (...args) => fixture.apiAt(handle.port, ...args);
   try {
     handle = await startServer({ port: 0 });
     for (const table of ['entities', 'emails', 'calendar_events', 'tasks', 'triggers']) assert.equal(getDb().prepare(`SELECT count(*) n FROM ${table}`).get().n, 0, 'personal startup cannot seed fixtures');

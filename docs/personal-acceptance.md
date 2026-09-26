@@ -7,13 +7,13 @@ upgraded personal installation. A consolidated six-workflow personal-mode
 fresh/upgrade harness remains unfinished.
 
 The personal-mode API suite is repeatable with `npm run test:personal`:
-eighteen cases cover brief, grounded draft, meeting preparation, failed-provider
+twenty cases cover brief, grounded draft, meeting preparation, failed-provider
 continuation, multi-run research, pending approval/rejection and approved
-simulated sends with confirmed/uncertain recovery on fresh and existing unmarked homes. They
+simulated sends with confirmed/uncertain recovery and process interruption on fresh and existing unmarked homes. They
 use actual owner auth, runtime, configured model HTTP and Google/Brave adapters
 with isolated scripted transports and a controlled clock. Existing fixture
 records survive upgrade/restart.
-The default harness denies provider writes. Four explicitly opted-in cases
+The default harness denies provider writes. Six explicitly opted-in cases
 intercept only the exact Gmail POST, original account token and approved MIME;
 no write reaches native provider networking. Confirmed receipts ground a
 dependent draft and final model continuation. Missing receipts require owner
@@ -118,8 +118,20 @@ dependent draft and a final response grounded in those observed artifacts;
 uncertain acknowledgements require attention and retain blocked dependents
 without more planning. Repeated approval, explicit wakes and restart cannot
 repeat either send; original account/payload and existing records survive.
-These are not live delivery, threaded replies, process interruption during a
-running external effect, or personal browser approval proof.
+These are not live delivery, threaded replies or personal browser approval proof.
+
+Two further fresh/existing-home cases fork the real server, send an authenticated
+approval through native HTTP and gate on the exact original-account Gmail POST
+at an isolated loopback provider fixture. SIGKILL occurs while the durable attempt
+is actually executing and no acknowledgement has reached the runtime. A Date-only
+clock advances beyond the recorded lease; attempt/action rows are not fabricated
+or rewritten to manufacture recovery. Real restart/worker recovery retains one
+provider request and one historical attempt, explicit uncertainty in Operations
+and run explanation, unverified objective and waiting dependent draft. Reapproval,
+requeue, explicit wakes and further restart cannot repeat the send or continue
+planning. Native child networking permits only the loopback model/provider
+fixtures. This proves runtime interruption behavior, not actual provider delivery
+or successful reconciliation of an uncertain effect.
 
 Local personal drafts leave their sender unset, including while disconnected;
 they are saved work, not simulated mail delivery. No sender address is inferred
