@@ -26,6 +26,7 @@ const CONTENT_TYPES = {
  * separate, later task).
  */
 export function serveStatic(req, res) {
+  req.routeLogPath = '[static]';
   const url = new URL(req.url, 'http://localhost');
   let pathname = decodeURIComponent(url.pathname);
   if (pathname === '/' || pathname === '') pathname = '/index.html';

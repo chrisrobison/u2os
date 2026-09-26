@@ -31,6 +31,7 @@ import { AuthService } from './security/auth.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { canonicalDataHome, acquireHomeGuard, waitForClosingRuntime } from './runtime/home-guard.js';
+import { requestLogMetadata } from './logging/request-metadata.js';
 
 import { registerHealthRoutes } from './api/routes/health.js';
 import { registerAgentRoutes } from './api/routes/agent.js';
@@ -268,9 +269,9 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
     try {
       const startedAt = Date.now();
       res.on('finish', () => {
-        log.info('http', `${req.method} ${req.url}`, {
-          method: req.method,
-          path: req.url,
+        const metadata = requestLogMetadata(req);
+        log.info('http', `${metadata.method} ${metadata.path}`, {
+          ...metadata,
           status: res.statusCode,
           duration_ms: Date.now() - startedAt,
         });

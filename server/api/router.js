@@ -1,5 +1,6 @@
 import { URL } from 'node:url';
 import { log } from '../logging/logger.js';
+import { requestLogMetadata } from '../logging/request-metadata.js';
 
 const WRITES = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const PUBLIC = new Set(['GET /api/health', 'GET /api/auth/status', 'POST /api/auth/setup', 'POST /api/auth/login', 'POST /api/auth/logout']);
@@ -19,6 +20,7 @@ export class Router {
     const url = new URL(req.url, 'http://localhost'); let pathname;
     try { pathname = decodeURIComponent(url.pathname); } catch { return sendJson(res, 400, { error: 'Bad Request' }); }
     const paths = this.routes.filter((r) => r.pattern.test(pathname)); const match = paths.find((r) => r.method === req.method);
+    req.routeLogPath = match?.path || paths[0]?.path || '[unmatched]';
     if (!match) return sendJson(res, paths.length ? 405 : 404, { error: paths.length ? 'Method Not Allowed' : 'Not Found' });
     if (this.publicOrigin && !validHost(req, this.publicOrigin)) return sendJson(res, 400, { error: 'Invalid Host' });
     req.session = this.auth?.authenticate(req) || null; if (req.session) req.owner = { id: req.session.ownerId };
@@ -31,7 +33,10 @@ export class Router {
       if (WRITES.has(req.method)) req.body = await readJsonBody(req, match.options.bodyLimit || this.bodyLimit);
       await match.handler(req, res);
     } catch (err) {
-      log.error('router', 'Request handler failed', { method: req.method, path: pathname, error: err?.message || String(err) });
+      // Exceptions may contain provider responses, query values or private
+      // payload text. Durable action/connector health owns actionable details.
+      const status = Number.isInteger(err?.status) && err.status >= 400 && err.status <= 599 ? err.status : 500;
+      log.error('router', 'Request handler failed', { ...requestLogMetadata(req), status });
       if (!res.writableEnded) sendJson(res, err.status || 500, { error: err.status || process.env.NODE_ENV !== 'production' ? err.message : 'Internal Server Error' });
     }
   }
