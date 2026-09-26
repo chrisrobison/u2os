@@ -9,6 +9,7 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "test": "node --test tests/*.test.js",
+    "test:personal": "node --test tests/personal-workflows.test.js",
     "test:e2e": "playwright test -c tests/e2e/playwright.config.js",
     "demo": "node server/seed/demo.js",
     "seed": "node server/seed/seed.js",
