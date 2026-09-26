@@ -473,12 +473,38 @@ export class Agent {
     }
   }
 
-  /** Owner-triggered or approval-triggered wake of already-validated steps.
+  /** Existing queue ticks reconcile missed delivery events/restarts from
+   * SQLite. No new run is created, and idle prerequisites never call a model. */
+  async wakeWaitingRuns({ shouldStop = () => false } = {}) {
+    if (this._runWakeScan) return this._runWakeScan;
+    const work = async () => {
+      const candidates = this.runStore.listRunWakeCandidates?.({ afterId: this._runWakeCursor || '' }) || [];
+      const observed = [];
+      for (const { id } of candidates) {
+        if (shouldStop()) break;
+        this._runWakeCursor = id;
+        try {
+          await this.resumeRunDependents(id);
+          if (!shouldStop()) await this.resumeRunPlanning(id);
+          observed.push({ runId: id, status: this.runStore.getRun(id)?.status });
+        } catch {
+          console.error('[agent] waiting run reconciliation failed; inspect its durable state');
+        }
+      }
+      return observed;
+    };
+    this._runWakeScan = work();
+    try { return await this._runWakeScan; }
+    finally { this._runWakeScan = null; }
+  }
+
+  /** Owner-, approval-, or queue-triggered wake of already-validated steps.
    * Never calls a model or replays an action with an assigned action ID. */
   async resumeRunDependents(runId) {
     const execution = this.runStore.getRunExecution(runId);
     if (!execution) return null;
     const { run, steps } = execution;
+    if (['planning', 'running'].includes(run.status)) return this.runStore.getRun(runId);
     if (!steps.some((step) => step.status === 'waiting_dependency')) return this.runStore.getRun(runId);
     for (const step of steps) {
       if (step.status !== 'waiting_dependency') continue;

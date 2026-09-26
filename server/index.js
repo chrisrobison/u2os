@@ -163,12 +163,30 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   startSyncScheduler({ db, eventBus, dataDir });
 
   const agent = new Agent({ modelRouter, policyEngine, toolRegistry, eventBus, ownerEntityId, embeddingProvider, dataProcessingPolicy });
+  let queueTick = null;
+  let runWake = null;
+  let queueStopped = false;
   const actionQueueTimer = setInterval(() => {
-    agent.actionQueueWorker.processNext().catch((err) => {
-      log.error('action-queue', 'Queue tick failed', { error: err?.message || String(err) });
-    });
+    if (queueStopped || queueTick) return;
+    queueTick = (async () => {
+      await agent.actionQueueWorker.processNext();
+      if (!queueStopped && !runWake) {
+        // Slow model planning must not stall unrelated durable delivery.
+        runWake = agent.wakeWaitingRuns({ shouldStop: () => queueStopped })
+          .catch(() => { log.error('agent', 'Run reconciliation failed; inspect durable run state'); })
+          .finally(() => { runWake = null; });
+      }
+    })().catch(() => {
+      log.error('action-queue', 'Queue tick failed; inspect durable action/run state');
+    }).finally(() => { queueTick = null; });
   }, Number(process.env.U2OS_ACTION_QUEUE_TICK_MS) || 1_000);
   actionQueueTimer.unref?.();
+  const stopActionQueue = async () => {
+    queueStopped = true;
+    clearInterval(actionQueueTimer);
+    await queueTick;
+    await runWake;
+  };
 
   // Phase 6 / PROMPT.md §9: trigger engine. Event-driven half subscribes to
   // the event bus immediately; polled half ticks every `tickMs` (default
@@ -255,7 +273,7 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   // multicast socket.
   const mdnsHandle = !isLoopback(resolvedBind) ? startMdns({ port: boundPort }) : null;
   server.on('close', () => {
-    clearInterval(actionQueueTimer);
+    stopActionQueue().catch(() => {});
     mdnsHandle?.stop();
     stopSyncScheduler();
     triggerEngine.stopAll().catch(() => {});
@@ -264,7 +282,7 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
 
   log.info('server', 'U2OS server listening', { bind: resolvedBind, port: boundPort, dataDir, dbPath });
 
-  return { server, port: boundPort, bind: resolvedBind, dataDir, dbPath, agent, eventBus, toolRegistry, policyEngine, auth, mdns: mdnsHandle, deviceRegistry, capabilityRegistry, streamRegistry };
+  return { server, port: boundPort, bind: resolvedBind, dataDir, dbPath, agent, eventBus, toolRegistry, policyEngine, auth, mdns: mdnsHandle, deviceRegistry, capabilityRegistry, streamRegistry, stopActionQueue };
 }
 
 function readConfig(dataDir) { try { return JSON.parse(fs.readFileSync(path.join(dataDir, 'config', 'config.json'), 'utf8')); } catch { return {}; } }

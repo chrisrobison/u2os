@@ -321,6 +321,17 @@ export function listRuns({ limit = 20 } = {}) {
   return ids.map(({ id }) => getRun(id));
 }
 
+/** Fair, bounded reconciliation over durable waiting states. Active turns
+ * and terminal runs are excluded; scan position is only an optimization. */
+export function listRunWakeCandidates({ afterId = '', limit = 20 } = {}) {
+  const bounded = Math.min(20, Math.max(1, Math.floor(Number(limit) || 20)));
+  const db = getDb();
+  const query = `SELECT id FROM agent_runs WHERE cancel_requested_at IS NULL
+    AND status IN ('waiting_for_action', 'waiting_for_dependency', 'ready_to_continue', 'interrupted')`;
+  const rows = db.prepare(`${query} AND id > ? ORDER BY id LIMIT ?`).all(afterId, bounded);
+  return rows.length || !afterId ? rows : db.prepare(`${query} ORDER BY id LIMIT ?`).all(bounded);
+}
+
 export function getRunResult(runId) {
   const status = getRun(runId);
   if (!status) return null;

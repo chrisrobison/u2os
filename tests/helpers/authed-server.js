@@ -20,6 +20,12 @@ export async function startServer(options = {}) {
   });
   installFetchWrapper();
   handle.server.on('close', () => credentials.delete(origin));
+  // A test home must outlive delayed delivery/continuation work. Preserve
+  // normal Server.close semantics while draining the queue before callback.
+  const close = handle.server.close.bind(handle.server);
+  handle.server.close = (callback) => close((...args) => {
+    handle.stopActionQueue().then(() => callback?.(...args));
+  });
   return handle;
 }
 
