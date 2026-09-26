@@ -2,6 +2,16 @@
 
 U2OS is a persistent, single-owner pre-alpha service. Authentication exists, but it is not designed for direct public-internet exposure. Startup listens on `127.0.0.1` by default.
 
+Queue delivery, connector sync polling and trigger workers start only after a
+successful HTTP bind. A bind failure (for example an occupied port) cleans
+prepared device adapters and does not leave these execution workers running.
+Worker-setup failure after binding closes the listener and drains partial setup.
+The internal server handle offers `stopBackgroundWorkers()` for an idempotent
+background drain; it does not close HTTP or cancel in-flight request handlers.
+Local initialization and additive migrations may still occur before binding.
+This safeguard is not a cross-process singleton or maintenance lock; coordinated
+backup/recovery and complete startup/shutdown handling remain unfinished.
+
 ## Configuration
 
 | Setting | Default | Purpose |

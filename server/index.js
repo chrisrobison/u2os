@@ -162,13 +162,13 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   // server/integrations/connection-instances.js's header for the full
   // migration contract.
   ensureConnectionInstancesMigrated({ db, dataDir });
-  startSyncScheduler({ db, eventBus, dataDir });
 
   const agent = new Agent({ modelRouter, policyEngine, toolRegistry, eventBus, ownerEntityId, embeddingProvider, dataProcessingPolicy });
   let queueTick = null;
   let runWake = null;
   let queueStopped = false;
-  const actionQueueTimer = setInterval(() => {
+  let actionQueueTimer = null;
+  const runQueueTick = () => {
     if (queueStopped || queueTick) return;
     queueTick = (async () => {
       await agent.actionQueueWorker.processNext();
@@ -181,23 +181,13 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
     })().catch(() => {
       log.error('action-queue', 'Queue tick failed; inspect durable action/run state');
     }).finally(() => { queueTick = null; });
-  }, Number(process.env.U2OS_ACTION_QUEUE_TICK_MS) || 1_000);
-  actionQueueTimer.unref?.();
+  };
   const stopActionQueue = async () => {
     queueStopped = true;
     clearInterval(actionQueueTimer);
     await queueTick;
     await runWake;
   };
-
-  // Phase 6 / PROMPT.md §9: trigger engine. Event-driven half subscribes to
-  // the event bus immediately; polled half ticks every `tickMs` (default
-  // 60s -- overridable via U2OS_TRIGGER_TICK_MS, mainly for tests/manual
-  // verification). Every action it runs goes through
-  // agent.evaluateAndMaybeExecute()/agent.evaluateEvent() -- this is a new
-  // *source* of proposed actions, never a bypass of the policy engine.
-  const triggerTickMs = Number(process.env.U2OS_TRIGGER_TICK_MS) || undefined;
-  triggerEngine.startAll({ eventBus, agent, ...(triggerTickMs ? { tickMs: triggerTickMs } : {}) });
 
   const router = new Router({ auth, publicOrigin });
   const startTime = Date.now();
@@ -265,7 +255,14 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
     }
   });
 
-  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(resolvedPort, resolvedBind, resolve); });
+  try {
+    await new Promise((resolve, reject) => { server.once('error', reject); server.listen(resolvedPort, resolvedBind, resolve); });
+  } catch (error) {
+    // No workers have started. Prepared adapters still own resources (e.g.
+    // the WebSocket heartbeat); a rejected bind has no close hook to drain them.
+    await deviceRegistry.stopAll();
+    throw error;
+  }
   // resolvedPort may be 0 (OS picks an ephemeral port, e.g. in tests) --
   // use the actually-bound port for mDNS/logging, not the requested one.
   const boundPort = server.address().port;
@@ -274,18 +271,38 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   // blocks or fails startup. Stop it automatically whenever the HTTP server
   // is closed (tests included) so no test run is left holding an open
   // multicast socket.
-  const mdnsHandle = !isLoopback(resolvedBind) ? startMdns({ port: boundPort }) : null;
-  server.on('close', () => {
-    stopActionQueue().catch(() => {});
-    mdnsHandle?.stop();
-    stopSyncScheduler().catch(() => { log.error('sync-scheduler', 'Sync shutdown drain failed'); });
-    triggerEngine.stopAll().catch(() => {});
-    deviceRegistry.stopAll().catch(() => {});
-  });
+  let mdnsHandle = null;
+  let backgroundStop = null;
+  const stopBackgroundWorkers = () => {
+    if (!backgroundStop) backgroundStop = Promise.allSettled([
+      stopActionQueue(), stopSyncScheduler(), triggerEngine.stopAll(), deviceRegistry.stopAll(),
+      Promise.resolve().then(() => mdnsHandle?.stop()),
+    ]).then((results) => {
+      if (results.some((result) => result.status === 'rejected')) throw new Error('Background cleanup failed; inspect durable state before restarting');
+    });
+    return backgroundStop;
+  };
+  server.on('close', () => { stopBackgroundWorkers().catch(() => { log.error('server', 'Background shutdown cleanup failed'); }); });
+  try {
+    // Start execution only after successful bind, with cleanup installed first.
+    startSyncScheduler({ db, eventBus, dataDir });
+    actionQueueTimer = setInterval(runQueueTick, Number(process.env.U2OS_ACTION_QUEUE_TICK_MS) || 1_000);
+    actionQueueTimer.unref?.();
+    // Phase 6 / PROMPT.md §9: both trigger halves retain the normal policy gate.
+    const triggerTickMs = Number(process.env.U2OS_TRIGGER_TICK_MS) || undefined;
+    triggerEngine.startAll({ eventBus, agent, ...(triggerTickMs ? { tickMs: triggerTickMs } : {}) });
+    mdnsHandle = !isLoopback(resolvedBind) ? startMdns({ port: boundPort }) : null;
+  } catch (error) {
+    server.closeAllConnections();
+    const closed = new Promise((resolve) => server.close(resolve));
+    await stopBackgroundWorkers().catch(() => { log.error('server', 'Failed startup cleanup incomplete'); });
+    await closed;
+    throw error;
+  }
 
   log.info('server', 'U2OS server listening', { bind: resolvedBind, port: boundPort, dataDir, dbPath });
 
-  return { server, port: boundPort, bind: resolvedBind, dataDir, dbPath, agent, eventBus, toolRegistry, policyEngine, auth, mdns: mdnsHandle, deviceRegistry, capabilityRegistry, streamRegistry, stopActionQueue };
+  return { server, port: boundPort, bind: resolvedBind, dataDir, dbPath, agent, eventBus, toolRegistry, policyEngine, auth, mdns: mdnsHandle, deviceRegistry, capabilityRegistry, streamRegistry, stopActionQueue, stopBackgroundWorkers };
 }
 
 function readConfig(dataDir) { try { return JSON.parse(fs.readFileSync(path.join(dataDir, 'config', 'config.json'), 'utf8')); } catch { return {}; } }
