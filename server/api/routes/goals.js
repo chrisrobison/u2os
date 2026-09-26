@@ -1,5 +1,5 @@
 import { sendJson } from '../router.js';
-import { createGoalDraft, getGoalDraft, listGoalDrafts, updateGoalDraft } from '../../agent/goal-store.js';
+import { createGoalDraft, getGoalDraft, getGoalRunEvidence, listGoalDrafts, updateGoalDraft } from '../../agent/goal-store.js';
 
 /** Owner-scoped goals. Only the explicit run route calls the bounded agent;
  * listing/editing never starts work and there is no background wake-up. */
@@ -22,5 +22,8 @@ export function registerGoalRoutes(router, { agent }) {
     const text = `${goal.objective}\nCompletion criteria:\n${goal.completionCriteria.map((item) => `- ${item}`).join('\n')}\nConstraints:\n${goal.constraints.map((item) => `- ${item}`).join('\n')}\nUse read-only tools within the intended domains. Do not claim objective completion without evidence.`;
     const result = await agent.handleMessage({ text, actorId: req.owner.id, goalId: goal.id });
     sendJson(res, 200, { ...result, goalId: goal.id });
+  });
+  router.get('/api/goals/:id/runs/:runId', async (req, res) => {
+    sendJson(res, 200, getGoalRunEvidence(req.params.id, req.owner.id, req.params.runId));
   });
 }

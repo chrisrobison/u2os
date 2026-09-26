@@ -60,9 +60,22 @@ test('owner invokes one read-only goal run and sees durable spending without a c
     await expect(goals.locator('.goal-message')).toContainText('objective is not automatically verified');
     await expect(goals.locator('.goal-form__state')).toContainText('Spent: 1 runs');
     await expect(goals.locator('.goal-runs')).toContainText('objective unverified');
+    await expect(goals.locator('.goal-evidence')).toContainText('objective unverified');
     await expect(goals.locator('.goal-run')).toBeHidden();
     await page.reload();
     await expect(goals.locator('.goal-form__state')).toContainText('Spent: 1 runs');
     await expect(goals.locator('.goal-runs')).toContainText('objective unverified');
+    await goals.locator('.goal-runs__item').click();
+    await expect(goals.locator('.goal-evidence')).toContainText('objective unverified');
+    const runId = (await goals.locator('.goal-runs__item').textContent()).match(/Inspect run (\S+)/)[1];
+    await page.route('**/api/goals/*/runs/*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+      runId, status: 'completed', objectiveStatus: 'unverified', response: '<script>bad()</script>', responseTruncated: false,
+      stepsTruncated: false, steps: [{ index: 0, tool: 'web.search', status: 'executed', actionId: 'act_fixture',
+        resultPreview: '{"title":"<img src=x onerror=bad()>"}', resultTruncated: false }],
+    }) }));
+    await goals.locator('.goal-runs__item').click();
+    await expect(goals.locator('.goal-evidence')).toContainText('<script>bad()</script>');
+    await expect(goals.locator('.goal-evidence')).toContainText('<img src=x onerror=bad()>');
+    await expect(goals.locator('.goal-evidence script, .goal-evidence img')).toHaveCount(0);
   } finally { await stopDedicatedServer(page, dedicated); }
 });

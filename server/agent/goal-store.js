@@ -1,8 +1,11 @@
 import { getDb } from '../db/connection.js';
 import { newId } from '../db/ids.js';
+import { getRun } from './run-store.js';
 
 const DOMAINS = new Set(['web', 'email', 'calendar', 'contacts', 'tasks']);
 const FIELDS = ['objective', 'completionCriteria', 'constraints', 'permittedScope', 'budgets'];
+const EVIDENCE_PREVIEW_CHARS = 4000;
+const SECRET_FIELD = /(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret|authorization|credential)/i;
 
 export function createGoalDraft(ownerId, input) {
   const data = validateDraft(input);
@@ -35,6 +38,55 @@ export function getGoalForRun(runId) {
   const row = getDb().prepare('SELECT * FROM goals WHERE id = ?').get(link.goal_id);
   return row ? { id: row.id, status: row.status, permittedScope: JSON.parse(row.permitted_scope) }
     : { id: link.goal_id, status: 'missing', permittedScope: { domains: [] } };
+}
+
+/** Owner-only, bounded view of persisted run observations. Arguments and
+ * account bindings stay in the audit store and never enter this response. */
+export function getGoalRunEvidence(goalId, ownerId, runId) {
+  if (!getDb().prepare('SELECT 1 FROM goals WHERE id = ? AND owner_id = ?').get(goalId, ownerId)) {
+    throw httpError(404, 'Goal not found');
+  }
+  const linked = getDb().prepare('SELECT response FROM agent_runs WHERE id = ? AND goal_id = ? AND actor_id = ?')
+    .get(runId, goalId, ownerId);
+  if (!linked) throw httpError(404, 'Goal run not found');
+  const run = getRun(runId);
+  const rows = getDb().prepare(`SELECT s.step_index, s.tool, s.status, s.action_id, a.result
+    FROM agent_run_steps s LEFT JOIN agent_actions a ON a.id = s.action_id
+    WHERE s.run_id = ? ORDER BY s.step_index LIMIT 33`).all(runId);
+  const statuses = new Map(run.steps.map((step) => [step.index, step.status]));
+  const response = preview(linked.response);
+  return {
+    goalId, runId, status: run.status, objectiveStatus: run.objectiveStatus,
+    response: response.text, responseTruncated: response.truncated,
+    stepsTruncated: rows.length > 32,
+    steps: rows.slice(0, 32).map((row) => {
+      const status = statuses.get(row.step_index) || row.status;
+      const result = status === 'executed' ? previewResult(row.result) : { text: null, truncated: false };
+      return { index: row.step_index, tool: row.tool, status, actionId: row.action_id,
+        resultPreview: result.text, resultTruncated: result.truncated };
+    }),
+  };
+}
+
+function previewResult(raw) {
+  if (raw == null) return { text: null, truncated: false };
+  if (raw.length > 100_000) return { text: '[Large result omitted]', truncated: true };
+  try { return preview(JSON.stringify(redactResult(JSON.parse(raw)))); }
+  catch { return { text: '[Result unavailable]', truncated: false }; }
+}
+
+function redactResult(value, depth = 0) {
+  if (depth >= 8) return '[nested result omitted]';
+  if (Array.isArray(value)) return value.map((item) => redactResult(item, depth + 1));
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value)
+    .map(([key, item]) => [key, SECRET_FIELD.test(key) ? '[redacted]' : redactResult(item, depth + 1)]));
+  return value;
+}
+
+function preview(value) {
+  if (value == null) return { text: null, truncated: false };
+  const text = String(value);
+  return { text: text.slice(0, EVIDENCE_PREVIEW_CHARS), truncated: text.length > EVIDENCE_PREVIEW_CHARS };
 }
 
 /** Full replacement with a compare-and-swap revision. An owner cannot
