@@ -57,6 +57,8 @@ import { registerDeviceRoutes } from './api/routes/devices.js';
 import { registerDiagnosticsRoutes } from './api/routes/diagnostics.js';
 import { registerVaultRoutes } from './api/routes/vault.js';
 import { startVaultWatcher } from './vault/watcher.js';
+import { registerRoutineRoutes } from './api/routes/routines.js';
+import { startRoutineRunner, stopRoutineRunner } from './routines/routine-runner.js';
 
 export async function startServer(options = {}) {
   const home = canonicalDataHome(getDataDir());
@@ -258,6 +260,7 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
     developmentMode: deviceDebugEnabled });
   registerDiagnosticsRoutes(router, { db, dbPath, dataDir, startTime, sseHub, modelRouter, embeddingProvider });
   registerVaultRoutes(router, { eventBus });
+  registerRoutineRoutes(router, { eventBus, agent });
 
   // Minimal HTTP access log (method, path, status, duration_ms) wrapped
   // around the existing router/static dispatch. This only observes the
@@ -336,7 +339,7 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
   let backgroundStop = null;
   const stopBackgroundWorkers = () => {
     if (!backgroundStop) backgroundStop = Promise.allSettled([
-      stopActionQueue(), stopSyncScheduler(), triggerEngine.stopAll(), deviceRegistry.stopAll(),
+      stopActionQueue(), stopSyncScheduler(), triggerEngine.stopAll(), stopRoutineRunner(), deviceRegistry.stopAll(),
       Promise.resolve().then(() => mdnsHandle?.stop()),
       Promise.resolve().then(() => vaultWatcher?.stop()),
     ]).then((results) => {
@@ -355,6 +358,8 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
     // Phase 6 / PROMPT.md §9: both trigger halves retain the normal policy gate.
     const triggerTickMs = Number(process.env.U2OS_TRIGGER_TICK_MS) || undefined;
     triggerEngine.startAll({ eventBus, agent, ...(triggerTickMs ? { tickMs: triggerTickMs } : {}) });
+    // Owner-written vault routines: unattended, but through the same policy gate.
+    startRoutineRunner({ eventBus, agent });
     mdnsHandle = !isLoopback(resolvedBind) ? startMdns({ port: boundPort }) : null;
   } catch (error) {
     server.closeAllConnections();
