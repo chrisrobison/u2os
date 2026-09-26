@@ -107,7 +107,7 @@ test('recovered uncertain notification attempt is not delivered again', () => wi
   beginActionAttempt({ queueId: item.id, leaseOwner: 'interrupted-worker' });
   db.prepare("UPDATE action_queue SET lease_expires_at = '2000-01-01T00:00:00.000Z' WHERE id = ?").run(item.id);
   const result = await agent.actionQueueWorker.processAction(proposal.id);
-  assert.equal(result.errorClass, 'owner_attention_required');
+  assert.equal(result.errorClass, 'outcome_uncertain');
   assert.match(result.error, /outcome is uncertain/);
   assert.deepEqual(seen, []);
   assert.equal(getQueuedActionByActionId(proposal.id).attempt_count, 1);
