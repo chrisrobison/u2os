@@ -18,7 +18,7 @@ import * as defaultRunStore from './run-store.js';
 import { resolveActionReferences } from './result-references.js';
 import { validatePlan } from './plan-validator.js';
 import { getAgentAction, updateAgentAction } from '../policy/policy-engine.js';
-import { appendTurn, requireConversation } from './conversation-store.js';
+import { appendTurn, requireConversation, getPriorTurnsForModel } from './conversation-store.js';
 
 const MAX_MODEL_CALLS_PER_MESSAGE = 3;
 
@@ -86,7 +86,7 @@ export class Agent {
     let result;
     try {
       if (conversationId) appendTurn({ conversationId, ownerId: actorId, role: 'user', content: text, correlationId, runId });
-      result = await this._handleRunMessage({ text, actorId, voice, correlationId, actor, runId });
+      result = await this._handleRunMessage({ text, actorId, voice, correlationId, actor, runId, conversationId });
     } catch (error) {
       this.runStore.failRun(runId);
       if (conversationId) {
@@ -107,8 +107,9 @@ export class Agent {
     }
   }
 
-  async _handleRunMessage({ text, actorId, voice, correlationId, actor, runId, resume = false, previousObservations = [], previousResults = [], previousAttempted = new Set() }) {
+  async _handleRunMessage({ text, actorId, voice, correlationId, actor, runId, conversationId = null, resume = false, previousObservations = [], previousResults = [], previousAttempted = new Set() }) {
     const planContext = await this.contextAssembler.assemble({ correlationId, actor, objective: text });
+    const conversationHistory = conversationId ? getPriorTurnsForModel(conversationId, actorId, runId) : [];
 
     if (!resume) this.eventBus.publish({
       type: 'agent.message.received', source: 'user', actor, data: { text },
@@ -143,7 +144,7 @@ export class Agent {
       }
       let proposedPlan;
       try {
-        proposedPlan = await this.planner.plan({ ...planContext, observations,
+        proposedPlan = await this.planner.plan({ ...planContext, observations, conversationHistory,
           onModelCall: () => this.runStore.beginModelCall(runId, MAX_MODEL_CALLS_PER_MESSAGE),
           onUsage: (usage) => this.runStore.recordModelUsage(runId, usage),
         }, text);
@@ -545,7 +546,7 @@ export class Agent {
         text: run.objective, actorId: run.actor_id, correlationId: run.correlation_id,
         actor: { type: 'user', id: run.actor_id },
         voice: run.voice_confidence === null ? undefined : { confidence: run.voice_confidence },
-        runId, resume: true, previousObservations: observations, previousResults: results, previousAttempted: attempted,
+        runId, conversationId: run.conversation_id, resume: true, previousObservations: observations, previousResults: results, previousAttempted: attempted,
       });
     } catch {
       this.runStore.failRun(runId, 'Continuation failed during planning. Completed actions were not replayed; review the run before giving a new instruction.');

@@ -62,11 +62,13 @@ test('legacy unowned transcript rows survive additive migration without being as
   const old = getDb();
   old.exec('DROP TABLE conversations');
   old.exec('ALTER TABLE conversation_messages DROP COLUMN run_id');
+  old.exec('ALTER TABLE conversation_messages DROP COLUMN classification');
   closeAllForTests();
   const reopened = getDb();
   assert.equal(reopened.prepare("SELECT content FROM conversation_messages WHERE id = 'old_turn'").get().content, 'existing personal text');
   assert.equal(reopened.prepare('SELECT COUNT(*) AS n FROM conversations').get().n, 0);
   assert.equal(reopened.prepare("SELECT run_id FROM conversation_messages WHERE id = 'old_turn'").get().run_id, null);
+  assert.equal(reopened.prepare("SELECT classification FROM conversation_messages WHERE id = 'old_turn'").get().classification, 'private');
   const id = createConversation('owner');
   assert.deepEqual(getConversationTurns(id, 'owner'), []);
   closeAllForTests(); getDb();
