@@ -19,6 +19,7 @@ import { resolveActionReferences, resolvePriorActionReferences } from './result-
 import { validatePlan } from './plan-validator.js';
 import { getAgentAction, updateAgentAction } from '../policy/policy-engine.js';
 import { appendTurn, requireConversation, getPriorTurnsForModel, getPriorReadArtifacts } from './conversation-store.js';
+import { getGoalForRun } from './goal-store.js';
 
 const MAX_MODEL_CALLS_PER_MESSAGE = 3;
 
@@ -78,11 +79,11 @@ export class Agent {
   // the same authorization behavior. Only POST /api/agent/voice-message
   // ever passes it. See server/voice/authorize.js for the one place it
   // actually changes anything.
-  async handleMessage({ text, actorId = 'user', voice, conversationId = null } = {}) {
+  async handleMessage({ text, actorId = 'user', voice, conversationId = null, goalId = null } = {}) {
     if (conversationId) requireConversation(conversationId, actorId);
     const correlationId = newId('corr');
     const actor = { type: 'user', id: actorId };
-    const runId = this.runStore.createRun({ correlationId, actorId, objective: text, voice, conversationId });
+    const runId = this.runStore.createRun({ correlationId, actorId, objective: text, voice, conversationId, goalId });
     let result;
     try {
       if (conversationId) appendTurn({ conversationId, ownerId: actorId, role: 'user', content: text, correlationId, runId });
@@ -108,6 +109,7 @@ export class Agent {
   }
 
   async _handleRunMessage({ text, actorId, voice, correlationId, actor, runId, conversationId = null, resume = false, previousObservations = [], previousResults = [], previousAttempted = new Set() }) {
+    const goalRun = Boolean(getGoalForRun(runId));
     const planContext = await this.contextAssembler.assemble({ correlationId, actor, objective: text });
     const conversationHistory = conversationId ? getPriorTurnsForModel(conversationId, actorId, runId) : [];
     const priorReadArtifacts = conversationId ? getPriorReadArtifacts(conversationId, actorId, runId) : [];
@@ -263,7 +265,7 @@ export class Agent {
       }
     }
 
-    if (!resume && !this.runStore.isCancellationRequested(runId) && this.ownerEntityId) {
+    if (!resume && !goalRun && !this.runStore.isCancellationRequested(runId) && this.ownerEntityId) {
       try {
         detectAndRecordCommitment({ text, ownerEntityId: this.ownerEntityId, eventBus: this.eventBus, correlationId });
       } catch (err) {
@@ -276,7 +278,7 @@ export class Agent {
     // later review -- it is NOT a memory write. Promoting a candidate into an
     // established fact (with its own provenance/confidence) is a separate,
     // explicit step; a plan can never silently become "established truth".
-    if (memoryCandidates.length && !this.runStore.isCancellationRequested(runId)) {
+    if (!goalRun && memoryCandidates.length && !this.runStore.isCancellationRequested(runId)) {
       for (const [index, candidate] of memoryCandidates.entries()) {
         const stored = proposeMemoryCandidate({ content: candidate.content, confidence: candidate.confidence, correlationId, proposedBy: actorId });
         this.eventBus.publish({
@@ -303,7 +305,7 @@ export class Agent {
       actions: results,
       pendingActionIds,
       ...(response !== undefined ? { response } : {}),
-      ...(memoryCandidates.length ? { memoryCandidates } : {}),
+      ...(!goalRun && memoryCandidates.length ? { memoryCandidates } : {}),
     };
   }
 
@@ -325,9 +327,15 @@ export class Agent {
     // policyRule/requiresApproval, so a voice-forced approval is always
     // inspectable in the audit trail, never silent.
     const voiceEvaluation = applyVoiceAuthorization({ evaluation: rawEvaluation, voice });
-    const evaluation = bindingError && !voiceEvaluation.blocked
-      ? { ...voiceEvaluation, blocked: true, requiresApproval: false, reason: bindingError, rule: 'account-binding' }
-      : voiceEvaluation;
+    const goal = runId ? getGoalForRun(runId) : null;
+    const goalBlocked = goal && (goal.status !== 'active' || tool.category !== 'read' ||
+      !goal.permittedScope.domains.includes(tool.domain));
+    const scopedEvaluation = goalBlocked && !voiceEvaluation.blocked
+      ? { ...voiceEvaluation, blocked: true, requiresApproval: false,
+        reason: 'Tool is outside this goal’s read-only permitted scope', rule: 'goal-scope' } : voiceEvaluation;
+    const evaluation = bindingError && !scopedEvaluation.blocked
+      ? { ...scopedEvaluation, blocked: true, requiresApproval: false, reason: bindingError, rule: 'account-binding' }
+      : scopedEvaluation;
 
     const auditRow = this.approvalManager.recordDecision({
       id: actionId,

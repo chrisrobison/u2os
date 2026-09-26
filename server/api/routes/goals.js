@@ -1,9 +1,9 @@
 import { sendJson } from '../router.js';
 import { createGoalDraft, getGoalDraft, listGoalDrafts, updateGoalDraft } from '../../agent/goal-store.js';
 
-/** Draft-only API. These routes record owner intent; they never start a run,
- * enqueue an action, or schedule an automatic wake-up. */
-export function registerGoalRoutes(router) {
+/** Owner-scoped goals. Only the explicit run route calls the bounded agent;
+ * listing/editing never starts work and there is no background wake-up. */
+export function registerGoalRoutes(router, { agent }) {
   router.get('/api/goals', async (req, res) => {
     sendJson(res, 200, { goals: listGoalDrafts(req.owner.id, req.query.limit) });
   });
@@ -15,5 +15,12 @@ export function registerGoalRoutes(router) {
   });
   router.put('/api/goals/:id', async (req, res) => {
     sendJson(res, 200, updateGoalDraft(req.params.id, req.owner.id, req.body));
+  });
+  router.post('/api/goals/:id/runs', async (req, res) => {
+    if (Object.keys(req.body || {}).length) return sendJson(res, 400, { error: 'Run parameters are not supported; revise the draft before starting work' });
+    const goal = getGoalDraft(req.params.id, req.owner.id);
+    const text = `${goal.objective}\nCompletion criteria:\n${goal.completionCriteria.map((item) => `- ${item}`).join('\n')}\nConstraints:\n${goal.constraints.map((item) => `- ${item}`).join('\n')}\nUse read-only tools within the intended domains. Do not claim objective completion without evidence.`;
+    const result = await agent.handleMessage({ text, actorId: req.owner.id, goalId: goal.id });
+    sendJson(res, 200, { ...result, goalId: goal.id });
   });
 }

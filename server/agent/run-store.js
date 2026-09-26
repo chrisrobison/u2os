@@ -5,12 +5,27 @@ const TERMINAL = new Set(['executed', 'blocked', 'failed', 'cancelled', 'rejecte
 export const DEFAULT_RUN_STEP_LIMIT = 16;
 export const DEFAULT_RUN_ELAPSED_MS = 86_400_000;
 
-export function createRun({ correlationId, actorId, objective, voice, conversationId = null }) {
+export function createRun({ correlationId, actorId, objective, voice, conversationId = null, goalId = null }) {
   const id = newId('run');
   const now = new Date().toISOString();
-  getDb().prepare(`INSERT INTO agent_runs (id, correlation_id, actor_id, objective, conversation_id, voice_confidence, deadline_at, status, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'planning', ?, ?)`).run(id, correlationId, actorId, objective, conversationId, voice ? voice.confidence : null,
-      new Date(Date.now() + DEFAULT_RUN_ELAPSED_MS).toISOString(), now, now);
+  withTransaction(getDb(), () => {
+    if (goalId) {
+      const goal = getDb().prepare('SELECT owner_id, status, budgets, permitted_scope FROM goals WHERE id = ?').get(goalId);
+      if (!goal || goal.owner_id !== actorId) throw goalError(404, 'Goal not found');
+      if (!['draft', 'active'].includes(goal.status)) throw goalError(409, 'Goal cannot start a run in its current state');
+      if (!JSON.parse(goal.permitted_scope).domains.length) throw goalError(409, 'Select at least one intended domain before running this goal');
+      const budgets = JSON.parse(goal.budgets);
+      const spent = goalUsage(goalId);
+      if (spent.unfinished) throw goalError(409, 'A goal run is still unfinished; inspect or resolve it before starting another');
+      if (spent.runs >= budgets.maxRuns || spent.modelCalls >= budgets.maxModelCalls || spent.tokens >= budgets.maxTokens) {
+        throw goalError(409, 'Goal budget exhausted; revise or review the goal before another run');
+      }
+      getDb().prepare("UPDATE goals SET status = 'active', updated_at = ? WHERE id = ?").run(now, goalId);
+    }
+    getDb().prepare(`INSERT INTO agent_runs (id, correlation_id, actor_id, objective, conversation_id, goal_id, voice_confidence, deadline_at, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'planning', ?, ?)`).run(id, correlationId, actorId, objective, conversationId, goalId, voice ? voice.confidence : null,
+        new Date(Date.now() + DEFAULT_RUN_ELAPSED_MS).toISOString(), now, now);
+  });
   return id;
 }
 
@@ -32,19 +47,23 @@ export function recordRunPlan(runId, plan, contextProvenance = [], accountContex
 }
 
 export function beginModelCall(runId, limit = 3) {
-  const now = new Date().toISOString();
-  const changed = getDb().prepare(`UPDATE agent_runs SET model_call_count = model_call_count + 1, updated_at = ?
-    WHERE id = ? AND model_call_count < ? AND status IN ('planning', 'running') AND cancel_requested_at IS NULL
-    AND step_count < step_limit AND input_tokens + output_tokens < token_limit AND deadline_at > ?`)
-    .run(now, runId, limit, now);
-  if (changed.changes !== 1) {
+  withTransaction(getDb(), () => {
     const reason = getBudgetStopReason(runId);
     if (reason) throw budgetError(reason);
-    const error = new Error('Run model-call limit reached');
-    error.code = 'MODEL_CALL_LIMIT';
-    error.status = 429;
-    throw error;
-  }
+    const goalReason = getGoalModelCallStopReason(runId);
+    if (goalReason) throw budgetError(goalReason);
+    const now = new Date().toISOString();
+    const changed = getDb().prepare(`UPDATE agent_runs SET model_call_count = model_call_count + 1, updated_at = ?
+      WHERE id = ? AND model_call_count < ? AND status IN ('planning', 'running') AND cancel_requested_at IS NULL
+      AND step_count < step_limit AND input_tokens + output_tokens < token_limit AND deadline_at > ?`)
+      .run(now, runId, limit, now);
+    if (changed.changes !== 1) {
+      const error = new Error('Run model-call limit reached');
+      error.code = 'MODEL_CALL_LIMIT';
+      error.status = 429;
+      throw error;
+    }
+  });
 }
 
 export function getModelCallCount(runId) {
@@ -94,13 +113,38 @@ export function beginRunStep(runId, index) {
 }
 
 export function getBudgetStopReason(runId, now = new Date()) {
-  const row = getDb().prepare('SELECT step_count, step_limit, input_tokens, output_tokens, token_limit, deadline_at FROM agent_runs WHERE id = ?').get(runId);
+  const row = getDb().prepare('SELECT step_count, step_limit, input_tokens, output_tokens, token_limit, deadline_at, goal_id FROM agent_runs WHERE id = ?').get(runId);
   if (!row) return 'run_unavailable';
   if (new Date(now).toISOString() >= row.deadline_at) return 'elapsed_limit';
   if (row.step_count >= row.step_limit) return 'step_limit';
   if (row.input_tokens + row.output_tokens >= row.token_limit) return 'token_limit';
+  if (row.goal_id) {
+    const goal = getDb().prepare('SELECT budgets, status FROM goals WHERE id = ?').get(row.goal_id);
+    if (!goal || goal.status !== 'active') return 'goal_unavailable';
+    const spent = goalUsage(row.goal_id);
+    const budgets = JSON.parse(goal.budgets);
+    if (spent.tokens >= budgets.maxTokens) return 'goal_token_limit';
+  }
   return null;
 }
+
+function getGoalModelCallStopReason(runId) {
+  const row = getDb().prepare('SELECT goal_id FROM agent_runs WHERE id = ?').get(runId);
+  if (!row?.goal_id) return null;
+  const goal = getDb().prepare('SELECT budgets, status FROM goals WHERE id = ?').get(row.goal_id);
+  if (!goal || goal.status !== 'active') return 'goal_unavailable';
+  return goalUsage(row.goal_id).modelCalls >= JSON.parse(goal.budgets).maxModelCalls ? 'goal_model_call_limit' : null;
+}
+
+function goalUsage(goalId) {
+  const row = getDb().prepare(`SELECT COUNT(*) AS runs, COALESCE(SUM(model_call_count), 0) AS modelCalls,
+    COALESCE(SUM(input_tokens + output_tokens), 0) AS tokens,
+    COALESCE(SUM(CASE WHEN status NOT IN ('completed', 'failed', 'cancelled', 'budget_exhausted') THEN 1 ELSE 0 END), 0) AS unfinished
+    FROM agent_runs WHERE goal_id = ?`).get(goalId);
+  return row;
+}
+
+function goalError(status, message) { const error = new Error(message); error.status = status; return error; }
 
 export function isRunDeadlineExpired(runId) {
   const row = getDb().prepare('SELECT deadline_at FROM agent_runs WHERE id = ?').get(runId);
@@ -226,6 +270,7 @@ export function getRun(runId) {
   const usageEnd = terminalRun && run.status === status ? Date.parse(run.updated_at) : Date.now();
   return {
     id: run.id,
+    goalId: run.goal_id,
     correlationId: run.correlation_id,
     status,
     objectiveStatus: run.objective_status,

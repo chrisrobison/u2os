@@ -15,6 +15,7 @@ import { classifyActionError } from './action-error-classifier.js';
 import { getProviderForBinding } from '../integrations/provider-registry.js';
 import { accountDomainForAction, assertCalendarTarget, assertSmtpIdentity } from './account-binding.js';
 import { findRunByAction, isCancellationRequested, isRunDeadlineExpired, markBudgetExhausted } from './run-store.js';
+import { getGoalForRun } from './goal-store.js';
 
 export class ActionQueueWorker {
   constructor({ actionEvaluator, actionExecutor, eventBus, workerId, maxActionAgeMs = 24 * 60 * 60 * 1000, leaseMs = 30_000, leaseRenewalIntervalMs } = {}) {
@@ -71,6 +72,14 @@ export class ActionQueueWorker {
       evaluation = this.actionEvaluator.evaluate({ tool, arguments: item.arguments });
     } catch (error) {
       return this._stop(item, 'failed', error.message, 'non_retryable', action);
+    }
+
+    if (runId) {
+      const goal = getGoalForRun(runId);
+      if (goal && (goal.status !== 'active' || tool.category !== 'read' || !goal.permittedScope.domains.includes(tool.domain))) {
+        updateAgentAction(action.id, { status: 'blocked', result: { error: 'Goal scope is no longer valid' } });
+        return this._stop(item, 'cancelled', 'Goal scope is no longer valid', 'owner_attention_required', action);
+      }
     }
 
     if (evaluation.blocked) {
