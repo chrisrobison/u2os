@@ -22,6 +22,23 @@ restart/wakes. These messages are new follow-ups, not proof of reply threading.
 This is not live model judgment, UI/OAuth onboarding, all historical schemas,
 or a consolidated proof of all six workflows.
 
+Configured personal-browser approval acceptance is separately repeatable with
+`npm run test:e2e -- tests/e2e/personal-approval-workflow.spec.js`.
+Six fresh/existing × confirmed/uncertain/rejected scenarios run in each browser
+engine, using the actual native composer, owner login, reload, Operations preview
+and approve/reject endpoints. A configured loopback model receives observed
+Google adapter evidence; no browser API responses are stubbed and no demo
+planner is used. Switching accounts and server restart retain the exact original
+proposal. Only the explicitly expected fake Gmail POST is intercepted, never
+forwarded externally. One confirmed receipt permits bounded observed
+continuation; uncertainty/rejection stop dependent work and repeat approval,
+wakes and restart cannot replay delivery. Existing records and renamed owner
+survive. This proves fixture integration, not live delivery, reply threading,
+real-model judgment, scheduled personal-browser goals or recovery activation.
+Late Home/Briefing responses/errors also cannot overwrite a newly selected
+Operations view; [gated navigation tests](../tests/e2e/navigation-late-dashboard.spec.js)
+exercise this separately. Other asynchronous root views remain separate work.
+
 ## Safe preparation
 
 For CI and repeatable regression checks, run from the repository:
@@ -118,7 +135,8 @@ dependent draft and a final response grounded in those observed artifacts;
 uncertain acknowledgements require attention and retain blocked dependents
 without more planning. Repeated approval, explicit wakes and restart cannot
 repeat either send; original account/payload and existing records survive.
-These are not live delivery, threaded replies or personal browser approval proof.
+These API cases alone are not live delivery, threaded replies or personal browser
+approval proof; the separate configured browser fixture suite is described above.
 
 Saved approval review is available under Operations as well as the dashboard.
 After reload, open a waiting item's **Review approval** to fetch its original
@@ -130,7 +148,8 @@ outcome requires checking the original provider, not retrying. Browser fixtures
 exercise actual demo reload/rejection and personal-mode component responses for
 lazy fetch, in-flight/SSE preservation, stale records, single-flight refresh and
 inert private text ([saved review suite](../tests/e2e/saved-approval-review.spec.js)).
-These are not configured personal-model browser delivery or live-provider proof.
+These component/demo cases alone are not configured personal-model browser
+delivery or live-provider proof; see the separate configured fixture suite above.
 
 For fresh personal setup, open Model and explicitly supply a trusted endpoint and
 installed model name. Saving does not send a test prompt. Restart the server and
