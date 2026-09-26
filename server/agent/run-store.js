@@ -31,8 +31,8 @@ export function createRun({ correlationId, actorId, objective, voice, conversati
         .run(id, now, goalWakeId, goalId, goalRevision, now);
       if (consumed.changes !== 1) throw goalError(409, 'Goal wake is not due or has already been consumed');
     }
-    getDb().prepare(`INSERT INTO agent_runs (id, correlation_id, actor_id, objective, conversation_id, goal_id, goal_revision, voice_confidence, deadline_at, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'planning', ?, ?)`).run(id, correlationId, actorId, objective, conversationId, goalId, goalRevision, voice ? voice.confidence : null,
+    getDb().prepare(`INSERT INTO agent_runs (id, correlation_id, actor_id, objective, conversation_id, goal_id, goal_revision, voice_confidence, deadline_at, status, output_classification, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'planning', 'private', ?, ?)`).run(id, correlationId, actorId, objective, conversationId, goalId, goalRevision, voice ? voice.confidence : null,
         new Date(Date.now() + DEFAULT_RUN_ELAPSED_MS).toISOString(), now, now);
   });
   return id;
@@ -53,6 +53,17 @@ export function recordRunPlan(runId, plan, contextProvenance = [], accountContex
       .run(plan.reasoning_summary, plan.continue === true && plan.actions.length ? baseIndex + plan.actions.length - 1 : null, now, runId);
     return baseIndex;
   });
+}
+
+export function recordOutputClassification(runId, classification) {
+  // Unknown runtime metadata is restrictive, never a model-assigned downgrade.
+  if (classification !== 'private') {
+    getDb().prepare("UPDATE agent_runs SET output_classification = 'sensitive' WHERE id = ?").run(runId);
+  }
+}
+
+export function getOutputClassification(runId) {
+  return getDb().prepare('SELECT output_classification FROM agent_runs WHERE id = ?').get(runId)?.output_classification === 'private' ? 'private' : 'sensitive';
 }
 
 export function beginModelCall(runId, limit = 3) {

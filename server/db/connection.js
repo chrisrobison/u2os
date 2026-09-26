@@ -120,6 +120,9 @@ export function getDb() {
   ensureColumn(db, 'agent_runs', 'elapsed_limit_ms', 'INTEGER NOT NULL DEFAULT 86400000');
   ensureColumn(db, 'agent_runs', 'deadline_at', 'TEXT');
   ensureColumn(db, 'agent_runs', 'budget_stop_reason', 'TEXT');
+  // Existing model-derived outputs have no trustworthy classification ledger.
+  // Preserve them, but never infer that they are safe private context.
+  ensureColumn(db, 'agent_runs', 'output_classification', "TEXT NOT NULL DEFAULT 'sensitive'");
   ensureColumn(db, 'conversation_messages', 'run_id', 'TEXT');
   ensureColumn(db, 'conversation_messages', 'classification', "TEXT NOT NULL DEFAULT 'private'");
   ensureColumn(db, 'agent_run_steps', 'context_provenance', 'TEXT');

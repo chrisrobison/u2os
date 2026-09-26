@@ -39,7 +39,9 @@ test('only bounded prior turns from this conversation survive restart', () => wi
   const history = getPriorTurnsForModel(first, 'owner', 'current_run');
   assert.equal(history.length, 6);
   assert.equal(history[0].content.startsWith('2:'), true);
-  assert.ok(history.every((turn) => turn.content.length <= 500 && turn.truncated && turn.classification === 'private'));
+  // These synthetic old IDs have no runtime classification ledger. Preserve
+  // authored user labels, but never assume orphaned assistant output is private.
+  assert.ok(history.every((turn) => turn.content.length <= 500 && turn.truncated && turn.classification === (turn.role === 'assistant' ? 'sensitive' : 'private')));
   assert.ok(!JSON.stringify(history).includes('other conversation secret'));
   assert.ok(!JSON.stringify(history).includes('current turn'));
   assert.throws(() => getPriorTurnsForModel(first, 'other', 'current_run'), { status: 404 });

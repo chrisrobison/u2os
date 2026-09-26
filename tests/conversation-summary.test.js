@@ -127,7 +127,8 @@ test('agent continuation re-filters durable earlier sources after policy change 
   const conversationId = createConversation('owner'), ids = turns(conversationId, 12), dataPolicy = policy(), seen = [];
   const registry = new ToolRegistry();
   registry.register({ name: 'fixture.read', domain: 'fixture', category: 'read', schema: { properties: {}, required: [] }, execute: async () => {
-    dataPolicy.policies.private.local_models = 'never'; return { id: 'fixture_result' };
+    // Orphaned legacy assistant sources are now conservatively sensitive.
+    dataPolicy.policies.private.local_models = 'never'; dataPolicy.policies.sensitive.local_models = 'never'; return { id: 'fixture_result' };
   } });
   closeAllForTests(); getDb();
   const agent = new Agent({ modelProvider: { id: 'local', destination: 'local_model', plan: async (context) => {
