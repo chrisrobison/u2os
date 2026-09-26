@@ -4,7 +4,7 @@ U2OS is **the operating system for your digital self**: a local-first, user-owne
 
 > Observe → remember → anticipate → act → observe outcome → learn.
 
-It is not a chatbot or desktop wrapper. Events, structured memory, policies, tools, automations, and feedback belong to one user-controlled agent; the model is replaceable infrastructure. The name means “the second you” plus “operating system.” See [Architecture](docs/architecture.md) for the current system and [PLAN.md](PLAN.md) for the roadmap; [PROMPT.md](PROMPT.md) is the historical product specification, not onboarding documentation.
+It is not a chatbot or desktop wrapper. **Your digital self is a vault of plain files you own**: who you are, the people and projects in your life, your commitments, and the standing routines you want carried out. U2OS indexes that vault, watches your connected accounts, and **acts on your behalf** within the authority you delegate. The agent is just a tool that uses this information, and the model is replaceable infrastructure. See [ADR 0007](docs/adr/0007-owned-vault-is-the-digital-self.md) and the [current milestone](https://github.com/chrisrobison/u2os/issues/355). The name means “the second you” plus “operating system.” See [Architecture](docs/architecture.md) for the current system and [PLAN.md](PLAN.md) for the roadmap; [PROMPT.md](PROMPT.md) is the historical product specification, not onboarding documentation.
 
 ## Project status
 
