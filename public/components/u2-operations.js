@@ -88,8 +88,9 @@ function operationCard(item) {
   tool.textContent = item.tool || 'Unknown action';
   const meta = document.createElement('span');
   meta.className = 'operation-card__meta';
-  const attempts = item.attemptCount ? ` · ${item.attemptCount} attempt${item.attemptCount === 1 ? '' : 's'}` : '';
-  meta.textContent = `${item.status.replaceAll('_', ' ')}${attempts}`;
+  const recovery = item.errorClass === 'recovery_review_required';
+  const attempts = item.attemptCount ? ` · ${item.attemptCount} ${recovery ? 'recorded ' : ''}attempt${item.attemptCount === 1 ? '' : 's'}` : '';
+  meta.textContent = `${recovery ? 'outcome unknown from restored snapshot' : item.status.replaceAll('_', ' ')}${attempts}`;
   card.append(tool, meta);
   if (item.errorClass) {
     const attention = document.createElement('span');
@@ -105,6 +106,7 @@ function operationCard(item) {
 }
 
 function humanizeErrorClass(value) {
+  if (value === 'recovery_review_required') return 'Restored snapshot: outcome needs review; original work may have progressed. Archived approval cannot be retried.';
   return value.replaceAll('_', ' ');
 }
 

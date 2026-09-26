@@ -135,3 +135,56 @@ permission to execute, authentication or distributed locking; copied IDs do
 not yet prevent two independent paths from running. Every recovery marker
 still blocks startup, even when a valid identity is present. Matching and
 explicit retirement/reconciliation belong to the subsequent activation flow.
+
+## Preview and quarantine unfinished database work
+
+For a verified inactive recovery with a known installation ID and supported
+application schema, inspect unfinished-work counts without changing records:
+
+```sh
+U2OS_HOME=/private/isolated-recovery npm run recovery:review
+```
+
+Only after reviewing those counts, the explicitly owner-driven apply command
+stops archived database work (it does **not** enable the home):
+
+```sh
+U2OS_HOME=/private/isolated-recovery npm run recovery:review -- --apply
+```
+
+The canonical-home guard excludes other supported processes. Preview is
+read-only and does not migrate. Normal homes, incomplete/mismatched metadata,
+legacy identity absence, linked storage and unsupported/custom executable
+schemas are refused and preserved. No objectives, arguments, recipients,
+tokens or results are printed. Neither command calls a provider or model.
+
+Apply transactionally revokes pending/approved authorization while retaining
+historical approval fields and results; unfinished queue items require owner
+review and cannot be retried with their archived approval. If the audit already
+proves an individual action executed, its queue is made terminal without
+another attempt. Unfinished runs lose continuations and are cancelled; their
+started steps can still report unknown outcomes from the restored snapshot.
+Goals pause with a new revision, triggers disable, pending wakes/finite schedules
+cancel, and archived sessions revoke. Completed evidence, attempt history,
+personal records, findings/reviews and measured resource counters remain.
+
+A private metadata-only event/checkpoint records counts, not task content.
+Every restore has its own recovery ID, so historical recovery events cannot
+stand in for a new review. Repeated apply checks stopped-state invariants and
+does not duplicate the audit or increment revisions again. A transaction
+failure/process interruption rolls back through SQLite; explicit retry can
+finish a committed database checkpoint whose marker publication failed. The
+home stays inactive throughout. Interrupted marker replacement may leave
+private `.u2os-recovery-stage-*` directories; review only after confirming the
+operation stopped, never delete active staging or the execution barrier.
+
+An unfinished item in a snapshot is **not** proof that the original failed or
+never attempted it: the original may have progressed after capture. Retain and
+review its ledger before any fresh consequential proposal. Future owner views
+can distinguish this as `recovery_review_required` / `outcome_uncertain`, not
+successful objective completion or definite failed delivery.
+
+This checkpoint covers **database work only**. Connector/model configuration,
+cached devices and credentials still require separate activation review.
+Original-instance retirement and activation remain unsupported; never remove
+the recovery marker to start this home. No live owner recovery was performed.

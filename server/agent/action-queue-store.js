@@ -105,6 +105,7 @@ export function requeueAction(queueId, {
   policyDecisionReference = null,
   now = new Date(),
 } = {}) {
+  if (getQueuedAction(queueId)?.error_class === 'recovery_review_required') throw new Error('Restored action requires owner review and a fresh proposal; archived authorization cannot be retried');
   const nowIso = toDate(now).toISOString();
   const result = getDb().prepare(`
     UPDATE action_queue
@@ -257,6 +258,7 @@ export function failActionAttempt(id, {
 
 export const ACTION_ERROR_CLASSES = Object.freeze([
   'retryable', 'non_retryable', 'authentication_required', 'owner_attention_required',
+  'recovery_review_required',
 ]);
 
 export function retryDelayMs(attemptNumber, { baseDelayMs = 1_000, maxDelayMs = 60_000 } = {}) {

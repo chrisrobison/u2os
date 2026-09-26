@@ -82,3 +82,10 @@ owner/account identity, carries no authority and is not a cross-path lock.
 Inactive restore records the archived ID (or honest legacy absence) for the
 future explicit original-instance retirement workflow. See [identity and
 metadata compatibility](backups.md#installation-identity-prerequisite).
+
+The preview-first `npm run recovery:review` command separately acquires this
+guard on a verified inactive recovery home. `--apply` quarantines unfinished
+database authorization, queues/runs and schedules, revokes archived sessions,
+and retains completed evidence and resource counters. It never activates the
+home or calls models/providers. Unsupported schemas are refused without
+migrations. See [database-work review](backups.md#preview-and-quarantine-unfinished-database-work).
