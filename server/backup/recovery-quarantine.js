@@ -55,7 +55,8 @@ export function validateRecoverySchema(db, additional = {}) {
     if (db.prepare('SELECT cid FROM pragma_index_xinfo(?)').all(index.name).some((row) => row.cid === -2) ||
         (/\bwhere\b/.test(sql) && !partialIndexes.has(sql))) throw refused('custom executable index expressions are unsupported');
   }
-  for (const [table, columns] of Object.entries({ ...required, ...additional })) {
+  for (const table of new Set([...Object.keys(required), ...Object.keys(additional)])) {
+    const columns = [...(required[table] || []), ...(additional[table] || [])];
     const actual = db.prepare(`PRAGMA table_xinfo(${table})`).all();
     if (actual.some((column) => column.hidden || /[()]/.test(column.dflt_value || '')) || columns.some((column) => !actual.some((entry) => entry.name === column))) throw refused('database schema is unsupported; no migrations were attempted');
   }

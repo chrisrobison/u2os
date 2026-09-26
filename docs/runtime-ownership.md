@@ -96,3 +96,11 @@ privately outside runtime lookup, disconnects account instances and revokes
 cached device trust. Every failure and successful checkpoint remains inactive;
 there is still no activation or original-retirement bypass. See
 [connectivity review](backups.md#preview-and-quarantine-archived-connectivity).
+
+`npm run recovery:compare -- --original <existing-home>` requires both distinct
+canonical home guards and matching known personal installation/owner identity.
+It privately snapshots committed original SQLite/WAL evidence, reports bounded
+metadata drift and leaves application records/config/credentials untouched.
+Both guards remain held through staging cleanup; once released, the original
+may resume. Comparison grants no retirement, activation or execution authority.
+See [post-capture comparison](backups.md#compare-with-the-explicitly-selected-original).
