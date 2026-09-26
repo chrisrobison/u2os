@@ -57,6 +57,10 @@ export function getModelStatus() {
   return request('/api/model');
 }
 
+export function saveModelConfiguration(config) {
+  return request('/api/model', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(config) });
+}
+
 export function listGoalDrafts() {
   return request('/api/goals');
 }

@@ -2,25 +2,35 @@ import { sendJson } from '../router.js';
 import { loadModelConfig, saveModelConfig, saveMultiProviderConfig } from '../../agent/provider-config.js';
 import { readEncryptedFile } from '../../security/vault.js';
 import { readInstallationMode } from '../../seed/installation-mode.js';
+import { createHash } from 'node:crypto';
 
 const PROVIDERS_REQUIRING_MODEL = ['openai-compatible', 'anthropic'];
 
-export function registerModelRoutes(router) {
+export function registerModelRoutes(router, { modelRouter } = {}) {
+  const initialConfig = loadModelConfig();
+  const initialRevision = configurationRevision(initialConfig);
+  const demo = readInstallationMode() === 'demo';
+  const runtimePlannerStatus = plannerStatus(modelRouter?.config || initialConfig, demo);
+  let savedSinceStart = false;
   router.get('/api/model', async (_req, res) => {
     const config = loadModelConfig();
     const apiKeyConfigured = config.provider && config.provider !== 'mock' ? Boolean(readEncryptedFile(`model-${config.provider}`)?.apiKey) : false;
-    const demo = readInstallationMode() === 'demo';
-    const plannerName = config.roles?.planner || config.roles?.default || config.fallback || (!config.roles && Object.keys(config.providers || {})[0]);
-    const planner = config.providers ? config.providers[plannerName]?.type : config.provider;
-    const mock = planner === 'mock' || planner === 'mock-embedding';
-    const plannerStatus = !planner || planner === 'embedding-openai-compatible' || mock && !demo ? 'configuration-required' : mock ? 'demo' : 'configured';
-    sendJson(res, 200, { ...redactSecrets(config), apiKeyConfigured, plannerStatus });
+    const revision = configurationRevision(config);
+    sendJson(res, 200, { ...redactSecrets(config), apiKeyConfigured, plannerStatus: plannerStatus(config, demo), runtimePlannerStatus,
+      restartRequired: savedSinceStart || revision !== initialRevision, configurationRevision: revision });
   });
   router.post('/api/model', async (req, res) => {
+    // Optional optimistic concurrency for owner setup forms. No model or vault
+    // mutation occurs before this synchronous comparison; legacy callers retain
+    // their existing unconditional API contract. Revision excludes secret values.
+    if (req.body?.configurationRevision !== undefined && req.body.configurationRevision !== configurationRevision(loadModelConfig())) {
+      return sendJson(res, 409, { error: 'Model configuration changed. Reload its current configuration before saving.' });
+    }
     if (req.body?.providers || req.body?.roles) {
       try {
         const { config, secrets } = validateMultiProvider(req.body);
         saveMultiProviderConfig(config, secrets);
+        savedSinceStart = true;
         return sendJson(res, 200, { configured: true, restartRequired: true, mode: 'multi-provider' });
       } catch (err) {
         return sendJson(res, 400, { error: err.message });
@@ -52,14 +62,29 @@ export function registerModelRoutes(router) {
       { provider, ...(PROVIDERS_REQUIRING_MODEL.includes(provider) ? { baseUrl, model, timeoutMs: Number(timeoutMs) || 30000 } : {}) },
       apiKey
     );
+    savedSinceStart = true;
     sendJson(res, 200, { configured: true, restartRequired: true, provider });
   });
 }
 
-function redactSecrets(value) {
-  if (Array.isArray(value)) return value.map(redactSecrets);
+function plannerStatus(config, demo) {
+  const name = config.roles?.planner || config.roles?.default || config.fallback || (!config.roles && Object.keys(config.providers || {})[0]);
+  const planner = config.providers ? config.providers[name]?.type : config.provider;
+  const mock = planner === 'mock' || planner === 'mock-embedding';
+  return !planner || planner === 'embedding-openai-compatible' || mock && !demo ? 'configuration-required' : mock ? 'demo' : 'configured';
+}
+
+function configurationRevision(config) {
+  return createHash('sha256').update(JSON.stringify(redactSecrets(config, true))).digest('hex');
+}
+
+function redactSecrets(value, forRevision = false) {
+  if (Array.isArray(value)) return value.map((child) => redactSecrets(child, forRevision));
   if (!value || typeof value !== 'object') return value;
-  return Object.fromEntries(Object.entries(value).filter(([key]) => !/api[-_]?key|secret|token/i.test(key)).map(([key, child]) => [key, redactSecrets(child)]));
+  // apiKeyRef selects an existing vault entry, rather than containing a key.
+  // Keep it in the opaque revision, but preserve its omission from API output.
+  return Object.fromEntries(Object.entries(value).filter(([key]) => forRevision && key === 'apiKeyRef' || !/api[-_]?key|secret|token/i.test(key))
+    .map(([key, child]) => [key, redactSecrets(child, forRevision)]));
 }
 
 function validateMultiProvider(body) {

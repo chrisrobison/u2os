@@ -13,6 +13,7 @@ const ROUTES = [
   ['#/automation', 'Automation'],
   ['#/diagnostics', 'Diagnostics'],
   ['#/connectors', 'Connectors'],
+  ['#/model', 'Model'],
   ['#/devices', 'Devices'],
   ['#/voice', 'Voice'],
 ];
