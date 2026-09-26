@@ -59,9 +59,12 @@ A fixed, small, trusted set — **never arbitrary code**, same principle as tool
 notify        -> policy-gated notifications.send (through agent.evaluateAndMaybeExecute, so it's audited like everything else)
 create_task   -> policy-gated tasks.create
 evaluate      -> hand the triggering event to the proactive agent's evaluateEvent() (below) for a full ignore/remember/notify/.../act decision instead of a fixed action
+goal_run      -> a managed one-time goal wake, atomically consumed by the existing bounded read-only runtime (docs/goals.md)
 ```
 
 `notify` here is specifically `notifications.send` (docs/tools.md), not the device-aware `presentation.notify` (docs/devices.md) -- the two are not yet connected. Routing a trigger's `notify` action through the resolver (so it could land on a specific trusted device instead of always the notifications connector) is a natural extension, not yet built.
+
+Goal timers are created only through the owner goal-wake route, have source `goal`, and bind the exact timer ID, wake ID, and goal revision. A caller-created trigger cannot substitute for that binding. Generic trigger mutation routes reject managed goal timers; pause the goal to cancel a pending wake. Their audit result contains only run linkage/status, not model response or provider content. A consumed wake is not proof of objective completion.
 
 Every trigger firing publishes its own `agent.action.completed`/`.failed`-shaped bookkeeping the same way tool executions do, so triggers show up in the activity feed like everything else — no silent background magic (PROMPT.md §14's explicit "never feel like it is mysteriously doing things behind the user's back" applies just as much to scheduled automation as to chat-driven actions).
 

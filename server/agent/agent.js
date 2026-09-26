@@ -79,11 +79,11 @@ export class Agent {
   // the same authorization behavior. Only POST /api/agent/voice-message
   // ever passes it. See server/voice/authorize.js for the one place it
   // actually changes anything.
-  async handleMessage({ text, actorId = 'user', voice, conversationId = null, goalId = null } = {}) {
+  async handleMessage({ text, actorId = 'user', voice, conversationId = null, goalId = null, goalWakeId = null } = {}) {
     if (conversationId) requireConversation(conversationId, actorId);
     const correlationId = newId('corr');
     const actor = { type: 'user', id: actorId };
-    const runId = this.runStore.createRun({ correlationId, actorId, objective: text, voice, conversationId, goalId });
+    const runId = this.runStore.createRun({ correlationId, actorId, objective: text, voice, conversationId, goalId, goalWakeId });
     let result;
     try {
       if (conversationId) appendTurn({ conversationId, ownerId: actorId, role: 'user', content: text, correlationId, runId });

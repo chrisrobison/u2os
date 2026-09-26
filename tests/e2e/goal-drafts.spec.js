@@ -48,6 +48,21 @@ test('owner edits durable goal drafts without claiming work has started', async 
     await goals.locator('.goal-reload').click();
     await expect(goals.locator('[name="objective"]')).toHaveValue('Another tab revision');
     await expect(goals).toContainText('Manual only · Next wake-up: none · Spent: 0 runs, 0 model calls, 0 reported tokens');
+    const localTime = new Date(Date.now() + 3600_000);
+    const localInput = new Date(localTime.getTime() - localTime.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    await goals.locator('[name="wakeAt"]').fill(localInput);
+    await goals.locator('.goal-schedule-save').click();
+    await expect(goals.locator('.goal-message')).toContainText('No work started now');
+    await expect(goals.locator('.goal-form__state')).toContainText('One-time schedule');
+    await expect(goals.locator('.goal-wake-status')).toContainText('Wake pending');
+    await page.reload();
+    await expect(goals.locator('.goal-form__state')).toContainText('One-time schedule');
+    await expect(goals.locator('.goal-schedule-save')).toBeDisabled();
+    await goals.locator('[data-goal-control="pause"]').click();
+    await expect(goals.locator('.goal-wake-status')).toContainText('Wake cancelled');
+    await goals.locator('[data-goal-control="resume"]').click();
+    await expect(goals.locator('.goal-form__state')).toContainText('Next wake-up: none');
+    await expect(goals.locator('.goal-form__state')).toContainText('Spent: 0 runs');
   } finally { releaseInitialList(); await stopDedicatedServer(page, dedicated); }
 });
 
