@@ -8,6 +8,8 @@ import { getDb, closeAllForTests } from '../server/db/connection.js';
 import { storeTokens } from '../server/integrations/oauth/google-oauth.js';
 import { writeEncryptedFile } from '../server/security/vault.js';
 import { listEmails, getEmail, syncChanges } from '../server/integrations/gmail-provider.js';
+import { safeSyncError } from '../server/integrations/provider-registry.js';
+import { googleReadFailureMetadata } from '../server/integrations/google-read-deadline.js';
 
 const PRIVATE = 'fixture-private-mail-query-token-body';
 const message = (id) => ({ id, labelIds: ['INBOX', 'UNREAD'], internalDate: '1000', payload: { mimeType: 'text/plain',
@@ -210,4 +212,15 @@ test('Gmail deadline fired before startup performs no provider or cache work', (
   const pending = listEmails({}, { ...f.options, timers, fetchImpl() { calls++; } });
   const rejected = assert.rejects(pending, safe('GOOGLE_READ_TIMEOUT')); timers.fire(); await rejected; await new Promise(setImmediate);
   assert.equal(calls, 0); assert.equal(timers.cleared, 1); assert.equal(f.db.prepare('SELECT count(*) n FROM emails').get().n, 0);
+}));
+
+test('sync health consumes verified immutable read metadata, never mutated/forged error text or codes', () => fixture(async (f) => {
+  const error = await operations[1][1]({ ...f.options, fetchImpl: async () => ({ ok: false, status: 429 }) }).then(() => assert.fail('expected rate limit'), (error) => error);
+  const metadata = googleReadFailureMetadata(error); metadata.kind = 'timeout'; metadata.status = 503;
+  error.message = PRIVATE; error.code = 'GOOGLE_READ_TIMEOUT'; error.status = 503;
+  assert.match(safeSyncError(error), /rate limited.*status 429.*retry later/); assert.doesNotMatch(safeSyncError(error), /fixture-private/);
+  assert.equal(googleReadFailureMetadata(error).kind, 'rate_limit');
+  const forged = Object.assign(new Error(PRIVATE), { code: 'GOOGLE_READ_RATE_LIMIT', status: 429 });
+  assert.equal(googleReadFailureMetadata(forged), null); assert.match(safeSyncError(forged), /check account credentials/);
+  assert.doesNotMatch(safeSyncError(forged), /fixture-private|rate limited/);
 }));

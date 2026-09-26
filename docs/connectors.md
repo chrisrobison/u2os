@@ -191,7 +191,9 @@ List/search, get and sync use one 30-second operation deadline including token
 acquisition and every message body. Timeout discards late replies before mail,
 event or credential writes; completed earlier reads may remain cached. Failed
 search/sync is not full success: authorization/rate-limit/outage detail failures
-stop rather than being silently skipped. Error text is sanitized; no retry,
+stop rather than being silently skipped. Sync health retains verified timeout,
+authorization and rate-limit status without trusting upstream error codes/text.
+Error text is sanitized; no retry,
 mock fallback or send is performed. Get-404 returns `null`; sync may skip a
 message deleted since listing, or one whose labels no longer include Inbox.
 Malformed references and missing/mismatched full-message IDs cannot create

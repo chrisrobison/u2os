@@ -2,6 +2,10 @@
 // headers and body parsing; it must await its reads before mutating caches.
 import { googleTokenFailureMetadata } from './oauth/google-oauth.js';
 const trustedFailures = new WeakMap();
+export function googleReadFailureMetadata(error) {
+  const metadata = trustedFailures.get(error);
+  return metadata ? { ...metadata } : null;
+}
 function failure(kind, status) {
   const messages = {
     timeout: 'read timed out; check provider availability and retry later',
