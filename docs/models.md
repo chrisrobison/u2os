@@ -51,7 +51,8 @@ The endpoint and model name are stored in `U2OS_HOME/config/config.json`; a supp
 The response also includes a non-secret `configurationRevision`. Sending it in
 either POST shape makes the save conditional: a stale/malformed revision returns
 409 before config/vault writes. The browser always uses it. It hashes redacted
-model configuration, not secret values or the whole config file, so key-only
+model configuration (including non-secret vault references), not secret values
+or the whole config file, so key-only
 changes do not alter it; restart state still changes. Legacy API callers may omit
 it and retain unconditional behavior. The UI does not expose key deletion or
 concurrent-secret reconciliation. API runtime planning behavior remains unchanged;

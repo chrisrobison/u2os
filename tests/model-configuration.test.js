@@ -88,7 +88,7 @@ test('current revision retains blank existing key, rejects mock and invalid payl
   assert.equal(changed.runtimePlannerStatus, 'configured'); assert.equal(readEncryptedFile('model-openai-compatible', home).apiKey, 'fixture-replacement-key');
 }));
 
-test('legacy unconditional owner API remains compatible and conditional current revision can update advanced configuration', () => fixture(async ({ api }) => {
+test('legacy unconditional owner API remains compatible and conditional current revision can update advanced configuration', () => fixture(async ({ api, home, snapshot, restart }) => {
   await api(single);
   const current = await api();
   await api({ provider: 'anthropic', model: 'fixture-anthropic' });
@@ -96,4 +96,13 @@ test('legacy unconditional owner API remains compatible and conditional current 
   const latest = await api();
   await api({ providers: { named: { type: 'openai-compatible', baseUrl: single.baseUrl, model: 'fixture-role' } }, roles: { planner: 'named' }, configurationRevision: latest.configurationRevision });
   assert.equal((await api()).roles.planner, 'named');
+  await restart(); const original = await api(); assert.equal(original.restartRequired, false);
+  // Isolated owner file edit: credential *reference* is configuration, not a
+  // secret value. It must change the revision/restart signal even though GET
+  // still omits the reference itself. Never read a referenced real credential.
+  const file = path.join(home, 'config', 'config.json'), config = JSON.parse(fs.readFileSync(file, 'utf8'));
+  config.model.providers.named.apiKeyRef = 'fixture-new-key-reference'; fs.writeFileSync(file, JSON.stringify(config));
+  const changed = await api(); assert.notEqual(changed.configurationRevision, original.configurationRevision); assert.equal(changed.restartRequired, true);
+  assert.ok(!JSON.stringify(changed).includes('fixture-new-key-reference'));
+  const before = snapshot(); await api({ ...single, configurationRevision: original.configurationRevision }, 409); assert.deepEqual(snapshot(), before);
 }));

@@ -75,13 +75,16 @@ function plannerStatus(config, demo) {
 }
 
 function configurationRevision(config) {
-  return createHash('sha256').update(JSON.stringify(redactSecrets(config))).digest('hex');
+  return createHash('sha256').update(JSON.stringify(redactSecrets(config, true))).digest('hex');
 }
 
-function redactSecrets(value) {
-  if (Array.isArray(value)) return value.map(redactSecrets);
+function redactSecrets(value, forRevision = false) {
+  if (Array.isArray(value)) return value.map((child) => redactSecrets(child, forRevision));
   if (!value || typeof value !== 'object') return value;
-  return Object.fromEntries(Object.entries(value).filter(([key]) => !/api[-_]?key|secret|token/i.test(key)).map(([key, child]) => [key, redactSecrets(child)]));
+  // apiKeyRef selects an existing vault entry, rather than containing a key.
+  // Keep it in the opaque revision, but preserve its omission from API output.
+  return Object.fromEntries(Object.entries(value).filter(([key]) => forRevision && key === 'apiKeyRef' || !/api[-_]?key|secret|token/i.test(key))
+    .map(([key, child]) => [key, redactSecrets(child, forRevision)]));
 }
 
 function validateMultiProvider(body) {
