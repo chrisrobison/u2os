@@ -1,7 +1,8 @@
-// MOCK provider: real CRUD against SQLite's emails table, no real Gmail/etc
-// connection.
+// Mock delivery/read helpers and the shared local-only SQLite draft store.
+// Saving a personal draft is real local work, not simulated delivery.
 import { getDb } from '../db/connection.js';
 import { newId } from '../db/ids.js';
+import { readInstallationMode } from '../seed/installation-mode.js';
 
 const OWNER_ADDRESS = 'chris@u2os.local';
 
@@ -48,7 +49,7 @@ export function createDraft({ to, subject, body, inReplyTo = null }, correlation
   db.prepare(
     `INSERT INTO emails (id, thread_id, from_addr, to_addr, subject, body, folder, is_read, received_at, created_at, correlation_id)
      VALUES (?,?,?,?,?,?,?,?,?,?,?)`
-  ).run(id, inReplyTo, OWNER_ADDRESS, JSON.stringify(Array.isArray(to) ? to : [to]), subject, body, 'drafts', 1, null, now, correlationId);
+  ).run(id, inReplyTo, readInstallationMode() === 'demo' ? OWNER_ADDRESS : '', JSON.stringify(Array.isArray(to) ? to : [to]), subject, body, 'drafts', 1, null, now, correlationId);
   return getEmail(id);
 }
 

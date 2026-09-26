@@ -178,6 +178,15 @@ REST v3, via native `fetch` (no `googleapis` SDK dependency):
 - `GET https://people.googleapis.com/v1/people/me/connections?personFields=names,emailAddresses,phoneNumbers`
 - Map each connection → an `entities` row (`type: 'Person'`), upserted by `resourceName` (id convention: `gc_<resourceName-sanitized>`), plus `facts` rows for email/phone with `source: 'google-contacts'`, `inferred: false`, `confidence: 1.0`.
 
+## Local email drafts
+
+Local `email.draft` is independent of a connected provider and performs no
+delivery. New personal/unmarked-legacy drafts leave `from_addr` empty: the
+sender has not been selected, and no address is inferred from the owner's
+name. A later consequential send binds its exact provider/account before
+approval. Explicit isolated demo drafts retain their fictional demo sender.
+Existing ambiguous drafts are preserved for review, not silently rewritten.
+
 ## Web search provider — Brave Search API
 
 - Create or update a named `brave-search` instance through `/api/connectors/brave-search/instances`.
