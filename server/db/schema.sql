@@ -378,6 +378,23 @@ CREATE TABLE IF NOT EXISTS conversations (
 );
 CREATE INDEX IF NOT EXISTS idx_conversations_owner ON conversations(owner_id, updated_at DESC);
 
+-- Owner-authored goal drafts are intent records only. No scheduler or model
+-- consumes them until a later, separately reviewed execution slice.
+CREATE TABLE IF NOT EXISTS goals (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  objective TEXT NOT NULL,
+  completion_criteria TEXT NOT NULL,
+  constraints TEXT NOT NULL DEFAULT '[]',
+  permitted_scope TEXT NOT NULL DEFAULT '{}',
+  budgets TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'draft',
+  revision INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_goals_owner ON goals(owner_id, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS conversation_messages (
   id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL,

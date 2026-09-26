@@ -33,6 +33,7 @@ import path from 'node:path';
 
 import { registerHealthRoutes } from './api/routes/health.js';
 import { registerAgentRoutes } from './api/routes/agent.js';
+import { registerGoalRoutes } from './api/routes/goals.js';
 import { registerActionRoutes } from './api/routes/actions.js';
 import { registerEventRoutes } from './api/routes/events.js';
 import { registerCalendarRoutes } from './api/routes/calendar.js';
@@ -184,6 +185,7 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   registerModelRoutes(router);
   registerHealthRoutes(router, { dataDir, dbPath, startTime });
   registerAgentRoutes(router, { agent });
+  registerGoalRoutes(router);
   registerActionRoutes(router, { agent, eventBus });
   registerEventRoutes(router, { db, sseHub });
   registerCalendarRoutes(router);
