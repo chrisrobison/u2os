@@ -16,6 +16,9 @@ import { EventBus } from '../server/events/event-bus.js';
 import { PolicyEngine } from '../server/policy/policy-engine.js';
 import { OpenAICompatibleProvider } from '../server/agent/openai-compatible-provider.js';
 import { createToolRegistry } from '../server/tools/register-all.js';
+import { getAgentAction } from '../server/policy/policy-engine.js';
+import { resolvePriorActionReferences } from '../server/agent/result-references.js';
+import { validatePlan } from '../server/agent/plan-validator.js';
 
 async function withHome(fn) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-prior-artifacts-'));
@@ -127,4 +130,82 @@ test('follow-up sees prior result but cannot use its guessed ID or injected tool
   const payload = JSON.parse(request.messages[1].content);
   assert.equal(payload.prior_read_artifacts[0].items[1].data.id, 'task_two');
   assert.ok(!request.messages[0].content.includes('shell.exec'));
+}));
+
+test('a verified second-item reference reaches normal approval with the exact prior ID', () => withHome(async () => {
+  const conversationId = createConversation('owner');
+  const source = storedAction({ conversationId, tool: 'tasks.list', account: null,
+    result: [{ id: 'task_one', title: 'First' }, { id: 'task_two', title: 'Second' }] });
+  const registry = new ToolRegistry();
+  let completed = 0;
+  registry.register({ name: 'tasks.complete', category: 'consequential', domain: 'tasks', schema: { properties: { id: { type: 'string' } }, required: ['id'] },
+    execute: async ({ id }) => { completed++; return { id }; } });
+  const agent = new Agent({ modelProvider: { id: 'fixture', destination: 'local_model', plan: async () => ({
+    reasoning_summary: 'Complete selected item', actions: [{ tool: 'tasks.complete', arguments: { id: '' },
+      priorResultRefs: { id: { actionId: source.actionId, itemIndex: 1, path: 'id' } } }],
+  }) }, policyEngine: new PolicyEngine({ policies: { tasks: { complete: 'confirm' } } }),
+  toolRegistry: registry, eventBus: new EventBus(getDb()), dataProcessingPolicy: policy });
+  agent.contextAssembler.assemble = async () => ({ toolRegistry: registry });
+  const response = await agent.handleMessage({ text: 'Use the second one', actorId: 'owner', conversationId });
+  assert.equal(response.actions[0].status, 'pending');
+  assert.equal(getAgentAction(response.actions[0].id).arguments.id, 'task_two');
+  assert.equal(completed, 0);
+  await agent.approveAction(response.actions[0].id, 'owner');
+  assert.equal(completed, 1);
+  const rejected = await agent.handleMessage({ text: 'Use the second one again', actorId: 'owner', conversationId });
+  assert.equal(rejected.actions[0].status, 'pending');
+  await agent.rejectAction(rejected.actions[0].id, 'owner');
+  assert.equal(completed, 1);
+  assert.equal(getAgentAction(rejected.actions[0].id).status, 'rejected');
+}));
+
+test('cross-run refs reject missing, filtered, wrong-source, and malformed items', () => {
+  const registry = new ToolRegistry();
+  registry.register({ name: 'tasks.complete', category: 'consequential', domain: 'tasks', schema: { properties: { id: { type: 'string' } }, required: ['id'] } });
+  const allowed = [{ actionId: 'act_visible', tool: 'tasks.list', status: 'executed', items: [{ index: 1, data: { id: 'task_two' } }] }];
+  const raw = [{ actionId: 'act_visible', tool: 'tasks.list' }];
+  const action = (ref) => ({ tool: 'tasks.complete', arguments: { id: '' }, priorResultRefs: { id: ref } });
+  assert.equal(resolvePriorActionReferences(action({ actionId: 'act_visible', itemIndex: 1, path: 'id' }), allowed, raw, registry).arguments.id, 'task_two');
+  for (const ref of [
+    { actionId: 'act_other_conversation', itemIndex: 1, path: 'id' },
+    { actionId: 'act_visible', itemIndex: 0, path: 'id' },
+    { actionId: 'act_visible', itemIndex: 1, path: 'title' },
+  ]) assert.throws(() => resolvePriorActionReferences(action(ref), allowed, raw, registry), { code: 'UNVERIFIED_RESULT_REFERENCE' });
+  assert.throws(() => resolvePriorActionReferences(action({ actionId: 'act_visible', itemIndex: 1, path: 'id' }), [], raw, registry), { code: 'UNVERIFIED_RESULT_REFERENCE' });
+  assert.throws(() => validatePlan({ reasoning_summary: '', actions: [action({ actionId: 'act_visible', itemIndex: -1, path: 'id' })] }, registry), /invalid reference/);
+  assert.throws(() => validatePlan({ reasoning_summary: '', actions: [{ ...action({ actionId: 'act_visible', itemIndex: 1, path: 'id' }), resultRefs: { id: { stepIndex: 0, itemIndex: 0, path: 'id' } } }] }, registry), /two references/);
+  registry.register({ name: 'calendar.reschedule', category: 'consequential', domain: 'calendar', schema: { properties: { eventId: { type: 'string' }, newStartAt: { type: 'string' }, newEndAt: { type: 'string' } }, required: ['eventId', 'newStartAt', 'newEndAt'] } });
+  const calendarBinding = { domain: 'calendar', providerId: 'google-calendar', instanceId: 'conn_calendar', credentialRevision: 1 };
+  const calendar = resolvePriorActionReferences({ tool: 'calendar.reschedule', arguments: { eventId: '', newStartAt: '2026-10-01', newEndAt: '2026-10-02' },
+    priorResultRefs: { eventId: { actionId: 'act_calendar', itemIndex: 0, path: 'id' } } },
+  [{ actionId: 'act_calendar', tool: 'calendar.list', status: 'executed', items: [{ index: 0, data: { id: 'gcal_event' } }] }],
+  [{ actionId: 'act_calendar', accountBinding: calendarBinding }], registry);
+  assert.equal(calendar.arguments.eventId, 'gcal_event');
+  assert.equal(calendar.sourceAccountBinding, calendarBinding);
+});
+
+test('an approved prior-item action survives restart without repeating the effect', () => withHome(async () => {
+  const conversationId = createConversation('owner');
+  const source = storedAction({ conversationId, tool: 'tasks.list', account: null, result: [{ id: 'task_one' }, { id: 'task_two' }] });
+  let effects = 0;
+  const registry = new ToolRegistry();
+  registry.register({ name: 'tasks.complete', category: 'consequential', domain: 'tasks', schema: { properties: { id: { type: 'string' } }, required: ['id'] },
+    execute: async ({ id }) => { effects++; return { id }; } });
+  const makeAgent = () => {
+    const agent = new Agent({ modelProvider: { id: 'fixture', destination: 'local_model', plan: async () => ({ reasoning_summary: 'Complete',
+      actions: [{ tool: 'tasks.complete', arguments: { id: '' }, priorResultRefs: { id: { actionId: source.actionId, itemIndex: 1, path: 'id' } } }] }) },
+    policyEngine: new PolicyEngine({ policies: { tasks: { complete: 'confirm' } } }), toolRegistry: registry, eventBus: new EventBus(getDb()), dataProcessingPolicy: policy });
+    agent.contextAssembler.assemble = async () => ({ toolRegistry: registry });
+    return agent;
+  };
+  const pending = await makeAgent().handleMessage({ text: 'Use second', actorId: 'owner', conversationId });
+  const actionId = pending.actions[0].id;
+  assert.equal(getAgentAction(actionId).arguments.id, 'task_two');
+  closeAllForTests(); getDb();
+  const resumed = makeAgent();
+  const outcome = await resumed.approveAction(actionId, 'owner');
+  assert.equal(outcome.status, 'executed');
+  assert.equal(effects, 1);
+  await assert.rejects(resumed.approveAction(actionId, 'owner'), /not pending/);
+  assert.equal(effects, 1);
 }));

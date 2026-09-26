@@ -35,11 +35,35 @@ export function resolveActionReferences(action, allowedObservations, registry, {
   if (continuation) {
     for (const argument of ID_ARGUMENTS[action.tool] || []) {
       const literal = args[argument];
-      if (literal !== undefined && !action.resultRefs?.[argument]) throw clarificationError();
+      if (literal !== undefined && !action.resultRefs?.[argument] && !action.priorResultRefs?.[argument]) throw clarificationError();
     }
   }
   validatePlan({ reasoning_summary: '', actions: [{ tool: action.tool, arguments: args }] }, registry);
   return { ...action, arguments: args };
+}
+
+/** A prior reference is usable only if this provider actually saw that
+ * exact item. Full account binding stays in runtime memory, not the prompt. */
+export function resolvePriorActionReferences(action, allowedPrior, rawPrior, registry) {
+  if (!action.priorResultRefs) return action;
+  const supported = { 'email.read': 'id', 'tasks.complete': 'id', 'calendar.reschedule': 'eventId' };
+  const argument = supported[action.tool];
+  if (!argument || Object.keys(action.priorResultRefs).length !== 1 || !action.priorResultRefs[argument]) throw clarificationError();
+  const ref = action.priorResultRefs[argument];
+  if (ref.path !== 'id') throw clarificationError();
+  const observation = allowedPrior.find((item) => item.actionId === ref.actionId && item.status === 'executed');
+  if (!REFERENCE_SOURCES[action.tool]?.[argument]?.includes(observation?.tool)) throw clarificationError();
+  const item = observation?.items.find((entry) => entry.index === ref.itemIndex);
+  const value = item?.data?.id;
+  if (typeof value !== 'string' || !value) throw clarificationError();
+  const source = rawPrior.find((entry) => entry.actionId === ref.actionId);
+  if (!source) throw clarificationError();
+  const needsAccount = action.tool === 'email.read' || action.tool === 'calendar.reschedule';
+  if (needsAccount && !source.accountBinding) throw clarificationError();
+  const resolved = { ...action, arguments: { ...action.arguments, [argument]: value },
+    ...(needsAccount ? { sourceAccountBinding: source.accountBinding } : {}) };
+  validatePlan({ reasoning_summary: '', actions: [{ tool: resolved.tool, arguments: resolved.arguments }] }, registry);
+  return resolved;
 }
 
 function clarificationError() {

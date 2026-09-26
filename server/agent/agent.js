@@ -12,10 +12,10 @@ import { enqueueAction, cancelUnstartedAction } from './action-queue-store.js';
 import { EvaluatorRegistry } from './proactive/evaluator-registry.js';
 import { registerBuiltinEvaluators } from './proactive/builtin-evaluators.js';
 import { proposeMemoryCandidate } from '../memory/candidate-store.js';
-import { captureAccountBinding } from '../integrations/provider-registry.js';
+import { captureAccountBinding, getProviderForBinding } from '../integrations/provider-registry.js';
 import { accountDomainForAction, assertCalendarTarget, captureSmtpIdentity } from './account-binding.js';
 import * as defaultRunStore from './run-store.js';
-import { resolveActionReferences } from './result-references.js';
+import { resolveActionReferences, resolvePriorActionReferences } from './result-references.js';
 import { validatePlan } from './plan-validator.js';
 import { getAgentAction, updateAgentAction } from '../policy/policy-engine.js';
 import { appendTurn, requireConversation, getPriorTurnsForModel, getPriorReadArtifacts } from './conversation-store.js';
@@ -179,9 +179,10 @@ export class Agent {
       // Reject an unverified reference anywhere in this plan before the
       // first step can cause an external effect or request approval.
       const resolvedActions = plan.actions.map((action) => resolveActionReferences(
-        action, this.planner.lastAllowedObservations || [], this.toolRegistry, { continuation: round > 0 || (this.planner.lastAllowedPriorArtifacts || []).length > 0 },
+        resolvePriorActionReferences(action, this.planner.lastAllowedPriorArtifacts || [], priorReadArtifacts, this.toolRegistry),
+        this.planner.lastAllowedObservations || [], this.toolRegistry, { continuation: round > 0 || (this.planner.lastAllowedPriorArtifacts || []).length > 0 },
       ));
-      const accountContexts = resolvedActions.map((action) => captureProposedAccount(action.tool, action.arguments, this.toolRegistry.get(action.tool)));
+      const accountContexts = resolvedActions.map((action) => captureProposedAccount(action.tool, action.arguments, this.toolRegistry.get(action.tool), action.sourceAccountBinding));
       const baseIndex = this.runStore.recordRunPlan(runId, { ...plan, actions: resolvedActions }, contextProvenance, accountContexts, this._describeModel());
       acceptedPlan = plan;
       const roundResults = [];
@@ -573,11 +574,12 @@ export class Agent {
   }
 }
 
-function captureProposedAccount(toolName, args, tool) {
+function captureProposedAccount(toolName, args, tool, sourceAccountBinding) {
   const domain = tool?.requiresAccountBinding && tool?.category === 'read' ? tool.domain : accountDomainForAction(toolName);
   if (!domain) return null;
   try {
-    const binding = captureAccountBinding(domain);
+    const binding = sourceAccountBinding || captureAccountBinding(domain);
+    if (sourceAccountBinding) getProviderForBinding(domain, binding);
     if (toolName === 'email.send' && binding.providerId === 'imap') binding.smtpIdentity = captureSmtpIdentity(binding);
     if (toolName === 'calendar.reschedule') assertCalendarTarget(binding, args?.eventId);
     return { binding, error: null };

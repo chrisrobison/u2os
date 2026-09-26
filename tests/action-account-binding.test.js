@@ -21,6 +21,8 @@ import { EventBus } from '../server/events/event-bus.js';
 import { PolicyEngine } from '../server/policy/policy-engine.js';
 import { createToolRegistry } from '../server/tools/register-all.js';
 import { getRun } from '../server/agent/run-store.js';
+import { createRun, recordRunPlan } from '../server/agent/run-store.js';
+import { createConversation } from '../server/agent/conversation-store.js';
 
 async function withAccounts(run) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-account-binding-'));
@@ -115,6 +117,50 @@ test('read results retain the exact selected account and do not follow a later s
       });
       assert.equal(result.status, 'executed');
       assert.equal(getAgentAction(result.id).accountBinding.instanceId, second.id);
+    } finally { globalThis.fetch = previousFetch; }
+  });
+});
+
+test('a prior email reference reads from its source account after active selection changes', async () => {
+  await withAccounts(async ({ db, dir, first, second }) => {
+    const conversationId = createConversation('owner');
+    const sourceRun = createRun({ correlationId: 'corr_prior_email', actorId: 'owner', objective: 'Search mail', conversationId });
+    recordRunPlan(sourceRun, { reasoning_summary: 'Search', actions: [{ tool: 'email.search', arguments: { query: 'fixture' } }] });
+    const sourceId = 'act_prior_email_fixture';
+    const now = new Date().toISOString();
+    const binding = captureAccountBinding('email');
+    const messageId = `gmail_${first.id}_one`;
+    db.prepare(`INSERT INTO agent_actions (id, requested_by, tool, arguments, status, result, account_binding, created_at, updated_at)
+      VALUES (?, 'owner', 'email.search', '{}', 'executed', ?, ?, ?, ?)`).run(sourceId,
+      JSON.stringify([{ id: messageId, subject: 'Recruiter' }]), JSON.stringify(binding), now, now);
+    db.prepare("UPDATE agent_run_steps SET action_id = ?, status = 'executed' WHERE run_id = ? AND step_index = 0").run(sourceId, sourceRun);
+    switchTo(dir, second.id);
+    const previousFetch = globalThis.fetch;
+    const seen = [];
+    globalThis.fetch = async (url, options) => {
+      if (String(url).includes('gmail.googleapis.com/gmail/v1/users/me/messages/')) {
+        seen.push(options.headers.Authorization);
+        return new Response(JSON.stringify({ id: 'one', labelIds: ['INBOX'], payload: { headers: [{ name: 'Subject', value: 'Recruiter' }] } }), { status: 200 });
+      }
+      return previousFetch(url, options);
+    };
+    try {
+      const agent = new Agent({ modelProvider: { id: 'fixture', destination: 'local_model', plan: async (context) => {
+        assert.equal(context.priorReadArtifacts[0].account.instanceId, first.id);
+        assert.equal(context.priorReadArtifacts[0].accountBinding, undefined);
+        assert.ok(!JSON.stringify(context.priorReadArtifacts).includes('credentialRevision'));
+        return { reasoning_summary: 'Read the prior email', actions: [{ tool: 'email.read', arguments: { id: '' },
+          priorResultRefs: { id: { actionId: sourceId, itemIndex: 0, path: 'id' } } }] };
+      } }, policyEngine: new PolicyEngine(), toolRegistry: createToolRegistry(), eventBus: new EventBus(db) });
+      const result = await agent.handleMessage({ text: 'Read that one', actorId: 'owner', conversationId });
+      assert.equal(result.actions[0].status, 'executed');
+      assert.equal(getAgentAction(result.actions[0].id).accountBinding.instanceId, first.id);
+      assert.deepEqual(seen, ['Bearer token-first']);
+      deleteConnectionInstance(db, { row: first, dataDir: dir });
+      const blocked = await agent.handleMessage({ text: 'Read that one again', actorId: 'owner', conversationId });
+      assert.equal(blocked.actions[0].status, 'blocked');
+      assert.match(blocked.actions[0].reason, /deleted or disconnected/);
+      assert.deepEqual(seen, ['Bearer token-first']);
     } finally { globalThis.fetch = previousFetch; }
   });
 });

@@ -91,7 +91,7 @@ export function getPriorReadArtifacts(id, ownerId, currentRunId) {
         || (binding.instanceId !== null && typeof binding.instanceId !== 'string'))) return [];
       const account = binding ? { providerId: binding.providerId, instanceId: binding.instanceId, label: binding.label } : null;
       return [{ runId: row.runId, stepIndex: row.stepIndex, tool: row.tool, actionId: row.actionId, observedAt: row.observedAt,
-        status: 'executed', result: JSON.parse(row.result), account }];
+        status: 'executed', result: JSON.parse(row.result), account, accountBinding: binding }];
     } catch { return []; }
   });
 }
