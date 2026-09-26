@@ -168,6 +168,16 @@ or any consequential send/change. Provider-operation deadlines remain separate.
 
 REST v3, via native `fetch` (no `googleapis` SDK dependency):
 
+List/get and the existing sync loop share a 30-second operation deadline,
+including token acquisition, headers and JSON parsing. Timeout aborts and
+discards late results before event-cache or refreshed-token writes; native
+bodies/timers are cleaned up. Missing-event get still returns `null`, while
+authorization, rate-limit, timeout and unavailable failures are sanitized and
+actionable. There is no retry or mock fallback. Existing cached evidence is
+retained, not treated as fresh sync success. Create/reschedule are deliberately
+outside this read boundary; their cautious uncertain-outcome handling is
+unchanged. Gmail/Contacts operation deadlines remain separate work.
+
 - List: `GET https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=&timeMax=&singleEvents=true&orderBy=startTime`
 - Create: `POST .../events`
 - Reschedule: `PATCH .../events/{googleEventId}` with new `start`/`end`

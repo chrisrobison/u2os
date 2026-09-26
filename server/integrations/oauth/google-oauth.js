@@ -17,7 +17,14 @@ import { isDeepStrictEqual } from 'node:util';
 
 const AUTH_BASE_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
-const trustedTokenFailures = new WeakSet();
+const trustedTokenFailures = new WeakMap();
+
+// Preserve safe token-failure classification across a containing read deadline,
+// without trusting an upstream error code/message or exposing credential data.
+export function googleTokenFailureMetadata(error) {
+  const metadata = trustedTokenFailures.get(error);
+  return metadata ? { ...metadata } : null;
+}
 
 function tokenFailure(operation, kind, status) {
   const messages = {
@@ -29,7 +36,7 @@ function tokenFailure(operation, kind, status) {
   const error = new Error(`google-oauth: ${operation} ${messages[kind]}`);
   error.code = `GOOGLE_OAUTH_${kind.toUpperCase()}`;
   if (Number.isInteger(status) && status >= 100 && status <= 599) error.status = status;
-  trustedTokenFailures.add(error);
+  trustedTokenFailures.set(error, { kind, status: error.status });
   return error;
 }
 
@@ -73,7 +80,8 @@ async function requestTokens(operation, body, fetchImpl, { timeoutMs = 10_000, t
   catch (error) {
     controller.abort(); discardTokenBody(response);
     if (timedOut) throw tokenFailure(operation, 'timeout');
-    if (trustedTokenFailures.has(error)) throw error;
+    const known = trustedTokenFailures.get(error);
+    if (known) throw tokenFailure(operation, known.kind, known.status);
     throw tokenFailure(operation, 'unavailable');
   } finally { timers.clearTimeout(timer); }
 }

@@ -5,6 +5,7 @@
 import { getDb } from '../db/connection.js';
 import { hasTokens, getValidAccessToken } from './oauth/google-oauth.js';
 import { scopedLocalId, unscopedUpstreamId } from './connector-instance-ids.js';
+import { withGoogleRead } from './google-read-deadline.js';
 
 export const id = 'google-calendar';
 
@@ -74,26 +75,32 @@ async function authHeaders(fetchImpl, dataDir, instance) {
   return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 }
 
-export async function listEvents({ from, to } = {}, { fetchImpl = globalThis.fetch, dataDir, instance } = {}) {
-  const headers = await authHeaders(fetchImpl, dataDir, instance);
-  const url = new URL(API_BASE);
-  if (from) url.searchParams.set('timeMin', from);
-  if (to) url.searchParams.set('timeMax', to);
-  url.searchParams.set('singleEvents', 'true');
-  url.searchParams.set('orderBy', 'startTime');
-  const res = await fetchImpl(url.toString(), { headers });
-  if (!res.ok) throw new Error(`google-calendar: list failed (status ${res.status})`);
-  const json = await res.json();
-  return (json.items || []).map((gEvent) => upsertRow(mapGoogleEvent(gEvent, instance)));
+export async function listEvents({ from, to } = {}, { fetchImpl = globalThis.fetch, dataDir, instance, timeoutMs, timers } = {}) {
+  return withGoogleRead({ fetchImpl, timeoutMs, timers }, async ({ fetchImpl, check }) => {
+    const headers = await authHeaders(fetchImpl, dataDir, instance);
+    const url = new URL(API_BASE);
+    if (from) url.searchParams.set('timeMin', from);
+    if (to) url.searchParams.set('timeMax', to);
+    url.searchParams.set('singleEvents', 'true');
+    url.searchParams.set('orderBy', 'startTime');
+    const res = await fetchImpl(url.toString(), { headers });
+    if (!res.ok) throw new Error(`google-calendar: list failed (status ${res.status})`);
+    const json = await res.json();
+    check();
+    return (json.items || []).map((gEvent) => upsertRow(mapGoogleEvent(gEvent, instance)));
+  });
 }
 
-export async function getEvent(localId, { fetchImpl = globalThis.fetch, dataDir, instance } = {}) {
-  const headers = await authHeaders(fetchImpl, dataDir, instance);
-  const res = await fetchImpl(`${API_BASE}/${encodeURIComponent(toGoogleId(localId, instance))}`, { headers });
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`google-calendar: getEvent failed (status ${res.status})`);
-  const gEvent = await res.json();
-  return upsertRow(mapGoogleEvent(gEvent, instance));
+export async function getEvent(localId, { fetchImpl = globalThis.fetch, dataDir, instance, timeoutMs, timers } = {}) {
+  return withGoogleRead({ fetchImpl, timeoutMs, timers }, async ({ fetchImpl, check }) => {
+    const headers = await authHeaders(fetchImpl, dataDir, instance);
+    const res = await fetchImpl(`${API_BASE}/${encodeURIComponent(toGoogleId(localId, instance))}`, { headers });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`google-calendar: getEvent failed (status ${res.status})`);
+    const gEvent = await res.json();
+    check();
+    return upsertRow(mapGoogleEvent(gEvent, instance));
+  });
 }
 
 export async function createEvent(
@@ -135,39 +142,42 @@ export async function rescheduleEvent(localId, { newStartAt, newEndAt }, { fetch
  * would (calendar.event_added for new local ids, calendar.event_changed for
  * ones that already existed with a different start/end), source:'google-calendar'.
  */
-export async function syncChanges({ db, eventBus, correlationId, fetchImpl = globalThis.fetch, dataDir, instance } = {}) {
-  const headers = await authHeaders(fetchImpl, dataDir, instance);
-  const url = new URL(API_BASE);
-  url.searchParams.set('timeMin', new Date(Date.now() - 24 * 3600 * 1000).toISOString());
-  url.searchParams.set('singleEvents', 'true');
-  url.searchParams.set('orderBy', 'startTime');
-  const res = await fetchImpl(url.toString(), { headers });
-  if (!res.ok) throw new Error(`google-calendar: syncChanges failed (status ${res.status})`);
-  const json = await res.json();
-  const items = json.items || [];
-  let count = 0;
-  for (const gEvent of items) {
-    const mapped = mapGoogleEvent(gEvent, instance);
-    const existing = (db || getDb()).prepare('SELECT * FROM calendar_events WHERE id = ?').get(mapped.id);
-    const after = upsertRow(mapped);
-    if (!existing) {
-      eventBus?.publish({
-        type: 'calendar.event_added',
-        source: id,
-        subject: { type: 'calendar_event', id: after.id },
-        data: { after },
-        metadata: { correlationId, provenance: 'sync:google-calendar' },
-      });
-    } else if (existing.start_at !== after.start_at || existing.end_at !== after.end_at) {
-      eventBus?.publish({
-        type: 'calendar.event_changed',
-        source: id,
-        subject: { type: 'calendar_event', id: after.id },
-        data: { before: { ...existing, attendees: JSON.parse(existing.attendees || '[]') }, after },
-        metadata: { correlationId, provenance: 'sync:google-calendar' },
-      });
+export async function syncChanges({ db, eventBus, correlationId, fetchImpl = globalThis.fetch, dataDir, instance, timeoutMs, timers } = {}) {
+  return withGoogleRead({ fetchImpl, timeoutMs, timers }, async ({ fetchImpl, check }) => {
+    const headers = await authHeaders(fetchImpl, dataDir, instance);
+    const url = new URL(API_BASE);
+    url.searchParams.set('timeMin', new Date(Date.now() - 24 * 3600 * 1000).toISOString());
+    url.searchParams.set('singleEvents', 'true');
+    url.searchParams.set('orderBy', 'startTime');
+    const res = await fetchImpl(url.toString(), { headers });
+    if (!res.ok) throw new Error(`google-calendar: syncChanges failed (status ${res.status})`);
+    const json = await res.json();
+    check();
+    const items = json.items || [];
+    let count = 0;
+    for (const gEvent of items) {
+      const mapped = mapGoogleEvent(gEvent, instance);
+      const existing = (db || getDb()).prepare('SELECT * FROM calendar_events WHERE id = ?').get(mapped.id);
+      const after = upsertRow(mapped);
+      if (!existing) {
+        eventBus?.publish({
+          type: 'calendar.event_added',
+          source: id,
+          subject: { type: 'calendar_event', id: after.id },
+          data: { after },
+          metadata: { correlationId, provenance: 'sync:google-calendar' },
+        });
+      } else if (existing.start_at !== after.start_at || existing.end_at !== after.end_at) {
+        eventBus?.publish({
+          type: 'calendar.event_changed',
+          source: id,
+          subject: { type: 'calendar_event', id: after.id },
+          data: { before: { ...existing, attendees: JSON.parse(existing.attendees || '[]') }, after },
+          metadata: { correlationId, provenance: 'sync:google-calendar' },
+        });
+      }
+      count += 1;
     }
-    count += 1;
-  }
-  return { synced: count };
+    return { synced: count };
+  });
 }
