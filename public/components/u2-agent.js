@@ -1,18 +1,10 @@
 import { getModelStatus, createConversation, listConversations, getConversationTurns, sendAgentMessage, sendVoiceMessage } from '../services/api.js';
 import { AudioPipeline } from '../services/audio.js';
 import { VoiceprintService } from '../services/voiceprint.js';
+import { actionOutcomeSentence, isUncertainOutcome } from './action-outcome.js';
 import './u2-approval.js';
 import './u2-agent-status.js';
 
-const DONE_LABELS = {
-  'calendar.reschedule': 'Done. Rescheduled.',
-  'calendar.create': 'Done. Added to your calendar.',
-  'calendar.cancel': 'Done. Cancelled the event.',
-  'email.send': 'Done. Sent.',
-  'tasks.create': 'Done. Added the task.',
-  'tasks.complete': 'Done. Marked complete.',
-  'notifications.send': 'Done. Sent the notification.',
-};
 const CONVERSATION_KEY = 'u2os.conversationId';
 
 // Right-hand conversation panel. Owns the request lifecycle status pill
@@ -384,9 +376,10 @@ export class U2Agent extends HTMLElement {
   }
 
   _onActionResolved(detail) {
-    this._pendingActionIds.delete(detail.id);
-    const label = detail.status === 'rejected' ? 'Cancelled.' : DONE_LABELS[detail.tool] || 'Done.';
-    this._appendBubble('system', detail.status === 'failed' ? "That didn't go through." : label);
+    if (detail.status === 'pending' && !isUncertainOutcome(detail)) this._pendingActionIds.add(detail.id);
+    else this._pendingActionIds.delete(detail.id);
+    const label = actionOutcomeSentence(detail);
+    this._appendBubble('system', label);
 
     const nextState = this._pendingActionIds.size ? 'waiting-for-approval' : this._voiceMode ? 'listening' : 'idle';
     if (this._voiceMode) {

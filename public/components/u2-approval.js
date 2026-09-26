@@ -1,5 +1,6 @@
 import { escapeHtml, formatDateTime, humanizeKey } from './util.js';
 import { approveAction, rejectAction } from '../services/api.js';
+import { isUncertainOutcome, approvalOutcomeLabel, approvalOutcomeGuidance } from './action-outcome.js';
 import './u2-why.js';
 
 // Humanized verb for the approval headline. Falls back to a readable
@@ -39,6 +40,7 @@ function normalize(raw) {
     policyRule: raw?.policy_rule ?? null,
     status: raw?.status ?? 'pending',
     result: raw?.result ?? null,
+    errorClass: raw?.errorClass === 'outcome_uncertain' ? 'outcome_uncertain' : null,
     accountBinding: raw?.accountBinding ?? null,
   };
 }
@@ -98,7 +100,8 @@ export class U2Approval extends HTMLElement {
     this.classList.add('u2-approval');
     this.dataset.status = a.status;
 
-    const resolved = !['pending', undefined, null].includes(a.status);
+    const resolved = isUncertainOutcome(a) || !['pending', undefined, null].includes(a.status);
+    const guidance = approvalOutcomeGuidance(a);
     const policyLine = a.policyDomain || a.policyRule
       ? `Policy: ${escapeHtml(a.policyDomain || '')}${a.policyRule ? ` &middot; ${escapeHtml(a.policyRule)}` : ''}`
       : '';
@@ -110,11 +113,12 @@ export class U2Approval extends HTMLElement {
       ${a.accountBinding?.smtpIdentity ? `<div class="u2-approval__policy">SMTP sender: ${escapeHtml(a.accountBinding.smtpIdentity.label)} (${escapeHtml(a.accountBinding.smtpIdentity.from)})</div>` : ''}
       ${a.reason ? `<div class="u2-approval__reason">${escapeHtml(a.reason)}</div>` : ''}
       ${policyLine ? `<div class="u2-approval__policy">${policyLine}</div>` : ''}
+      ${guidance ? `<p class="u2-approval__policy u2-approval__guidance">${escapeHtml(guidance)}</p>` : ''}
       ${a.id ? `<u2-why action-id="${escapeHtml(a.id)}"></u2-why>` : ''}
       <div class="u2-approval__actions">
         ${
           resolved
-            ? `<span class="u2-approval__status" data-status="${escapeHtml(a.status)}">${escapeHtml(statusLabel(a.status))}</span>`
+            ? `<span class="u2-approval__status" data-status="${escapeHtml(a.status)}">${escapeHtml(approvalOutcomeLabel(a))}</span>`
             : `<button type="button" class="btn btn-ghost" data-action="reject">Cancel</button>
                <button type="button" class="btn btn-primary" data-action="approve">Approve</button>`
         }
@@ -134,16 +138,17 @@ export class U2Approval extends HTMLElement {
     try {
       const result = kind === 'approve' ? await approveAction(this._normalized.id) : await rejectAction(this._normalized.id);
       const status = result?.status || (kind === 'approve' ? 'approved' : 'rejected');
-      this._normalized = { ...this._normalized, status, result: result?.result ?? null };
+      this._normalized = { ...this._normalized, status, result: result?.result ?? null,
+        errorClass: result?.errorClass === 'outcome_uncertain' ? 'outcome_uncertain' : null };
       this._render();
       this.dispatchEvent(
         new CustomEvent('u2-action-resolved', {
           bubbles: true,
           composed: true,
-          detail: { id: this._normalized.id, tool: this._normalized.tool, status, result: this._normalized.result },
+          detail: { id: this._normalized.id, tool: this._normalized.tool, status, result: this._normalized.result, errorClass: this._normalized.errorClass },
         })
       );
-    } catch (err) {
+    } catch {
       buttons.forEach((b) => (b.disabled = false));
       const actions = this.querySelector('.u2-approval__actions');
       let errEl = this.querySelector('.load-error');
@@ -152,23 +157,10 @@ export class U2Approval extends HTMLElement {
         errEl.className = 'load-error';
         actions.insertAdjacentElement('beforebegin', errEl);
       }
-      errEl.textContent = `Couldn't ${kind === 'approve' ? 'approve' : 'cancel'}: ${err.message}`;
+      errEl.textContent = kind === 'approve'
+        ? "Couldn't confirm approval. Delivery may still be pending; check Operations before trying again."
+        : "Couldn't confirm cancellation. Reload and check current status before trying again.";
     }
-  }
-}
-
-function statusLabel(status) {
-  switch (status) {
-    case 'executed':
-      return 'Approved and done';
-    case 'approved':
-      return 'Approved';
-    case 'rejected':
-      return 'Cancelled';
-    case 'failed':
-      return 'Failed';
-    default:
-      return status;
   }
 }
 
