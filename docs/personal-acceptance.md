@@ -6,6 +6,14 @@ The demo does not prove real model quality, provider availability or a usable
 upgraded personal installation. A consolidated six-workflow personal-mode
 fresh/upgrade harness remains unfinished.
 
+The first personal-mode API slice is repeatable with `npm run test:personal`:
+eight cases cover brief, grounded draft, meeting preparation and failed-provider
+continuation on fresh and existing unmarked homes. They use actual owner auth,
+runtime, configured model HTTP and Google adapters with isolated scripted
+transports and a fixed clock. Existing fixture records survive upgrade/restart.
+This is not live model judgment, UI/OAuth onboarding, all historical schemas,
+or a consolidated proof of all six workflows.
+
 ## Safe preparation
 
 For CI and repeatable regression checks, run from the repository:
@@ -22,7 +30,7 @@ node --test tests/installation-mode.test.js tests/dashboard-generation.test.js t
 npx playwright test -c tests/e2e/playwright.config.js daily-driver-demo.spec.js job-research.spec.js goal-research-schedule.spec.js personal-connectors.spec.js
 ```
 
-These are component and demo acceptance tests, not a single personal-mode
+These focused commands are component and demo acceptance tests, not a single personal-mode
 end-to-end proof. Never point test harnesses at an owner data directory.
 
 For a fresh personal installation, choose a new, empty, private directory and
@@ -71,6 +79,14 @@ skipped and uncertain actions independently. Run `objectiveStatus` remains
 If an external outcome is uncertain, inspect the provider manually before
 making any fresh proposal. Never requeue an archived recovery action or repeat
 a request merely because the browser lost its response.
+
+[Personal workflow fixtures](../tests/personal-workflows.test.js) additionally
+exercise the first three workflows and calendar outage through authenticated
+personal APIs. Retrieved mail arrives older-first; the draft selects the latest
+observed timestamp and validated result references. Restart retains results
+without replaying reads/model calls. Outage blocks drafting and overrides an
+incorrect completion claim. Provider writes and unknown network destinations
+are denied by the fixture; no personal account or real model is contacted.
 
 Local personal drafts leave their sender unset, including while disconnected;
 they are saved work, not simulated mail delivery. No sender address is inferred
