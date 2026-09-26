@@ -6,6 +6,7 @@ import { validateSettings as validateSmtpSettings } from '../integrations/smtp-t
 
 export const ACCOUNT_BOUND_ACTION_DOMAINS = Object.freeze({
   'email.send': 'email',
+  'notifications.send': 'notifications',
   'calendar.create': 'calendar',
   'calendar.reschedule': 'calendar',
 });
