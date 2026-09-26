@@ -24,11 +24,105 @@ async function sync(fixture) { await fixture.api('/api/connectors/email/sync', {
 const run = (options, operation) => async (context) => {
   // Freeze only Date: HTTP, deadlines and runtime shutdown retain real timers.
   context.mock.timers.enable({ apis: ['Date'], now: new Date(2026, 8, 25, 6).getTime() });
-  await withPersonalWorkflow(options, operation);
+  await withPersonalWorkflow(options, (fixture) => {
+    fixture.advanceClock = (milliseconds) => context.mock.timers.tick(milliseconds);
+    return operation(fixture);
+  });
 };
+
+const researchDraft = { objective: 'Research suitable senior engineering opportunities',
+  completionCriteria: ['Explain source-linked candidate fit and unverified availability'],
+  constraints: ['Senior research engineer', 'Remote only', 'Research only. No applications or outreach.'],
+  permittedScope: { domains: ['web'], consequentialActions: false }, budgets: { maxRuns: 2, maxModelCalls: 4, maxTokens: 1000 } };
+function researchPlan(payload) {
+  assert.match(payload.user_objective, /Remote only/); assert.match(payload.user_objective, /No applications or outreach/);
+  if (!payload.tool_observations) return { reasoning_summary: 'Search saved criteria', continue: true,
+    actions: [{ tool: 'web.search', arguments: { query: 'remote senior research engineer opportunities' } }] };
+  const roles = payload.tool_observations.find((item) => item.tool === 'web.search').items[0].data.results;
+  const reviews = (payload.prior_read_artifacts || []).flatMap((artifact) => artifact.ownerReviewContext?.reviews || []);
+  return { reasoning_summary: 'Explain observed excerpts, not verified openings', actions: [], response: roles.map((role) => {
+    const reviewed = reviews.find((item) => item.url === role.url && item.appliesToCurrentRevision);
+    return `${role.title} (${role.url}): ${role.snippet} ${role.snippet.startsWith('Remote') ? 'Candidate fit; verify requirements.' : 'Does not meet remote-only constraint.'}${reviewed ? ` Prior owner review: ${reviewed.reviewStatus}; not a fresh discovery.` : ''}`;
+  }).join('\n') + '\nCurrent availability not verified. No applications or outreach performed.' };
+}
 
 for (const existing of [false, true]) {
   const label = existing ? 'existing unmarked personal home' : 'fresh personal home';
+  test(`${label}: personal research retains criteria/reviews, deduplicates across restart and obeys cumulative budgets/lifecycle`, run({ existing, research: true, modelPlan: researchPlan }, async (fixture) => {
+    const goal = await fixture.api('/api/goals', researchDraft, 201);
+    assert.equal(fixture.modelRequests.length, 0); assert.equal(fixture.network.length, 0);
+    const first = await fixture.api(`/api/goals/${goal.id}/runs`, {});
+    assert.match(first.response, /Candidate fit/); assert.match(first.response, /Does not meet remote-only constraint/);
+    assert.match(first.response, /Current availability not verified/);
+    const evidence = await fixture.api(`/api/goals/${goal.id}/runs/${first.runId}`);
+    assert.equal(evidence.objectiveStatus, 'unverified'); assert.equal(evidence.researchUpdate.newCount, 2);
+    assert.equal(evidence.researchUpdate.repeatedCount, 0);
+    const findings = await fixture.api(`/api/goals/${goal.id}/findings`);
+    const atlas = findings.findings.find((item) => item.url === fixture.roles[0].url);
+    assert.ok(atlas);
+    for (const finding of findings.findings) {
+      assert.equal(finding.sources[0].account.instanceId, fixture.searchAccount.id);
+      assert.equal(finding.sources[0].mock, false, 'real adapter on isolated HTTP fixtures, not demo fallback');
+    }
+    const reviewed = await fixture.api(`/api/goals/${goal.id}/findings/${atlas.id}`, { reviewStatus: 'relevant', expectedRevision: atlas.revision, expectedGoalRevision: goal.revision }, 200, 'PUT');
+    const before = await fixture.api(`/api/goals/${goal.id}`), networkBefore = fixture.network.length, modelBefore = fixture.modelRequests.length;
+    assert.equal(before.spent.runs, 1); assert.equal(before.spent.modelCalls, 2); assert.equal(before.spent.tokens, 240);
+    assert.equal(before.spent.tokenUsageComplete, true); assert.equal(before.spent.monetaryCost.available, false);
+    await fixture.restart();
+    assert.deepEqual(await fixture.api(`/api/goals/${goal.id}`), before);
+    assert.equal((await fixture.api(`/api/goals/${goal.id}/findings`)).findings.find((item) => item.id === atlas.id).reviewStatus, 'relevant');
+    assert.equal(fixture.network.length, networkBefore); assert.equal(fixture.modelRequests.length, modelBefore);
+    fixture.advanceClock(1000);
+    const second = await fixture.api(`/api/goals/${goal.id}/runs`, {});
+    assert.match(second.response, /Prior owner review: relevant; not a fresh discovery/);
+    assert.match(second.response, /Fixture Cedar/);
+    const next = await fixture.api(`/api/goals/${goal.id}/runs/${second.runId}`);
+    assert.equal(next.objectiveStatus, 'unverified'); assert.equal(next.researchUpdate.newCount, 1); assert.equal(next.researchUpdate.repeatedCount, 1);
+    const retained = (await fixture.api(`/api/goals/${goal.id}/findings`)).findings;
+    assert.equal(retained.length, 3); assert.equal(retained.find((item) => item.id === atlas.id).revision, reviewed.revision);
+    const spent = await fixture.api(`/api/goals/${goal.id}`);
+    assert.equal(spent.spent.runs, 2); assert.equal(spent.spent.modelCalls, 4); assert.equal(spent.spent.tokens, 480);
+    assert.equal(spent.manualRunAvailable, false); assert.equal(spent.status, 'active');
+    await fixture.api(`/api/goals/${goal.id}/runs`, {}, 409);
+    const paused = await fixture.api(`/api/goals/${goal.id}/control`, { operation: 'pause', expectedRevision: spent.revision });
+    await fixture.restart(); assert.equal((await fixture.api(`/api/goals/${goal.id}`)).status, 'paused');
+    await fixture.api(`/api/goals/${goal.id}/runs`, {}, 409);
+    const cancelled = await fixture.api(`/api/goals/${goal.id}/control`, { operation: 'cancel', expectedRevision: paused.revision });
+    assert.equal(cancelled.status, 'cancelled'); await fixture.api(`/api/goals/${goal.id}/runs`, {}, 409);
+    // Also exercise lifecycle refusal with untouched budgets, so an
+    // exhausted ledger cannot hide a broken pause/cancellation boundary.
+    const untouched = await fixture.api('/api/goals', researchDraft, 201);
+    const untouchedPaused = await fixture.api(`/api/goals/${untouched.id}/control`, { operation: 'pause', expectedRevision: untouched.revision });
+    assert.equal(untouchedPaused.spent.runs, 0); await fixture.api(`/api/goals/${untouched.id}/runs`, {}, 409);
+    const untouchedCancelled = await fixture.api(`/api/goals/${untouched.id}/control`, { operation: 'cancel', expectedRevision: untouchedPaused.revision });
+    assert.equal(untouchedCancelled.spent.runs, 0); await fixture.api(`/api/goals/${untouched.id}/runs`, {}, 409);
+    assert.equal(fixture.modelRequests.length, 4); assert.equal(fixture.searchPasses, 2); assert.equal(fixture.network.length, 2);
+    assert.ok(!JSON.stringify({ spent, retained }).includes('fixture-search-api-key'));
+    for (const action of getRun(second.runId).steps.filter((item) => item.actionId)) assert.equal(getAgentAction(action.actionId).accountBinding.instanceId, fixture.searchAccount.id);
+  }));
+
+  test(`${label}: personal research outage retains failed evidence and resumes only on explicit owner retry`, run({ existing, research: true, modelPlan: researchPlan }, async (fixture) => {
+    const goal = await fixture.api('/api/goals', researchDraft, 201); fixture.searchDown = true;
+    const failed = await fixture.api(`/api/goals/${goal.id}/runs`, {});
+    assert.equal(getRun(failed.runId).status, 'failed'); assert.equal(getRun(failed.runId).objectiveStatus, 'unverified');
+    assert.equal(failed.actions[0].status, 'failed'); assert.match(failed.actions[0].error, /unavailable/);
+    assert.doesNotMatch(JSON.stringify(failed), /private-provider-fixture-body|all done/);
+    assert.equal((await fixture.api(`/api/goals/${goal.id}/findings`)).findings.length, 0);
+    const before = await fixture.api(`/api/goals/${goal.id}`);
+    assert.equal(before.spent.runs, 1); assert.equal(before.spent.modelCalls, 1); assert.equal(before.spent.tokens, 120);
+    await fixture.restart(); fixture.searchDown = false;
+    assert.deepEqual(await fixture.api(`/api/goals/${goal.id}`), before);
+    assert.equal(fixture.modelRequests.length, 1); assert.equal(fixture.network.length, 1);
+    fixture.advanceClock(1000);
+    const retry = await fixture.api(`/api/goals/${goal.id}/runs`, {});
+    assert.equal(getRun(retry.runId).status, 'completed'); assert.equal(getRun(retry.runId).objectiveStatus, 'unverified');
+    assert.equal((await fixture.api(`/api/goals/${goal.id}/findings`)).findings.length, 2);
+    const after = await fixture.api(`/api/goals/${goal.id}`);
+    assert.equal(after.spent.runs, 2); assert.equal(after.spent.modelCalls, 3); assert.equal(after.spent.tokens, 360);
+    assert.equal(after.relatedRuns.length, 2); assert.equal(after.manualRunAvailable, false);
+    await fixture.api(`/api/goals/${goal.id}/runs`, {}, 409);
+    assert.equal(fixture.network.length, 2); assert.equal(fixture.modelRequests.length, 3);
+  }));
   test(`${label}: morning brief is grounded in real provider-interface fixture observations and survives restart`, run({ existing, modelPlan: (payload, fixture) => {
     if (!payload.tool_observations) return reads(fixture);
     const { mail, event } = observed(payload);

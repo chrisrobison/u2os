@@ -12,15 +12,21 @@ import { recordFact } from '../../server/memory/fact-store.js';
 import { createConnectionInstance } from '../../server/integrations/connection-instances.js';
 import { storeTokens } from '../../server/integrations/oauth/google-oauth.js';
 import { installationModePath, readInstallationMode } from '../../server/seed/installation-mode.js';
+import { writeEncryptedFile } from '../../server/security/vault.js';
 
-export async function withPersonalWorkflow({ existing = false, modelPlan }, operation) {
+export async function withPersonalWorkflow({ existing = false, research = false, modelPlan }, operation) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-personal-workflow-'));
   const previousHome = process.env.U2OS_HOME, nativeFetch = globalThis.fetch;
   process.env.U2OS_HOME = home;
   let handle, cookie, csrf, previousRecord, previousContact;
   const day = new Date(); day.setHours(0, 0, 0, 0);
   const start = new Date(day); start.setHours(10); const end = new Date(day); end.setHours(11);
-  const fixture = { home, network: [], unexpectedNetwork: [], externalWrites: [], modelRequests: [], modelErrors: [], calendarDown: false,
+  const fixture = { home, network: [], unexpectedNetwork: [], externalWrites: [], modelRequests: [], modelErrors: [], calendarDown: false, searchDown: false,
+    searchPasses: 0, roles: [
+      { title: 'Fixture Atlas research engineer', url: 'https://jobs.example.test/atlas', snippet: 'Remote senior research engineer. Posting date unavailable.' },
+      { title: 'Fixture Birch analyst', url: 'https://jobs.example.test/birch', snippet: 'On-site analyst in London. Experience requirements unavailable.' },
+      { title: 'Fixture Cedar research engineer', url: 'https://jobs.example.test/cedar', snippet: 'Remote senior research engineer. Posting date unavailable.' },
+    ],
     calendarEvent: { id: 'fixture_meeting', summary: 'Fixture interview preparation', start: { dateTime: start.toISOString() }, end: { dateTime: end.toISOString() },
       attendees: [{ displayName: 'Fixture Recruiter', email: 'recruiter@example.test' }, { displayName: 'Unmatched Fixture Partner', email: 'partner@example.test' }] },
     from: day.toISOString(), to: new Date(day.getTime() + 86400000).toISOString(),
@@ -54,6 +60,14 @@ export async function withPersonalWorkflow({ existing = false, modelPlan }, oper
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(typeof input === 'string' ? input : input.url);
     if (url.origin === modelOrigin) return nativeFetch(input, init);
+    if (research && url.hostname === 'api.search.brave.com' && url.pathname === '/res/v1/web/search') {
+      if ((init.method || 'GET') !== 'GET') { fixture.externalWrites.push(url.href); throw new Error('External writes are prohibited by this fixture'); }
+      assert.equal(new Headers(init.headers).get('x-subscription-token'), 'fixture-search-api-key');
+      fixture.network.push({ service: 'web', path: url.pathname, query: url.searchParams.get('q') });
+      if (fixture.searchDown) return new Response('{"error":"private-provider-fixture-body"}', { status: 503 });
+      const results = ++fixture.searchPasses === 1 ? fixture.roles.slice(0, 2) : [fixture.roles[0], fixture.roles[2]];
+      return Response.json({ web: { results: results.map(({ snippet, ...role }) => ({ ...role, description: snippet })) } });
+    }
     if (!['gmail.googleapis.com', 'www.googleapis.com'].includes(url.hostname)) {
       fixture.unexpectedNetwork.push(url.href); throw new Error('Unexpected network is prohibited by this fixture');
     }
@@ -73,9 +87,9 @@ export async function withPersonalWorkflow({ existing = false, modelPlan }, oper
   };
   const stop = async () => { if (handle) { await handle.shutdown(); handle = null; closeAllForTests(); } };
   fixture.restart = async () => { await stop(); handle = await startServer({ port: 0 }); };
-  fixture.api = async (route, body, expectedStatus = 200) => {
+  fixture.api = async (route, body, expectedStatus = 200, method = body === undefined ? 'GET' : 'POST') => {
     const origin = `http://127.0.0.1:${handle.port}`;
-    const response = await nativeFetch(`${origin}${route}`, { method: body === undefined ? 'GET' : 'POST',
+    const response = await nativeFetch(`${origin}${route}`, { method,
       headers: { cookie, origin, 'x-u2os-csrf': csrf, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
     const result = await response.json(); assert.equal(response.status, expectedStatus, JSON.stringify(result)); return result;
@@ -110,6 +124,12 @@ export async function withPersonalWorkflow({ existing = false, modelPlan }, oper
     };
     fixture.primary = addAccount('Selected fixture account', 'primary'); fixture.other = addAccount('Other fixture account', 'other');
     for (const [domain, providerId] of [['email', 'gmail'], ['calendar', 'google-calendar']]) await fixture.api(`/api/connectors/${domain}/active`, { connectorId: 'google', instanceId: fixture.primary.id, providerId });
+    if (research) {
+      const created = createConnectionInstance(getDb(), { connectorId: 'brave-search', label: 'Selected fixture search account', status: 'connected', dataDir: home });
+      fixture.searchAccount = getDb().prepare('SELECT * FROM connection_instances WHERE id=?').get(created.id);
+      writeEncryptedFile(fixture.searchAccount.vault_key, { apiKey: 'fixture-search-api-key' }, home);
+      await fixture.api('/api/connectors/web/active', { connectorId: 'brave-search', instanceId: created.id, providerId: 'brave-search' });
+    }
     await fixture.api('/api/model', { provider: 'openai-compatible', baseUrl: modelOrigin, model: 'personal-fixture-planner', timeoutMs: 5000 });
     await fixture.restart();
     assert.equal((await fixture.api('/api/model')).plannerStatus, 'configured'); assert.equal(handle.auth.ownerEntity().id, fixture.ownerEntityId);
