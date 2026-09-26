@@ -51,10 +51,11 @@ presentation.present / presentation.notify (Tools) ─▶ PolicyEngine ─▶ ag
 Agents
 ```
 
-(Every OTHER capability invocation path -- the raw `POST /api/capabilities/:capability/invoke`
-route, device management's "test capability", `StreamRegistry.open()` -- is session-authenticated
-but deliberately NOT policy-gated; see "Known gaps" below. `presentation.*` is the one path that
-is, because it's a real Tool reached through the same pipeline every other consequential route uses.)
+Raw `POST /api/capabilities/:capability/invoke`, device management's test route, and
+stream-open routes are **disabled by default**, before adapter access. Only explicit
+non-production development mode enables these session/CSRF-protected debug paths.
+Normal execution uses `presentation.*` tools through the policy/approval/audit pipeline.
+Internal adapter/stream primitives are trusted implementation APIs, not model tools.
 
 ## Device model
 
@@ -264,9 +265,8 @@ tool-authorization pipeline or the `agent_actions` audit log, and stays that
 way permanently as a raw function — policy-gating happens one layer up, by
 wrapping a specific capability in a real Tool ("Semantic presentation",
 Phase 5 below, does exactly this for `ui.render`/`ui.notify`). Calling
-`invokeCapability()` directly, as the raw `POST
-/api/capabilities/:capability/invoke` route still does, bypasses that —
-see Known gaps.
+`invokeCapability()` directly bypasses that layer; raw HTTP execution is
+therefore disabled outside explicit development mode (see Development debug boundary).
 
 ## Realtime device bus (Phase 3)
 
@@ -424,7 +424,7 @@ management controls:
   /api/devices/:id/trust`. A real pairing *flow* (device-initiated request,
   credential exchange) is Phase 7; this is the owner-driven "just set it"
   primitive that flow will eventually call into.
-- **Test capability** -- clicking a capability chip calls `POST
+- **Test capability (development only)** -- clicking an enabled capability chip calls `POST
   /api/devices/:id/test`, which directly invokes THAT device (bypassing
   the resolver on purpose -- see `invokeDeviceCapability()` below) and
   shows the raw result inline.
@@ -442,7 +442,7 @@ UI, skipping resolution entirely -- but still refuses a revoked device or
 one that doesn't actually advertise the capability, and still publishes
 `capability.invoked`/`capability.failed` (tagged `direct: true`). Like the
 raw `POST /api/capabilities/:capability/invoke` route, this does **not**
-go through `PolicyEngine` -- it is explicitly an owner-only debug/test
+go through `PolicyEngine` -- it is explicitly a development-only debug/test
 primitive, never something an agent's planning loop should reach.
 
 ## Trust lifecycle foundation (Phase 7)
@@ -599,28 +599,33 @@ GET  /api/devices/connect-token                  session-gated; lets an authenti
 All require an authenticated session; `POST` additionally requires CSRF,
 like every other private write route (`server/api/router.js`). `audience`
 on the invoke route is client-supplied and not yet bound to the
-authenticated owner — see Known gaps.
+authenticated owner — see Remaining limitations (the raw route is development only).
 
-## Known gaps (by design)
+## Development debug boundary
 
-- **`POST /api/capabilities/:capability/invoke` still bypasses
-  `PolicyEngine`/`agent_actions` entirely** -- it calls
-  `invokeCapability()` directly, not through a Tool. This is the one place
-  in the device subsystem that does not yet fully honor "the device bus
-  MUST NOT bypass authorization checks": it is gated by session
-  authentication + CSRF like every other private write route, but NOT by
-  autonomy level or an approval step, and produces no audit trail. Contrast
-  with `presentation.present`/`presentation.notify` (Phase 5, above), which
-  ARE fully policy-gated because they're real Tools reached through
-  `evaluateAndMaybeExecute()` -- exactly the pattern every other
-  consequential route in this codebase uses (e.g. `POST /api/tasks` ->
-  `tasks.create`). Closing this for every capability, not just the two
-  wrapped as tools, needs either a Tool per capability or teaching
-  `invokeCapability()` itself to consult `PolicyEngine` generically using
-  each capability's own `defaultAuthorization` -- deliberately deferred
-  rather than rushed into this phase; treat the raw invoke route as a
-  trusted-owner-only debug/direct-control surface until this is closed,
-  not as something meant to be reachable by an agent's own planning loop.
+Normal requests to raw invoke, device test and stream-open routes return HTTP 403
+with `{ code: "device_debug_disabled", attempted: false }` before any adapter call
+or capability/stream effect event. Discovery, resolution, registry management,
+closing an existing stream reference, and policy-gated presentation tools remain
+available. The native Devices view renders tests disabled unless the server's
+`GET /api/devices` response explicitly reports `debugActionsEnabled: true`;
+missing/unknown metadata fails closed.
+
+For isolated development only, start with `U2OS_DEVELOPMENT_MODE=1 npm run dev`,
+or use `startServer({ developmentMode: true })` in a fixture. This flag is not a
+model/tool/request parameter and is not automatically enabled by demo mode or
+`NODE_ENV=development`. `NODE_ENV=production` always disables these routes, even
+with an opt-in. Startup and the Devices view warn that development debug execution
+bypasses normal tool policy/audit. Session authentication, CSRF, capability validation,
+trust and revocation checks still apply. Do not enable it for personal operation.
+
+## Remaining limitations
+
+- Development debug routes invoke adapters directly and do not create a normal
+  `agent_actions` approval/audit record. They are unavailable in ordinary or
+  production operation. More capabilities need separately scoped policy-gated
+  tools before they can be used by the planner; enabling debug mode is not a way
+  to grant an agent those tools.
 - `audience` on `POST .../invoke` is client-supplied, not derived from the
   authenticated session — see the SECURITY comment in
   `server/api/routes/devices.js`. It only affects device *selection*; it

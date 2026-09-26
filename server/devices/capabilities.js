@@ -113,10 +113,11 @@ export async function invokeCapability(capabilityId, args = {}, request = {}, { 
  * advertise the capability, and still publishes capability.invoked/failed.
  *
  * This is an admin/debug primitive, same posture as the raw
- * POST /api/capabilities/:capability/invoke route (docs/devices.md's Known
- * gaps): it does NOT go through PolicyEngine, and must never be reachable
+ * POST /api/capabilities/:capability/invoke route (docs/devices.md's
+ * development boundary): it does NOT go through PolicyEngine, and must never be reachable
  * by an agent's own planning loop -- only by an authenticated owner
- * explicitly testing one specific device from the management UI.
+ * explicitly testing one specific device in development mode. The HTTP
+ * debug routes are disabled during normal/production operation.
  */
 export async function invokeDeviceCapability(deviceId, capabilityId, args = {}, { deviceRegistry, capabilityRegistry, eventBus } = {}) {
   if (!capabilityRegistry.has(capabilityId)) {

@@ -184,6 +184,8 @@ U2OS binds to `127.0.0.1` by default and requires owner login for private APIs. 
 
 Security properties already present include policy enforcement outside the planner, a separate data-processing privacy policy governing what data may reach a local vs. remote model, prompt-injection containment tests, append-only action/event auditing with retrieved-context provenance, encrypted connector secrets, OAuth state validation, secret-redacted APIs, safe dashboard schemas, and regression tests preventing feedback or voice confidence from loosening authorization policy.
 
+Raw device invoke, test and stream-open routes are disabled outside explicit non-production development mode. Normal execution uses policy-gated tools; see the [device debug boundary](docs/devices.md#development-debug-boundary). Never enable development debug execution for personal operation.
+
 ## Repository layout
 
 ```text

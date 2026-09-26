@@ -53,9 +53,12 @@ import { registerModelRoutes } from './api/routes/model.js';
 import { registerDeviceRoutes } from './api/routes/devices.js';
 import { registerDiagnosticsRoutes } from './api/routes/diagnostics.js';
 
-export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsoluteSeconds, mode = null } = {}) {
+export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsoluteSeconds, mode = null,
+  developmentMode = process.env.U2OS_DEVELOPMENT_MODE === '1' } = {}) {
 
   const installationMode = ensureInstallationMode(mode);
+  const deviceDebugEnabled = developmentMode === true && process.env.NODE_ENV !== 'production';
+  if (deviceDebugEnabled) log.warn('server', 'Development device debug execution enabled: raw routes bypass normal tool policy/audit. Do not use for personal operation.');
   const dataDir = ensureDataDirs();
   // SECURITY: create the credentials/ dir + master key now, at 0700, rather
   // than lazily on first credential save -- see the comment on SUBDIRS in
@@ -218,7 +221,8 @@ export async function startServer({ port, bind, sessionIdleSeconds, sessionAbsol
   registerTriggerRoutes(router);
   registerRecommendationRoutes(router);
   registerFeedbackRoutes(router, { eventBus });
-  registerDeviceRoutes(router, { deviceRegistry, capabilityRegistry, eventBus, deviceConnectToken, streamRegistry });
+  registerDeviceRoutes(router, { deviceRegistry, capabilityRegistry, eventBus, deviceConnectToken, streamRegistry,
+    developmentMode: deviceDebugEnabled });
   registerDiagnosticsRoutes(router, { db, dbPath, dataDir, startTime, sseHub, modelRouter, embeddingProvider });
 
   // Minimal HTTP access log (method, path, status, duration_ms) wrapped
