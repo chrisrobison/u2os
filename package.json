@@ -20,7 +20,8 @@
     "recovery:compare": "node server/backup/recovery-compare-cli.js",
     "maintain": "node server/events/maintenance-cli.js",
     "imsg:read": "node server/integrations/imsg-cli.js",
-    "setup-owner": "node server/security/setup-owner-cli.js"
+    "setup-owner": "node server/security/setup-owner-cli.js",
+    "vault:export": "node server/vault/export-cli.js"
   },
   "engines": {
     "node": ">=22"
