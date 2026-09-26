@@ -5,6 +5,7 @@ import { getDb } from '../db/connection.js';
 import { newId } from '../db/ids.js';
 import { hasTokens, getValidAccessToken } from './oauth/google-oauth.js';
 import { scopedLocalId, unscopedUpstreamId } from './connector-instance-ids.js';
+import { withGoogleRead } from './google-read-deadline.js';
 
 export const id = 'gmail';
 
@@ -35,6 +36,15 @@ function headerValue(payload, name) {
   return payload?.headers?.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value || null;
 }
 
+function messageRefs(json) {
+  if (!json || typeof json !== 'object' || Array.isArray(json)
+      || (json.messages !== undefined && !Array.isArray(json.messages))) throw new Error('gmail: invalid message list');
+  return (json.messages || []).slice(0, 50).map((ref) => {
+    if (!ref || typeof ref.id !== 'string' || !ref.id.trim()) throw new Error('gmail: invalid message reference');
+    return ref;
+  });
+}
+
 // Extracts a plain-text body from Gmail's MIME part tree. Simplification
 // documented per docs/connectors.md: no attachment/multipart-alternative
 // preference logic beyond "first text/plain part found, else fall back to
@@ -54,7 +64,8 @@ function extractBody(payload) {
   return '';
 }
 
-function mapGmailMessage(msg, instance) {
+function mapGmailMessage(msg, instance, expectedId) {
+  if (!msg || typeof msg.id !== 'string' || !msg.id.trim() || msg.id !== expectedId) throw new Error('gmail: invalid message identity');
   const payload = msg.payload || {};
   const from = headerValue(payload, 'From') || '';
   const to = headerValue(payload, 'To') || '';
@@ -99,40 +110,47 @@ function getRowById(localId) {
 /** One bounded Gmail search page. The query is Gmail's server-side `q`
  * syntax; returned full messages are still checked against the requested
  * folder because `OR` inside user text must not broaden that constraint. */
-export async function listEmails({ folder, query } = {}, { fetchImpl = globalThis.fetch, dataDir, instance } = {}) {
+export async function listEmails({ folder, query } = {}, { fetchImpl = globalThis.fetch, dataDir, instance, timeoutMs, timers } = {}) {
   if (folder !== undefined && (typeof folder !== 'string' || !['inbox', 'sent', 'other'].includes(folder))) {
     throw new Error('gmail: folder must be inbox, sent, or other');
   }
   if (query !== undefined && (typeof query !== 'string' || query.length > 256 || !query.trim())) {
     throw new Error('gmail: query must be non-empty and at most 256 characters');
   }
-  const headers = await authHeaders(fetchImpl, dataDir, instance);
-  const url = new URL(`${API_BASE}/messages`);
-  const search = [folder && folder !== 'other' ? `in:${folder}` : '', query?.trim() || ''].filter(Boolean).join(' ');
-  if (search) url.searchParams.set('q', search);
-  url.searchParams.set('maxResults', '50');
-  const listRes = await fetchImpl(url.toString(), { headers });
-  if (!listRes.ok) throw new Error(`gmail: list failed (status ${listRes.status})`);
-  const listJson = await listRes.json();
-  const rows = [];
-  for (const ref of (listJson.messages || []).slice(0, 50)) {
-    const msgRes = await fetchImpl(`${API_BASE}/messages/${encodeURIComponent(ref.id)}?format=full`, { headers });
-    if (!msgRes.ok) throw new Error(`gmail: search message fetch failed (status ${msgRes.status})`);
-    const msg = await msgRes.json();
-    const mapped = mapGmailMessage(msg, instance);
-    if (folder && mapped.folder !== folder) continue;
-    rows.push(upsertRow(mapped));
-  }
-  return rows;
+  return withGoogleRead({ fetchImpl, timeoutMs, timers }, async ({ fetchImpl, check }) => {
+    const headers = await authHeaders(fetchImpl, dataDir, instance);
+    const url = new URL(`${API_BASE}/messages`);
+    const search = [folder && folder !== 'other' ? `in:${folder}` : '', query?.trim() || ''].filter(Boolean).join(' ');
+    if (search) url.searchParams.set('q', search);
+    url.searchParams.set('maxResults', '50');
+    const listRes = await fetchImpl(url.toString(), { headers });
+    if (!listRes.ok) throw new Error(`gmail: list failed (status ${listRes.status})`);
+    const listJson = await listRes.json();
+    const rows = [];
+    for (const ref of messageRefs(listJson)) {
+      const msgRes = await fetchImpl(`${API_BASE}/messages/${encodeURIComponent(ref.id)}?format=full`, { headers });
+      if (!msgRes.ok) throw new Error(`gmail: search message fetch failed (status ${msgRes.status})`);
+      const msg = await msgRes.json();
+      check();
+      const mapped = mapGmailMessage(msg, instance, ref.id);
+      if (folder && mapped.folder !== folder) continue;
+      rows.push(upsertRow(mapped));
+    }
+    return rows;
+  });
 }
 
-export async function getEmail(localId, { fetchImpl = globalThis.fetch, dataDir, instance } = {}) {
-  const headers = await authHeaders(fetchImpl, dataDir, instance);
-  const res = await fetchImpl(`${API_BASE}/messages/${encodeURIComponent(toGmailId(localId, instance))}?format=full`, { headers });
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`gmail: getEmail failed (status ${res.status})`);
-  const msg = await res.json();
-  return upsertRow(mapGmailMessage(msg, instance));
+export async function getEmail(localId, { fetchImpl = globalThis.fetch, dataDir, instance, timeoutMs, timers } = {}) {
+  return withGoogleRead({ fetchImpl, timeoutMs, timers }, async ({ fetchImpl, check }) => {
+    const headers = await authHeaders(fetchImpl, dataDir, instance);
+    const upstreamId = toGmailId(localId, instance);
+    const res = await fetchImpl(`${API_BASE}/messages/${encodeURIComponent(upstreamId)}?format=full`, { headers });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`gmail: getEmail failed (status ${res.status})`);
+    const msg = await res.json();
+    check();
+    return upsertRow(mapGmailMessage(msg, instance, upstreamId));
+  });
 }
 
 // SECURITY: `to` and `subject` become raw RFC 2822 header lines below. A CR
@@ -180,31 +198,37 @@ export async function sendEmail({ to, subject, body }, { fetchImpl = globalThis.
 
 /** Polled by sync-scheduler.js: fetch recent inbox messages, upsert, publish
  * email.received for any local id not previously seen. */
-export async function syncChanges({ db, eventBus, correlationId, fetchImpl = globalThis.fetch, dataDir, instance } = {}) {
-  const headers = await authHeaders(fetchImpl, dataDir, instance);
-  const url = new URL(`${API_BASE}/messages`);
-  url.searchParams.set('q', 'in:inbox newer_than:1d');
-  const listRes = await fetchImpl(url.toString(), { headers });
-  if (!listRes.ok) throw new Error(`gmail: syncChanges failed (status ${listRes.status})`);
-  const listJson = await listRes.json();
-  let count = 0;
-  const database = db || getDb();
-  for (const ref of listJson.messages || []) {
-    const localId = toLocalId(ref.id, instance);
-    const existing = database.prepare('SELECT * FROM emails WHERE id = ?').get(localId);
-    if (existing) continue;
-    const msgRes = await fetchImpl(`${API_BASE}/messages/${ref.id}?format=full`, { headers });
-    if (!msgRes.ok) continue;
-    const msg = await msgRes.json();
-    const after = upsertRow(mapGmailMessage(msg, instance));
-    eventBus?.publish({
-      type: 'email.received',
-      source: id,
-      subject: { type: 'email', id: after.id },
-      data: { after },
-      metadata: { correlationId, provenance: 'sync:gmail' },
-    });
-    count += 1;
-  }
-  return { synced: count };
+export async function syncChanges({ db, eventBus, correlationId, fetchImpl = globalThis.fetch, dataDir, instance, timeoutMs, timers } = {}) {
+  return withGoogleRead({ fetchImpl, timeoutMs, timers }, async ({ fetchImpl, check }) => {
+    const headers = await authHeaders(fetchImpl, dataDir, instance);
+    const url = new URL(`${API_BASE}/messages`);
+    url.searchParams.set('q', 'in:inbox newer_than:1d');
+    url.searchParams.set('maxResults', '50');
+    const listRes = await fetchImpl(url.toString(), { headers });
+    if (!listRes.ok) throw new Error(`gmail: syncChanges failed (status ${listRes.status})`);
+    const listJson = await listRes.json();
+    let count = 0;
+    const database = db || getDb();
+    for (const ref of messageRefs(listJson)) {
+      const localId = toLocalId(ref.id, instance);
+      const existing = database.prepare('SELECT * FROM emails WHERE id = ?').get(localId);
+      if (existing) continue;
+      const msgRes = await fetchImpl(`${API_BASE}/messages/${encodeURIComponent(ref.id)}?format=full`, { headers });
+      if (!msgRes.ok) continue; // Only deleted-message 404 reaches here.
+      const msg = await msgRes.json();
+      check();
+      const mapped = mapGmailMessage(msg, instance, ref.id);
+      if (mapped.folder !== 'inbox') continue; // Labels may change since listing.
+      const after = upsertRow(mapped);
+      eventBus?.publish({
+        type: 'email.received',
+        source: id,
+        subject: { type: 'email', id: after.id },
+        data: { after },
+        metadata: { correlationId, provenance: 'sync:gmail' },
+      });
+      count += 1;
+    }
+    return { synced: count };
+  });
 }

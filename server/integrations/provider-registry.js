@@ -23,6 +23,7 @@ import * as mockContacts from './mock-contacts-provider.js';
 import * as mockWeb from './mock-web-search-provider.js';
 import * as mockNotifications from './mock-notifications-provider.js';
 import * as googleCalendar from './google-calendar-provider.js';
+import { googleReadFailureMetadata } from './google-read-deadline.js';
 import * as gmail from './gmail-provider.js';
 import * as imap from './imap-provider.js';
 import * as googleContacts from './google-contacts-provider.js';
@@ -331,6 +332,15 @@ export function recordSyncSuccess(domain, instanceId, { db = getDb() } = {}) {
 }
 
 export function safeSyncError(err) {
+  const read = googleReadFailureMetadata(err);
+  if (read) {
+    const status = read.status === undefined ? '' : ` (status ${read.status})`;
+    if (read.kind === 'timeout') return 'Google sync timed out; check provider availability and retry later';
+    if (read.kind === 'authorization') return `Google sync authorization failed${status}; reconnect this account`;
+    if (read.kind === 'rate_limit') return `Google sync rate limited${status}; retry later`;
+    if (read.status !== undefined) return `Google sync unavailable${status}; retry later`;
+    return 'Sync failed; check account credentials and provider availability, then retry';
+  }
   const message = err?.message || '';
   const providerStatus = /^(gmail|google-calendar|google-contacts): (?:syncChanges|searchContacts) failed \(status ([1-5][0-9]{2})\)$/.exec(message);
   if (providerStatus) {

@@ -187,7 +187,19 @@ unchanged. Gmail/Contacts operation deadlines remain separate work.
 
 ## Gmail provider — real API calls
 
-- Sync: `GET https://gmail.googleapis.com/gmail/v1/users/me/messages?q=in:inbox+newer_than:1d`, then `GET .../messages/{id}?format=full` for unseen messages so the local row includes its plain-text body.
+List/search, get and sync use one 30-second operation deadline including token
+acquisition and every message body. Timeout discards late replies before mail,
+event or credential writes; completed earlier reads may remain cached. Failed
+search/sync is not full success: authorization/rate-limit/outage detail failures
+stop rather than being silently skipped. Sync health retains verified timeout,
+authorization and rate-limit status without trusting upstream error codes/text.
+Error text is sanitized; no retry,
+mock fallback or send is performed. Get-404 returns `null`; sync may skip a
+message deleted since listing, or one whose labels no longer include Inbox.
+Malformed references and missing/mismatched full-message IDs cannot create
+invented cache identities. Sending remains outside the read deadline boundary.
+
+- Sync: `GET https://gmail.googleapis.com/gmail/v1/users/me/messages?q=in:inbox+newer_than:1d&maxResults=50`, then `GET .../messages/{id}?format=full` for unseen messages so the local row includes its plain-text body. One page of at most 50 references; no exhaustive mailbox or older-mail coverage. A successful new-message poll does not prove every cached message's labels/body are current.
 - Read: `GET .../messages/{id}?format=full`, extract plain-text body from the MIME parts.
 - Search: `email.search` passes a bounded query to Gmail's `messages.list?q=` for the selected account, optionally with an inbox/sent folder filter, then fetches full messages for the first 50 matches. The result is one provider-ranked page, not proof of exhaustive mailbox coverage; Gmail query syntax applies. Detail-fetch failure fails the search instead of silently presenting an incomplete page. A folder is checked again against returned labels so query operators cannot broaden it. Personal mode never substitutes demo messages for failed Gmail search.
 - Send: `POST .../messages/send` with `raw` = base64url of a minimal hand-built RFC 2822 message (`To:`, `Subject:`, blank line, body) — no MIME/attachment support this phase, documented as a simplification.
