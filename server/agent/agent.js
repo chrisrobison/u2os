@@ -18,7 +18,7 @@ import * as defaultRunStore from './run-store.js';
 import { resolveActionReferences, resolvePriorActionReferences } from './result-references.js';
 import { validatePlan } from './plan-validator.js';
 import { getAgentAction, updateAgentAction } from '../policy/policy-engine.js';
-import { appendTurn, requireConversation, getPriorTurnsForModel, getPriorReadArtifacts } from './conversation-store.js';
+import { appendTurn, requireConversation, getPriorTurnsForModel, getEarlierTurnsForSummary, getPriorReadArtifacts } from './conversation-store.js';
 import { getGoalPriorReadArtifacts } from './goal-context.js';
 import { getGoalForRun } from './goal-store.js';
 
@@ -114,6 +114,7 @@ export class Agent {
     const goalRun = Boolean(linkedGoal);
     const planContext = await this.contextAssembler.assemble({ correlationId, actor, objective: text, allowEmbeddings: !goalRun });
     const conversationHistory = conversationId && !goalRun ? getPriorTurnsForModel(conversationId, actorId, runId) : [];
+    const conversationSummarySources = conversationId && !goalRun ? getEarlierTurnsForSummary(conversationId, actorId, runId) : [];
     const priorReadArtifacts = goalRun ? getGoalPriorReadArtifacts(linkedGoal.id, actorId, runId)
       : conversationId ? getPriorReadArtifacts(conversationId, actorId, runId) : [];
 
@@ -150,7 +151,7 @@ export class Agent {
       }
       let proposedPlan;
       try {
-        proposedPlan = await this.planner.plan({ ...planContext, observations, conversationHistory, priorReadArtifacts,
+        proposedPlan = await this.planner.plan({ ...planContext, observations, conversationHistory, conversationSummarySources, priorReadArtifacts,
           onModelCall: () => this.runStore.beginModelCall(runId, MAX_MODEL_CALLS_PER_MESSAGE),
           onUsage: (usage) => this.runStore.recordModelUsage(runId, usage),
         }, text);

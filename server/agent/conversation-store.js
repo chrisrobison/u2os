@@ -56,16 +56,26 @@ export function getConversationTurns(id, ownerId, limit = MAX_TURNS) {
  * or orphaned legacy rows. Classification is enforced again by Planner for
  * each actual model destination. */
 export function getPriorTurnsForModel(id, ownerId, currentRunId, limit = 6) {
-  requireConversation(id, ownerId);
   const bounded = Math.min(Math.max(Number(limit) || 6, 1), 6);
+  return priorAuthoredTurns(id, ownerId, currentRunId, bounded, 0);
+}
+
+/** The six authored turns immediately before the recent-history window.
+ * Durable sources only; no opaque summary cache or full transcript read. */
+export function getEarlierTurnsForSummary(id, ownerId, currentRunId) {
+  return priorAuthoredTurns(id, ownerId, currentRunId, 6, 6);
+}
+
+function priorAuthoredTurns(id, ownerId, currentRunId, limit, offset) {
+  requireConversation(id, ownerId);
   return getDb().prepare(`SELECT m.id AS turnId, m.role, substr(m.content, 1, 500) AS content,
     length(m.content) > 500 AS truncated, m.classification, m.run_id AS runId,
     r.status AS runStatus, r.objective_status AS objectiveStatus
     FROM conversation_messages m LEFT JOIN agent_runs r ON r.id = m.run_id
     WHERE m.session_id = ? AND m.role IN ('user', 'assistant')
     AND m.run_id IS NOT NULL AND m.run_id != ?
-    ORDER BY m.created_at DESC, m.rowid DESC LIMIT ?`)
-    .all(id, currentRunId, bounded).reverse().map((turn) => ({ ...turn, truncated: Boolean(turn.truncated) }));
+    ORDER BY m.created_at DESC, m.rowid DESC LIMIT ? OFFSET ?`)
+    .all(id, currentRunId, limit, offset).reverse().map((turn) => ({ ...turn, truncated: Boolean(turn.truncated) }));
 }
 
 /** Read-only historical data for a follow-up, never an executable result-ref
