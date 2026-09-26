@@ -80,6 +80,16 @@ Every included item keeps its own id (`factId`/`entityId`/`relationshipId`/`even
 
 Candidate ranking blends semantic similarity when an `embeddingProvider` is configured; without one, the remaining lexical, recency, confidence, authority, and structural signals still produce an inspectable score. `Planner`/the real `ModelProvider`s receive the assembled context as `retrieved_context` in the prompt payload (`server/agent/prompt-payload.js`), explicitly framed as **untrusted data retrieved from the user's own memory**, separate from the trusted `user_objective` field.
 
+Persisted goal linkage makes Agent request `allowEmbeddings: false`. When an
+embedding provider exists, ContextAssembler creates a request-local lexical
+assembler with the same owner, limits, registry, event bus and privacy policy;
+it never changes the shared provider during overlapping chat. Both candidate
+and per-person fact ranking therefore avoid unmetered auxiliary-model calls
+and cache writes in goal runs. This includes resumed planning/checkpoints.
+Ordinary chat/standalone optional embeddings remain available but are not
+included in the planning-model ledger; auxiliary reservations/usage accounting
+are unfinished, not silently represented as zero spending.
+
 Before that payload reaches a specific provider, `Planner` applies the data-processing privacy policy (docs/policies.md) -- a SEPARATE gate from tool authorization, governing what the model gets to SEE rather than what it's allowed to DO. Every item type ContextAssembler produces -- people, facts, commitments, and event summaries alike -- carries its own classification, and each is evaluated independently: a `sensitive`-classified person, commitment, or event is dropped from context bound for a remote model while still reaching a local one, and a person who is otherwise allowed through can still have individually-sensitive facts filtered out of their `facts` array. Every withholding, of any item type, is recorded on an `agent.context_restricted` event, never silent.
 
 Each returned candidate plan has a runtime-only weak association with the exact call's filtered observations, prior artifacts, provenance and provider identity (`Planner.getPlanContext`). Agent uses that association—not shared `last*` diagnostic fields—for reference validation and action/run audit identity. Overlapping messages, fallback calls and resumed runs cannot substitute another call's visible output. The association is not serialized into prompts, plan JSON or SQLite; model-supplied metadata is not authoritative and remains subject to the normal strict plan schema. A resumed run reconstructs observations from persisted confirmed actions and gets a fresh destination-filtered association for its next bounded call. Plans without runtime metadata fail closed for result references and use an unknown model identity.

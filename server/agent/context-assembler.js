@@ -73,13 +73,24 @@ export class ContextAssembler {
   /**
    * @returns {Promise<{toolRegistry: object, eventBus: object, correlationId: string, actor: object, personalContext: object}>}
    */
-  async assemble({ correlationId, actor, objective = '' } = {}) {
+  async assemble({ correlationId, actor, objective = '', allowEmbeddings = true } = {}) {
+    // Auxiliary embedding calls have no run/goal reservation or usage contract
+    // yet. A bounded goal uses a request-local lexical assembler, never a
+    // temporary mutation of the shared provider (other chats may overlap).
+    const assembler = !allowEmbeddings && this.embeddingProvider ? new ContextAssembler({
+      ...this.options,
+      toolRegistry: this.toolRegistry,
+      eventBus: this.eventBus,
+      ownerEntityId: this.ownerEntityId,
+      dataProcessingPolicy: this.dataProcessingPolicy,
+      embeddingProvider: null,
+    }) : this;
     return {
       toolRegistry: this.toolRegistry,
       eventBus: this.eventBus,
       correlationId,
       actor,
-      personalContext: await this.assemblePersonalContext(objective, { correlationId, actor }),
+      personalContext: await assembler.assemblePersonalContext(objective, { correlationId, actor }),
     };
   }
 

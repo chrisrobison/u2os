@@ -22,6 +22,17 @@ Use the returned `revision` as `expectedRevision` on `PUT`; a stale edit returns
 
 Only one unfinished run is allowed per goal; a new pass waits until that run is resolved. Run count and model-call budgets are enforced before work starts; provider-reported tokens are accumulated and checked before accepting a model plan or beginning another step. Token spending is only as complete as provider usage reporting; unknown usage is not invented. Cost remains unavailable. Runs, usage, and failures persist across restart. The additive `agent_runs.goal_id` migration leaves unrelated runs and existing data intact. No run is automatically retried just because an HTTP response was lost: inspect the goal's linked runs before invoking another pass.
 
+Goal context retrieval uses bounded lexical/recency/provenance ranking even if
+an optional embedding model is configured. Auxiliary embedding requests lack
+run/goal reservations and usage reporting, so goal runs cannot invoke them or
+write new embedding cache entries. This applies to initial and resumed runs,
+including after restart; useful structured context still receives the actual
+planner destination's privacy filter. Ordinary chat/standalone retrieval keeps
+configured semantic ranking, using separate request-local state. Its optional
+embedding usage is **not** included in the planning-call/token ledger; do not
+treat that ledger as a complete ordinary-chat spending total. Accountable
+auxiliary-model metering is required before enabling embeddings for goals.
+
 The owner can inspect a linked run in the Goals view after reload. `GET /api/goals/:id/runs/:runId` checks both goal ownership and the exact run link, then returns current run/step statuses, action IDs, the stored run response, and bounded previews of **executed** read results, with `Cache-Control: no-store`. It omits action arguments and account bindings. Credential-like result fields are redacted; large previews are marked truncated. Pending, blocked, failed, and uncertain steps have no completed-result preview. The UI renders provider/model text as text, not markup. Results are evidence to review, not proof that the completion criteria were met.
 
 **Pause goal**, **Resume goal**, and **Cancel goal** persist across restart. `POST /api/goals/:id/control` takes `{ operation: "pause" | "resume" | "cancel", expectedRevision }`. A changed-state request with a stale revision returns 409; same-state retries are harmless. Pause/cancel blocks new runs immediately and requests safe cancellation of unfinished linked runs. Each run is bound to its original goal revision; a lifecycle revision invalidates old planning, steps, and queued work even after resume. The additive snapshot migration binds older runs once because their active goal scope was immutable before these controls shipped. A provider call already in flight retains its real outcome. Resume permits a new bounded pass only after unfinished work is resolved; it does not replay the old run or automatically start work. Goal cancellation is terminal. Spending and evidence are never reset or deleted by these controls.
