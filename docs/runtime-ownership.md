@@ -65,6 +65,6 @@ offline commands above, not arbitrary
 external database/config writers, network filesystems, cross-host copies or
 restored homes at different paths. Backup creation also acquires this guard
 through private staging and publication; restore does not yet participate.
-Outer-encrypted archives and inactive-by-default isolated restore remain
-separate work. Stop older releases before upgrading: they do not participate
+Opt-in authenticated encrypted archives are supported, but inactive-by-default
+isolated restore remains separate work. Stop older releases before upgrading: they do not participate
 in this guard protocol. No live owner-account or hardware validation was used.

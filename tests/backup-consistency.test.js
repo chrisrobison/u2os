@@ -47,7 +47,7 @@ test('coherent backup captures WAL commits, row IDs, encrypted credentials and u
   assert.ok(!listing.includes('u2os.sqlite-wal'));
   assert.ok(!listing.includes('u2os.sqlite-shm'));
   const destination = path.join(root, 'isolated-restore');
-  restoreBackup({ archivePath: output, dataDir: destination });
+  await restoreBackup({ archivePath: output, dataDir: destination });
   const restored = new DatabaseSync(path.join(destination, 'db', 'u2os.sqlite'), { readOnly: true });
   try {
     assert.equal(restored.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
@@ -100,7 +100,7 @@ test('concurrent independent homes cannot clobber the same published archive', (
   const outcomes = await Promise.allSettled([createBackup({ dataDir: home, outputPath: output }), createBackup({ dataDir: second, outputPath: output })]);
   assert.equal(outcomes.filter((result) => result.status === 'fulfilled').length, 1);
   assert.match(outcomes.find((result) => result.status === 'rejected').reason.message, /already exists/);
-  const destination = path.join(root, 'isolated-winner'); restoreBackup({ archivePath: output, dataDir: destination });
+  const destination = path.join(root, 'isolated-winner'); await restoreBackup({ archivePath: output, dataDir: destination });
   assert.equal(fs.readFileSync(path.join(destination, 'marker.txt'), 'utf8'), outcomes[0].status === 'fulfilled' ? 'first source' : 'second source');
   assertNoStage(root);
 }));
@@ -129,7 +129,7 @@ test('backup preserves old schemas without adding current columns', () => fixtur
   db.exec("CREATE TABLE facts (id TEXT PRIMARY KEY, value TEXT); INSERT INTO facts (rowid,id,value) VALUES (77,'fixture_old_fact','Keep this record');");
   db.close();
   await createBackup({ dataDir: home, outputPath: output });
-  const destination = path.join(root, 'isolated-old-schema'); restoreBackup({ archivePath: output, dataDir: destination });
+  const destination = path.join(root, 'isolated-old-schema'); await restoreBackup({ archivePath: output, dataDir: destination });
   for (const directory of [home, destination]) {
     const checked = new DatabaseSync(path.join(directory, 'db', 'u2os.sqlite'), { readOnly: true });
     try {

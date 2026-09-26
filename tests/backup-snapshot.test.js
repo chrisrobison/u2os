@@ -33,7 +33,7 @@ test('backup-snapshot: full round trip -- snapshot a seeded U2OS_HOME, restore i
     // Destination starts genuinely empty.
     assert.equal(fs.readdirSync(destHome).length, 0);
 
-    const restoredInto = restoreBackup({ archivePath: outputPath, dataDir: destHome });
+    const restoredInto = await restoreBackup({ archivePath: outputPath, dataDir: destHome });
     assert.equal(restoredInto, destHome);
 
     assert.equal(
@@ -66,7 +66,7 @@ test('backup-snapshot: restore refuses a non-empty target without --force, and p
     // Make the destination non-empty with unrelated pre-existing content.
     fs.writeFileSync(path.join(destHome, 'pre-existing.txt'), 'do-not-clobber-me-silently');
 
-    assert.throws(
+    await assert.rejects(
       () => restoreBackup({ archivePath: outputPath, dataDir: destHome }),
       /non-empty/i,
       'restore into a non-empty dir without --force must refuse'
@@ -75,7 +75,7 @@ test('backup-snapshot: restore refuses a non-empty target without --force, and p
     assert.equal(fs.readFileSync(path.join(destHome, 'pre-existing.txt'), 'utf8'), 'do-not-clobber-me-silently');
 
     // With --force, it proceeds and the archive's content lands.
-    const restoredInto = restoreBackup({ archivePath: outputPath, dataDir: destHome, force: true });
+    const restoredInto = await restoreBackup({ archivePath: outputPath, dataDir: destHome, force: true });
     assert.equal(restoredInto, destHome);
     assert.equal(fs.readFileSync(path.join(destHome, 'db', 'marker.txt'), 'utf8'), 'fresh-content');
   } finally {

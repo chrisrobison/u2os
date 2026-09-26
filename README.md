@@ -158,7 +158,7 @@ Restore a backup:
 npm run restore -- /path/to/u2os-backup.tar.gz
 ```
 
-Backup output is private, outside the source home and never overwrites an existing archive. Committed SQLite WAL data is captured through its backup API; source links/special files are refused. Current archives are **not outer-encrypted**: they include the credential master key and are as sensitive as the live directory. Restore safety and inactive-copy execution safeguards remain unfinished; only restore to an isolated destination and do not run original/restored copies simultaneously. A portable, credential-free JSON export is also available from `GET /api/export`.
+Prefer `npm run backup -- --encrypt /private/backup-location/u2os.tar.gz.enc` for authenticated encryption with an independent masked passphrase. Default legacy `.tar.gz` creation is explicitly **UNENCRYPTED** and includes the credential master key. Output is private, outside the source home and never overwrites an existing archive; SQLite captures committed WAL data and source links/special files are refused. See [backup/encryption guidance](docs/backups.md). Restore safety and inactive-copy safeguards remain unfinished; use an isolated destination and never run original/restored copies simultaneously. A portable, credential-free JSON export is available from `GET /api/export`.
 
 ## Deployment
 

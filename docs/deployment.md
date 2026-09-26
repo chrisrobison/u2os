@@ -13,7 +13,7 @@ The [local runtime ownership guard](runtime-ownership.md) prevents simultaneous
 executors for one canonical home and retains ownership through started-handler
 and background drain. Setup-owner, seed, maintenance and backup creation use
 the same lock and require a stopped runtime. Coherent offline snapshot creation
-is supported; encrypted archives and isolated inactive recovery remain unfinished.
+is supported with opt-in authenticated encryption; isolated inactive recovery remains unfinished.
 The guard is not a restored-copy lock. Stop older releases before
 upgrading, because they do not participate in the new guard protocol.
 
@@ -65,7 +65,7 @@ Stop the runtime and wait for shutdown before `npm run backup`. Creation holds t
 
 The completed archive is mode 0600, published without overwriting an existing file, and must be outside the source home (including parent-directory aliases). This is an offline cooperative consistency strategy, not support for arbitrary external writers, older releases or network filesystems. Partial staging is cleaned on normal failure; after process interruption an owner may review private `.u2os-backup-stage-*` directories in the output parent. These can contain credentials. Never delete an active staging directory or runtime guard.
 
-Current `.tar.gz` archives remain outer-unencrypted and include the credential master key. Keep them as private as the live home. Encryption and recovery are subsequent slices. `npm run restore -- /path/to/archive.tar.gz` is still the legacy extraction path: do not merge into a populated destination or run original/restored copies concurrently. Use an isolated destination for validation; no automatic inactive-copy safeguard exists yet. Authenticated `GET /api/export` produces portable JSON without connector secrets. U2OS has no built-in TLS termination, supported public-internet recipe, Windows service, distributed limiter, or production rollback system.
+Use `npm run backup -- --encrypt /private/backup-location/u2os.tar.gz.enc` for authenticated encryption with an independent masked passphrase (or an explicitly supplied noninteractive secret environment variable). Encrypted restore authenticates the complete archive privately before extraction, and `--encrypt` requires encrypted input without plaintext fallback. See [format, secret handling and compatibility guidance](backups.md). Default legacy `.tar.gz` creation remains explicitly unencrypted and includes the credential master key. Restore still uses legacy extraction after authentication: do not merge into a populated destination or run original/restored copies concurrently. Use an isolated destination; no automatic inactive-copy safeguard exists yet. Authenticated `GET /api/export` produces portable JSON without connector secrets. U2OS has no built-in TLS termination, supported public-internet recipe, Windows service, distributed limiter, or production rollback system.
 
 `npm run maintain` runs SQLite and event-log integrity checks. `npm run maintain -- --retention-days 365` previews event pruning; add `--apply` only after taking a backup. Applied retention writes a `system.event_retention_applied` audit event before removing older rows. Retention is intentionally manual rather than an automatic background deletion policy.
 
