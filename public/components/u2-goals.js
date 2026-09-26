@@ -2,7 +2,7 @@ import * as api from '../services/api.js';
 
 const DOMAINS = ['web', 'email', 'calendar', 'contacts', 'tasks'];
 
-/** Owner-facing draft editor. It does not start, schedule, or claim work. */
+/** Owner-facing goal editor and manual run evidence viewer. */
 export class U2Goals extends HTMLElement {
   connectedCallback() {
     if (this._built) return;
@@ -36,6 +36,7 @@ export class U2Goals extends HTMLElement {
           <div class="goal-form__actions"><button type="submit" class="btn btn-primary">Save draft</button><button type="button" class="btn goal-run" hidden>Run once (read-only)</button><button type="button" class="btn goal-reload" hidden>Reload saved goal</button></div>
           <p class="goal-message" role="status" aria-live="polite"></p>
           <div class="goal-runs" aria-label="Related runs"></div>
+          <section class="goal-evidence" aria-label="Selected run evidence"></section>
         </form>
       </div>`;
     this._list = this.querySelector('.goal-list');
@@ -107,6 +108,7 @@ export class U2Goals extends HTMLElement {
     this._setDraftEditable(true);
     this.querySelector('.goal-form__state').textContent = 'Manual only · Next wake-up: none · Spent: 0 runs, 0 model calls, 0 tokens';
     this.querySelector('.goal-runs').replaceChildren();
+    this.querySelector('.goal-evidence').replaceChildren();
     this._message.textContent = '';
     this._message.classList.remove('is-error');
     this._markSelected();
@@ -135,10 +137,14 @@ export class U2Goals extends HTMLElement {
       this.querySelector('.goal-form__state').textContent = `Manual only · Next wake-up: none · Spent: ${goal.spent.runs} runs, ${goal.spent.modelCalls} model calls, ${goal.spent.tokens} reported tokens${goal.spent.tokenUsageComplete ? '' : ' (usage incomplete)'}${goal.spent.monetaryCost.available ? '' : ' (cost unavailable)'}`;
       const runs = this.querySelector('.goal-runs');
       runs.replaceChildren();
+      this.querySelector('.goal-evidence').replaceChildren();
       for (const run of goal.relatedRuns) {
-        const line = document.createElement('p');
-        line.textContent = `Run ${run.id} · ${run.status} · objective ${run.objectiveStatus}`;
-        runs.appendChild(line);
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'goal-runs__item';
+        button.textContent = `Inspect run ${run.id} · ${run.status} · objective ${run.objectiveStatus}`;
+        button.addEventListener('click', () => this._openRun(goal.id, run.id));
+        runs.appendChild(button);
       }
       this._message.textContent = '';
       this._message.classList.remove('is-error');
@@ -193,13 +199,56 @@ export class U2Goals extends HTMLElement {
       const result = await api.runGoalOnce(id);
       if (this._goalId !== id) return;
       await this._select(id);
-      if (this._goalId === id) this._message.textContent = `Run ${result.runId} returned. Review its status; the goal objective is not automatically verified.`;
+      if (this._goalId === id && await this._openRun(id, result.runId)) {
+        this._message.textContent = `Run ${result.runId} returned. Review its status; the goal objective is not automatically verified.`;
+      }
     } catch (error) {
       if (this._goalId === id) {
         await this._select(id);
         this._showError(`Run did not complete: ${error.message}. Review the linked run before retrying.`);
       }
     } finally { button.disabled = false; }
+  }
+
+  async _openRun(goalId, runId) {
+    const generation = this._generation;
+    const request = this._evidenceRequest = (this._evidenceRequest || 0) + 1;
+    const panel = this.querySelector('.goal-evidence');
+    panel.replaceChildren();
+    try {
+      const evidence = await api.getGoalRunEvidence(goalId, runId);
+      if (generation !== this._generation || request !== this._evidenceRequest || goalId !== this._goalId) return;
+      const heading = document.createElement('h3');
+      heading.textContent = `Run ${evidence.runId} · ${evidence.status} · objective ${evidence.objectiveStatus}`;
+      panel.appendChild(heading);
+      if (evidence.response !== null) {
+        const label = document.createElement('p');
+        label.textContent = `Run response (not verified completion)${evidence.responseTruncated ? ' · truncated' : ''}`;
+        panel.appendChild(label);
+        const response = document.createElement('pre');
+        response.textContent = evidence.response;
+        panel.appendChild(response);
+      }
+      for (const step of evidence.steps) {
+        const label = document.createElement('p');
+        label.textContent = `Step ${step.index} · ${step.tool} · ${step.status}${step.actionId ? ` · action ${step.actionId}` : ''}`;
+        panel.appendChild(label);
+        if (step.status === 'executed' && step.resultPreview !== null) {
+          const result = document.createElement('pre');
+          result.textContent = `${step.resultPreview}${step.resultTruncated ? '\n[preview truncated]' : ''}`;
+          panel.appendChild(result);
+        }
+      }
+      if (evidence.stepsTruncated) {
+        const warning = document.createElement('p');
+        warning.textContent = 'Additional steps omitted from this preview.';
+        panel.appendChild(warning);
+      }
+      return true;
+    } catch (error) {
+      if (generation === this._generation && request === this._evidenceRequest && goalId === this._goalId) this._showError(`Couldn't inspect run: ${error.message}`);
+      return false;
+    }
   }
 
   _showError(message) {

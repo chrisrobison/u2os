@@ -77,6 +77,10 @@ export function runGoalOnce(id) {
   return request(`/api/goals/${encodeURIComponent(id)}/runs`, { method: 'POST', headers: JSON_HEADERS, body: '{}' });
 }
 
+export function getGoalRunEvidence(goalId, runId) {
+  return request(`/api/goals/${encodeURIComponent(goalId)}/runs/${encodeURIComponent(runId)}`, { cache: 'no-store' });
+}
+
 export function saveConnectorConfig(endpoint, values) {
   return request(endpoint, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(values) });
 }

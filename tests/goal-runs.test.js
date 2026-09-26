@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { getDb, closeAllForTests } from '../server/db/connection.js';
-import { createGoalDraft, getGoalDraft, updateGoalDraft } from '../server/agent/goal-store.js';
+import { createGoalDraft, getGoalDraft, getGoalRunEvidence, updateGoalDraft } from '../server/agent/goal-store.js';
 import { Agent } from '../server/agent/agent.js';
 import { EventBus } from '../server/events/event-bus.js';
 import { ToolRegistry } from '../server/tools/registry.js';
@@ -156,6 +156,39 @@ test('old run table gains goal link without changing preexisting runs', () => wi
   assert.ok(getDb().prepare('PRAGMA table_info(agent_runs)').all().some((column) => column.name === 'goal_id'));
 }));
 
+test('owner-only evidence is bounded, redacted, and durable; blocked steps have no result preview', () => withHome(async () => {
+  const goal = createGoalDraft('owner', draft);
+  const other = createGoalDraft('owner', draft);
+  const agent = fixture(async () => ({ reasoning_summary: 'inspect', response: '<script>untrusted response</script>', actions: [
+    { tool: 'web.search', arguments: { query: 'private query' } },
+    { tool: 'email.send', arguments: { query: 'blocked' } },
+  ] }), []);
+  agent.toolRegistry.get('web.search').execute = async () => ({ title: '<script>untrusted result</script>', accessToken: 'must-redact',
+    body: 'x'.repeat(5000) });
+  const result = await agent.handleMessage({ text: goal.objective, actorId: 'owner', goalId: goal.id });
+  const blocked = getDb().prepare('SELECT action_id FROM agent_run_steps WHERE run_id = ? AND step_index = 1').get(result.runId);
+  getDb().prepare("UPDATE agent_actions SET result = ? WHERE id = ?").run(JSON.stringify({ secret: 'not-evidence' }), blocked.action_id);
+  let evidence = getGoalRunEvidence(goal.id, 'owner', result.runId);
+  assert.equal(evidence.objectiveStatus, 'unverified');
+  assert.equal(evidence.steps[0].status, 'executed');
+  assert.ok(evidence.steps[0].actionId);
+  assert.match(evidence.steps[0].resultPreview, /untrusted result/);
+  assert.match(evidence.steps[0].resultPreview, /\[redacted\]/);
+  assert.ok(!evidence.steps[0].resultPreview.includes('must-redact'));
+  assert.equal(evidence.steps[0].resultTruncated, true);
+  assert.equal(evidence.steps[1].status, 'blocked');
+  assert.equal(evidence.steps[1].resultPreview, null);
+  assert.ok(!JSON.stringify(evidence).includes('private query'));
+  assert.ok(!JSON.stringify(evidence).includes('accountBinding'));
+  assert.ok(!JSON.stringify(evidence).includes('not-evidence'));
+  assert.throws(() => getGoalRunEvidence(goal.id, 'other', result.runId), { status: 404 });
+  assert.throws(() => getGoalRunEvidence(other.id, 'owner', result.runId), { status: 404 });
+  closeAllForTests(); getDb();
+  evidence = getGoalRunEvidence(goal.id, 'owner', result.runId);
+  assert.equal(evidence.steps[0].status, 'executed');
+  assert.match(evidence.steps[0].resultPreview, /untrusted result/);
+}));
+
 test('authenticated goal run API links a bounded run and rejects unauthenticated access', () => withHome(async () => {
   const handle = await startServer({ port: 0 });
   const base = `http://127.0.0.1:${handle.port}`;
@@ -174,11 +207,23 @@ test('authenticated goal run API links a bounded run and rejects unauthenticated
     assert.equal(run.goalId, goal.id);
     assert.equal(getRun(run.runId).goalId, goal.id);
     assert.equal(getRun(run.runId).objectiveStatus, 'unverified');
+    assert.equal((await nativeFetch(`${base}/api/goals/${goal.id}/runs/${run.runId}`)).status, 401);
+    const evidenceResponse = await fetch(`${base}/api/goals/${goal.id}/runs/${run.runId}`);
+    assert.equal(evidenceResponse.status, 200);
+    assert.equal(evidenceResponse.headers.get('cache-control'), 'no-store');
+    const evidence = await evidenceResponse.json();
+    assert.equal(evidence.runId, run.runId);
+    assert.equal(evidence.objectiveStatus, 'unverified');
+    assert.ok(!('arguments' in evidence));
     const current = await (await fetch(`${base}/api/goals/${goal.id}`)).json();
     assert.equal(current.relatedRuns[0].id, run.runId);
     assert.equal(current.spent.runs, 1);
     assert.equal(current.manualRunAvailable, false);
     assert.equal((await fetch(`${base}/api/goals/${goal.id}/runs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status, 409);
     assert.equal((await fetch(`${base}/api/goals/missing/runs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status, 404);
+    assert.equal((await fetch(`${base}/api/goals/missing/runs/${run.runId}`)).status, 404);
+    const otherGoal = await (await fetch(`${base}/api/goals`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(draft) })).json();
+    assert.equal((await fetch(`${base}/api/goals/${otherGoal.id}/runs/${run.runId}`)).status, 404);
   } finally { handle.server.closeAllConnections(); await new Promise((resolve) => handle.server.close(resolve)); }
 }));
