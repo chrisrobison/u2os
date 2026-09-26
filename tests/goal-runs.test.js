@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { getDb, closeAllForTests } from '../server/db/connection.js';
-import { createGoalDraft, getGoalDraft, getGoalRunEvidence, updateGoalDraft } from '../server/agent/goal-store.js';
+import { controlGoal, createGoalDraft, getGoalDraft, getGoalRunEvidence, updateGoalDraft } from '../server/agent/goal-store.js';
 import { Agent } from '../server/agent/agent.js';
 import { EventBus } from '../server/events/event-bus.js';
 import { ToolRegistry } from '../server/tools/registry.js';
@@ -119,7 +119,7 @@ test('metered goal token cap discards a late plan before an effect', () => withH
   await assert.rejects(agent.handleMessage({ text: goal.objective, actorId: 'owner', goalId: goal.id }), { status: 409 });
 }));
 
-test('a changed goal scope stops a queued read before execution', () => withHome(async () => {
+test('a lifecycle revision stops an old queued read even after resume', () => withHome(async () => {
   const goal = createGoalDraft('owner', draft);
   const effects = [];
   const agent = fixture(async () => ({ reasoning_summary: 'search', actions: [{ tool: 'web.search', arguments: { query: 'roles' } }] }), effects);
@@ -130,7 +130,8 @@ test('a changed goal scope stops a queued read before execution', () => withHome
   getDb().prepare(`INSERT INTO agent_run_steps (run_id, step_index, tool, arguments, status, action_id, created_at, updated_at)
     VALUES (?, 0, 'web.search', ?, 'running', ?, ?, ?)`).run(runId, JSON.stringify({ query: 'roles' }), action.id, now, now);
   enqueueAction({ actionId: action.id, correlationId: 'queued_goal_read', tool: 'web.search', arguments: { query: 'roles' } });
-  getDb().prepare("UPDATE goals SET status = 'paused' WHERE id = ?").run(goal.id);
+  controlGoal(goal.id, 'owner', { operation: 'pause', expectedRevision: 1 });
+  controlGoal(goal.id, 'owner', { operation: 'resume', expectedRevision: 2 });
   await agent.actionQueueWorker.processAction(action.id);
   assert.deepEqual(effects, []);
   assert.equal(getRun(runId).steps[0].status, 'blocked');

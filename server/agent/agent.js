@@ -328,7 +328,7 @@ export class Agent {
     // inspectable in the audit trail, never silent.
     const voiceEvaluation = applyVoiceAuthorization({ evaluation: rawEvaluation, voice });
     const goal = runId ? getGoalForRun(runId) : null;
-    const goalBlocked = goal && (goal.status !== 'active' || tool.category !== 'read' ||
+    const goalBlocked = goal && (goal.status !== 'active' || goal.revision !== goal.runRevision || tool.category !== 'read' ||
       !goal.permittedScope.domains.includes(tool.domain));
     const scopedEvaluation = goalBlocked && !voiceEvaluation.blocked
       ? { ...voiceEvaluation, blocked: true, requiresApproval: false,

@@ -81,6 +81,11 @@ export function getGoalRunEvidence(goalId, runId) {
   return request(`/api/goals/${encodeURIComponent(goalId)}/runs/${encodeURIComponent(runId)}`, { cache: 'no-store' });
 }
 
+export function controlGoal(id, operation, expectedRevision) {
+  return request(`/api/goals/${encodeURIComponent(id)}/control`, { method: 'POST', headers: JSON_HEADERS,
+    body: JSON.stringify({ operation, expectedRevision }) });
+}
+
 export function saveConnectorConfig(endpoint, values) {
   return request(endpoint, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(values) });
 }

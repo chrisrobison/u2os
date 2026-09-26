@@ -76,7 +76,7 @@ export class ActionQueueWorker {
 
     if (runId) {
       const goal = getGoalForRun(runId);
-      if (goal && (goal.status !== 'active' || tool.category !== 'read' || !goal.permittedScope.domains.includes(tool.domain))) {
+      if (goal && (goal.status !== 'active' || goal.revision !== goal.runRevision || tool.category !== 'read' || !goal.permittedScope.domains.includes(tool.domain))) {
         updateAgentAction(action.id, { status: 'blocked', result: { error: 'Goal scope is no longer valid' } });
         return this._stop(item, 'cancelled', 'Goal scope is no longer valid', 'owner_attention_required', action);
       }

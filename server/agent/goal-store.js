@@ -33,10 +33,10 @@ export function listGoalDrafts(ownerId, limit = 20) {
 
 /** A goal's stored scope, not model text, is authoritative for linked runs. */
 export function getGoalForRun(runId) {
-  const link = getDb().prepare('SELECT goal_id FROM agent_runs WHERE id = ?').get(runId);
+  const link = getDb().prepare('SELECT goal_id, goal_revision FROM agent_runs WHERE id = ?').get(runId);
   if (!link?.goal_id) return null;
   const row = getDb().prepare('SELECT * FROM goals WHERE id = ?').get(link.goal_id);
-  return row ? { id: row.id, status: row.status, permittedScope: JSON.parse(row.permitted_scope) }
+  return row ? { id: row.id, status: row.status, revision: row.revision, runRevision: link.goal_revision, permittedScope: JSON.parse(row.permitted_scope) }
     : { id: link.goal_id, status: 'missing', permittedScope: { domains: [] } };
 }
 
@@ -105,6 +105,27 @@ export function updateGoalDraft(id, ownerId, input) {
     JSON.stringify(data.completionCriteria), JSON.stringify(data.constraints), JSON.stringify(data.permittedScope),
     JSON.stringify(data.budgets), now, id, ownerId, input.expectedRevision);
   if (changed.changes !== 1) throw httpError(409, 'Goal changed; reload before editing');
+  return getGoalDraft(id, ownerId);
+}
+
+/** Lifecycle changes never reset usage or replay a prior run. Same-state
+ * retries are harmless; a stale request cannot change the current state. */
+export function controlGoal(id, ownerId, input) {
+  if (!isObject(input) || Object.keys(input).some((key) => !['operation', 'expectedRevision'].includes(key)) ||
+      !['pause', 'resume', 'cancel'].includes(input.operation) || !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1) {
+    throw httpError(400, 'operation and a positive expectedRevision are required');
+  }
+  const current = getGoalDraft(id, ownerId);
+  const target = input.operation === 'pause' ? 'paused' : input.operation === 'cancel' ? 'cancelled'
+    : current.spent.runs ? 'active' : 'draft';
+  if (current.status === target) return current;
+  if (current.status === 'cancelled') throw httpError(409, 'Cancelled goals cannot be resumed');
+  if (current.revision !== input.expectedRevision) throw httpError(409, 'Goal changed; reload before changing its state');
+  if (input.operation === 'resume' && current.status !== 'paused') throw httpError(409, 'Only paused goals can be resumed');
+  const changed = getDb().prepare(`UPDATE goals SET status = ?, revision = revision + 1, updated_at = ?
+    WHERE id = ? AND owner_id = ? AND revision = ? AND status = ?`).run(target, new Date().toISOString(), id, ownerId,
+      input.expectedRevision, current.status);
+  if (changed.changes !== 1) throw httpError(409, 'Goal changed; reload before changing its state');
   return getGoalDraft(id, ownerId);
 }
 

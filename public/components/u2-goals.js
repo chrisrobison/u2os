@@ -34,6 +34,7 @@ export class U2Goals extends HTMLElement {
           </div>
           <p class="goal-form__note">Manual runs use read-only tools in the selected domains. This does not authorize consequential actions or start automation.</p>
           <div class="goal-form__actions"><button type="submit" class="btn btn-primary">Save draft</button><button type="button" class="btn goal-run" hidden>Run once (read-only)</button><button type="button" class="btn goal-reload" hidden>Reload saved goal</button></div>
+          <div class="goal-controls" hidden><button type="button" class="btn" data-goal-control="pause">Pause goal</button><button type="button" class="btn" data-goal-control="resume">Resume goal</button><button type="button" class="btn" data-goal-control="cancel">Cancel goal</button></div>
           <p class="goal-message" role="status" aria-live="polite"></p>
           <div class="goal-runs" aria-label="Related runs"></div>
           <section class="goal-evidence" aria-label="Selected run evidence"></section>
@@ -45,7 +46,10 @@ export class U2Goals extends HTMLElement {
     this.querySelector('.goal-new').addEventListener('click', () => this._newDraft());
     this.querySelector('.goal-reload').addEventListener('click', () => this._select(this._goalId));
     this.querySelector('.goal-run').addEventListener('click', () => this._run());
+    this.querySelectorAll('[data-goal-control]').forEach((button) => button.addEventListener('click', () => this._control(button.dataset.goalControl)));
     this._form.addEventListener('submit', (event) => { event.preventDefault(); this._save(); });
+    this._setDraftEditable(false);
+    this.querySelector('.goal-new').disabled = true;
     this._load();
   }
 
@@ -59,6 +63,7 @@ export class U2Goals extends HTMLElement {
       else if (goals.length) await this._select(goals[0].id);
       else this._newDraft();
     } catch (error) { this._showError(`Couldn't load goal drafts: ${error.message}`); }
+    finally { this.querySelector('.goal-new').disabled = false; }
   }
 
   _renderList(goals) {
@@ -74,7 +79,7 @@ export class U2Goals extends HTMLElement {
       button.type = 'button';
       button.className = 'goal-list__item';
       button.textContent = goal.objective;
-      button.title = `Draft · revision ${goal.revision}`;
+      button.title = `${goal.status} · revision ${goal.revision}`;
       button.dataset.goalId = goal.id;
       button.addEventListener('click', () => this._select(goal.id));
       this._list.appendChild(button);
@@ -105,6 +110,7 @@ export class U2Goals extends HTMLElement {
     this.querySelector('.goal-form__title').textContent = 'New draft';
     this.querySelector('.goal-reload').hidden = true;
     this.querySelector('.goal-run').hidden = true;
+    this.querySelector('.goal-controls').hidden = true;
     this._setDraftEditable(true);
     this.querySelector('.goal-form__state').textContent = 'Manual only · Next wake-up: none · Spent: 0 runs, 0 model calls, 0 tokens';
     this.querySelector('.goal-runs').replaceChildren();
@@ -130,9 +136,16 @@ export class U2Goals extends HTMLElement {
       this._form.maxRuns.value = String(goal.budgets.maxRuns);
       this._form.maxModelCalls.value = String(goal.budgets.maxModelCalls);
       this._form.maxTokens.value = String(goal.budgets.maxTokens);
-      this.querySelector('.goal-form__title').textContent = `${goal.status === 'draft' ? 'Draft' : 'Active (manual only)'} · revision ${goal.revision}`;
+      const stateLabel = { draft: 'Draft', active: 'Active (manual only)', paused: 'Paused', cancelled: 'Cancelled' }[goal.status] || goal.status;
+      this.querySelector('.goal-form__title').textContent = `${stateLabel} · revision ${goal.revision}`;
       this.querySelector('.goal-reload').hidden = false;
       this.querySelector('.goal-run').hidden = !goal.manualRunAvailable;
+      this.querySelector('.goal-controls').hidden = goal.status === 'cancelled';
+      this.querySelectorAll('[data-goal-control]').forEach((button) => {
+        button.hidden = button.dataset.goalControl === 'resume' ? goal.status !== 'paused'
+          : button.dataset.goalControl === 'pause' ? goal.status === 'paused' : false;
+        button.disabled = false;
+      });
       this._setDraftEditable(goal.status === 'draft');
       this.querySelector('.goal-form__state').textContent = `Manual only · Next wake-up: none · Spent: ${goal.spent.runs} runs, ${goal.spent.modelCalls} model calls, ${goal.spent.tokens} reported tokens${goal.spent.tokenUsageComplete ? '' : ' (usage incomplete)'}${goal.spent.monetaryCost.available ? '' : ' (cost unavailable)'}`;
       const runs = this.querySelector('.goal-runs');
@@ -249,6 +262,22 @@ export class U2Goals extends HTMLElement {
       if (generation === this._generation && request === this._evidenceRequest && goalId === this._goalId) this._showError(`Couldn't inspect run: ${error.message}`);
       return false;
     }
+  }
+
+  async _control(operation) {
+    if (!this._goalId) return;
+    const id = this._goalId;
+    const revision = this._revision;
+    this.querySelectorAll('[data-goal-control]').forEach((button) => { button.disabled = true; });
+    try {
+      await api.controlGoal(id, operation, revision);
+      if (this._goalId !== id) return;
+      await this._select(id);
+      if (this._goalId === id) this._message.textContent = operation === 'resume'
+        ? 'Goal resumed. No work automatically started.'
+        : `Goal ${operation === 'pause' ? 'paused' : 'cancelled'}. New work stopped; any in-flight outcome remains visible.`;
+    } catch (error) { if (this._goalId === id) this._showError(`Couldn't change goal state: ${error.message}`); }
+    finally { this.querySelectorAll('[data-goal-control]').forEach((button) => { button.disabled = false; }); }
   }
 
   _showError(message) {
