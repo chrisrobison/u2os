@@ -1,5 +1,6 @@
 import { getDb, withTransaction } from '../db/connection.js';
 import { newId } from '../db/ids.js';
+import { summarizeIncompleteActions, isActionSummaryResponse } from './action-result-summary.js';
 
 const TERMINAL = new Set(['executed', 'blocked', 'failed', 'cancelled', 'rejected', 'skipped']);
 export const DEFAULT_RUN_STEP_LIMIT = 16;
@@ -336,7 +337,9 @@ export function getRunResult(runId) {
   const status = getRun(runId);
   if (!status) return null;
   const row = getDb().prepare('SELECT response FROM agent_runs WHERE id = ?').get(runId);
-  return { ...status, response: row.response };
+  const summary = summarizeIncompleteActions(status.steps, { always: isActionSummaryResponse(row.response) });
+  const prefix = `${status.cancellationRequested ? 'Run cancellation requested. ' : ''}${status.budget.stopReason ? 'Run budget exhausted. ' : ''}`;
+  return { ...status, response: summary ? `${prefix}${summary}` : row.response };
 }
 
 export function reconcileInterruptedRuns() {
