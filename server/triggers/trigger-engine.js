@@ -25,7 +25,7 @@ import { getCachedCalendarEvent } from '../integrations/calendar-store.js';
 import { findEntities } from '../memory/entity-store.js';
 import { getFacts } from '../memory/fact-store.js';
 import { log } from '../logging/logger.js';
-import { runScheduledGoalWake } from '../agent/goal-wakes.js';
+import { runScheduledGoalWake, advanceGoalResearchSchedules } from '../agent/goal-wakes.js';
 
 const DEFAULT_TICK_MS = 60 * 1000;
 const DEFAULT_LEASE_MS = 5 * 60 * 1000;
@@ -124,6 +124,8 @@ export async function runTick({ eventBus, agent, now = new Date(), leaseOwner = 
   if (!eventBus || !agent) return;
   const db = getDb();
   const nowIso = now.toISOString();
+
+  advanceGoalResearchSchedules(now);
 
   const dueRows = db
     .prepare(

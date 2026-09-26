@@ -397,6 +397,24 @@ CREATE TABLE IF NOT EXISTS goal_wakes (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_goal_wake_pending ON goal_wakes(goal_id) WHERE status = 'pending';
 
+-- Finite owner-selected web research, checkpointed via ordinary goal wakes.
+CREATE TABLE IF NOT EXISTS goal_research_schedules (
+  id TEXT PRIMARY KEY,
+  goal_id TEXT NOT NULL,
+  goal_revision INTEGER NOT NULL,
+  interval_hours INTEGER NOT NULL,
+  max_passes INTEGER NOT NULL,
+  scheduled_passes INTEGER NOT NULL DEFAULT 1,
+  successful_passes INTEGER NOT NULL DEFAULT 0,
+  wake_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',
+  blocker TEXT,
+  checked_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_goal_research_active ON goal_research_schedules(goal_id) WHERE status = 'active';
+
 -- Derived search evidence and explicit owner review, never established facts.
 CREATE TABLE IF NOT EXISTS goal_findings (
   id TEXT PRIMARY KEY,
