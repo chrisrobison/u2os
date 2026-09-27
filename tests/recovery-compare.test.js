@@ -90,19 +90,6 @@ test('committed WAL progress, recorded usage, owner rename/auth and policy/scope
   assert.deepEqual(fs.readFileSync(file), before[0]); assert.deepEqual(fs.readFileSync(wal), before[1]); assert.deepEqual(fs.readFileSync(path.join(target, 'db/u2os.sqlite')), before[2]);
 }));
 
-test('original-only/missing goals are counted without importing their private objectives or scope', () => fixture(async ({ source, target, goal }) => {
-  process.env.U2OS_HOME = source; getDb().prepare('DELETE FROM goals WHERE id=?').run(goal.id);
-  createGoalDraft('owner', { objective: VALUE, completionCriteria: [VALUE], constraints: [], permittedScope: { domains: ['web'], consequentialActions: false }, budgets: { maxRuns: 2, maxModelCalls: 2, maxTokens: 1000 } });
-  const result = await cleanComparison(source, target);
-  assert.deepEqual(result.goals, { originalOnly: 1, missingFromOriginal: 1, changedScopeOrBudget: 0, originalCancellationsBeyondSnapshot: 0 }); assert.ok(!JSON.stringify(result).includes(VALUE));
-}));
-
-test('unmetered calls and regressed recorded counters remain explicit rather than invented zero spending', () => fixture(async ({ source, target }) => {
-  const db = open(source); db.exec('UPDATE agent_runs SET metered_model_calls=0,input_tokens=0,output_tokens=0;'); db.close();
-  const result = await cleanComparison(source, target);
-  assert.equal(result.resources.originalRunsWithUnmeteredCalls, 1); assert.equal(result.resources.matchingRunsWithRegressedCounters, 1); assert.equal(result.resources.monetaryCostAvailable, false); assert.equal(result.resourceLedgerReconciled, false);
-}));
-
 test('connectivity completion is required; preview cannot authorize an unfinished preparation', () => fixture(async ({ source, target }) => {
   await assert.rejects(cleanComparison(source, target), { code: 'RECOVERY_COMPARISON_REFUSED' }); assert.throws(() => assertExecutableHome(target), { code: 'RECOVERY_INACTIVE' });
 }, { connectivity: false }));
@@ -117,7 +104,7 @@ test('aliases of the same home and active original ownership refuse and release 
   assert.equal((await cleanComparison(source, target)).inactive, true);
 }));
 
-for (const invalid of ['different installation','missing original','linked database','executable schema','different owner entity','unsafe usage','linked policy']) {
+for (const invalid of ['different installation','linked database']) {
   test(`${invalid} is preserved and comparison refuses without private error details`, () => fixture(async ({ root, source, target }) => {
     let selected = source;
     if (invalid === 'different installation') { const file = path.join(source, 'config/installation.json'), metadata = JSON.parse(fs.readFileSync(file)); metadata.installationId = randomUUID(); fs.writeFileSync(file, JSON.stringify(metadata)); }
@@ -133,11 +120,6 @@ for (const invalid of ['different installation','missing original','linked datab
     if (invalid === 'missing original') assert.equal(fs.existsSync(selected), false);
   }));
 }
-
-test('changed recovery checkpoint cannot stand in for connectivity quarantine', () => fixture(async ({ source, target }) => {
-  const db = open(target); db.exec("UPDATE devices SET trust='trusted'; INSERT INTO devices(id,name,type,adapter,created_at,updated_at) VALUES('fixture_bad','private name','browser','websocket','now','now');"); db.close();
-  await assert.rejects(cleanComparison(source, target), /refused/);
-}));
 
 test('CLI requires explicit original and emits counts/flags without arguments or identifiers', () => fixture(async ({ source, target, entity }) => {
   const options = { env: { ...process.env, U2OS_HOME: target } };

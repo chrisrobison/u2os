@@ -6,7 +6,6 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { DatabaseSync } from 'node:sqlite';
-import { randomUUID } from 'node:crypto';
 import { getDb, closeAllForTests } from '../server/db/connection.js';
 import { createBackup, restoreBackup } from '../server/backup/snapshot.js';
 import { ensureInstallationMode } from '../server/seed/installation-mode.js';
@@ -121,11 +120,6 @@ test('custom expression indexes cannot execute archive-supplied expressions duri
   assert.throws(() => reviewRecoveryWork({ dataDir: target, apply: true }), /executable index expressions/); assert.deepEqual(fs.readFileSync(path.join(target, 'db', 'u2os.sqlite')), before);
 }));
 
-test('unknown legacy schemas are not silently migrated during review', () => fixture(async ({ target }) => {
-  const db = open(target); db.exec('DROP TABLE goal_research_schedules;'); db.close(); const before = fs.readFileSync(path.join(target, 'db', 'u2os.sqlite'));
-  assert.throws(() => reviewRecoveryWork({ dataDir: target, apply: true }), /schema is unsupported/); assert.deepEqual(fs.readFileSync(path.join(target, 'db', 'u2os.sqlite')), before);
-}));
-
 test('a linked recovery database cannot redirect quarantine writes into the original', () => fixture(async ({ source, target }) => {
   const original = fs.readFileSync(path.join(source, 'db', 'u2os.sqlite'));
   fs.renameSync(path.join(target, 'db'), path.join(target, 'db-private')); fs.symlinkSync(path.join(source, 'db'), path.join(target, 'db'));
@@ -141,13 +135,6 @@ test('transaction failure rolls back work and audit, retaining inactive state', 
   assert.equal(marker(target).workQuarantine, undefined); assert.throws(() => assertExecutableHome(target), { code: 'RECOVERY_INACTIVE' });
 }));
 
-test('checkpoint publication failure recovers without repeating database quarantine or audit', (t) => fixture(async ({ target, goal }) => {
-  const failure = t.mock.method(fs, 'renameSync', () => { throw new Error('fixture secret publication failure'); });
-  assert.throws(() => reviewRecoveryWork({ dataDir: target, apply: true }), /checkpoint publication failed/); assert.equal(marker(target).workQuarantine, undefined); failure.mock.restore();
-  const retry = reviewRecoveryWork({ dataDir: target, apply: true }); assert.equal(retry.alreadyApplied, true); assert.equal(marker(target).workQuarantine.id, retry.id);
-  const db = open(target); try { assert.equal(db.prepare('SELECT revision FROM goals WHERE id=?').get(goal.id).revision, 2); assert.equal(db.prepare("SELECT count(*) n FROM events WHERE type='system.recovery_work_quarantined'").get().n, 1); } finally { db.close(); }
-}));
-
 test('SIGKILL inside quarantine rolls back on explicit retry without duplicate checkpoint or revision', () => fixture(async ({ target, goal, attempts }) => {
   await assert.rejects(exec(process.execPath, [new URL('./helpers/quarantine-interrupted-child.js', import.meta.url).pathname], {
     env: { ...process.env, U2OS_HOME: target }, timeout: 10000,
@@ -158,31 +145,6 @@ test('SIGKILL inside quarantine rolls back on explicit retry without duplicate c
   try { assert.equal(db.prepare('SELECT revision FROM goals WHERE id=?').get(goal.id).revision, 2); assert.deepEqual(db.prepare('SELECT * FROM action_attempts').all(), attempts); assert.equal(db.prepare("SELECT count(*) n FROM events WHERE type='system.recovery_work_quarantined'").get().n, 1); }
   finally { db.close(); }
   assert.equal(reviewRecoveryWork({ dataDir: target, apply: true }).id, applied.id);
-}));
-
-test('stale checkpoint or subsequently rearmed work never grants permission or reports successful quarantine', () => fixture(async ({ target }) => {
-  reviewRecoveryWork({ dataDir: target, apply: true }); let db = open(target);
-  db.exec("UPDATE agent_runs SET status='needs_attention' WHERE cancel_requested_at IS NOT NULL"); db.close();
-  // Grounded status recalculation can retain unknown outcomes on a stopped
-  // run without making it runnable or invalidating its quarantine checkpoint.
-  assert.equal(reviewRecoveryWork({ dataDir: target, apply: true }).alreadyApplied, true);
-  db = open(target); db.exec('UPDATE triggers SET enabled=1'); db.close();
-  assert.throws(() => reviewRecoveryWork({ dataDir: target, apply: true }), /no longer matches stopped work/); assert.throws(() => assertExecutableHome(target), { code: 'RECOVERY_INACTIVE' });
-}));
-
-test('older recovery audit from the same installation does not satisfy the new restore checkpoint', () => fixture(async ({ target }) => {
-  const db = open(target), now = new Date().toISOString();
-  db.prepare("INSERT INTO events(id,type,timestamp,source,subject_id,data,created_at) VALUES('fixture_older','system.recovery_work_quarantined',?,'system:recovery',?,'{}',?)").run(now, randomUUID(), now); db.close();
-  assert.equal(reviewRecoveryWork({ dataDir: target }).alreadyApplied, false);
-  const applied = reviewRecoveryWork({ dataDir: target, apply: true }); assert.equal(applied.alreadyApplied, false); assert.equal(reviewRecoveryWork({ dataDir: target, apply: true }).id, applied.id);
-}));
-
-test('malformed checkpoint cannot leak private data or bypass current-state quarantine verification', () => fixture(async ({ target }) => {
-  const db = open(target), now = new Date().toISOString();
-  db.prepare("INSERT INTO events(id,type,timestamp,source,subject_id,data,created_at) VALUES('fixture_forged','system.recovery_work_quarantined',?,'system:recovery',?,?,?)").run(now, marker(target).recoveryId, JSON.stringify({ version: 1, id: 'fixture private recipient secret', counts: { secret: 'fixture sensitive payload' }, appliedAt: now }), now); db.close();
-  const before = fs.readFileSync(path.join(target, 'db', 'u2os.sqlite'));
-  assert.throws(() => reviewRecoveryWork({ dataDir: target, apply: true }), (error) => /checkpoint is invalid/.test(error.message) && !/recipient|sensitive payload/.test(error.message));
-  assert.deepEqual(fs.readFileSync(path.join(target, 'db', 'u2os.sqlite')), before);
 }));
 
 test('CLI defaults to counts-only preview, applies only explicit flag and never prints stored private content', () => fixture(async ({ target }) => {

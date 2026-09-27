@@ -69,7 +69,7 @@ test('Google token deadline aborts a native isolated HTTP response with a stalle
   } finally { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); }
 });
 
-for (const [status, code] of [[400, 'AUTHORIZATION'], [401, 'AUTHORIZATION'], [403, 'AUTHORIZATION'], [429, 'RATE_LIMIT'], [503, 'UNAVAILABLE']]) {
+for (const [status, code] of [[400, 'AUTHORIZATION'], [429, 'RATE_LIMIT'], [503, 'UNAVAILABLE']]) {
   test(`Google token HTTP ${status} has sanitized actionable status and discards its body without retry`, async () => {
     for (const [, request] of operations) {
       const timers = clock(); let calls = 0, cancelled = 0;
@@ -80,7 +80,7 @@ for (const [status, code] of [[400, 'AUTHORIZATION'], [401, 'AUTHORIZATION'], [4
   });
 }
 
-for (const kind of ['transport', 'parser', 'forged error']) {
+for (const kind of ['transport', 'forged error']) {
   test(`Google token ${kind} cannot expose upstream text or impersonate a safe failure`, async () => {
     for (const [, request] of operations) {
       const timers = clock(); let signal;

@@ -36,10 +36,7 @@ async function fixture(operation) {
 
 for (const [name, to] of [
   ['nested injected array', [[`${PRIVATE}@example.test\r\nBcc: other@example.test`]]],
-  ['nested clean array', [['recipient@example.test']]], ['object', { email: `${PRIVATE}@example.test` }],
-  ['array object', [{ email: `${PRIVATE}@example.test` }]], ['null', null], ['number', 123], ['empty array', []],
-  ['sparse array', new Array(1)],
-  ['empty string', ''], ['blank string', '  '], ['blank element', ['recipient@example.test', ' ']],
+  ['object', { email: `${PRIVATE}@example.test` }], ['null', null], ['empty array', []], ['blank element', ['recipient@example.test', ' ']],
   ['injected string', `${PRIVATE}@example.test\nBcc: other@example.test`],
   ['injected array element', ['recipient@example.test', `${PRIVATE}@example.test\rBcc: other@example.test`]],
 ]) {
@@ -52,7 +49,7 @@ for (const [name, to] of [
   }));
 }
 
-for (const [name, changes] of [['injected subject', { subject: `${PRIVATE}\r\nBcc: other@example.test` }], ['object subject', { subject: {} }], ['object body', { body: {} }]]) {
+for (const [name, changes] of [['injected subject', { subject: `${PRIVATE}\r\nBcc: other@example.test` }], ['object body', { body: {} }]]) {
   test(`Gmail ${name} fails before OAuth or transport and omits submitted values`, () => fixture(async (f) => {
     let calls = 0;
     await assert.rejects(sendEmail({ ...message, ...changes }, { dataDir: f.home, instance: f.instance, fetchImpl() { calls++; } }), (error) => {

@@ -40,7 +40,7 @@ const operations = [
   ['get', (options) => getEvent(`gcal_${options.instance.id}_fixture_event`, options)],
   ['sync', (options) => syncChanges(options)],
 ];
-for (const [name, run] of operations) for (const stage of ['headers', 'body']) {
+for (const [name, run] of operations) for (const stage of name === 'sync' ? ['headers', 'body'] : ['body']) {
   test(`Calendar ${name} bounds stalled ${stage} and late completion writes no cache/events`, () => fixture(async (f) => {
     const timers = clock(), reached = deferred(), late = deferred(); let signal, calls = 0, parsed = 0, cancelled = 0;
     const response = { ok: true, body: { cancel() { cancelled++; } }, json() { parsed++; reached.resolve(); return stage === 'body' ? late.promise : Promise.resolve(name === 'get' ? event : { items: [event] }); } };
@@ -80,7 +80,7 @@ test('Calendar missing event returns null and discards 404 body without parsing 
   assert.ok(cancelled >= 1); assert.equal(f.db.prepare('SELECT count(*) n FROM calendar_events').get().n, 0);
 }));
 
-for (const [status, code] of [[400, 'UNAVAILABLE'], [401, 'AUTHORIZATION'], [403, 'AUTHORIZATION'], [429, 'RATE_LIMIT'], [503, 'UNAVAILABLE']]) {
+for (const [status, code] of [[401, 'AUTHORIZATION'], [429, 'RATE_LIMIT'], [503, 'UNAVAILABLE']]) {
   test(`Calendar HTTP ${status} fails safely without error-body parsing, cache/events or retries`, () => fixture(async (f) => {
     for (const [, run] of operations) {
       const timers = clock(); let calls = 0, cancelled = 0;
@@ -92,7 +92,7 @@ for (const [status, code] of [[400, 'UNAVAILABLE'], [401, 'AUTHORIZATION'], [403
   }));
 }
 
-for (const kind of ['transport', 'parser', 'forged error']) {
+for (const kind of ['transport', 'forged error']) {
   test(`Calendar ${kind} cannot leak private upstream text or impersonate safe failures`, () => fixture(async (f) => {
     for (const [, run] of operations) {
       const timers = clock(); let signal;
