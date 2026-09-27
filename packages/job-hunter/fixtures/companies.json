@@ -1,0 +1,7 @@
+{
+  "companies": {
+    "Acme Robotics": { "industry": "Robotics", "size": "500-1000", "summary": "Acme Robotics builds warehouse automation and is growing its platform group." },
+    "Globex": { "industry": "Logistics software", "size": "1000-5000", "summary": "Globex sells supply-chain software to mid-size retailers." },
+    "Umbrella Health": { "industry": "Health technology", "size": "200-500", "summary": "Umbrella Health runs patient data infrastructure with strict privacy requirements." }
+  }
+}

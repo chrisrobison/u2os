@@ -1,0 +1,22 @@
+# A mock job board: returns the postings in fixtures/jobs.json. Read-only.
+id: mock.job-search
+version: 1.0.0
+description: Search a mock job board (fixture data, no network access).
+effect: read
+permissions: [network]
+inputSchema:
+  type: object
+  properties:
+    query: { type: string, maxLength: 200 }
+outputSchema:
+  type: object
+  required: [query, jobs]
+  properties:
+    query: { type: string }
+    jobs: { type: array }
+implementation:
+  type: fixture
+  file: fixtures/jobs.json
+  output:
+    query: "{{ input.query }}"
+    jobs: "{{ data.jobs }}"

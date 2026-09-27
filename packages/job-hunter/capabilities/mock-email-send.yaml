@@ -1,0 +1,25 @@
+# SIMULATED email: returns what it would have sent. It is still a
+# consequential ("write") capability, so it goes through permissions, the
+# package policy, your policies.yaml (mock.email-send) and the audit log.
+id: mock.email-send
+version: 1.0.0
+description: Pretend to send an email (simulated; nothing leaves U2OS).
+effect: write
+permissions: [notifications.send]
+inputSchema:
+  type: object
+  required: [to, subject, body]
+  properties:
+    to: { type: string, minLength: 3, maxLength: 320 }
+    subject: { type: string, maxLength: 200 }
+    body: { type: string, maxLength: 4000 }
+    score: { type: number }
+outputSchema:
+  type: object
+  required: [simulated]
+implementation:
+  type: static
+  output:
+    simulated: true
+    to: "{{ input.to }}"
+    subject: "{{ input.subject }}"

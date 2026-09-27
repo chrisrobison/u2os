@@ -1,0 +1,24 @@
+{
+  "jobs": [
+    { "id": "mock-001", "title": "Staff Platform Engineer", "company": "Acme Robotics", "location": "Remote (US)",
+      "compensation": { "min": 185000, "max": 230000, "currency": "USD" },
+      "description": "Own our distributed systems platform and privacy-preserving data pipeline.",
+      "url": "https://jobs.example.com/mock-001" },
+    { "id": "mock-002", "title": "Senior Backend Engineer", "company": "Globex", "location": "San Francisco",
+      "compensation": { "min": 165000, "max": 175000, "currency": "USD" },
+      "description": "Build APIs for our platform team.",
+      "url": "https://jobs.example.com/mock-002" },
+    { "id": "mock-003", "title": "Engineering Manager, Payments", "company": "Initech", "location": "New York",
+      "compensation": { "min": 150000, "max": 160000, "currency": "USD" },
+      "description": "Lead a payments team.",
+      "url": "https://jobs.example.com/mock-003" },
+    { "id": "mock-004", "title": "Principal Engineer, Privacy", "company": "Umbrella Health", "location": "Remote",
+      "compensation": { "min": 210000, "max": 260000, "currency": "USD" },
+      "description": "Design privacy infrastructure across distributed systems.",
+      "url": "https://jobs.example.com/mock-004" },
+    { "id": "mock-005", "title": "Junior Web Developer", "company": "Acme Robotics", "location": "Austin",
+      "compensation": { "min": 80000, "max": 95000, "currency": "USD" },
+      "description": "Maintain our marketing site.",
+      "url": "https://jobs.example.com/mock-005" }
+  ]
+}

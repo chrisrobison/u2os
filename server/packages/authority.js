@@ -65,6 +65,7 @@ export function packageContextRecord(authority) {
     automation: authority.automationId || null,
     skill: authority.skillId || null,
     run: authority.workflowRunId || null,
+    rootRun: authority.rootRunId || authority.workflowRunId || null,
     step: authority.stepId || null,
     capability: authority.capabilityId || null,
     provider: authority.providerId || null,

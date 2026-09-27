@@ -54,6 +54,7 @@ export class CapabilityInvoker {
       automationId: ctx.automationId || null,
       skillId: ctx.skillId || null,
       workflowRunId: ctx.workflowRunId || null,
+      rootRunId: ctx.rootRunId || ctx.workflowRunId || null,
       stepId: ctx.stepId || null,
       capabilityId,
       providerId: provider.id,

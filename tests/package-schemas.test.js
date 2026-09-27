@@ -119,6 +119,8 @@ test('expressions evaluate over data and support the documented operators', () =
   assert.equal(evaluate('"a" + 1', {}), 'a1');
   assert.equal(evaluate('1 / 0', {}), null);
   assert.equal(evaluate('job["score"]', scope), 90);
+  assert.deepEqual(evaluate('slice(unique(concat(seen, pluck(jobs, "id"))), -3)', { seen: ['a', 'b'], jobs: [{ id: 'b' }, { id: 'c' }, { id: 'd' }] }), ['b', 'c', 'd']);
+  assert.throws(() => evaluate('pluck(jobs, "__proto__")', { jobs: [{}] }), /not allowed/);
 });
 
 test('expressions cannot reach code, prototypes or methods', () => {

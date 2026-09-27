@@ -337,6 +337,10 @@ const FUNCTIONS = Object.freeze({
   coalesce: (_s, ...values) => values.find((value) => value !== null && value !== undefined) ?? null,
   join: (_s, value, separator = ', ') => (Array.isArray(value) ? value.map(toText).join(toText(separator)) : toText(value)),
   keys: (_s, value) => (value && typeof value === 'object' && !Array.isArray(value) ? Object.keys(value) : []),
+  concat: (_s, ...lists) => lists.flatMap((list) => (Array.isArray(list) ? list : list === null || list === undefined ? [] : [list])),
+  pluck: (_s, list, key) => (Array.isArray(list) ? list.map((item) => readProperty(item, key)) : []),
+  unique: (_s, list) => (Array.isArray(list) ? list.filter((item, index) => list.findIndex((other) => equals(other, item)) === index) : []),
+  slice: (_s, value, start = 0, end) => (Array.isArray(value) || typeof value === 'string' ? value.slice(start, end) : null),
   now: (state) => state.now.toISOString(),
   daysSince: (state, value) => {
     const time = Date.parse(value);

@@ -1,0 +1,46 @@
+# Deterministic scoring against the owner's preferences. A model could be
+# used here later (llm.evaluate) to produce facts; whether anything is
+# DONE with the score is still decided by policy code, not by the model.
+id: score-job
+version: 1.0.0
+description: Score a normalized job against preferences (0-100).
+inputSchema:
+  type: object
+  required: [job, preferences]
+  properties:
+    job: { type: object }
+    preferences: { type: object }
+outputSchema:
+  type: object
+  required: [score, reasons]
+  properties:
+    score: { type: number, minimum: 0, maximum: 100 }
+steps:
+  - id: matchedKeywords
+    use: filter
+    with:
+      source: "{{ inputs.preferences.keywords }}"
+      where: "contains(inputs.job.description, item)"
+  - id: parts
+    use: transform
+    with:
+      value:
+        salary: "{{ inputs.job.salary >= inputs.preferences.minimumSalary ? 40 : 10 }}"
+        location: "{{ inputs.job.remote || inputs.job.location in inputs.preferences.allowedLocations ? 30 : 0 }}"
+        keywords: "{{ min(30, 10 * len(steps.matchedKeywords.output)) }}"
+  - id: reasons
+    use: filter
+    with:
+      source:
+        - "{{ steps.parts.output.salary == 40 ? 'pays at least your minimum' : null }}"
+        - "{{ steps.parts.output.location == 30 ? 'location works for you' : null }}"
+        - "{{ len(steps.matchedKeywords.output) ? 'mentions ' + join(steps.matchedKeywords.output) : null }}"
+      where: "item != null"
+output:
+  id: "{{ inputs.job.id }}"
+  title: "{{ inputs.job.title }}"
+  company: "{{ inputs.job.company }}"
+  url: "{{ inputs.job.url }}"
+  salary: "{{ inputs.job.salary }}"
+  score: "{{ steps.parts.output.salary + steps.parts.output.location + steps.parts.output.keywords }}"
+  reasons: "{{ steps.reasons.output }}"
