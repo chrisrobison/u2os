@@ -1356,3 +1356,13 @@ u2-device-panel .u2-card {
 
 .device-message { font-size: var(--text-sm); padding: 0 var(--space-4) var(--space-3); color: var(--accent-active); }
 .device-message.is-error { color: var(--accent-danger); }
+
+/* Packages view (u2-packages) */
+.package-install { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: end; }
+.package-install label { flex: 1; min-width: 16rem; }
+.package-review ul { margin: var(--space-2) 0; padding-left: var(--space-5); }
+.package-section__title { font-size: var(--text-lg); margin: var(--space-6) 0 var(--space-3); }
+.package-muted { color: var(--text-tertiary); font-size: var(--text-sm); }
+.package-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.package-table th, .package-table td { text-align: left; padding: var(--space-2); border-bottom: var(--border-width) solid var(--border-color); vertical-align: top; }
+.package-steps { margin: var(--space-2) 0 0; padding-left: var(--space-5); font-size: var(--text-sm); }

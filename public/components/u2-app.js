@@ -16,6 +16,7 @@ import './u2-devices.js';
 import './u2-operations.js';
 import './u2-goals.js';
 import './u2-triggers.js';
+import './u2-packages.js';
 import './u2-diagnostics.js';
 import './u2-model.js';
 
@@ -237,6 +238,9 @@ export class U2App extends HTMLElement {
         break;
       case 'automation':
         this._renderTriggers();
+        break;
+      case 'packages':
+        this._setWorkspace('', document.createElement('u2-packages'));
         break;
       case 'diagnostics':
         this._renderDiagnostics();

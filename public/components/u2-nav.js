@@ -11,6 +11,7 @@ const ROUTES = [
   ['#/operations', 'Operations'],
   ['#/goals', 'Goals'],
   ['#/automation', 'Automation'],
+  ['#/packages', 'Packages'],
   ['#/diagnostics', 'Diagnostics'],
   ['#/connectors', 'Connectors'],
   ['#/model', 'Model'],

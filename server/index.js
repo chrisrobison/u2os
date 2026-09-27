@@ -59,6 +59,7 @@ import { registerVaultRoutes } from './api/routes/vault.js';
 import { startVaultWatcher } from './vault/watcher.js';
 import { startJournal } from './vault/journal.js';
 import { registerRoutineRoutes } from './api/routes/routines.js';
+import { registerPackageRoutes } from './api/routes/packages.js';
 import { startRoutineRunner, stopRoutineRunner } from './routines/routine-runner.js';
 import { createPackagePlatform } from './packages/platform.js';
 
@@ -266,6 +267,7 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
   registerDiagnosticsRoutes(router, { db, dbPath, dataDir, startTime, sseHub, modelRouter, embeddingProvider });
   registerVaultRoutes(router, { eventBus });
   registerRoutineRoutes(router, { eventBus, agent });
+  registerPackageRoutes(router, { packages });
 
   // Minimal HTTP access log (method, path, status, duration_ms) wrapped
   // around the existing router/static dispatch. This only observes the

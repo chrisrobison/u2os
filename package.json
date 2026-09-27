@@ -21,7 +21,8 @@
     "maintain": "node server/events/maintenance-cli.js",
     "imsg:read": "node server/integrations/imsg-cli.js",
     "setup-owner": "node server/security/setup-owner-cli.js",
-    "vault:export": "node server/vault/export-cli.js"
+    "vault:export": "node server/vault/export-cli.js",
+    "u2": "node server/packages/cli.js"
   },
   "engines": {
     "node": ">=22"
