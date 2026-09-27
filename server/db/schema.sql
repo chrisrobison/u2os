@@ -221,6 +221,7 @@ CREATE TABLE IF NOT EXISTS agent_runs (
   elapsed_limit_ms INTEGER NOT NULL DEFAULT 86400000,
   deadline_at TEXT,
   budget_stop_reason TEXT,
+  output_classification TEXT NOT NULL DEFAULT 'sensitive',
   reasoning_summary TEXT,
   response TEXT,
   created_at TEXT NOT NULL,

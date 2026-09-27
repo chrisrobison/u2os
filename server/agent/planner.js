@@ -1,6 +1,6 @@
 import { DataProcessingPolicy } from '../policy/data-processing-policy.js';
 import { filterPersonalContextForDestination } from './context-privacy-filter.js';
-import { filterObservationsForDestination } from './observation-filter.js';
+import { filterObservationsForDestination, classifyObservation } from './observation-filter.js';
 import { filterConversationHistoryForDestination, summarizeEarlierTurnsForDestination } from './conversation-history-filter.js';
 import { filterPriorArtifactsForDestination } from './prior-artifacts-filter.js';
 
@@ -151,6 +151,11 @@ export class Planner {
     }
 
     context.onModelCall?.();
+    // Snapshot before invoking the provider; later calls or provider mutation
+    // cannot change the classification authority for this exact output.
+    const outputClassification = classifyObservation('model.context', {
+      personalContext: filteredPersonalContext, observations, history, conversationSummary, priorReadArtifacts,
+    });
     const { onModelCall, conversationHistory, conversationSummarySources: _summarySources,
       conversationSummary: _untrustedSummary, priorReadArtifacts: _priorReadArtifacts, ...providerContext } = context;
     const proposed = await provider.plan({ ...providerContext, personalContext: filteredPersonalContext, observations, conversationHistory: history, conversationSummary, priorReadArtifacts }, objective);
@@ -158,7 +163,7 @@ export class Planner {
     // plan object. Malformed primitive/array results still reach validation.
     if (!proposed || typeof proposed !== 'object' || Array.isArray(proposed)) return proposed;
     const plan = { ...proposed };
-    planContexts.set(plan, { providerId, observations, priorReadArtifacts, conversationSummary, provenanceRefs });
+    planContexts.set(plan, { providerId, observations, priorReadArtifacts, conversationSummary, provenanceRefs, outputClassification });
     return plan;
   }
 }

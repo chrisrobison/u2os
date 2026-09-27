@@ -100,7 +100,7 @@ export class Agent {
     }
     if (!conversationId) return result;
     try {
-      appendTurn({ conversationId, ownerId: actorId, role: 'assistant', content: result.response || result.reasoning_summary || "I don't have anything to add.", correlationId, runId });
+      appendTurn({ conversationId, ownerId: actorId, role: 'assistant', content: result.response || result.reasoning_summary || "I don't have anything to add.", correlationId, runId, classification: this.runStore.getOutputClassification?.(runId) || 'sensitive' });
       return { ...result, conversationId, conversationSaved: true };
     } catch {
       // The action may already have happened. Do not turn a completed run
@@ -173,10 +173,11 @@ export class Agent {
         stopReason = `Run budget exhausted (${budgetAfterModel}); the late model result was discarded. The objective is not verified.`;
         break;
       }
-      plan = validatePlan(proposedPlan, this.toolRegistry);
       // Only the exact call's server metadata is reference authority. Shared
       // last-call diagnostics can change while another run awaits its model.
       const callContext = this.planner.getPlanContext?.(proposedPlan) || {};
+      this.runStore.recordOutputClassification?.(runId, callContext.outputClassification);
+      plan = validatePlan(proposedPlan, this.toolRegistry);
       const allowedObservations = callContext.observations || [];
       const allowedPriorArtifacts = callContext.priorReadArtifacts || [];
       const modelIdentity = callContext.providerId || 'unknown';
