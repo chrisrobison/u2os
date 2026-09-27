@@ -20,6 +20,8 @@ vault/
   projects/        # one file per project
   commitments/     # things you have promised
   routines/        # standing instructions (see routines.md)
+  policies.yaml    # optional: what U2OS may do without asking
+  journal/         # written by U2OS: what it did on your behalf
 ```
 
 Routine files are described in [routines](routines.md), and `policies.yaml` (what U2OS may do without asking) in [policies](policies.md#where-the-policy-lives). The rest of this page covers identity and memory files.
@@ -103,6 +105,25 @@ Some rules keep the file safe:
 - **Invalid files are never rewritten.** A file that does not currently parse is left alone, and the edit is refused until you fix it.
 - **Vault relationships are changed in the file.** A commitment's link to you is removed by setting `status: done` or deleting the file, not through the relationship API.
 
+## The journal
+
+U2OS appends a line to `journal/YYYY-MM.jsonl` (by event month, UTC) for each thing it did on your behalf or you decided:
+
+- routine runs
+- actions proposed, approved, rejected, completed or failed
+- sends, notifications and tasks
+- memory suggestions
+- memory changes, and commitments it noticed
+
+It's your own history, readable with any tool and kept with the rest of your digital self:
+
+```json
+{"ts":"2026-09-28T07:00:03.120Z","type":"routine.fired","source":"routine","actor":{"type":"routine","id":"routines/morning-brief.md"},"eventId":"evt_…","data":{"routine":"routines/morning-brief.md","routineRunId":"rtn_…","trigger":"daily","slot":"daily:2026-09-28"}}
+{"ts":"2026-09-28T07:00:09.884Z","type":"agent.action.completed","source":"agent","subject":{"type":"agent_action","id":"act_…"},"correlationId":"corr_…","eventId":"evt_…","data":{"tool":"notifications.send"}}
+```
+
+Entries hold types, identifiers, timestamps and a few metadata fields (tool, routine, key names, error codes). **They never hold** message bodies, action arguments, memory values, or model or provider text. Look up the detail by ID in U2OS's Activity, Operations and **Why?** views. Raw connector observations such as every synced email are not journaled. The journal is append-only; U2OS never rewrites it. If it cannot be written, events still flow normally and a warning is logged once.
+
 ## Moving existing memory into the vault
 
 Installations that stored people, projects, commitments and facts about you before the vault existed can export them into files:
@@ -133,6 +154,3 @@ The report lists written and skipped files and how many facts were left out.
 
 The default vault lives inside `U2OS_HOME`, so `npm run backup` includes it. Backups refuse symlinks anywhere in the home. If you place the vault elsewhere with `U2OS_VAULT` or `vaultDir`, back it up yourself; git works well.
 
-## Not yet supported
-
-- A journal of observations and actions ([#360](https://github.com/chrisrobison/u2os/issues/360)).

@@ -121,6 +121,8 @@ Vault and routine events ([vault](vault.md), [routines](routines.md)). They carr
 
 Routines never react to `routine.*`, `agent.*`, `action.*`, `run.*` or `vault.*` events.
 
+A content-free subset of these and the action/memory events above is also appended to the owner's vault journal ([vault](vault.md#the-journal)).
+
 Device/capability/stream events (docs/devices.md's device/capability subsystem -- `source` is `device-adapter:<adapterId>` for registry-driven transitions, `device:<id>` for device-initiated ones like a heartbeat-derived status change or a trust transition):
 
 | Type | Emitted when | source |
