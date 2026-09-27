@@ -13,7 +13,7 @@ export function upsertPackage({ manifest, sourceType, sourceRef = null, installP
     VALUES (?,?,?,?,?,?,?,?, 'installed', ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET version = excluded.version, name = excluded.name, description = excluded.description,
       source_type = excluded.source_type, source_ref = excluded.source_ref, install_path = excluded.install_path,
-      manifest = excluded.manifest, status = 'installed', updated_at = excluded.updated_at`)
+      manifest = excluded.manifest, status = 'installed', enabled = excluded.enabled, updated_at = excluded.updated_at`)
     .run(manifest.id, manifest.version, manifest.name, manifest.description || '', sourceType, sourceRef, installPath, JSON.stringify(manifest), enabled ? 1 : 0, time, time);
   return getPackageRow(manifest.id);
 }
