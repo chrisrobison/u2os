@@ -72,18 +72,23 @@ test('correcting a vault fact edits only that line and keeps the file the author
   assert.match(read('people/alice.md'), /---\nAllergic to peanuts and shellfish\.\n$/);
 });
 
-test('reclassification never lowers privacy, and notes follow the file', async (t) => {
+test('reclassification records exactly the level the owner chose', async (t) => {
   const { call, read, fact } = await fixture(t, { 'people/bob.md': '---\nclassification: private\nphone: "555"\nemail: bob@example.com\n---\nNotes.\n' });
   const bob = vaultEntityId('people/bob.md');
   const lowered = await call('PATCH', `/api/memory/facts/${fact(bob, 'email').id}`, { classification: 'public' });
   assert.equal(lowered.status, 200);
-  assert.equal(lowered.body.fact.classification, 'private', 'the file level still applies');
+  assert.equal(lowered.body.fact.classification, 'public', "the owner's explicit choice");
   const raised = await call('PATCH', `/api/memory/facts/${fact(bob, 'phone').id}`, { classification: 'sensitive' });
   assert.equal(raised.body.fact.classification, 'sensitive');
-  assert.deepEqual(parseMarkdown(read('people/bob.md')).frontmatter.sensitive_keys, ['phone']);
   const notes = await call('PATCH', `/api/memory/facts/${fact(bob, 'notes').id}`, { classification: 'sensitive' });
-  assert.equal(notes.status, 422);
-  assert.equal(fact(bob, 'notes').classification, 'private', 'a refused edit changes nothing');
+  assert.equal(notes.body.fact.classification, 'sensitive');
+  const frontmatter = parseMarkdown(read('people/bob.md')).frontmatter;
+  assert.deepEqual(frontmatter.sensitive_keys, ['phone', 'notes']);
+  assert.deepEqual(frontmatter.classifications, { email: 'public' });
+  const back = await call('PATCH', `/api/memory/facts/${fact(bob, 'email').id}`, { classification: 'private' });
+  assert.equal(back.body.fact.classification, 'private');
+  assert.equal(parseMarkdown(read('people/bob.md')).frontmatter.classifications, undefined, 'matching the file level needs no entry');
+  assert.equal((await call('POST', '/api/vault/reindex')).body.report.changed, 0);
 });
 
 test('deleting a vault fact removes it from the file', async (t) => {
@@ -103,6 +108,7 @@ test('an accepted memory suggestion is written into the file', async (t) => {
   const response = await call('POST', `/api/memory/candidates/${candidate.id}/accept`, { entityId: alice, key: 'contact_preference' });
   assert.equal(response.status, 200);
   assert.equal(response.body.fact.source, 'vault:people/alice.md');
+  assert.ok(response.body.fact.supersedes_fact_id, 'the file-backed fact links to the accepted suggestion');
   assert.match(read('people/alice.md'), /^contact_preference: prefers texts to calls$/m);
   assert.equal(fact(alice, 'contact_preference').value, 'prefers texts to calls');
 
@@ -169,11 +175,14 @@ test('an edit is refused if the file changed underneath it', () => {
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('classification rules express only what the file format can hold', () => {
+test('classification is written exactly as chosen', () => {
   const fm = { classification: 'personal' };
-  assert.equal(applyClassification(fm, 'ssn', 'private'), 'sensitive', 'more restrictive than the file becomes sensitive');
+  assert.equal(applyClassification(fm, 'ssn', 'sensitive'), 'sensitive');
   assert.deepEqual(fm.sensitive_keys, ['ssn']);
-  assert.equal(applyClassification(fm, 'ssn', 'public'), 'personal', 'less restrictive keeps the file level');
-  assert.equal(fm.sensitive_keys, undefined);
+  assert.equal(applyClassification(fm, 'ssn', 'private'), 'private');
+  assert.deepEqual(fm.sensitive_keys, []);
+  assert.deepEqual(fm.classifications, { ssn: 'private' });
+  assert.equal(applyClassification(fm, 'ssn', 'personal'), 'personal');
+  assert.deepEqual(fm.classifications, {});
   assert.throws(() => applyClassification(fm, 'x', 'secret'), (error) => error.status === 400);
 });

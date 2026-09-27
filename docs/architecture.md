@@ -17,10 +17,10 @@ The vault ([vault](vault.md)) lives at `U2OS_VAULT`, then config `vaultDir`, the
   - Changed values supersede, while removed keys and files soft-delete.
   - Facts from other sources are never modified; a conflicting explicit value becomes `disputed`.
   - A file with `id:` describes an existing record instead of creating one. Export relies on this, so it never duplicates people.
-  - `classification` and `sensitive_keys` set the data-processing classification. An invalid classification rejects the file, never silently lowering privacy.
+  - `classification`, `sensitive_keys` and per-key `classifications` set the data-processing classification. An invalid classification rejects the file, never silently lowering privacy.
 - `watcher.js` polls stat signatures (`U2OS_VAULT_POLL_MS`, default 5 s) and re-indexes on change, including when the owner link changes. It starts before triggers and routines, so they act on current memory.
-- `writeback.js` writes owner edits from the memory API (correct, delete, reclassify, accepted candidates, record deletion to `.trash/`) back into the file first, with minimal line edits, atomic conflict-aware replacement and no privacy lowering. The route then applies the audited database change and re-indexes.
-- `exporter.js` writes database memory into new vault files (`npm run vault:export`, `POST /api/vault/export`). It never overwrites or deletes, leaves inferred facts out, and never lowers privacy.
+- `writeback.js` writes owner edits from the memory API (correct, delete, reclassify, accepted candidates, record deletion to `.trash/`) back into the file first, with minimal line edits, atomic conflict-aware replacement and exactly the classification the owner chose. The route then applies the audited database change and re-indexes.
+- `exporter.js` writes database memory into new vault files (`npm run vault:export`, `POST /api/vault/export`). It never overwrites or deletes, leaves inferred facts out, and preserves each fact's classification exactly.
 
 Because vault facts are ordinary explicit facts, context assembly, dashboards, memory views and explainability use them without special cases. Owner-only `GET /api/vault` and `POST /api/vault/reindex` report status, and a `vault.indexed` event carries counts only.
 

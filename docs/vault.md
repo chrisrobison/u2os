@@ -46,7 +46,8 @@ Allergic to peanuts. Prefers texts to calls.
 | `id` | Optional. Binds the file to an existing record, for example one imported from contacts or exported from the database, instead of creating a new one. It must name a known record that no other file describes, and it cannot name the owner. |
 | `name` or `title` | Display name. Falls back to the first `# Heading`, then the file name. |
 | `classification` | `public`, `personal` (default), `private` or `sensitive`. Applies to the entity and all its facts. It decides which facts may reach a local or remote model ([policies](policies.md)). An unknown value makes the file invalid rather than silently less private. |
-| `sensitive_keys` | List of keys classified `sensitive` regardless of the file classification. |
+| `sensitive_keys` | List of keys (including `notes`) classified `sensitive` regardless of the file classification. |
+| `classifications` | Optional per-key levels, for example `{ email: public, phone: private }`. An unknown level makes the file invalid. `sensitive_keys` wins if a key is in both. |
 | any other key | Becomes a fact with that key and value. Lists and nested values are kept as JSON. |
 | body | Stored as a `notes` fact. |
 
@@ -97,8 +98,8 @@ Some rules keep the file safe:
 
 - **Minimal edits.** Only the affected lines change, so comments, ordering and formatting elsewhere are kept. If a targeted edit cannot be proven to produce exactly the intended file, the frontmatter is re-serialized, which drops frontmatter comments.
 - **Atomic writes, conflict-aware.** The file is replaced atomically. If it changed on disk while the edit was prepared (for example you saved in your editor), the edit is refused with `409` and your save wins.
-- **Privacy never lowered.** A file holds one `classification` plus per-key `sensitive_keys`. Asking for a level more restrictive than the file marks the key sensitive; asking for a less restrictive one keeps the file's level. `notes` always follow the file, and restricting them further is refused: change `classification` in the file.
-- **File-only fields.** `id`, `name`, `title`, `classification` and `sensitive_keys` are edited in the file itself (except `name` in `me.md`).
+- **Exact privacy.** A reclassification is written exactly as chosen. A level equal to the file's `classification` needs no entry, `sensitive` goes into `sensitive_keys`, and any other level goes into `classifications`. U2OS never changes a level you did not ask to change.
+- **File-only fields.** `id`, `name`, `title`, `classification`, `sensitive_keys` and `classifications` are edited in the file itself (except `name` in `me.md`).
 - **Invalid files are never rewritten.** A file that does not currently parse is left alone, and the edit is refused until you fix it.
 - **Vault relationships are changed in the file.** A commitment's link to you is removed by setting `status: done` or deleting the file, not through the relationship API.
 
@@ -118,7 +119,7 @@ The export works as follows:
 - It never overwrites an existing file. `me.md` is skipped if you already wrote one, and a name collision gets a `-2` suffix.
 - It never deletes database records. Once indexed, a vault value supersedes the identical database fact, so the file becomes the authority.
 - It includes only explicit and imported facts. Inferred guesses stay out of your files and in U2OS's memory for review.
-- It never lowers privacy. The file's `classification` is the highest non-sensitive level among its facts, and sensitive facts are listed in `sensitive_keys`. A sensitive note is left out of the file and stays in the database.
+- It preserves every fact's classification exactly. The file carries the record's level, facts that differ are listed in `sensitive_keys` or `classifications`, and notes are included at their own level.
 
 The report lists written and skipped files and how many facts were left out.
 

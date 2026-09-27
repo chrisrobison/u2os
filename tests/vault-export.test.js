@@ -85,16 +85,17 @@ test('export never overwrites files or lowers privacy', () => {
     assert.equal(fs.readFileSync(path.join(vault, 'me.md'), 'utf8'), '---\nname: Mine\n---\nHand written.\n');
     assert.ok(report.written.includes('people/bob-2.md'), 'a name collision picks a new file name');
     const file = read('people/bob-2.md');
-    assert.equal(file.frontmatter.classification, 'private');
-    assert.deepEqual(file.frontmatter.sensitive_keys, ['ssn']);
-    assert.equal(file.body, '', 'a sensitive note is left out rather than downgraded');
-    assert.equal(report.sensitiveNotesLeftOut, 1);
+    assert.equal(file.frontmatter.classification, 'personal', 'the file carries the record level');
+    assert.deepEqual(file.frontmatter.sensitive_keys, ['ssn', 'notes']);
+    assert.deepEqual(file.frontmatter.classifications, { email: 'private' });
+    assert.equal(file.body, 'diagnosis details');
 
     indexVault();
     const levels = Object.fromEntries(getFacts(bob.id).map((fact) => [fact.key, fact.classification]));
     assert.equal(levels.email, 'private');
     assert.equal(levels.ssn, 'sensitive');
-    assert.equal(levels.notes, 'sensitive', 'the database note keeps its classification');
+    assert.equal(levels.notes, 'sensitive', 'every level survives the round trip exactly');
+    assert.equal(getFacts(bob.id).find((fact) => fact.key === 'notes').source, 'vault:people/bob-2.md');
   } finally { cleanup(dir); }
 });
 

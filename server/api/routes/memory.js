@@ -1,4 +1,5 @@
 import { sendJson } from '../router.js';
+import { getDb } from '../../db/connection.js';
 import { findEntities, getEntity, getEntityDeletionPreview, deleteEntity } from '../../memory/entity-store.js';
 import { getFacts, getFact, confirmFact, correctFact, reclassifyFact, deleteFact, getFactRevisions } from '../../memory/fact-store.js';
 import { getRelationships, getRelationship, deleteRelationship } from '../../memory/relationship-store.js';
@@ -11,7 +12,15 @@ import { indexVault } from '../../vault/indexer.js';
 // audit, then the vault is re-indexed so the file stays the authority.
 function isVaultFact(fact) { return typeof fact?.source === 'string' && fact.source.startsWith('vault:'); }
 function currentFact(entityId, key, fallback) {
-  return getFacts(entityId).find((fact) => fact.key === key && isVaultFact(fact)) || fallback;
+  const fact = getFacts(entityId).find((item) => item.key === key && isVaultFact(item));
+  if (!fact) return fallback;
+  // Keep the chain explainable: the file-backed fact replaced the fact the
+  // owner accepted or corrected through the API.
+  if (!fact.supersedes_fact_id && fallback?.id && fallback.id !== fact.id) {
+    getDb().prepare('UPDATE facts SET supersedes_fact_id = ? WHERE id = ? AND supersedes_fact_id IS NULL').run(fallback.id, fact.id);
+    return { ...fact, supersedes_fact_id: fallback.id };
+  }
+  return fact;
 }
 async function vaultRoute(res, handler) {
   try { return await handler(); }

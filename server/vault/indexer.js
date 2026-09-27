@@ -13,7 +13,7 @@ import { listMarkdownFiles, readVaultFile, fileSignature } from './markdown.js';
 // never modified.
 
 const CLASSIFICATIONS = new Set(['public', 'personal', 'private', 'sensitive']);
-const RESERVED_KEYS = new Set(['id', 'name', 'title', 'classification', 'sensitive_keys']);
+const RESERVED_KEYS = new Set(['id', 'name', 'title', 'classification', 'sensitive_keys', 'classifications']);
 const ENTITY_ID = /^ent_[A-Za-z0-9_]{1,64}$/;
 const COMMITMENT_ATTRIBUTE_KEYS = new Set(['status', 'due']);
 const MAX_KEY_LENGTH = 100;
@@ -86,6 +86,11 @@ function describe({ relativePath, type }, { frontmatter, body }) {
   if (!CLASSIFICATIONS.has(classification)) throw invalid('classification must be public, personal, private, or sensitive');
   const sensitiveKeys = frontmatter.sensitive_keys ?? [];
   if (!Array.isArray(sensitiveKeys) || sensitiveKeys.some((key) => typeof key !== 'string')) throw invalid('sensitive_keys must be a list of key names');
+  const perKey = frontmatter.classifications ?? {};
+  if (perKey === null || typeof perKey !== 'object' || Array.isArray(perKey) || Object.values(perKey).some((level) => !CLASSIFICATIONS.has(level))) {
+    throw invalid('classifications must map keys to public, personal, private, or sensitive');
+  }
+  const levelFor = (key) => (sensitiveKeys.includes(key) ? 'sensitive' : perKey[key] ?? classification);
 
   const boundId = frontmatter.id === undefined ? null : String(frontmatter.id);
   if (boundId !== null && !ENTITY_ID.test(boundId)) throw invalid('id must be an existing record id such as ent_abc123');
@@ -98,12 +103,12 @@ function describe({ relativePath, type }, { frontmatter, body }) {
     if (key.length > MAX_KEY_LENGTH) throw invalid(`Key "${key.slice(0, 20)}…" is longer than ${MAX_KEY_LENGTH} characters`);
     if (JSON.stringify(value).length > MAX_VALUE_CHARS) throw invalid(`Value for "${key}" is too large`);
     if (type === 'Commitment' && COMMITMENT_ATTRIBUTE_KEYS.has(key)) attributes[key] = value;
-    facts.set(key, { value, classification: sensitiveKeys.includes(key) ? 'sensitive' : classification });
+    facts.set(key, { value, classification: levelFor(key) });
   }
-  if (relativePath === ME_FILE && scalarText(frontmatter.name)) facts.set('name', { value: scalarText(frontmatter.name), classification });
+  if (relativePath === ME_FILE && scalarText(frontmatter.name)) facts.set('name', { value: scalarText(frontmatter.name), classification: levelFor('name') });
   if (body) {
     if (body.length > MAX_VALUE_CHARS) throw invalid('Notes are too large');
-    facts.set('notes', { value: body, classification });
+    facts.set('notes', { value: body, classification: levelFor('notes') });
   }
   if (type === 'Commitment') {
     attributes.status = attributes.status === undefined ? 'open' : String(attributes.status);

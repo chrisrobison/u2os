@@ -131,9 +131,13 @@ test('classification and sensitive_keys set privacy; invalid files are reported 
     write('people/carol.md', '---\nclassification: private\nsensitive_keys: [ssn]\nssn: "123"\nemail: c@example.com\n---\n');
     write('people/bad-yaml.md', '---\nname: [oops\n---\n');
     write('people/bad-class.md', '---\nclassification: secret\n---\n');
+    write('people/bad-map.md', '---\nclassifications:\n  email: secret\n---\n');
+    write('people/dave.md', '---\nclassifications:\n  email: public\n  notes: private\nemail: d@example.com\nphone: "1"\n---\nPrivate note.\n');
     const report = indexVault();
-    assert.equal(report.changed, 1);
-    assert.deepEqual(report.errors.map((error) => error.path).sort(), ['people/bad-class.md', 'people/bad-yaml.md']);
+    assert.equal(report.changed, 2);
+    assert.deepEqual(report.errors.map((error) => error.path).sort(), ['people/bad-class.md', 'people/bad-map.md', 'people/bad-yaml.md']);
+    const dave = Object.fromEntries(getFacts(vaultEntityId('people/dave.md')).map((fact) => [fact.key, fact.classification]));
+    assert.deepEqual(dave, { email: 'public', phone: 'personal', notes: 'private' }, 'per-key levels apply exactly');
     const byKey = Object.fromEntries(getFacts(vaultEntityId('people/carol.md')).map((fact) => [fact.key, fact.classification]));
     assert.deepEqual(byKey, { ssn: 'sensitive', email: 'private' });
   } finally { cleanup(dir); }

@@ -15,7 +15,7 @@ import { parseMarkdown, MAX_VAULT_FILE_BYTES } from './markdown.js';
 // Writes are atomic and refused if the file changed while being edited.
 
 const RANK = { public: 0, personal: 1, private: 2, sensitive: 3 };
-const RESERVED = new Set(['id', 'name', 'title', 'classification', 'sensitive_keys']);
+const RESERVED = new Set(['id', 'name', 'title', 'classification', 'sensitive_keys', 'classifications']);
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
 const TRASH_DIR = '.trash';
 
@@ -43,11 +43,11 @@ export function writeFactToVault(entityId, { key, value, previousKey = null, cla
   editVaultFile(target, (frontmatter, body) => {
     let nextBody = body;
     const fm = { ...frontmatter };
-    const wasSensitive = previousKey && Array.isArray(fm.sensitive_keys) && fm.sensitive_keys.includes(previousKey);
+    const previousLevel = previousKey ? keyLevel(fm, previousKey) : undefined;
     if (previousKey && previousKey !== key) {
       if (previousKey === 'notes') nextBody = '';
       else delete fm[previousKey];
-      if (Array.isArray(fm.sensitive_keys)) fm.sensitive_keys = fm.sensitive_keys.filter((item) => item !== previousKey);
+      clearKeyLevel(fm, previousKey);
     }
     if (key === 'notes') {
       const text = typeof value === 'string' ? value : JSON.stringify(value);
@@ -57,7 +57,7 @@ export function writeFactToVault(entityId, { key, value, previousKey = null, cla
     } else {
       fm[key] = value;
     }
-    const requested = classification ?? (wasSensitive ? 'sensitive' : undefined);
+    const requested = classification ?? (previousKey !== key ? previousLevel : undefined);
     if (requested !== undefined) note.effectiveClassification = applyClassification(fm, key, requested);
     return { frontmatter: tidy(fm), body: nextBody };
   }, { create: target.owner });
@@ -73,7 +73,7 @@ export function removeFactFromVault(entityId, key) {
     if (key === 'notes') return { frontmatter: fm, body: '' };
     if (key === 'name' && target.owner) delete fm.name;
     else delete fm[key];
-    if (Array.isArray(fm.sensitive_keys)) fm.sensitive_keys = fm.sensitive_keys.filter((item) => item !== key);
+    clearKeyLevel(fm, key);
     return { frontmatter: tidy(fm), body };
   });
   return { path: target.relativePath };
@@ -115,24 +115,38 @@ function trashFile(target) {
 }
 
 /**
- * The file can express its own classification plus a per-key `sensitive`.
- * A request more restrictive than the file becomes `sensitive` (never
- * weaker than asked); a less restrictive request keeps the file's level
- * (never weaker than the file). Notes always follow the file.
+ * Records exactly the level the owner chose for `key`: the file's own
+ * `classification` when equal, `sensitive_keys` for sensitive, otherwise a
+ * `classifications:` entry. Returns the level the key now has.
  */
 export function applyClassification(frontmatter, key, requested) {
   if (!(requested in RANK)) throw writeBackError('classification must be public, personal, private, or sensitive', 400);
   const fileClass = frontmatter.classification in RANK ? frontmatter.classification : 'personal';
-  if (key === 'notes') {
-    if (RANK[requested] > RANK[fileClass]) throw writeBackError(`Notes follow this file's classification (${fileClass}); change classification in the file to restrict them further`, 422);
-    return fileClass;
+  clearKeyLevel(frontmatter, key);
+  if (requested === 'sensitive' && fileClass !== 'sensitive') {
+    frontmatter.sensitive_keys = [...(Array.isArray(frontmatter.sensitive_keys) ? frontmatter.sensitive_keys : []), key];
+  } else if (requested !== fileClass) {
+    frontmatter.classifications = { ...(isMapping(frontmatter.classifications) ? frontmatter.classifications : {}), [key]: requested };
   }
-  const keys = new Set(Array.isArray(frontmatter.sensitive_keys) ? frontmatter.sensitive_keys : []);
-  let effective;
-  if (requested === 'sensitive' || RANK[requested] > RANK[fileClass]) { keys.add(key); effective = 'sensitive'; }
-  else { keys.delete(key); effective = fileClass; }
-  if (keys.size) frontmatter.sensitive_keys = [...keys]; else delete frontmatter.sensitive_keys;
-  return effective;
+  return requested;
+}
+
+/** The per-key level recorded in the file, or undefined for the file level. */
+function keyLevel(frontmatter, key) {
+  if (Array.isArray(frontmatter.sensitive_keys) && frontmatter.sensitive_keys.includes(key)) return 'sensitive';
+  return isMapping(frontmatter.classifications) ? frontmatter.classifications[key] : undefined;
+}
+
+function clearKeyLevel(frontmatter, key) {
+  if (Array.isArray(frontmatter.sensitive_keys)) frontmatter.sensitive_keys = frontmatter.sensitive_keys.filter((item) => item !== key);
+  if (isMapping(frontmatter.classifications) && key in frontmatter.classifications) {
+    const { [key]: _removed, ...rest } = frontmatter.classifications;
+    frontmatter.classifications = rest;
+  }
+}
+
+function isMapping(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 export function editVaultFile({ vaultDir, relativePath }, mutate, { create = false } = {}) {
@@ -227,6 +241,7 @@ function assertWritableKey(target, key) {
 
 function tidy(frontmatter) {
   if (Array.isArray(frontmatter.sensitive_keys) && !frontmatter.sensitive_keys.length) delete frontmatter.sensitive_keys;
+  if (isMapping(frontmatter.classifications) && !Object.keys(frontmatter.classifications).length) delete frontmatter.classifications;
   return frontmatter;
 }
 
