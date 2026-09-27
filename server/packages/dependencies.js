@@ -82,8 +82,11 @@ export function validateDependencies(bundle, registries, { u2osVersion = U2OS_VE
 
   // A capability's required permissions must be declared by the package
   // that uses it, or it can never run (the invoker would deny it).
+  // Transitive: a skill from another package acts with this package's
+  // grants when this package's workflows call it (the principal rule).
   const used = new Set(Object.keys(required.capabilities));
-  for (const [, workflow] of workflows) for (const id of workflowReferences(workflow).capabilities) used.add(id);
+  const lookupSkill = (id) => bundle.skills.find((s) => s.id === id) || registries.skills.find(id);
+  for (const [, workflow] of workflows) for (const id of capabilityClosure(workflow, lookupSkill)) used.add(id);
   for (const id of used) {
     const contract = bundle.capabilities.find((c) => c.id === id && !c.implements)
       || (registries.capabilities.has(id) ? registries.capabilities.get(id) : null);
@@ -95,4 +98,34 @@ export function validateDependencies(bundle, registries, { u2osVersion = U2OS_VE
   }
 
   return { errors, resolved };
+}
+
+/** Capabilities a workflow uses directly or through the skills it calls. */
+export function capabilityClosure(workflow, lookupSkill, seen = new Set()) {
+  const result = new Set();
+  const visit = (current) => {
+    const refs = workflowReferences(current);
+    for (const id of refs.capabilities) result.add(id);
+    for (const id of refs.skills) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const skill = lookupSkill(id);
+      if (skill?.workflow) visit(skill.workflow);
+    }
+  };
+  if (workflow) visit(workflow);
+  return result;
+}
+
+/**
+ * Capabilities and permissions an automation needs from its package's
+ * grants, including through skills (for install review, enable, inspect).
+ */
+export function automationRequirements(definition, registries) {
+  const capabilities = [...capabilityClosure(definition.workflow, (id) => registries.skills.find(id))].sort();
+  const permissions = new Set();
+  for (const id of capabilities) {
+    if (registries.capabilities.has(id)) for (const permission of registries.capabilities.get(id).requiredPermissions) permissions.add(permission);
+  }
+  return { capabilities, permissions: [...permissions].sort() };
 }

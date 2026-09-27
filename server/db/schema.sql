@@ -642,3 +642,88 @@ CREATE TABLE IF NOT EXISTS capability_provider_selection (
   updated_at TEXT NOT NULL
 );
 
+-- Durable workflows (docs/plugin-architecture.md §8-9). One instance per
+-- installed automation holds its persistent state and schedule. Runs are
+-- checkpointed per step and per foreach item as structured data (never
+-- JavaScript state), leased like triggers and action_queue, and
+-- deduplicated per trigger slot/event by dedupe_key.
+CREATE TABLE IF NOT EXISTS automation_instances (
+  id TEXT PRIMARY KEY,
+  package_id TEXT NOT NULL,
+  automation_id TEXT NOT NULL UNIQUE,
+  enabled INTEGER NOT NULL DEFAULT 0,
+  paused INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'installed',  -- 'installed' | 'uninstalled'
+  state TEXT NOT NULL DEFAULT '{}',
+  state_version INTEGER NOT NULL DEFAULT 0,
+  next_run_at TEXT,
+  last_run_id TEXT,
+  last_run_at TEXT,
+  last_status TEXT,
+  last_error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS workflow_runs (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,                 -- 'automation' | 'skill'
+  definition_id TEXT NOT NULL,
+  package_id TEXT NOT NULL,             -- package that defines the workflow
+  principal_package_id TEXT NOT NULL,   -- package whose grants capability calls use (the root automation's)
+  package_version TEXT,
+  automation_instance_id TEXT,
+  root_run_id TEXT,
+  parent_run_id TEXT,
+  parent_step_id TEXT,
+  depth INTEGER NOT NULL DEFAULT 0,
+  trigger TEXT NOT NULL DEFAULT '{}',
+  dedupe_key TEXT UNIQUE,
+  status TEXT NOT NULL DEFAULT 'pending',  -- pending | running | waiting | completed | failed | cancelled | skipped | throttled
+  workflow TEXT NOT NULL,             -- definition snapshot taken at creation
+  inputs TEXT NOT NULL DEFAULT '{}',
+  outputs TEXT,
+  context TEXT NOT NULL DEFAULT '{}', -- completed step outputs
+  position TEXT NOT NULL DEFAULT '{}',-- step index, foreach items/results, wait handle
+  wait TEXT,
+  wake_at TEXT,
+  error TEXT,
+  correlation_id TEXT,
+  lease_owner TEXT,
+  lease_expires_at TEXT,
+  created_at TEXT NOT NULL,
+  started_at TEXT,
+  updated_at TEXT NOT NULL,
+  completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_workflow_runs_status ON workflow_runs(status, wake_at);
+CREATE INDEX IF NOT EXISTS idx_workflow_runs_instance ON workflow_runs(automation_instance_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_workflow_runs_parent ON workflow_runs(parent_run_id);
+
+CREATE TABLE IF NOT EXISTS workflow_steps (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  step_id TEXT NOT NULL,
+  iteration INTEGER NOT NULL DEFAULT -1,
+  kind TEXT NOT NULL,
+  status TEXT NOT NULL,               -- running | completed | failed | skipped | denied | waiting
+  attempts INTEGER NOT NULL DEFAULT 0,
+  action_id TEXT,
+  child_run_id TEXT,
+  policy TEXT,
+  output TEXT,
+  error TEXT,
+  started_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  completed_at TEXT,
+  UNIQUE(run_id, step_id, iteration)
+);
+CREATE INDEX IF NOT EXISTS idx_workflow_steps_run ON workflow_steps(run_id, started_at);
+
+-- Last event row delivered to automations, so events published while the
+-- runtime was stopped are delivered once on start.
+CREATE TABLE IF NOT EXISTS automation_event_cursor (
+  id INTEGER PRIMARY KEY,               -- always 1
+  last_rowid INTEGER NOT NULL,
+  updated_at TEXT NOT NULL
+);
