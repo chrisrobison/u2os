@@ -60,6 +60,7 @@ import { startVaultWatcher } from './vault/watcher.js';
 import { startJournal } from './vault/journal.js';
 import { registerRoutineRoutes } from './api/routes/routines.js';
 import { startRoutineRunner, stopRoutineRunner } from './routines/routine-runner.js';
+import { createPackagePlatform } from './packages/platform.js';
 
 export async function startServer(options = {}) {
   const home = canonicalDataHome(getDataDir());
@@ -211,6 +212,9 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
   ensureConnectionInstancesMigrated({ db, dataDir });
 
   const agent = new Agent({ modelRouter, policyEngine, toolRegistry, eventBus, ownerEntityId, embeddingProvider, dataProcessingPolicy });
+  // Package platform (docs/plugin-architecture.md): installed packages'
+  // capabilities, skills and automations, invoking through the agent's gate.
+  const packages = createPackagePlatform({ agent, eventBus, dataDir });
   let queueTick = null;
   let runWake = null;
   let queueStopped = false;
@@ -341,7 +345,7 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
   let backgroundStop = null;
   const stopBackgroundWorkers = () => {
     if (!backgroundStop) backgroundStop = Promise.allSettled([
-      stopActionQueue(), stopSyncScheduler(), triggerEngine.stopAll(), stopRoutineRunner(), deviceRegistry.stopAll(),
+      stopActionQueue(), stopSyncScheduler(), triggerEngine.stopAll(), stopRoutineRunner(), packages.runtime.stop(), deviceRegistry.stopAll(),
       Promise.resolve().then(() => mdnsHandle?.stop()),
       Promise.resolve().then(() => vaultWatcher?.stop()),
       Promise.resolve().then(() => stopJournal?.()),
@@ -365,6 +369,8 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
     triggerEngine.startAll({ eventBus, agent, ...(triggerTickMs ? { tickMs: triggerTickMs } : {}) });
     // Owner-written vault routines: unattended, but through the same policy gate.
     startRoutineRunner({ eventBus, agent });
+    // Package automations: durable, triggered workflows through the same gate.
+    packages.runtime.start();
     mdnsHandle = !isLoopback(resolvedBind) ? startMdns({ port: boundPort }) : null;
   } catch (error) {
     server.closeAllConnections();
@@ -383,7 +389,7 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
 
   log.info('server', 'U2OS server listening', { bind: resolvedBind, port: boundPort, dataDir, dbPath });
 
-  return { server, port: boundPort, bind: resolvedBind, dataDir, dbPath, agent, eventBus, toolRegistry, policyEngine, auth, mdns: mdnsHandle, deviceRegistry, capabilityRegistry, streamRegistry, stopActionQueue, stopBackgroundWorkers, drainRequests };
+  return { server, port: boundPort, bind: resolvedBind, dataDir, dbPath, agent, eventBus, toolRegistry, policyEngine, auth, packages, mdns: mdnsHandle, deviceRegistry, capabilityRegistry, streamRegistry, stopActionQueue, stopBackgroundWorkers, drainRequests };
 }
 
 function readConfig(dataDir) { try { return JSON.parse(fs.readFileSync(path.join(dataDir, 'config', 'config.json'), 'utf8')); } catch { return {}; } }
