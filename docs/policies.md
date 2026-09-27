@@ -128,6 +128,15 @@ Authorization is not frozen when an action enters the durable queue. Immediately
 
 For `email.send`, `calendar.create`, and `calendar.reschedule`, the runtime also stores the selected provider, connection instance, display label, and credential revision in the action audit record before approval or enqueueing. The approval card shows this account identity. Approval and queue execution resolve that exact instance even if the active provider changes; a deleted, disconnected, or reconnected account stops before an external call. A queued payload differing from its audited proposal also stops. Calendar reschedules reject events from another account. Older pending actions without a binding require owner review. IMAP sends additionally bind the explicitly associated SMTP instance and credential revision; changing or removing that sender blocks an earlier approval before delivery.
 
+## Package authority
+
+Actions requested by installed packages ([plugin architecture](plugin-architecture.md#6-permissions-and-delegated-authority)) go through the same evaluation, audit, approval and queue path, with one additive, tighten-only overlay applied after the voice, goal and account-binding gates (`server/packages/authority.js`):
+
+1. **Permission**: the capability's required permissions must be declared by the package and granted by the owner. Otherwise the action is `blocked` with rule `package-permission`.
+2. **Package policy**: a deterministic package policy may deny (`blocked`, rule `package-policy:<name>`) or require approval. `automatic` leaves this policy file's decision unchanged, so a package can never make an action more permissive than `policies.yaml`.
+
+Package capabilities use their id as `domain.operation` here (`mock.email-send` → domain `mock`, operation `email-send`); with no rule they require confirmation. Audit rows carry `requested_by = package:<id>` and a `package_context` JSON column naming the package, automation, skill, run, step, permission and policy decision. When a queued package action executes, the worker re-checks that the package is still installed, enabled and granted, and blocks it otherwise (or when no package runtime is attached).
+
 ## Data-processing privacy policy (separate from the above)
 
 Assistant transcript outputs also inherit a runtime classification floor from the exact filtered inputs used for their model call. The runtime records `private` or `sensitive` on the run; sensitive contributing context, history, summaries or observations tighten the output, and later rounds/continuations cannot lower it. Model JSON cannot supply this authority. Historical assistant turns use the stricter of their stored label and the run floor before each destination's history/summary filtering. Ordinary known-private outputs remain reusable under owner policy.

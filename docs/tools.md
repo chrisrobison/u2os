@@ -6,6 +6,8 @@ Most tools (`email.*`, `calendar.*`, `contacts.search`, `web.search`, `notificat
 
 `presentation.present`/`presentation.notify` (docs/devices.md) are a different shape from every other tool here: instead of calling a connector provider, they call `invokeCapability()` (server/devices/capabilities.js), which resolves an eligible *device* deterministically (trust/privacy/ownership-aware, never LLM-driven) and delegates to that device's adapter. They also take their dependencies via constructor injection (`deviceRegistry`/`capabilityRegistry`) rather than a module-level provider accessor -- see server/tools/presentation-tools.js's header comment for why.
 
+Every tool listed in `server/packages/core-capabilities.js` is also a **core capability** under the same id that installed packages may invoke, with the permissions it maps to ([capabilities guide](packages/capabilities.md)). Package-defined capabilities are registered in the same registry as **hidden** tools (`register(tool, { hidden: true })`): the gate and durable queue can execute them, but `list()` never shows them to the planner and plan validation refuses them.
+
 ## `Tool` interface (`server/tools/tool.js`)
 
 ```js

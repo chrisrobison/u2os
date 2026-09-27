@@ -77,6 +77,8 @@ notifications:
 
 ## Skill manifest schema
 
+These files predate the package platform and describe **connectors**, i.e. the providers behind core capabilities; in [plugin architecture](plugin-architecture.md) terms they are provider manifests, and "skill" now means reusable package behaviour. Their `provides` lists are shown as the providers of core capabilities in `GET /api/packages/capabilities`. The directory keeps its name for compatibility.
+
 ```json
 {
   "id": "google-calendar",
