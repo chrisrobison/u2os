@@ -2,7 +2,7 @@
 
 No LLM output executes a consequential tool without passing through this engine. The planner proposes; this evaluates; the tool layer (only after this returns `requiresApproval: false`, or after explicit user approval) executes.
 
-This engine is what makes it safe for U2OS to act **on the owner's behalf** ([ADR 0007](adr/0007-owned-vault-is-the-digital-self.md)). Every source of intent goes through it with the same result for the same action: chat, voice, [routines](routines.md) running unattended, triggers, goals, and proactive evaluators. A routine has exactly the authority policy grants and no more. With the default policy, a routine that wants to send email leaves a pending approval, just as chat does. Moving delegated authority into the vault as an owner-editable file is planned ([#362](https://github.com/chrisrobison/u2os/issues/362)).
+This engine is what makes it safe for U2OS to act **on the owner's behalf** ([ADR 0007](adr/0007-owned-vault-is-the-digital-self.md)). Every source of intent goes through it with the same result for the same action: chat, voice, [routines](routines.md) running unattended, triggers, goals, and proactive evaluators. A routine has exactly the authority policy grants and no more. With the default policy, a routine that wants to send email leaves a pending approval, just as chat does. Delegated authority lives in your vault as `policies.yaml` (see [Where the policy lives](#where-the-policy-lives)).
 
 ## Autonomy levels
 
@@ -16,6 +16,26 @@ LEVEL 5 — Domain      manage an explicitly delegated domain autonomously
 ```
 
 Phase 1 implements levels 0, 2, 3, and 4 end to end (level 1/5 are representable in config but not exercised by the demo scenario).
+
+## Where the policy lives
+
+The effective policy is the home policy (`U2OS_HOME/policies/policies.yaml`, written with the defaults below on first run), overridden **per domain operation** by your vault policy (`<vault>/policies.yaml`) when that file exists. The vault file is the one you own and edit ([vault](vault.md)):
+
+```yaml
+# <vault>/policies.yaml: only what differs from the home policy is needed
+tasks:
+  create: confirm          # ask me first
+calendar:
+  reschedule:
+    personal: autonomous   # I delegate personal reschedules
+    default: confirm
+```
+
+- `npm run vault:export` copies the current home policy into the vault unchanged, so nothing changes until you edit it. An existing vault policy is never replaced.
+- Edits apply on the next decision, without a restart. Every evaluation checks both files' change signature.
+- Only `always`, `autonomous`, `confirm` and `never` are accepted, as a level per operation or per sub-category.
+- **An invalid vault policy fails closed.** This includes bad YAML, an unknown level, the wrong shape, a non-regular file, or more than 64 KiB. Every non-read action then requires confirmation, `never` blocks still apply, reads are unaffected, and the error is reported by `GET /api/vault` (`policy.error`). U2OS never falls back to a possibly looser home policy just because your file is broken.
+- Sub-categories (`friends`, `business`, `personal`, …) are still resolved only from authoritative server context, never from the proposed action.
 
 ## Config file
 

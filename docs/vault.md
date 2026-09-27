@@ -22,7 +22,7 @@ vault/
   routines/        # standing instructions (see routines.md)
 ```
 
-Routine files are described in [routines](routines.md). The rest of this page covers identity and memory files.
+Routine files are described in [routines](routines.md), and `policies.yaml` (what U2OS may do without asking) in [policies](policies.md#where-the-policy-lives). The rest of this page covers identity and memory files.
 
 ## File format
 
@@ -135,4 +135,4 @@ The default vault lives inside `U2OS_HOME`, so `npm run backup` includes it. Bac
 
 ## Not yet supported
 
-- A journal of observations and actions ([#360](https://github.com/chrisrobison/u2os/issues/360)) and vault policies ([#362](https://github.com/chrisrobison/u2os/issues/362)).
+- A journal of observations and actions ([#360](https://github.com/chrisrobison/u2os/issues/360)).

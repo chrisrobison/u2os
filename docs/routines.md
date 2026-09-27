@@ -69,6 +69,6 @@ Routines are edited as files; there is no create or update API.
 
 ## Not yet supported
 
-- Loosening policy per routine. Delegated authority belongs in vault policy ([#362](https://github.com/chrisrobison/u2os/issues/362)).
+- Per-routine authority. Your vault `policies.yaml` ([policies](policies.md#where-the-policy-lives)) applies to routines exactly as to chat; scoping it by routine or counterpart is PLAN.md Milestone C.
 - A Routines page in the browser; use the API or Activity view for now.
 - Catch-up of missed daily runs after long downtime.
