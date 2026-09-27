@@ -66,7 +66,7 @@ test('overlapping lexical/semantic requests cannot mutate shared provider, owner
   recordFact({ entityId: person.id, key: 'second', value: 'Lower ranked fact', source: 'fixture:owner', confidence: 0.5 });
   const entered = deferred(), release = deferred(); let calls = 0;
   const provider = { id: 'fixture-embedding', destination: 'local_model', async embed() { calls++; entered.resolve(); await release.promise; return [1, 0, 0]; } };
-  const assembler = new ContextAssembler({ embeddingProvider: provider, ownerEntityId: person.id, maxFactsPerPerson: 1 });
+  const assembler = new ContextAssembler({ embeddingProvider: provider, ownerEntityId: person.id, maxFactsPerPerson: 1, maxOwnerFacts: 1 });
   const ordinary = assembler.assemble({ objective, actor: { type: 'user', id: 'owner' } });
   await entered.promise; const before = calls;
   try {

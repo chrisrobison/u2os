@@ -39,6 +39,27 @@ Other frontmatter:
 
 - `name`: a display name. It falls back to the first `# Heading`, then the file name.
 - `enabled: false`: pauses the routine.
+- `skills: [job-hunting, tone]`: vault skills to use, up to 5 (see below).
+
+## Skills
+
+A skill is a vault file in `skills/` that says **how you want something done**: criteria, tone, what to report, what never to do. Routines name the skills they use, and their instructions are given to the planner right after the routine's own instruction:
+
+```markdown
+<!-- skills/job-hunting.md -->
+---
+description: How I evaluate job postings and what to tell me about them.
+---
+A strong match fits a target role, pays at least my minimum, ...
+Never apply or contact employers.
+```
+
+- The skill's name is its file name (`skills/job-hunting.md` → `job-hunting`): lowercase letters, digits, `-` or `_`.
+- A skill has up to 8,000 characters of instructions, and a routine's skills total at most 16,000 characters.
+- If a routine names a skill that is missing or invalid, the routine is reported as invalid and never runs with only part of its instructions.
+- Skills are your own instructions: they reach the configured planner like the routine text itself. Put facts about you in `me.md` (which the planner always receives in full, subject to its privacy classifications), and put how to use them in the skill.
+
+The [example vault](../examples/vault/README.md) builds Job Hunter this way, and [skills vs packages](skills-vs-packages.md) compares it with the package workflow ([ADR 0009](adr/0009-extension-model-mcp-tools-vault-skills-routines.md)).
 
 The body is the instruction, up to 4,000 characters. A routine with an invalid trigger or an empty body is reported and never runs.
 

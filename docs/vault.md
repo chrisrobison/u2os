@@ -20,6 +20,7 @@ vault/
   projects/        # one file per project
   commitments/     # things you have promised
   routines/        # standing instructions (see routines.md)
+  skills/          # how you want things done; routines name them (see routines.md)
   policies.yaml    # optional: what U2OS may do without asking
   journal/         # written by U2OS: what it did on your behalf
 ```
