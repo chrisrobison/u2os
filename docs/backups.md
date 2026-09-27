@@ -1,5 +1,7 @@
 # Offline backups and encryption
 
+**What to protect first:** your vault ([vault](vault.md)) is the irreplaceable part of U2OS: your digital self as plain files. With the default location (`U2OS_HOME/vault`), every backup below includes it. If you keep the vault elsewhere (`U2OS_VAULT` or `vaultDir`), U2OS backups do **not** include it; version or back it up yourself, for example with git on an encrypted disk. The rest of `U2OS_HOME` is the runtime: database index, queue, credentials and history. Vault-sourced memory can be rebuilt from the files, but connector caches, other memory, audit history and credentials cannot.
+
 Stop U2OS and wait for shutdown before creating a backup. Creation acquires
 the canonical-home ownership guard, stages related regular files privately,
 captures committed SQLite WAL data through SQLite backup without migrations,

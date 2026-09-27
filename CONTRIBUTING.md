@@ -1,11 +1,19 @@
 # Contributing to U2OS
 
-U2OS is a local-first personal agent, not a chatbot wrapper. Contributions should deepen the observe → remember → anticipate → act → observe outcome → learn loop while preserving owner control, provenance, and replaceable infrastructure.
+U2OS consolidates the owner's digital self into **files they own** and **acts on their behalf** within delegated authority. It is not a chatbot wrapper. Contributions should deepen the observe → remember → anticipate → act → observe outcome → learn loop while preserving owner control, provenance, and replaceable infrastructure.
+
+## Product direction
+
+Read [ADR 0007](docs/adr/0007-owned-vault-is-the-digital-self.md) and [PLAN.md](PLAN.md) first.
+
+- The **vault** of Markdown files is the digital self. A feature that stores owner-authored knowledge should live in the vault, or be written back to it, not only in SQLite.
+- **Routines** are how U2OS acts without being asked. New proactive behaviour should usually be expressible as a routine, not a new hard-coded evaluator.
+- Priority follows PLAN.md: finish the owned digital self, prove it in daily use, then widen delegated authority. Speculative hardening of recovery, backup or connector edge cases is deferred unless real use or a security review surfaces it. Say in the issue which milestone it serves.
 
 ## Ground rules
 
 - Require Node.js 22 or newer and use native ES modules.
-- Keep SQLite as the authoritative local store.
+- The vault is authoritative for owner-authored knowledge; SQLite is its index and the authoritative store for runtime state, connector caches and audit.
 - Keep the browser no-build: vanilla JavaScript, Web Components, and web standards.
 - Prefer small explicit modules over framework or dependency expansion.
 - Treat browser clients, connector content, model output, and device messages as untrusted.
@@ -14,7 +22,7 @@ U2OS is a local-first personal agent, not a chatbot wrapper. Contributions shoul
 - Never store or expose model chain-of-thought. Stored reasoning summaries and provenance are sufficient.
 - Preserve existing `U2OS_HOME` installations with additive migrations and conservative defaults.
 
-Read [docs/architecture.md](docs/architecture.md), [docs/policies.md](docs/policies.md), [docs/events.md](docs/events.md), and [docs/models.md](docs/models.md) before changing a trust boundary.
+Read [docs/architecture.md](docs/architecture.md), [docs/vault.md](docs/vault.md), [docs/routines.md](docs/routines.md), [docs/policies.md](docs/policies.md), [docs/events.md](docs/events.md), and [docs/models.md](docs/models.md) before changing a trust boundary.
 
 ## Set up and test
 
@@ -24,7 +32,7 @@ npm test
 npm run test:e2e
 ```
 
-Run the service with `npm start`, or `npm run dev` for automatic restarts. Runtime data belongs under `U2OS_HOME`; use a temporary value while developing against migrations or seed data. Do not point destructive tests at a real owner data directory.
+Run the service with `npm start`, or `npm run dev` for automatic restarts. Runtime data belongs under `U2OS_HOME` and owner files in the vault (`U2OS_VAULT`); use temporary values for both while developing against migrations or seed data. Do not point destructive tests at a real owner data directory.
 
 The Node suite uses the built-in test runner. Browser tests use Playwright against the real server and real Web Components—there is no frontend compilation step. Add focused regression coverage first, run targeted tests while iterating, then run both complete suites before opening a pull request.
 

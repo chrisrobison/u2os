@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted; refined by [0007](0007-owned-vault-is-the-digital-self.md). Owner-authored knowledge now lives in a vault of plain files, which may sit inside or outside `U2OS_HOME`.
 
 ## Context
 

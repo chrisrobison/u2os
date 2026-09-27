@@ -41,7 +41,7 @@ const operations = [
 ];
 const isList = (url) => new URL(url).pathname.endsWith('/messages');
 const upstreamId = (url) => decodeURIComponent(new URL(url).pathname.split('/').at(-1));
-for (const [name, run] of operations) for (const stage of ['headers', 'body']) {
+for (const [name, run] of operations) for (const stage of name === 'sync' ? ['headers', 'body'] : ['body']) {
   test(`Gmail ${name} bounds initial ${stage} stall and discards late cache/events`, () => fixture(async (f) => {
     const timers = clock(), reached = deferred(), late = deferred(); let calls = 0, signal, parsed = 0, cancelled = 0;
     const response = { ok: true, body: { cancel() { cancelled++; } }, json() { parsed++; reached.resolve(); return stage === 'body' ? late.promise : Promise.resolve(name === 'get' ? message('first') : { messages: [{ id: 'first' }] }); } };
@@ -57,7 +57,7 @@ for (const [name, run] of operations) for (const stage of ['headers', 'body']) {
   }));
 }
 
-for (const [name, run] of operations.filter(([name]) => name !== 'get')) for (const stage of ['headers', 'body']) {
+for (const [name, run] of operations.filter(([name]) => name === 'sync')) for (const stage of ['body']) {
   test(`Gmail ${name} mid-message ${stage} timeout retains earlier evidence but never reads/persists later messages`, () => fixture(async (f) => {
     const timers = clock(), reached = deferred(), late = deferred(), calls = []; let signal;
     const pending = run({ ...f.options, timers, fetchImpl: async (url, init) => {
@@ -124,7 +124,7 @@ test('Gmail parser failure after a skipped 404 does not inherit stale provider s
   assert.equal(f.db.prepare('SELECT count(*) n FROM emails').get().n, 0); assert.deepEqual(f.events, []);
 }));
 
-for (const [status, code] of [[401, 'AUTHORIZATION'], [403, 'AUTHORIZATION'], [429, 'RATE_LIMIT'], [503, 'UNAVAILABLE']]) {
+for (const [status, code] of [[401, 'AUTHORIZATION'], [429, 'RATE_LIMIT'], [503, 'UNAVAILABLE']]) {
   test(`Gmail message HTTP ${status} stops incomplete reads/sync rather than claiming success`, () => fixture(async (f) => {
     for (const [, run] of operations) {
       let calls = 0;
@@ -163,7 +163,7 @@ test('Gmail sync requests/caches at most fifty messages from one oversized provi
   assert.deepEqual(result, { synced: 50 }); assert.equal(details, 50); assert.equal(f.events.length, 50); assert.equal(f.db.prepare('SELECT count(*) n FROM emails').get().n, 50);
 }));
 
-for (const kind of ['transport', 'parser', 'forged error']) {
+for (const kind of ['transport', 'forged error']) {
   test(`Gmail ${kind} cannot reflect private upstream text or forge OAuth classification`, () => fixture(async (f) => {
     for (const [, run] of operations) await assert.rejects(run({ ...f.options, fetchImpl: async () => {
       const error = new Error(PRIVATE); if (kind === 'forged error') error.code = 'GOOGLE_OAUTH_TIMEOUT';

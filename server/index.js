@@ -55,6 +55,11 @@ import { registerAuthRoutes } from './api/routes/auth.js';
 import { registerModelRoutes } from './api/routes/model.js';
 import { registerDeviceRoutes } from './api/routes/devices.js';
 import { registerDiagnosticsRoutes } from './api/routes/diagnostics.js';
+import { registerVaultRoutes } from './api/routes/vault.js';
+import { startVaultWatcher } from './vault/watcher.js';
+import { startJournal } from './vault/journal.js';
+import { registerRoutineRoutes } from './api/routes/routines.js';
+import { startRoutineRunner, stopRoutineRunner } from './routines/routine-runner.js';
 
 export async function startServer(options = {}) {
   const home = canonicalDataHome(getDataDir());
@@ -255,6 +260,8 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
   registerDeviceRoutes(router, { deviceRegistry, capabilityRegistry, eventBus, deviceConnectToken, streamRegistry,
     developmentMode: deviceDebugEnabled });
   registerDiagnosticsRoutes(router, { db, dbPath, dataDir, startTime, sseHub, modelRouter, embeddingProvider });
+  registerVaultRoutes(router, { eventBus });
+  registerRoutineRoutes(router, { eventBus, agent });
 
   // Minimal HTTP access log (method, path, status, duration_ms) wrapped
   // around the existing router/static dispatch. This only observes the
@@ -329,11 +336,15 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
   // is closed (tests included) so no test run is left holding an open
   // multicast socket.
   let mdnsHandle = null;
+  let vaultWatcher = null;
+  let stopJournal = null;
   let backgroundStop = null;
   const stopBackgroundWorkers = () => {
     if (!backgroundStop) backgroundStop = Promise.allSettled([
-      stopActionQueue(), stopSyncScheduler(), triggerEngine.stopAll(), deviceRegistry.stopAll(),
+      stopActionQueue(), stopSyncScheduler(), triggerEngine.stopAll(), stopRoutineRunner(), deviceRegistry.stopAll(),
       Promise.resolve().then(() => mdnsHandle?.stop()),
+      Promise.resolve().then(() => vaultWatcher?.stop()),
+      Promise.resolve().then(() => stopJournal?.()),
     ]).then((results) => {
       if (results.some((result) => result.status === 'rejected')) throw new Error('Background cleanup failed; inspect durable state before restarting');
     });
@@ -342,12 +353,18 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
   server.on('close', () => { stopBackgroundWorkers().catch(() => { log.error('server', 'Background shutdown cleanup failed'); }); });
   try {
     // Start execution only after successful bind, with cleanup installed first.
+    // The owned vault (ADR 0007) is indexed before triggers can act on memory.
+    vaultWatcher = startVaultWatcher({ eventBus });
+    // What U2OS does on the owner's behalf is also recorded in their vault.
+    stopJournal = startJournal({ eventBus });
     startSyncScheduler({ db, eventBus, dataDir });
     actionQueueTimer = setInterval(runQueueTick, Number(process.env.U2OS_ACTION_QUEUE_TICK_MS) || 1_000);
     actionQueueTimer.unref?.();
     // Phase 6 / PROMPT.md §9: both trigger halves retain the normal policy gate.
     const triggerTickMs = Number(process.env.U2OS_TRIGGER_TICK_MS) || undefined;
     triggerEngine.startAll({ eventBus, agent, ...(triggerTickMs ? { tickMs: triggerTickMs } : {}) });
+    // Owner-written vault routines: unattended, but through the same policy gate.
+    startRoutineRunner({ eventBus, agent });
     mdnsHandle = !isLoopback(resolvedBind) ? startMdns({ port: boundPort }) : null;
   } catch (error) {
     server.closeAllConnections();

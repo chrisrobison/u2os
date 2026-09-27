@@ -1,5 +1,7 @@
 # Goals: bounded read-only runs and finite schedules
 
+Goals are bounded, **read-only** research objectives with budgets. To have U2OS carry out standing instructions that may act (brief me, draft replies, follow up), use a [routine](routines.md) in your vault instead; see [automation](automation.md) for how the two compare.
+
 Goals sit above runs and actions. An owner can save a draft and explicitly start bounded, read-only work now, at a selected future time, or through a finite web research schedule. Without selected scheduled work, `executionEnabled: false` and `nextWakeAt: null` remain truthful. The run's `objectiveStatus` stays `unverified` even if individual read actions succeed. Dedicated one-time timers reuse the existing trigger scheduler; there is no continuous model polling or unbounded recurrence.
 
 The native **Goals** view creates and edits drafts, shows real linked runs and resource usage, and offers **Run once (read-only)** while budget remains. Starting the first run makes the goal active and freezes its fields until paused. A stale revision asks the owner to reload instead of overwriting another edit.

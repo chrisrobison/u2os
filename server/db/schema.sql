@@ -574,3 +574,22 @@ CREATE TABLE IF NOT EXISTS connection_sync_state (
   updated_at TEXT NOT NULL,
   PRIMARY KEY (instance_id, domain)
 );
+
+-- Standing routines (docs/routines.md, ADR 0007). The routine itself is a
+-- vault file; this table only records which trigger slots were claimed so a
+-- scheduled or event routine runs at most once per slot, across restarts.
+-- A claimed slot is never replayed, even if the process died mid-run.
+CREATE TABLE IF NOT EXISTS routine_runs (
+  id TEXT PRIMARY KEY,
+  routine_path TEXT NOT NULL,
+  slot TEXT NOT NULL,
+  trigger_kind TEXT NOT NULL,
+  event_id TEXT,
+  run_id TEXT,
+  status TEXT NOT NULL DEFAULT 'started',
+  reason TEXT,
+  created_at TEXT NOT NULL,
+  completed_at TEXT,
+  UNIQUE(routine_path, slot)
+);
+CREATE INDEX IF NOT EXISTS idx_routine_runs_created ON routine_runs(created_at);

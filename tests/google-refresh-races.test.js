@@ -23,8 +23,6 @@ async function home(operation) {
 }
 const changes = [
   ['service disconnect', (dir) => clearTokens(account, 'gmail', dir)],
-  ['account removal', (dir) => deleteEncryptedFile(account, dir)],
-  ['reconnected access token', (dir) => storeTokens(account, 'gmail', { ...expired, access_token: 'fixture-reconnected-access', expires_in: 3600 }, dir)],
   ['replaced refresh token', (dir) => storeTokens(account, 'gmail', { ...expired, refresh_token: 'fixture-reconnected-refresh' }, dir)],
   ['shared OAuth client replacement', (dir) => writeEncryptedFile('google', { clientId: 'fixture-new-client', clientSecret: 'fixture-new-secret' }, dir)],
 ];

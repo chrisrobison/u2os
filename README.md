@@ -1,102 +1,93 @@
 # U2OS
 
-U2OS is **the operating system for your digital self**: a local-first, user-owned evented counterpart built around a durable loop:
+U2OS is **the operating system for your digital self**. It consolidates who you are into **files you own**, and **acts on your behalf** within the authority you delegate.
 
 > Observe → remember → anticipate → act → observe outcome → learn.
 
-It is not a chatbot or desktop wrapper. Events, structured memory, policies, tools, automations, and feedback belong to one user-controlled agent; the model is replaceable infrastructure. The name means “the second you” plus “operating system.” See [Architecture](docs/architecture.md) for the current system and [PLAN.md](PLAN.md) for the roadmap; [PROMPT.md](PROMPT.md) is the historical product specification, not onboarding documentation.
+It is not a chatbot. The digital self is a **vault of plain Markdown files** that you can read, edit, version and carry anywhere:
+
+- who you are (`me.md`)
+- the people and projects in your life, and what you have promised
+- the standing routines you want carried out
+
+U2OS indexes that vault, watches the accounts you connect, and runs your routines unattended. Every action goes through a policy engine that sits outside the model. The agent is just a tool that uses this information, and the model is replaceable infrastructure. The name means "the second you" plus "operating system".
+
+Start with the [overview](docs/overview.md), then [the vault](docs/vault.md) and [routines](docs/routines.md). [ADR 0007](docs/adr/0007-owned-vault-is-the-digital-self.md) records why the vault is the centre, and [PLAN.md](PLAN.md) is the roadmap. [PROMPT.md](PROMPT.md) is the historical product specification, not onboarding documentation.
+
+## How it works
+
+```text
+            your vault (Markdown files you own)
+  me.md · people/ · projects/ · commitments/ · routines/
+                │ indexed within seconds of any edit
+                ▼
+   memory index (SQLite) ◄── connected accounts (mail, calendar, contacts, search)
+                │
+   routines · triggers · chat · voice    ← sources of intent
+                ▼
+   planner (replaceable model) proposes structured actions
+                ▼
+   data-processing policy: what each model may see
+   action policy: allow · ask you · block        ← outside the model
+                ▼
+   durable action queue → tool → outcome → event log / audit / "Why?"
+```
+
+- **The vault is the self.** Files are the authority for what they say. SQLite holds an index of them plus runtime state (sessions, queue, runs, audit, connector caches), and vault-sourced memory can be rebuilt from the files.
+- **Routines act for you.** A routine file names a trigger (a daily time, an interval, or an event such as `email.received`) and an instruction in your own words. It runs without a chat, through the same planner → policy → queue → audit path as everything else, and never with more authority than your policy delegates.
+- **Policy is outside the model.** Reads and drafts can be automatic. Sending, rescheduling and other consequential actions ask you or are blocked, according to policy. Model output, routines, feedback and voice confidence cannot loosen that.
+- **Privacy is separate from permission.** Each fact carries a classification (`public`, `personal`, `private`, `sensitive`), and the data-processing policy decides what may reach a local or remote model.
+- **Everything is explainable.** Actions keep their reasoning summary, policy rule, model identity and the memory that informed them.
+
+The browser is a client of a persistent Node.js service. Closing it does not stop sync, routines, triggers or the agent.
 
 ## Project status
 
-U2OS is currently a working pre-alpha prototype. The repository implements the seven development phases in [PROMPT.md](PROMPT.md), plus the deployment milestone and the nine-phase device/capability subsystem (see [docs/devices.md](docs/devices.md)), as tested vertical slices:
+U2OS is a working **pre-alpha**, not a production product. Everything below is implemented and tested with fixtures. **It has not yet been validated in daily use with real accounts and a real model**; that is the next milestone ([PLAN.md](PLAN.md), Milestone B).
 
-- Persistent SQLite event log with normalized events, correlation, provenance, subscriptions, filtered history, and SSE delivery
-- Structured entities, facts, relationships, commitments, and memory provenance, including a data-processing privacy classification across every context type (facts, people, commitments, and event-derived summaries), not just facts
-- An Agent orchestrator decomposed into focused services (ContextAssembler, Planner, ActionEvaluator, ActionExecutor, ApprovalManager, EvaluatorRegistry) rather than one growing class
-- Real OpenAI-compatible and Anthropic model providers alongside the deterministic `MockModelProvider`, selected per-role by a `ModelRouter` with one deterministic fallback retry
-- A strict, validated plan schema (bounded action count/argument depth, `dependsOn`, `memoryCandidates`) with one bounded, non-fabricating repair pass before a malformed plan is rejected outright
-- Bounded, ranked, provenance-tagged personal-context assembly across entities, facts, commitments, and allowlisted events, with optional application-side semantic ranking over the same structured memory -- never a vector-database replacement
-- A data-processing privacy policy, separate from tool authorization, governing what data may reach a local vs. remote model provider
-- Prompt-injection containment tests proving retrieved content cannot register tools, authorize actions, or alter policy/routing configuration
-- Tool registry and a policy engine outside the model execution path
-- Durable SQLite action delivery with atomic leases, restart recovery, bounded retries, explicit provider idempotency contracts, execution-time policy/approval/freshness checks, and a sanitized owner Operations view
-- Audited consequential actions with explicit approval or hard policy blocks, plus owner-facing **Why?** views on approval cards and activity history. The views use `GET /api/actions/:id/explain` and `GET /api/recommendations/:id/explain` to show stored reasoning summaries, policy/model identity, retrieved-context references, source events, and correlated event trails—never hidden model chain-of-thought.
-- Native Web Component interface with morning, meeting, and project dashboards
-- A device/capability subsystem (see [docs/devices.md](docs/devices.md)): a persisted device registry, an in-memory capability catalog, a deterministic (never LLM-driven) trust/privacy-aware resolver, a realtime WebSocket device bus (`/ws/devices`), the browser itself as a registered device, semantic presentation (`presentation.present`/`presentation.notify`) routed through the same policy/approval/audit pipeline as every other tool, a device management UI (`#/devices`), an enforced trust lifecycle (pairing-request events, revocation that disconnects live connections and is checked on every path), a metadata-only stream registry, and a service-provider unification proof of concept
-- Google Calendar, Gmail, Google Contacts, Brave Search, and webhook connector adapters; mock connectors are confined to demo mode
-- Encrypted local credential storage and Google OAuth support
-- Named Google, IMAP, Brave Search, and webhook connection instances with explicit account selection in the Connectors UI (SMTP remains single-account)
-- Browser microphone, VAD, STT/TTS, barge-in, voice enrollment, and confidence-aware authorization
-- Timers, recurring schedules, event rules, condition watches, and proactive event evaluation
-- Outcome feedback that adjusts prioritization without weakening authorization policies
-- Docker, systemd, launchd, mDNS, health checks, structured logs, backup/restore, and portable JSON export
-- An owner-only Diagnostics view with dependency/action health and a deliberate sanitized bug-bundle download that excludes content, credentials, endpoints, raw errors, and operation identifiers
+**The owned digital self**
+- Markdown vault with YAML frontmatter: `me.md`, `people/`, `projects/`, `commitments/`, `routines/`. It is indexed on start and on every change, and its location is set with `U2OS_VAULT` or `vaultDir`.
+- Vault facts are explicit memory with `vault:<path>` provenance. Edits supersede, removals soft-delete, and other sources are never modified.
+- Per-file `classification` and `sensitive_keys` control what can reach a model.
+- `npm run vault:export` moves existing database memory into vault files, bound to the same records with `id:`. Memory-UI edits are written back to the files, `policies.yaml` in the vault states what U2OS may do without asking (an invalid file fails closed), and `journal/` records what it did on your behalf.
+- Standing routines run on daily, interval or event triggers. Each slot runs once, even across restarts, and runs go through policy and approval, with a runaway limit.
 
-This is not production-ready. A single-owner passphrase, expiring sessions, CSRF protection, request limits, and loopback-default networking protect the HTTP boundary. `MockModelProvider` is confined to explicit demo homes; personal planning is unavailable until a local or remote model is configured. Major limitations include simplified speaker verification, in-process-only rate limits, a single-owner identity model, no supported direct internet exposure, and — in the device/capability subsystem — no cryptographic pairing and only one connector unified into the capability model. Raw direct-invoke/test/stream-open routes are disabled by default and always disabled in production; explicit development opt-in exposes debug paths that bypass normal action policy/audit. Real Gmail, Google Calendar, and notification webhooks do not claim provider-level idempotency; uncertain crash/timeout outcomes stop for owner review rather than risk a duplicate external side effect.
+**Acting safely on your behalf**
+- A policy engine outside the model, plus audited approvals, hard blocks and owner-facing **Why?** views (`GET /api/actions/:id/explain`, `GET /api/recommendations/:id/explain`). They show stored summaries, never model chain-of-thought.
+- Durable SQLite action delivery with atomic leases, restart recovery, bounded retries, explicit provider idempotency contracts, execution-time policy/approval/freshness checks, and a sanitized Operations view. Uncertain external outcomes stop for your review instead of risking a duplicate send.
+- Timers, schedules, event rules, condition watches, proactive evaluators, and bounded read-only goals.
+
+**Memory and intelligence**
+- Append-only event log with correlation, provenance and SSE delivery.
+- Structured entities, facts, relationships and commitments, with authority labels (explicit, imported, derived, inferred) and confirm/correct/reclassify/delete controls.
+- Bounded, ranked, provenance-tagged context assembly with optional application-side semantic ranking.
+- OpenAI-compatible and Anthropic providers selected per role by a `ModelRouter`, plus a strict plan schema and prompt-injection containment tests.
+
+**Interfaces and integrations**
+- Native Web Component UI with morning, meeting and project dashboards, chat, approvals, Operations and Diagnostics.
+- Google Calendar, Gmail, Google Contacts, IMAP/SMTP, Brave Search and webhook/ntfy connectors, with named accounts and exact account binding. Mocks run only in explicit demo homes.
+- Browser voice (VAD, STT/TTS, barge-in, enrollment). Voice similarity is **not** authentication.
+- A device/capability subsystem with a deterministic resolver, a realtime device bus, and the browser as a device ([devices](docs/devices.md)).
+- Docker, systemd, launchd, health checks, structured logs, encrypted backups, validated inactive restore, and JSON export.
 
 ### Capability status
 
 | Status | Current scope |
 |---|---|
-| **Implemented** | Persistent event/memory state, destination-aware context privacy, model routing, policy/approval/audit, durable actions, explainability, fact controls, dynamic dashboards, browser E2E/SSE recovery, real Google/Brave/webhook connectors, and backup/export described above |
-| **Demo mocks** | The deterministic planner and connector mocks run only in an explicit demo home. Personal mode reports unconfigured/disconnected services. |
-| **Experimental** | Node's `node:sqlite`; simplified DSP voice similarity; device/capability subsystem; application-side semantic retrieval; self-hosted real connectors |
-| **Unavailable** | CalDAV, Deepgram, ElevenLabs, cryptographic device pairing, external task-manager sync, native mobile/watch apps, and a U2OS-hosted cloud service |
+| **Implemented** | Vault indexing and export, routines, persistent event/memory state, destination-aware context privacy, model routing, policy/approval/audit, durable actions, explainability, fact controls, dashboards, real Google/IMAP/Brave/webhook connectors, backup/export |
+| **Not yet** | Browser views for vault and routines, real-model and live-account validation |
+| **Demo only** | The deterministic planner and connector mocks, in an explicit demo home |
+| **Experimental** | `node:sqlite`, simplified voice similarity, the device/capability subsystem, semantic retrieval |
+| **Unavailable** | CalDAV, Deepgram, ElevenLabs, cryptographic device pairing, native mobile apps, any U2OS-hosted service |
 
-What you should absolutely not do yet: expose U2OS directly to the public internet, treat voice confidence as authentication, assume an uncertain external action was not delivered, or use the pre-alpha system as the sole copy of important data without tested backups.
-
-## Architecture
-
-The main execution path is:
-
-```text
-user, connector, or trigger
-        ↓
-normalized event / structured request
-        ↓
-planner proposes structured actions
-        ↓
-policy engine authorizes, blocks, or requests approval
-        ↓
-authorized action persists in the leased SQLite queue
-        ↓
-policy, approval, and freshness are re-checked
-        ↓
-registered tool executes with a stable idempotency key
-        ↓
-result and outcome are written back to the event log
-```
-
-The browser is a client of the persistent Node.js service. Closing the browser does not stop connector synchronization, triggers, event processing, or the agent.
-
-Key documentation:
-
-- [Overview](docs/overview.md) — what U2OS is, why it exists, and how it's meant to be used (start here)
-- [Architecture](docs/architecture.md)
-- [Architecture decisions](docs/adr/README.md)
-- [Events](docs/events.md)
-- [Policies](docs/policies.md)
-- [Tools](docs/tools.md)
-- [Devices and capabilities](docs/devices.md)
-- [Dashboards](docs/dashboards.md)
-- [Connectors](docs/connectors.md)
-- [Local iMessage read helper](docs/imsg.md)
-- [Voice](docs/voice.md)
-- [Automation](docs/automation.md)
-- [Feedback](docs/feedback.md)
-- [Deployment](docs/deployment.md)
-- [Model providers](docs/models.md)
-- [Bounded goals and finite research](docs/goals.md)
-- [Two-pass job research walkthrough](docs/job-research-walkthrough.md)
-- [Personal acceptance and two-week dogfooding](docs/personal-acceptance.md)
-- [Contributing](CONTRIBUTING.md)
+Do not yet expose U2OS directly to the internet, treat voice confidence as authentication, assume an uncertain external action was not delivered, or keep your only copy of important data in it without tested backups. The vault is plain text, so keep it on an encrypted disk.
 
 ## Requirements
 
-- Node.js 22 or newer
+- Node.js 22 or newer (22.16+ for backups)
 - npm
 
-`node:sqlite` is used directly and may emit an experimental-feature warning on current Node.js releases.
+`node:sqlite` may print an experimental-feature warning.
 
 ## Quick start
 
@@ -105,104 +96,110 @@ npm install
 npm start
 ```
 
-Open <http://localhost:4000>.
+Open <http://localhost:4000> and create the owner passphrase. Later visits show the login form before any private data is available. For headless setup, `npm run setup-owner` creates the owner through a masked terminal prompt; stop any running instance first.
 
-On first visit, create the required owner passphrase. Later visits show the login form before any private API or interface data is available.
+On first start U2OS creates `~/.u2os/` (`U2OS_HOME` to change it) and your vault at `~/.u2os/vault/`. Put the vault anywhere, for example a git repository, with `U2OS_VAULT=/path/to/my-self`. Then:
 
-For headless/container initialization, `npm run setup-owner` creates the same owner record through a masked terminal prompt without opening the HTTP listener. Stop any runtime using that home first; setup-owner, seed and maintenance commands acquire the same local ownership guard before storage access.
+1. **Describe yourself and your people.** Edit `me.md` and add files under `people/`, `projects/` and `commitments/` ([format](docs/vault.md)). Existing installs can run `npm run vault:export` with U2OS stopped (or `POST /api/vault/export` while it runs) to write current memory out as files.
+2. **Configure a model.** Personal mode needs a local or hosted model. Use the **Model** screen or see [models](docs/models.md).
+3. **Connect accounts** you want U2OS to see and act on ([connectors](docs/connectors.md)).
+4. **Write a routine** ([routines](docs/routines.md)):
 
-On first start, U2OS creates its local data directory at `~/.u2os/`. Set `U2OS_HOME` to use another location. The directory contains configuration, policies, the SQLite database, encrypted connector credentials, and cache data. Real user data is not stored in the repository.
+   ```markdown
+   ---
+   when:
+     daily: "07:00"
+     days: [mon, tue, wed, thu, fri]
+   ---
+   Brief me on today's meetings and anything urgent in my inbox.
+   ```
 
-A [local runtime guard](docs/runtime-ownership.md) prevents two runtimes from executing against the same canonical home, including through directory aliases. Its lock remains held until started handlers and background work settle; interrupted external outcomes still require the existing cautious review. Stop older releases before upgrading. This does not yet make live-directory backups or restored copies safe to run concurrently.
+Personal homes never get fictional data, and disconnected services never fall back to mocks. For a deterministic offline walkthrough in a separate `~/.u2os-demo` home, run `npm run demo` and follow [docs/demo.md](docs/demo.md).
 
-Personal startup does not seed fictional people, messages, meetings, tasks, triggers, or mock devices. Personal owner setup creates only a structural `Owner` entity; explicit demo setup links to the seeded demo owner. A small `config/installation.json` records whether the home is personal or demo. Existing unmarked homes are treated as personal without deleting or classifying their records. Personal connector calls fail with an actionable unavailable state until a real account is selected; they never substitute mock results. Mail and calendar views label local records and last-known sync freshness. Legacy mock device records are preserved but unavailable for delivery in personal mode; the Devices view distinguishes demo provenance, adapter registration and last-observed status.
-
-For an isolated, deterministic five-minute walkthrough, run `npm run demo` and follow [docs/demo.md](docs/demo.md). It uses a separate `~/.u2os-demo` data home, refuses to overwrite an existing demo database without explicit `--reuse`, and will not convert an existing personal home into demo mode.
-
-For development with automatic server restarts:
-
-```sh
-npm run dev
-```
+A [runtime ownership guard](docs/runtime-ownership.md) prevents two U2OS processes from running against the same home. For development with automatic restarts, use `npm run dev`.
 
 ## Tests
 
 ```sh
-npm test
+npm test            # Node suite
+npm run test:e2e    # Playwright: Chromium, Firefox, WebKit
 ```
 
-The Node suite covers deterministic policy/privacy, memory/provenance, real-provider fixtures, exact account binding, durable conversations/runs/goals, queue/scheduler interruption, device trust, backup encryption and inactive recovery. The Playwright suite runs native Web Component workflows across Chromium, Firefox and WebKit. Current counts and implemented/fixture/live/deferred distinctions are maintained in the [progress record](docs/personal-agent-progress.md). Passing fixtures do not establish real-model relevance, owner-account validation, complete objective verification or safe restored activation; use the [personal acceptance procedure](docs/personal-acceptance.md) to record those boundaries honestly.
-
-A small Playwright harness also covers real-browser smoke coverage (boots the actual server in-process, no frontend build step):
-
-```sh
-npm run test:e2e
-```
+Current counts, and what is implemented versus fixture-tested versus live-validated, are tracked in the [progress record](docs/personal-agent-progress.md). Passing fixtures do not establish real-model usefulness or owner-account validation; use the [personal acceptance procedure](docs/personal-acceptance.md) to record those honestly.
 
 ## Data operations
 
-Seed an empty data directory:
+| Command | Purpose |
+|---|---|
+| `npm run vault:export` | Write database memory into vault files. Never overwrites a file or deletes a record. |
+| `npm run backup -- --encrypt <path>` | Encrypted offline snapshot of `U2OS_HOME`, including the default vault. Stop U2OS first. |
+| `npm run restore -- <archive>` | Validate into an empty, **inactive** recovery home (`U2OS_HOME=/isolated/path`) |
+| `npm run seed` / `npm run demo` | Seed an empty home / create the isolated demo home |
+| `npm run maintain` | Event-log integrity, audited retention, projection replay |
+| `GET /api/export` | Portable, credential-free JSON export |
 
-```sh
-npm run seed
-```
-
-Stop the runtime, then create a coherent offline snapshot of `U2OS_HOME` (SQLite backup requires Node.js 22.16+):
-
-```sh
-npm run backup
-```
-
-Restore a backup:
-
-```sh
-U2OS_HOME=/private/isolated-recovery npm run restore -- /path/to/u2os-backup.tar.gz
-```
-
-Prefer `npm run backup -- --encrypt /private/backup-location/u2os.tar.gz.enc` for authenticated encryption with an independent masked passphrase. Default legacy `.tar.gz` creation is explicitly **UNENCRYPTED** and includes the credential master key. Output is private, outside the source home and never overwrites an existing archive; SQLite captures committed WAL data and source links/special files are refused. Restore validates bounded entries and SQLite integrity into an empty isolated home under ownership, never force-merges, and leaves it **INACTIVE**. Startup and mutation CLIs refuse recovery homes before migrations or work. Explicit activation/original-instance retirement remain unfinished; do not remove the marker or run original/restored copies simultaneously. See [backup and offline verification guidance](docs/backups.md). A portable, credential-free JSON export is available from `GET /api/export`.
+Unencrypted backups include the credential master key. A vault placed outside `U2OS_HOME` is not in U2OS backups; back it up yourself (git works well). See [backups](docs/backups.md).
 
 ## Deployment
-
-Docker Compose is the shortest persistent deployment path:
 
 ```sh
 docker compose up -d --build
 ```
 
-The Compose configuration stores U2OS data in a named volume and exposes the service on port 4000. Templates for Linux systemd and macOS launchd are in `deploy/`. See [docs/deployment.md](docs/deployment.md) for installation details and operational caveats.
+Compose stores data in a named volume on port 4000. The deploy directory has systemd and launchd templates. See [deployment](docs/deployment.md), including how to mount a vault you keep elsewhere.
 
-## Connectors and honest mock boundaries
+## Security
 
-Mock calendar, email, contacts, search, and notification providers work without external accounts only in explicit demo homes. Real adapters are available for Google Calendar, Gmail, Google Contacts, Brave Search, and generic JSON or ntfy-compatible notification webhooks. The Connectors page accepts owner-supplied credentials and lets each domain select its active provider. Google requires an owner-created OAuth client; the exact scopes, redirect URI, setup sequence, and connector limitations are in [docs/connectors.md](docs/connectors.md). Configure the write-only webhook URL there and select **Webhook Notifications** for real delivery; U2OS stores the URL encrypted and never returns it from the status API. IMAP now supports TLS-only inbox sync and reads, with a separately configured SMTP companion for approved sends. CalDAV, Deepgram, and ElevenLabs currently have manifests only and are not implemented providers. A separate [local iMessage read helper](docs/imsg.md) is available only on explicit per-command opt-in; it is not an agent connector. The notifications connector is also reachable through the device/capability model (`server/devices/adapters/notification-service-adapter.js`) as a proof of concept that a physical device and an external service resolve/invoke through the exact same code path — see [docs/devices.md](docs/devices.md)'s "Service-provider unification".
+U2OS binds to `127.0.0.1` by default and requires owner login for every private API. It is a single-owner pre-alpha, not an internet-facing product; LAN binding is an explicit choice, and should sit behind a trusted TLS reverse proxy and firewall. Backups and the vault are as sensitive as the live instance. See [SECURITY.md](SECURITY.md).
 
-The demo planner is `MockModelProvider`, a deterministic intent matcher for offline/test fixtures. Personal mode requires explicit model configuration through the native **Model** setup screen, `POST /api/model`, or `U2OS_HOME/config/config.json`; the agent panel and API report the missing configuration. The browser setup saves encrypted keys without probing endpoints and requires explicit server restart; saved and running status remain distinct. Advanced configurations are read-only in the simple form. Advanced installations can send the validated multi-provider/per-role shape to `POST /api/model` or edit the model config, including an explicit embeddings role; provider secrets are moved into the encrypted vault and configuration changes require a restart. See [docs/models.md](docs/models.md) for exact payloads and local-provider examples. Voice similarity uses a lightweight browser-side DSP fingerprint and must not be treated as authentication.
+Protections include:
+- policy enforcement outside the planner, and a separate data-processing policy
+- prompt-injection containment tests
+- append-only action and event auditing with provenance
+- encrypted connector secrets and OAuth state validation
+- safe dashboard schemas, and routines that pass only event identifiers (never content) to the planner
+- regression tests preventing feedback or voice confidence from loosening policy
 
-## Keeping data local
+Raw device debug routes are disabled outside explicit non-production development mode ([device debug boundary](docs/devices.md#development-debug-boundary)).
 
-U2OS has no required hosted backend. Use a separate demo home for a fully offline connector demonstration, or configure loopback/private-network model endpoints and only the connectors you choose in a personal home. The data-processing policy independently controls which classifications may reach `local_model`, `configured_remote_model`, `external_tool`, and `local_ui`; a remote planner or embedding endpoint does not receive restricted context merely because tool policy would allow an action. Runtime state and encrypted credentials stay under `U2OS_HOME`, but any real remote model or connector necessarily receives the specific request data sent to it. Review [docs/policies.md](docs/policies.md), [docs/models.md](docs/models.md), and [docs/connectors.md](docs/connectors.md) before enabling remote services.
+## Documentation
 
-## Security warning
-
-U2OS binds to `127.0.0.1` by default and requires owner login for private APIs. This is still a pre-alpha single-owner service, not an internet-facing product. LAN binding is an explicit configuration decision; use a trusted TLS reverse proxy and firewall if you make one. Backups contain the credential master key and owner hash and are as sensitive as the live identity store. See [SECURITY.md](SECURITY.md).
-
-Security properties already present include policy enforcement outside the planner, a separate data-processing privacy policy governing what data may reach a local vs. remote model, prompt-injection containment tests, append-only action/event auditing with retrieved-context provenance, encrypted connector secrets, OAuth state validation, secret-redacted APIs, safe dashboard schemas, and regression tests preventing feedback or voice confidence from loosening authorization policy.
-
-Raw device invoke, test and stream-open routes are disabled outside explicit non-production development mode. Normal execution uses policy-gated tools; see the [device debug boundary](docs/devices.md#development-debug-boundary). Never enable development debug execution for personal operation.
+- **Start here:** [Overview](docs/overview.md), [The vault](docs/vault.md), [Routines](docs/routines.md)
+- **Design:** [Architecture](docs/architecture.md), [Architecture decisions](docs/adr/README.md), [Events](docs/events.md), [Policies](docs/policies.md), [Tools](docs/tools.md)
+- **Subsystems:**
+  - [Automation](docs/automation.md), [Bounded goals](docs/goals.md), [Dashboards](docs/dashboards.md), [Feedback](docs/feedback.md)
+  - [Model providers](docs/models.md), [Connectors](docs/connectors.md), [Voice](docs/voice.md), [Devices and capabilities](docs/devices.md), [Local iMessage read helper](docs/imsg.md)
+- **Operating it:** [Deployment](docs/deployment.md), [Backups](docs/backups.md), [Runtime ownership](docs/runtime-ownership.md), [Demo](docs/demo.md)
+- **Validation:**
+  - [Progress record](docs/personal-agent-progress.md)
+  - [Personal acceptance and dogfooding](docs/personal-acceptance.md)
+  - [Job research walkthrough](docs/job-research-walkthrough.md)
+- **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md)
 
 ## Repository layout
 
 ```text
-server/       persistent service, APIs, agent, events, memory, policy, tools, devices
-public/       browser client built with native ES modules and Web Components
+server/       persistent service
+  vault/      vault location, Markdown parsing, indexer, watcher, exporter
+  routines/   routine parsing and the unattended runner
+  agent/      context assembly, planner, policy evaluation, execution, approvals, runs, goals
+  memory/     entities, facts, relationships, projections, retrieval
+  policy/     action policy and data-processing policy
+  events/     event log, SSE, maintenance
+  integrations/, tools/, triggers/, devices/, voice/, security/, backup/, api/
+public/       browser client: native ES modules and Web Components, no build step
 skills/       connector manifests and declared permissions
-tests/        Node test suites
-docs/         subsystem contracts, decisions, setup, and known limitations
+tests/        Node suites and Playwright e2e
+docs/         product, architecture, subsystem contracts, decisions
 deploy/       systemd and launchd templates
-data/         repository placeholder only; runtime data lives in U2OS_HOME
+data/         repository placeholder; runtime data lives in U2OS_HOME and your vault
 ```
-
-`server/devices/` is the device/capability subsystem: the registry, the capability catalog, the resolver, adapters (mock, realtime WebSocket, the notification service wrapper), and the stream registry. Its client-side half is `public/services/device-client.js` and `public/components/u2-device-panel.js`/`u2-devices.js`. See [docs/devices.md](docs/devices.md).
 
 ## Roadmap
 
-Development priorities and acceptance criteria are maintained in [PLAN.md](PLAN.md). The immediate goal is a secure, testable single-owner alpha—not additional breadth before the authentication and operational boundaries are trustworthy.
+[PLAN.md](PLAN.md) orders work by product value:
+
+1. The owned digital self (complete).
+2. Prove it in daily use with real accounts and models.
+3. Widen delegated authority safely.
+4. Only then broaden voice, connectors and packaging.

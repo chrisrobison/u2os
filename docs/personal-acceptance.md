@@ -1,5 +1,7 @@
 # Personal acceptance and two-week dogfooding
 
+> **Scope update:** acceptance now also covers the owned vault and routines ([ADR 0007](adr/0007-owned-vault-is-the-digital-self.md)). During the two weeks, keep your identity, people, projects and commitments in the [vault](vault.md) (start with `npm run vault:export` on an existing install), and run at least a morning-brief [routine](routines.md) and one event routine on your real accounts. Record whether the files stay accurate, whether routines fire as expected, and every approval they request. Extending the harness below to vault and routine workflows is part of [PLAN.md](../PLAN.md) Milestone B.
+
 This is an owner-run procedure, **not completed live validation**. Current
 evidence is isolated fixtures listed below and in the [progress record](personal-agent-progress.md).
 The demo does not prove real model quality, provider availability or a usable

@@ -131,21 +131,25 @@ test.describe.serial('memory candidate accept/reject flow (#17)', () => {
     // gone (accepted candidates are no longer 'pending').
     await expect(page.locator('.dashboard-card', { hasText: content })).toHaveCount(0);
 
-    // Navigate to Chris's entity detail and confirm the new fact renders
-    // with the exact humanized key (see util.js's humanizeKey:
-    // "preferred_meeting_time" -> "Preferred meeting time"), the candidate's
-    // content as the JSON-stringified value, and the real
+    // Navigate to Chris's entity detail. Chris is the owner, so the accepted
+    // fact is written to the owner's vault file (me.md, docs/vault.md
+    // "Editing from the UI") and the current fact is file-backed. The
+    // accepted candidate remains as its superseded history with the real
     // memory-candidate-confirmation provenance/confidence
-    // (confidenceNumber('high') === 0.95 -> "confidence 95%").
+    // (confidenceNumber('high') === 0.95 -> "confidence 95%"). Keys render
+    // humanized (util.js's humanizeKey: "preferred_meeting_time" ->
+    // "Preferred meeting time") with JSON-stringified values.
     await page.locator('.entity-row__name', { hasText: 'Chris' }).click();
     await expect(page).toHaveURL(new RegExp(`#/memory/${chrisId}$`));
 
-    const factRow = page.locator('.fact-row', { hasText: 'Preferred meeting time' });
+    const factRow = page.locator('.fact-row--current', { hasText: 'Preferred meeting time' });
     await expect(factRow).toBeVisible();
     await expect(factRow).toContainText('Preferred meeting time:');
     await expect(factRow).toContainText(`"${content}"`);
-    await expect(factRow).toContainText('memory-candidate-confirmation');
-    await expect(factRow).toContainText('Confidence95%');
+    await expect(factRow).toContainText('vault:me.md');
+    const accepted = page.locator('.fact-row--superseded', { hasText: 'Preferred meeting time' });
+    await expect(accepted).toContainText('memory-candidate-confirmation');
+    await expect(accepted).toContainText('Confidence95%');
   });
 
   test('owner can inspect, confirm, reclassify, correct, and deliberately delete a fact', async () => {
@@ -172,10 +176,13 @@ test.describe.serial('memory candidate accept/reject flow (#17)', () => {
     const correctionRequest = page.waitForRequest((request) => request.method() === 'PATCH' && request.url().includes('/api/memory/facts/'));
     await factRow.getByRole('button', { name: 'Correct', exact: true }).click();
     expect((await correctionRequest).postDataJSON().value).toBe('Prefers morning meetings');
-    await expect(page.locator('.fact-row--superseded', { hasText: 'Prefers afternoon meetings' })).toBeVisible();
+    // History keeps the previous file-backed value and the audited
+    // correction; the current fact is written back to me.md.
+    await expect(page.locator('.fact-row--superseded', { hasText: 'Prefers afternoon meetings' }).filter({ hasText: 'vault:me.md' })).toBeVisible();
+    await expect(page.locator('.fact-row--superseded', { hasText: 'Prefers morning meetings' }).filter({ hasText: 'correction:' })).toBeVisible();
     factRow = page.locator('.fact-row--current', { hasText: 'Preferred meeting time' });
     await expect(factRow).toContainText('Prefers morning meetings');
-    await expect(factRow).toContainText('correction:');
+    await expect(factRow).toContainText('vault:me.md');
     const correctedId = await factRow.getAttribute('data-fact-id');
 
     page.once('dialog', (dialog) => dialog.accept());
