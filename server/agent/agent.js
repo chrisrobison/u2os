@@ -22,6 +22,7 @@ import { appendTurn, requireConversation, getPriorTurnsForModel, getEarlierTurns
 import { getGoalPriorReadArtifacts } from './goal-context.js';
 import { getGoalForRun } from './goal-store.js';
 import { summarizeIncompleteActions } from './action-result-summary.js';
+import { applyPackageAuthority, packageContextRecord } from '../packages/authority.js';
 
 const MAX_MODEL_CALLS_PER_MESSAGE = 3;
 
@@ -58,6 +59,16 @@ export class Agent {
     this.actionQueueWorker = new ActionQueueWorker({ actionEvaluator: this.actionEvaluator, actionExecutor: this.actionExecutor, eventBus });
     this.approvalManager = new ApprovalManager({ eventBus, actionEvaluator: this.actionEvaluator, actionQueueWorker: this.actionQueueWorker });
     this.evaluatorRegistry = evaluatorRegistry || registerBuiltinEvaluators(new EvaluatorRegistry());
+  }
+
+  /**
+   * Installs the package runtime's execution-time re-check for queued
+   * package actions (grant revoked, package disabled or removed between
+   * proposal/approval and execution). Without one, queued package actions
+   * fail closed.
+   */
+  setPackageAuthority(check) {
+    this.actionQueueWorker.packageAuthority = check;
   }
 
   setOwnerEntityId(id) {
@@ -327,7 +338,7 @@ export class Agent {
    * of calling a tool directly -- "policy gates everything consequential"
    * applies regardless of which HTTP route triggered it.
    */
-  async evaluateAndMaybeExecute({ actionId, tool: toolName, arguments: args, requestedBy, requestText, reasoningSummary, correlationId, actor, voice, contextProvenance, accountContext, modelIdentity, runId }) {
+  async evaluateAndMaybeExecute({ actionId, tool: toolName, arguments: args, requestedBy, requestText, reasoningSummary, correlationId, actor, voice, contextProvenance, accountContext, modelIdentity, runId, authority }) {
     const tool = this.actionEvaluator.resolve(toolName);
     const rawEvaluation = this.actionEvaluator.evaluate({ tool, arguments: args });
     const accountState = accountContext === undefined ? captureProposedAccount(toolName, args, tool) : accountContext;
@@ -345,9 +356,12 @@ export class Agent {
     const scopedEvaluation = goalBlocked && !voiceEvaluation.blocked
       ? { ...voiceEvaluation, blocked: true, requiresApproval: false,
         reason: 'Tool is outside this goal’s read-only permitted scope', rule: 'goal-scope' } : voiceEvaluation;
-    const evaluation = bindingError && !scopedEvaluation.blocked
+    const boundEvaluation = bindingError && !scopedEvaluation.blocked
       ? { ...scopedEvaluation, blocked: true, requiresApproval: false, reason: bindingError, rule: 'account-binding' }
       : scopedEvaluation;
+    // Package-originated actions (docs/plugin-architecture.md §6): declared
+    // and granted permissions plus the package policy, tightening only.
+    const evaluation = applyPackageAuthority({ evaluation: boundEvaluation, authority });
 
     const auditRow = this.approvalManager.recordDecision({
       id: actionId,
@@ -362,6 +376,7 @@ export class Agent {
       actor,
       contextProvenance,
       accountBinding,
+      packageContext: packageContextRecord(authority),
     });
 
     if (runId && this.runStore.isCancellationRequested(runId)) {

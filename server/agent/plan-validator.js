@@ -94,6 +94,8 @@ function validateAction(action, index, toolRegistry) {
   if (typeof action.tool !== 'string' || !plainObject(action.arguments)) throw new Error('Model returned a malformed action');
 
   const tool = toolRegistry.get(action.tool); // fail closed on unregistered/invented tools
+  // Package capabilities are callable only by their packages' workflows.
+  if (toolRegistry.isHidden?.(action.tool)) throw new Error(`Unknown tool: ${action.tool}`);
   if (exceedsDepth(action.arguments, MAX_ARG_DEPTH)) {
     throw new Error(`Model action ${action.tool} arguments exceed the maximum nesting depth (${MAX_ARG_DEPTH})`);
   }

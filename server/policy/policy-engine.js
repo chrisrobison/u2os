@@ -154,8 +154,8 @@ export function recordAudit(row) {
     `INSERT INTO agent_actions (
       id, requested_by, request_text, model, tool, arguments, reasoning_summary,
       policy_domain, policy_rule, autonomy_level, requires_approval, status,
-      approved_by, approved_at, result, correlation_id, context_provenance, account_binding, created_at, updated_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+      approved_by, approved_at, result, correlation_id, context_provenance, account_binding, package_context, created_at, updated_at
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
   ).run(
     id,
     row.requestedBy,
@@ -175,6 +175,7 @@ export function recordAudit(row) {
     row.correlationId ?? null,
     row.contextProvenance && row.contextProvenance.length ? JSON.stringify(row.contextProvenance) : null,
     row.accountBinding ? JSON.stringify(row.accountBinding) : null,
+    row.packageContext ? JSON.stringify(row.packageContext) : null,
     now,
     now
   );
@@ -229,5 +230,6 @@ function rowToAction(row) {
     result: row.result ? JSON.parse(row.result) : null,
     contextProvenance: row.context_provenance ? JSON.parse(row.context_provenance) : [],
     accountBinding: row.account_binding ? JSON.parse(row.account_binding) : null,
+    packageContext: row.package_context ? JSON.parse(row.package_context) : null,
   };
 }
