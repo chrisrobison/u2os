@@ -75,6 +75,21 @@ Let the owner say, in their vault, what U2OS may do without asking, while keepin
 - Delegated authority is visible and editable as a file, and is validated. An invalid policy fails closed to `confirm`.
 - No routine, model output or feedback signal can widen authority beyond the vault policy (regression-tested).
 
+## Owner-directed: package platform
+
+Tracking issue: [#376](https://github.com/chrisrobison/u2os/issues/376). The owner brought forward "installable skills with permission review" from Later as core platform work: packages of **capabilities**, **skills** and **automations** with validated manifests, owner-granted permissions, deterministic package policies under `policies.yaml`, durable workflows and one audit trail ([plugin architecture](docs/plugin-architecture.md), [ADR 0008](docs/adr/0008-packages-capabilities-skills-automations.md)).
+
+- [ ] [#377](https://github.com/chrisrobison/u2os/issues/377) Architecture assessment and design
+- [ ] Core types and schemas
+- [ ] Registries with dependency validation
+- [ ] Capability invocation through the gate, permissions and audit
+- [ ] Durable workflow engine
+- [ ] Durable automations
+- [ ] Package loader and lifecycle
+- [ ] CLI, API and UI
+- [ ] Reference Job Hunter package
+- [ ] Author guides and hardening
+
 ## Later — deferred until the product is proven
 
 These remain valid, but are scheduled after Milestones A–C unless real use makes one urgent.
