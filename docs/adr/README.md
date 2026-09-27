@@ -10,5 +10,6 @@ These records capture U2OS's foundational, cross-cutting decisions. They describ
 - [0006 — Data-processing policy is separate from tool policy](0006-data-processing-policy-separate-from-tool-policy.md)
 - [0007 — The owned vault is the digital self](0007-owned-vault-is-the-digital-self.md)
 - [0008 — Packages of capabilities, skills and automations](0008-packages-capabilities-skills-automations.md)
+- [0009 — Extension model: MCP tools, vault skills, routines as automations](0009-extension-model-mcp-tools-vault-skills-routines.md)
 
 New ADRs should use the next number and contain at least Status, Context, Decision, and Consequences. Supersede an accepted record with a new ADR rather than silently rewriting the original decision.

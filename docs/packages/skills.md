@@ -1,5 +1,7 @@
 # Skill author guide
 
+> **Direction update ([ADR 0009](../adr/0009-extension-model-mcp-tools-vault-skills-routines.md)):** packages, permissions, the single action gate, package policy and audit described here stand. The declarative workflow language for skills and automations is **frozen**: no new features, and it will be retired once the reference Job Hunter runs on MCP-provided tools, vault skills and routines ([#397](https://github.com/chrisrobison/u2os/issues/397)). Do not build new packages on it.
+
 A skill is short-lived, reusable behaviour with typed input and output, built from capabilities and other skills: `company-research`, `summarize-thread`, `score-job`. Automations call skills instead of carrying their own copies of that logic.
 
 ## A declarative skill

@@ -56,7 +56,7 @@ U2OS is a working **pre-alpha**, not a production product. Everything below is i
 - A policy engine outside the model, plus audited approvals, hard blocks and owner-facing **Why?** views (`GET /api/actions/:id/explain`, `GET /api/recommendations/:id/explain`). They show stored summaries, never model chain-of-thought.
 - Durable SQLite action delivery with atomic leases, restart recovery, bounded retries, explicit provider idempotency contracts, execution-time policy/approval/freshness checks, and a sanitized Operations view. Uncertain external outcomes stop for your review instead of risking a duplicate send.
 - Timers, schedules, event rules, condition watches, proactive evaluators, and bounded read-only goals.
-- Installable **packages** of capabilities, skills and durable automations (`npm run u2 -- package install ./packages/job-hunter`, or the Packages view): owner-granted permissions, deterministic package policies that can only tighten `policies.yaml`, restart-safe workflows, and one audit trail ([plugin architecture](docs/plugin-architecture.md)).
+- Installable **packages** of capabilities, skills and durable automations (`npm run u2 -- package install ./packages/job-hunter`, or the Packages view): owner-granted permissions, deterministic package policies that can only tighten `policies.yaml`, restart-safe workflows, and one audit trail ([plugin architecture](docs/plugin-architecture.md)). Direction ([ADR 0009](docs/adr/0009-extension-model-mcp-tools-vault-skills-routines.md)): new tools will come from MCP servers, skills from vault Markdown and automations from routines; the package workflow language is frozen.
 
 **Memory and intelligence**
 - Append-only event log with correlation, provenance and SSE delivery.
