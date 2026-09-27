@@ -190,6 +190,10 @@ CREATE TABLE IF NOT EXISTS agent_actions (
   -- see server/agent/explain.js.
   context_provenance TEXT,
   account_binding TEXT,
+  -- Package platform (docs/plugin-architecture.md §11): package, automation,
+  -- run, step, permission and package-policy decision for actions a package
+  -- requested. NULL for owner/agent actions.
+  package_context TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -593,3 +597,48 @@ CREATE TABLE IF NOT EXISTS routine_runs (
   UNIQUE(routine_path, slot)
 );
 CREATE INDEX IF NOT EXISTS idx_routine_runs_created ON routine_runs(created_at);
+
+-- Package platform (docs/plugin-architecture.md §8). Package files live under
+-- U2OS_HOME/packages/<id>/<version>/; these rows record what is installed,
+-- what the owner granted, and the owner's settings. Uninstalling marks a
+-- package uninstalled and keeps its history.
+CREATE TABLE IF NOT EXISTS packages (
+  id TEXT PRIMARY KEY,
+  version TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  source_type TEXT NOT NULL,
+  source_ref TEXT,
+  install_path TEXT,
+  manifest TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'installed',  -- 'installed' | 'uninstalled'
+  enabled INTEGER NOT NULL DEFAULT 1,
+  installed_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS package_grants (
+  package_id TEXT NOT NULL,
+  permission TEXT NOT NULL,
+  granted_by TEXT,
+  granted_at TEXT NOT NULL,
+  PRIMARY KEY (package_id, permission)
+);
+
+-- Owner values for package settings (kind 'setting') and package policy
+-- approval overrides (kind 'policy'). Never written into package files.
+CREATE TABLE IF NOT EXISTS package_settings (
+  package_id TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'setting',
+  key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (package_id, kind, key)
+);
+
+CREATE TABLE IF NOT EXISTS capability_provider_selection (
+  capability_id TEXT PRIMARY KEY,
+  provider_id TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+

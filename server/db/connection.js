@@ -102,6 +102,7 @@ export function getDb() {
   // non-chat route, or a proactive evaluator, may have none).
   ensureColumn(db, 'agent_actions', 'context_provenance', 'TEXT');
   ensureColumn(db, 'agent_actions', 'account_binding', 'TEXT');
+  ensureColumn(db, 'agent_actions', 'package_context', 'TEXT');
   ensureColumn(db, 'agent_runs', 'model_call_count', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'agent_runs', 'conversation_id', 'TEXT');
   ensureColumn(db, 'agent_runs', 'goal_id', 'TEXT');

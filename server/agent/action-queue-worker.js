@@ -26,6 +26,8 @@ export class ActionQueueWorker {
     this.maxActionAgeMs = maxActionAgeMs;
     this.leaseMs = leaseMs;
     this.leaseRenewalIntervalMs = leaseRenewalIntervalMs ?? Math.max(10, Math.floor(leaseMs / 3));
+    // Set by Agent.setPackageAuthority(); see _executeLeased.
+    this.packageAuthority = null;
   }
 
   async processAction(actionId) {
@@ -85,6 +87,17 @@ export class ActionQueueWorker {
     if (evaluation.blocked) {
       updateAgentAction(action.id, { status: 'blocked', result: { error: evaluation.reason } });
       return this._stop(item, 'cancelled', evaluation.reason, 'non_retryable', action);
+    }
+    if (action.packageContext) {
+      // Re-check package authority at execution time; fail closed when no
+      // package runtime is attached (docs/plugin-architecture.md §10).
+      let problem;
+      try { problem = this.packageAuthority ? this.packageAuthority(action) : 'Package runtime is not available'; }
+      catch { problem = 'Package authority could not be verified'; }
+      if (problem) {
+        updateAgentAction(action.id, { status: 'blocked', result: { error: problem } });
+        return this._stop(item, 'cancelled', problem, 'non_retryable', action);
+      }
     }
     const createdAt = Date.parse(action.created_at);
     if (!Number.isFinite(createdAt) || Date.now() - createdAt > this.maxActionAgeMs) {

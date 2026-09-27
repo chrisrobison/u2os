@@ -28,7 +28,7 @@ export class ApprovalManager {
    * row; the caller (Agent) decides whether to execute immediately based on
    * `evaluation.blocked`/`evaluation.requiresApproval`.
    */
-  recordDecision({ id, tool, arguments: args, requestedBy, requestText, model, reasoningSummary, evaluation, correlationId, actor, contextProvenance, accountBinding }) {
+  recordDecision({ id, tool, arguments: args, requestedBy, requestText, model, reasoningSummary, evaluation, correlationId, actor, contextProvenance, accountBinding, packageContext = null }) {
     const auditRow = recordAudit({
       id,
       requestedBy,
@@ -45,6 +45,7 @@ export class ApprovalManager {
       correlationId,
       contextProvenance,
       accountBinding,
+      packageContext,
     });
 
     if (evaluation.blocked) {
