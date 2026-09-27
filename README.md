@@ -56,6 +56,7 @@ U2OS is a working **pre-alpha**, not a production product. Everything below is i
 - A policy engine outside the model, plus audited approvals, hard blocks and owner-facing **Why?** views (`GET /api/actions/:id/explain`, `GET /api/recommendations/:id/explain`). They show stored summaries, never model chain-of-thought.
 - Durable SQLite action delivery with atomic leases, restart recovery, bounded retries, explicit provider idempotency contracts, execution-time policy/approval/freshness checks, and a sanitized Operations view. Uncertain external outcomes stop for your review instead of risking a duplicate send.
 - Timers, schedules, event rules, condition watches, proactive evaluators, and bounded read-only goals.
+- Installable **packages** of capabilities, skills and durable automations (`npm run u2 -- package install ./packages/job-hunter`, or the Packages view): owner-granted permissions, deterministic package policies that can only tighten `policies.yaml`, restart-safe workflows, and one audit trail ([plugin architecture](docs/plugin-architecture.md)).
 
 **Memory and intelligence**
 - Append-only event log with correlation, provenance and SSE delivery.
@@ -174,6 +175,7 @@ Raw device debug routes are disabled outside explicit non-production development
   - [Progress record](docs/personal-agent-progress.md)
   - [Personal acceptance and dogfooding](docs/personal-acceptance.md)
   - [Job research walkthrough](docs/job-research-walkthrough.md)
+- **Packages:** [Plugin architecture](docs/plugin-architecture.md), [writing packages](docs/packages/README.md), [reference Job Hunter package](packages/job-hunter/README.md)
 - **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md)
 
 ## Repository layout
@@ -182,12 +184,14 @@ Raw device debug routes are disabled outside explicit non-production development
 server/       persistent service
   vault/      vault location, Markdown parsing, indexer, watcher, exporter
   routines/   routine parsing and the unattended runner
+  packages/   package platform: manifests, registries, invoker, workflow engine, automation runtime, loader, CLI
   agent/      context assembly, planner, policy evaluation, execution, approvals, runs, goals
   memory/     entities, facts, relationships, projections, retrieval
   policy/     action policy and data-processing policy
   events/     event log, SSE, maintenance
   integrations/, tools/, triggers/, devices/, voice/, security/, backup/, api/
 public/       browser client: native ES modules and Web Components, no build step
+packages/     installable packages; packages/job-hunter is the reference package
 skills/       connector manifests and declared permissions
 tests/        Node suites and Playwright e2e
 docs/         product, architecture, subsystem contracts, decisions

@@ -2,7 +2,7 @@
 
 U2OS grows through **packages**: installable directories that contribute **capabilities**, **skills** and **automations**. Packages compose like Lego blocks. An automation depends on skills, skills are built from capabilities, and capabilities are implemented by providers. Every invocation that leaves a package passes permission checks, deterministic policy and the existing action gate, and lands in the same audit trail as everything else U2OS does ([ADR 0008](adr/0008-packages-capabilities-skills-automations.md)).
 
-This document starts with the Phase 1 assessment of the existing runtime (what already exists and how the new concepts map onto it), then specifies the design. Author-facing guides are added in Phase 10.
+This document starts with the Phase 1 assessment of the existing runtime (what already exists and how the new concepts map onto it), then specifies the design as implemented. Author-facing guides: [packages](packages/README.md), [capabilities](packages/capabilities.md), [skills](packages/skills.md), [automations](packages/automations.md) and [security notes](packages/security.md). The [reference Job Hunter package](../packages/job-hunter/README.md) is a tested walkthrough.
 
 ## 1. Assessment of the existing architecture
 
@@ -219,9 +219,13 @@ Step kinds (`use:`): `capability:<id>`, `skill:<id>`, `transform` (`value`), `fi
 
 Interpolation: `{{ expr }}` inside strings. A string that is exactly one expression yields the raw value; otherwise values are stringified. Scope: `inputs`, `steps.<id>.output`, `item`, `index`, `settings`, `state`, `trigger`, `run`.
 
-Expressions are parsed by a small recursive-descent parser and interpreted over plain data. There is no `eval`, no `Function`, no property access to `__proto__`/`constructor`/`prototype`, no method calls, and only whitelisted pure functions (`len`, `lower`, `upper`, `contains`, `startsWith`, `endsWith`, `min`, `max`, `abs`, `round`, `floor`, `ceil`, `coalesce`, `join`, `keys`, `now`, `daysSince`). Operators: `== != < <= > >= && || ! and or not in + - * / % ?:`. Expressions are length- and depth-limited.
+Expressions are parsed by a small recursive-descent parser and interpreted over plain data. There is no `eval`, no `Function`, no property access to `__proto__`/`constructor`/`prototype`, no method calls, and only whitelisted pure functions (`len`, `lower`, `upper`, `contains`, `startsWith`, `endsWith`, `min`, `max`, `abs`, `round`, `floor`, `ceil`, `coalesce`, `join`, `keys`, `concat`, `pluck`, `unique`, `slice`, `now`, `daysSince`). Operators: `== != < <= > >= && || ! and or not in + - * / % ?:`. Expressions are length-, depth- and work-limited.
 
-Retries apply to non-consequential failures; consequential capabilities are never re-proposed by the workflow because the action queue owns their retries and uncertain outcomes. Timeouts bound a step's wait for an in-process result.
+Retries apply to non-consequential failures; consequential capabilities are never re-proposed by the workflow because the action queue owns their retries and uncertain outcomes. Timeouts bound read-capability calls.
+
+Outcomes: a package-policy denial or an owner rejection skips the item (audited, run continues); a missing permission, a `never` rule in `policies.yaml` or an invalid input fails the step (`onError: continue` records it and carries on).
+
+**Principal rule.** Capability calls act with the grants of the package whose automation (or top-level skill run) started the work, never with the grants of a composed skill's own package. Otherwise an automation could borrow another package's permissions by calling its skill. Installation therefore checks that a package declares every permission needed by the capabilities it uses, transitively through skills. Settings and policies inside a skill remain the skill package's own.
 
 ## 8. Persistence model
 
@@ -232,7 +236,7 @@ Retries apply to non-consequential failures; consequential capabilities are neve
 | `package_settings` | owner values for settings and policy overrides |
 | `capability_provider_selection` | owner's chosen provider per capability |
 | `automation_instances` | per automation: enabled, paused, status, persistent `state`, `next_run_at`, last run/result |
-| `workflow_runs` | automation and skill runs: kind, definition, package, trigger, status, inputs, outputs, position (step, iteration, partial outputs, wait handle), context (step outputs), wait condition, `wake_at`, lease, dedupe key, parent run |
+| `workflow_runs` | automation and skill runs: kind, definition snapshot, defining and principal package, trigger, status, inputs, outputs, position (step, iteration, foreach items and results, wait handle), context (step outputs), wait condition, `wake_at`, lease, dedupe key, root and parent run, depth |
 | `workflow_steps` | per step/iteration record: status, attempts, output, error, linked `agent_actions` id or child run |
 | `automation_event_cursor` | last event row processed, so events published while stopped are caught up once |
 
@@ -248,7 +252,7 @@ Runs are checkpointed after every step and every foreach item. Waiting records a
 - **Concurrency**: `single` (default) records a new trigger as `skipped` while a run is active; `parallel` allows overlap.
 - **Waiting**: runs wait for owner approval of a proposed action, child skill runs, timers, or events, and resume from the tick or the event that satisfies them.
 - **Lifecycle**: install (disabled), enable (requires the grants its capabilities need), pause/resume, disable, run now, stop (cancel active runs), inspect, uninstall.
-- Events: `automation.started`, `automation.completed`, `automation.failed`, `automation.waiting`, plus `package.installed`, `package.uninstalled`, `package.enabled`, `package.disabled`. They carry identifiers and status only.
+- Events: `automation.started`, `automation.waiting`, `automation.completed`, `automation.failed`, plus `package.installed`, `package.upgraded`, `package.uninstalled`, `package.enabled`, `package.disabled`, `package.permissions_changed`. They carry identifiers and status only.
 
 ## 10. Security model
 
@@ -267,8 +271,9 @@ Runs are checkpointed after every step and every foreach item. Waiting records a
 Every capability invocation made by a package produces an `agent_actions` row (the existing audit table) with `requested_by = package:<id>`, the tool, arguments, `policies.yaml` rule, status and result, and a `package_context` JSON column:
 
 ```json
-{ "package": "com.u2os.job-hunter", "automation": "job-hunter", "run": "wfr_…", "step": "notify",
-  "permission": { "allowed": true, "required": ["email.send"] },
+{ "package": "com.u2os.job-hunter", "automation": "job-hunter", "skill": null, "run": "wfr_…", "rootRun": "wfr_…",
+  "step": "notify", "capability": "mock.email-send", "provider": "com.u2os.job-hunter",
+  "permission": { "allowed": true, "required": ["notifications.send"], "missingDeclared": [], "missingGrant": [] },
   "policy": { "name": "notifyCandidate", "decision": "approval", "reasons": ["approval: required"] } }
 ```
 
@@ -284,24 +289,34 @@ Permission and policy denials are recorded as `blocked` rows, so the trail answe
 | Grant/revoke | `npm run u2 -- package grant <id> <perm…\|--all>` | `POST /api/packages/:id/grants` |
 | Enable/disable package | `npm run u2 -- package enable <id>` | `POST /api/packages/:id/enable` |
 | Settings | `npm run u2 -- package config <id> key=value` | `PUT /api/packages/:id/settings` |
-| Capabilities / skills | `npm run u2 -- capability list`, `skill list` | `GET /api/capabilities`, `GET /api/skills` |
+| Capabilities / skills | `npm run u2 -- capability list`, `skill list` | `GET /api/packages/capabilities`, `GET /api/packages/skills` (device capabilities keep `/api/capabilities`) |
 | Automations | `npm run u2 -- automation list\|enable\|disable\|pause\|resume\|run\|stop\|inspect <id>` | `/api/automations/*` |
 
 Installation: read manifest → validate → check `u2os` compatibility → resolve dependencies against installed and exported definitions → report requested permissions → copy files → merge additive state migrations → register capabilities, skills and automations → leave automations disabled.
 
 Uninstalling refuses while another installed package depends on its exports, cancels its active runs, removes its files and registrations, and keeps run history, audit rows and automation state in the database.
 
-## 13. Implementation plan
+## 13. Implementation status
 
-Tracked in [#376](https://github.com/chrisrobison/u2os/issues/376), one PR per phase:
+Tracked in [#376](https://github.com/chrisrobison/u2os/issues/376); each phase landed as its own PR:
 
-1. This assessment and ADR 0008.
-2. Core types and schemas in `server/packages/`: manifest, JSON-schema subset, semver, expressions, permissions, policies, events, workflow validation.
-3. Registries: package, capability (core tools and connector providers included), skill, automation; dependency validation.
-4. Invocation: capability invoker, package authority overlay in the gate, hidden package tools, queue-worker re-check, `package_context` audit column.
-5. Durable workflow engine and persistence tables.
-6. Durable automations: triggers, runtime, restart recovery, run history.
-7. Package loader and lifecycle manager; startup wiring.
-8. CLI, API and the Packages UI view.
-9. Reference Job Hunter package.
-10. Author guides, manifest examples, security notes, walkthrough.
+| Phase | Where |
+|---|---|
+| 1. Assessment and ADR 0008 | this document, [ADR 0008](adr/0008-packages-capabilities-skills-automations.md) |
+| 2. Types and schemas | `server/packages/{manifest,json-schema,semver,expression,permissions,policy,events,workflow,cron,triggers,ids,types}.js` |
+| 3. Registries | `capability-registry.js`, `registries.js`, `dependencies.js`, `core-capabilities.js` |
+| 4-5. Invocation, permissions, policy, audit | `invoker.js`, `authority.js`, `providers.js`, `store.js`, `secrets.js`; gate overlay in `server/agent/agent.js`; queue re-check in `action-queue-worker.js`; hidden tools in `tools/registry.js` and `plan-validator.js` |
+| 4. Workflow engine | `workflow-engine.js`, `workflow-store.js` |
+| 6. Durable automations | `automation-runtime.js` |
+| 7. Loader and lifecycle | `loader.js`, `manager.js`, `platform.js`, wired in `server/index.js` |
+| 8. CLI, API, UI | `cli.js` (`npm run u2`), `server/api/routes/packages.js`, `public/components/u2-packages.js` (`#/packages`) |
+| 9. Reference package | [`packages/job-hunter/`](../packages/job-hunter/README.md) |
+| 10. Guides | [`docs/packages/`](packages/README.md) |
+
+### Known limitations
+
+- `module` code runs in-process without isolation; it is gated by an explicit `code.execute` grant.
+- No `llm.*`, `browser.*` or `filesystem.*` capabilities yet; packages cannot provide alternative implementations of core capabilities.
+- `watch` triggers, network host allow-lists, package signing, a registry, and serving package `ui.dashboard` files are not implemented.
+- Recovery quarantine does not yet count automation work; restored homes are not executable, so no automation runs there.
+- `emit` is at-least-once across a crash between publishing and checkpointing.

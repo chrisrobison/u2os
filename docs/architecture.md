@@ -225,6 +225,10 @@ agent-reachable. Not yet implemented: the semantic `listen()` API, real
 cryptographic pairing, and extending unification to more connectors. See
 docs/devices.md.
 
+## Package platform
+
+Installable packages add capabilities, skills and automations without core changes ([plugin architecture](plugin-architecture.md), [ADR 0008](adr/0008-packages-capabilities-skills-automations.md)). `server/packages/platform.js` builds the registries (every core tool is a capability under its existing id), a `CapabilityInvoker` over the agent's gate, the durable `WorkflowEngine`, the `AutomationRuntime` (started with the other background workers) and the `PackageManager`, which loads installed packages at startup. Package actions are ordinary audited actions with a tighten-only package authority overlay ([policies](policies.md#package-authority)); package capabilities are hidden from the planner.
+
 ## Known gaps
 
 - `ModelRouter` resolves a provider per role and supports OpenAI-compatible, Anthropic, and embedding adapters. The HTTP model endpoint accepts both legacy single-provider and validated multi-provider/role configuration; the browser form still configures only the legacy single-provider shape. Semantic ranking remains opt-in, application-side, and intentionally bounded at personal scale, but candidate selection/ranking spans entities, current facts, open owner commitments, and allowlisted events before final context limits.

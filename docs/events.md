@@ -138,6 +138,18 @@ Device/capability/stream events (docs/devices.md's device/capability subsystem -
 | `stream.available` | `StreamRegistry.open()` recorded a stream reference as active | `device:<id>` |
 | `stream.closed` | `StreamRegistry.close()` removed an active stream reference | `device:<id>` |
 
+Package platform events ([plugin architecture](plugin-architecture.md)). They carry identifiers and status only, never step inputs or outputs:
+
+| Type | Emitted when | source |
+|---|---|---|
+| `automation.started` | a package automation run begins executing | `automation-runtime` |
+| `automation.waiting` | a run is waiting for an approval, a child skill run, a timer or an event (`data.waitingFor`) | `automation-runtime` |
+| `automation.completed` / `automation.failed` | a run finished; `data.reason` is `run_failed` or `cancelled`, never error text | `automation-runtime` |
+| `package.installed`, `package.upgraded`, `package.uninstalled`, `package.enabled`, `package.disabled`, `package.permissions_changed` | owner lifecycle operations | `package-manager` |
+| *declared package events* (e.g. `job.candidate`) | an `emit` step; the type must be declared in the package's `events.emits` and outside reserved core domains | `package:<id>` |
+
+Packages may subscribe to any event type (automation `event` triggers and `wait` steps) but may only emit their declared types. `metadata.workflowRunId` and `metadata.automationInstanceId` identify the emitting run, so an automation never re-triggers on its own events.
+
 Not implemented until later phases (reserved names, do not repurpose): `document.created`, `document.changed`, `purchase.completed`, `package.shipped`, `location.changed`.
 
 ## Subscribing

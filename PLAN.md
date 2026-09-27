@@ -79,16 +79,16 @@ Let the owner say, in their vault, what U2OS may do without asking, while keepin
 
 Tracking issue: [#376](https://github.com/chrisrobison/u2os/issues/376). The owner brought forward "installable skills with permission review" from Later as core platform work: packages of **capabilities**, **skills** and **automations** with validated manifests, owner-granted permissions, deterministic package policies under `policies.yaml`, durable workflows and one audit trail ([plugin architecture](docs/plugin-architecture.md), [ADR 0008](docs/adr/0008-packages-capabilities-skills-automations.md)).
 
-- [ ] [#377](https://github.com/chrisrobison/u2os/issues/377) Architecture assessment and design
-- [ ] Core types and schemas
-- [ ] Registries with dependency validation
-- [ ] Capability invocation through the gate, permissions and audit
-- [ ] Durable workflow engine
-- [ ] Durable automations
-- [ ] Package loader and lifecycle
-- [ ] CLI, API and UI
-- [ ] Reference Job Hunter package
-- [ ] Author guides and hardening
+- [x] [#377](https://github.com/chrisrobison/u2os/issues/377) Architecture assessment and design
+- [x] [#379](https://github.com/chrisrobison/u2os/issues/379) Core types and schemas
+- [x] [#381](https://github.com/chrisrobison/u2os/issues/381) Registries with dependency validation
+- [x] [#383](https://github.com/chrisrobison/u2os/issues/383) Capability invocation through the gate, permissions and audit
+- [x] [#384](https://github.com/chrisrobison/u2os/issues/384) Durable workflow engine
+- [x] [#385](https://github.com/chrisrobison/u2os/issues/385) Durable automations
+- [x] [#387](https://github.com/chrisrobison/u2os/issues/387) Package loader and lifecycle
+- [x] [#389](https://github.com/chrisrobison/u2os/issues/389) CLI, API and UI
+- [x] [#390](https://github.com/chrisrobison/u2os/issues/390) Reference Job Hunter package
+- [x] Author guides and hardening ([docs/packages](docs/packages/README.md))
 
 ## Later — deferred until the product is proven
 
@@ -106,7 +106,8 @@ These remain valid, but are scheduled after Milestones A–C unless real use mak
 - Contract tests shared by mock and real providers, and opt-in live tests for Google, Brave Search and webhooks.
 - Google token revocation and clearer re-authorization, plus Gmail MIME, attachment, thread and real draft support.
 - CalDAV. IMAP/SMTP exist but need live-account validation.
-- Signed, installable skills with permission review, and enforced outbound network permissions.
+- Package signing and a registry; enforced outbound network host allow-lists for packages.
+- Package platform follow-ups: isolate `module` code (worker threads or a separate process with Node's permission model); `llm.generate`/`llm.evaluate` capabilities through the model router and data-processing policy; `browser.*` and scoped `filesystem.*` capabilities; package-provided alternatives to core capabilities; `watch` triggers; serving package `ui.dashboard`; counting automation work in recovery quarantine.
 
 ### Distribution
 
