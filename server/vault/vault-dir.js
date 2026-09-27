@@ -23,6 +23,7 @@ can edit it with any text editor, keep it in git, or sync it however you like.
 - \`commitments/\`: things you have promised (\`status: open\` or \`done\`).
 - \`routines/\`: standing instructions U2OS carries out on your behalf.
 - \`policies.yaml\` (optional): what U2OS may do without asking you.
+- \`journal/\`: written by U2OS, one line per thing it did or you decided (\`YYYY-MM.jsonl\`).
 
 Each file may start with YAML frontmatter:
 

@@ -57,6 +57,7 @@ import { registerDeviceRoutes } from './api/routes/devices.js';
 import { registerDiagnosticsRoutes } from './api/routes/diagnostics.js';
 import { registerVaultRoutes } from './api/routes/vault.js';
 import { startVaultWatcher } from './vault/watcher.js';
+import { startJournal } from './vault/journal.js';
 import { registerRoutineRoutes } from './api/routes/routines.js';
 import { startRoutineRunner, stopRoutineRunner } from './routines/routine-runner.js';
 
@@ -336,12 +337,14 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
   // multicast socket.
   let mdnsHandle = null;
   let vaultWatcher = null;
+  let stopJournal = null;
   let backgroundStop = null;
   const stopBackgroundWorkers = () => {
     if (!backgroundStop) backgroundStop = Promise.allSettled([
       stopActionQueue(), stopSyncScheduler(), triggerEngine.stopAll(), stopRoutineRunner(), deviceRegistry.stopAll(),
       Promise.resolve().then(() => mdnsHandle?.stop()),
       Promise.resolve().then(() => vaultWatcher?.stop()),
+      Promise.resolve().then(() => stopJournal?.()),
     ]).then((results) => {
       if (results.some((result) => result.status === 'rejected')) throw new Error('Background cleanup failed; inspect durable state before restarting');
     });
@@ -352,6 +355,8 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
     // Start execution only after successful bind, with cleanup installed first.
     // The owned vault (ADR 0007) is indexed before triggers can act on memory.
     vaultWatcher = startVaultWatcher({ eventBus });
+    // What U2OS does on the owner's behalf is also recorded in their vault.
+    stopJournal = startJournal({ eventBus });
     startSyncScheduler({ db, eventBus, dataDir });
     actionQueueTimer = setInterval(runQueueTick, Number(process.env.U2OS_ACTION_QUEUE_TICK_MS) || 1_000);
     actionQueueTimer.unref?.();

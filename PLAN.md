@@ -35,7 +35,7 @@ Tracking issue: [#355](https://github.com/chrisrobison/u2os/issues/355).
 - [x] [#367](https://github.com/chrisrobison/u2os/issues/367) Align all documentation with the vault architecture and roadmap
 - [x] [#361](https://github.com/chrisrobison/u2os/issues/361) Write owner memory edits and accepted memory candidates back to vault files
 - [x] [#362](https://github.com/chrisrobison/u2os/issues/362) Move action policies into the vault (`policies.yaml`)
-- [ ] [#360](https://github.com/chrisrobison/u2os/issues/360) Append observations and action outcomes to a vault journal (`journal/YYYY-MM.jsonl`)
+- [x] [#360](https://github.com/chrisrobison/u2os/issues/360) Append observations and action outcomes to a vault journal (`journal/YYYY-MM.jsonl`)
 
 ### Acceptance criteria
 
