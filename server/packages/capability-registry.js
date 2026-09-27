@@ -55,6 +55,7 @@ export class CapabilityRegistry {
     if (!contract) {
       const error = new Error(`Unknown capability: ${id}`);
       error.code = 'CAPABILITY_UNKNOWN';
+      error.status = 404;
       throw error;
     }
     return contract;
@@ -64,7 +65,7 @@ export class CapabilityRegistry {
 
   select(id, providerId) {
     if (providerId === null || providerId === undefined) { this._selections.delete(id); return; }
-    if (!this.providers(id).some((provider) => provider.id === providerId)) throw new Error(`No provider ${providerId} for ${id}`);
+    if (!this.providers(id).some((provider) => provider.id === providerId)) throw Object.assign(new Error(`No provider ${providerId} for ${id}`), { status: 400 });
     this._selections.set(id, providerId);
   }
 

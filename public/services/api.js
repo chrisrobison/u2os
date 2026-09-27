@@ -483,3 +483,24 @@ export function triggerSync(domain) {
     headers: JSON_HEADERS,
   });
 }
+
+// Package platform (docs/plugin-architecture.md): packages, capabilities,
+// skills and automations. Secret values are write-only.
+const enc = encodeURIComponent;
+const postJson = (path, body = {}, method = 'POST') => request(path, { method, headers: JSON_HEADERS, body: JSON.stringify(body) });
+export function getPackages() { return request('/api/packages'); }
+export function getPackage(id) { return request(`/api/packages/${enc(id)}`); }
+export function reviewPackage(source) { return postJson('/api/packages/review', { source }); }
+export function installPackage(source, grant = null) { return postJson('/api/packages/install', { source, grant }); }
+export function uninstallPackage(id) { return request(`/api/packages/${enc(id)}`, { method: 'DELETE' }); }
+export function setPackageEnabled(id, enabled) { return postJson(`/api/packages/${enc(id)}/${enabled ? 'enable' : 'disable'}`); }
+export function setPackageGrants(id, { grant = null, revoke = null }) { return postJson(`/api/packages/${enc(id)}/grants`, { grant, revoke }); }
+export function configurePackage(id, { settings = null, policies = null }) { return postJson(`/api/packages/${enc(id)}/settings`, { settings, policies }, 'PUT'); }
+export function getPackageCapabilities() { return request('/api/packages/capabilities'); }
+export function getPackageSkills() { return request('/api/packages/skills'); }
+export function getPackageAudit(params = {}) { return request(`/api/packages/audit?${new URLSearchParams(params)}`); }
+export function getAutomations() { return request('/api/automations'); }
+export function getAutomation(id) { return request(`/api/automations/${enc(id)}`); }
+export function getAutomationRun(runId) { return request(`/api/automations/runs/${enc(runId)}`); }
+export function automationOperation(id, operation) { return postJson(`/api/automations/${enc(id)}/${operation}`); }
+export function runAutomation(id, inputs = {}) { return postJson(`/api/automations/${enc(id)}/run`, { inputs }); }

@@ -22,6 +22,7 @@ class DefinitionRegistry {
     if (!item) {
       const error = new Error(`Unknown ${this.kind}: ${id}`);
       error.code = `${this.kind.toUpperCase()}_UNKNOWN`;
+      error.status = 404;
       throw error;
     }
     return item;
