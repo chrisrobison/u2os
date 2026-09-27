@@ -1,6 +1,6 @@
 import { getDb } from '../db/connection.js';
 import { newId } from '../db/ids.js';
-import { loadPolicies } from './policies-loader.js';
+import { loadPolicies, policySignature, VAULT_POLICY_INVALID } from './policies-loader.js';
 
 // always/autonomous/confirm/never -> autonomy levels 0/4/3/5, per docs/policies.md.
 const LEVELS = { always: 0, autonomous: 4, confirm: 3, never: 5 };
@@ -13,12 +13,23 @@ const REQUIRES_APPROVAL = { always: false, autonomous: false, confirm: true, nev
 
 export class PolicyEngine {
   constructor({ policies } = {}) {
+    // Explicit policies (tests, fixtures) are fixed. Loaded policies follow
+    // the files: an owner's edit to the vault policy applies on the next
+    // evaluation, without a restart.
+    this.fixed = Boolean(policies);
     this.policies = policies || loadPolicies();
+    // Taken after loading: the first load may create the home policy file.
+    this.signature = this.fixed ? null : policySignature();
   }
 
   reload() {
     this.policies = loadPolicies();
+    this.signature = policySignature();
     return this.policies;
+  }
+
+  refresh() {
+    if (!this.fixed && policySignature() !== this.signature) this.reload();
   }
 
   /**
@@ -26,6 +37,7 @@ export class PolicyEngine {
    * Implements the exact resolution algorithm in docs/policies.md.
    */
   evaluate({ tool, arguments: args = {}, context = {} }) {
+    this.refresh();
     const domain = tool.domain;
     const operation = tool.name.split('.')[1];
 
@@ -77,6 +89,13 @@ export class PolicyEngine {
       rule = `${domain}.${operation}:fallback-confirm`;
     }
 
+    if (this.policies?.[VAULT_POLICY_INVALID] && (levelKey === 'always' || levelKey === 'autonomous')) {
+      // The vault policy is broken; never act on the (possibly looser) home
+      // policy without asking. `never` blocks still apply.
+      levelKey = 'confirm';
+      rule = `${rule}:vault-policy-invalid`;
+    }
+
     const autonomyLevel = LEVELS[levelKey] ?? 3;
     const blocked = levelKey === 'never';
     const requiresApproval = REQUIRES_APPROVAL[levelKey] ?? true;
@@ -87,7 +106,9 @@ export class PolicyEngine {
       blocked,
       domain,
       rule,
-      reason: describeReason(levelKey, domain, operation),
+      reason: rule.endsWith(':vault-policy-invalid')
+        ? `Your vault policies.yaml is invalid, so ${domain}.${operation} requires confirmation until it is fixed.`
+        : describeReason(levelKey, domain, operation),
     };
   }
 }

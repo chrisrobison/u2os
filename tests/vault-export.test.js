@@ -44,7 +44,7 @@ test('database memory is exported to vault files bound to the same records', () 
     recordRelationship({ fromEntityId: ownerEntityId, relation: 'promised', toEntityId: promise.id, source: 'system:projector', inferred: true, confidence: 0.8 });
 
     const report = exportMemoryToVault();
-    assert.deepEqual(report.written.sort(), ['commitments/send-the-report.md', 'me.md', 'people/alice-chen.md', 'projects/house-renovation.md']);
+    assert.deepEqual(report.written.sort(), ['commitments/send-the-report.md', 'me.md', 'people/alice-chen.md', 'policies.yaml', 'projects/house-renovation.md']);
     assert.equal(report.inferredFactsLeftOut, 1, 'guesses are not promoted to owner-authored files');
 
     const file = read('people/alice-chen.md');

@@ -34,7 +34,7 @@ Tracking issue: [#355](https://github.com/chrisrobison/u2os/issues/355).
 - [x] [#359](https://github.com/chrisrobison/u2os/issues/359) Export existing database memory into vault files, bound by `id:`
 - [x] [#367](https://github.com/chrisrobison/u2os/issues/367) Align all documentation with the vault architecture and roadmap
 - [x] [#361](https://github.com/chrisrobison/u2os/issues/361) Write owner memory edits and accepted memory candidates back to vault files
-- [ ] [#362](https://github.com/chrisrobison/u2os/issues/362) Move action policies into the vault (`policies.yaml`)
+- [x] [#362](https://github.com/chrisrobison/u2os/issues/362) Move action policies into the vault (`policies.yaml`)
 - [ ] [#360](https://github.com/chrisrobison/u2os/issues/360) Append observations and action outcomes to a vault journal (`journal/YYYY-MM.jsonl`)
 
 ### Acceptance criteria
@@ -64,7 +64,7 @@ The product has not yet been used day to day with real accounts and a real model
 
 Let the owner say, in their vault, what U2OS may do without asking, while keeping policy outside the model.
 
-- Vault policy (from #362) scoped by domain, counterpart and routine, for example "may send routine replies to people tagged family" or "may decline meetings outside working hours".
+- Vault policy (from #362) extended to be scoped by domain, counterpart and routine, for example "may send routine replies to people tagged family" or "may decline meetings outside working hours".
 - Approvals that reach the owner where they are (notification with approve/reject) instead of only in the browser.
 - Commitment follow-through: open commitments with due dates produce routine-driven reminders and follow-ups.
 - Clear owner-facing summaries of what was done on their behalf, drawn from the journal.

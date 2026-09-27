@@ -2,12 +2,14 @@ import { sendJson } from '../router.js';
 import { getVaultDir } from '../../vault/vault-dir.js';
 import { indexVault, getLastVaultReport } from '../../vault/indexer.js';
 import { exportMemoryToVault } from '../../vault/exporter.js';
+import { loadPolicies, getPolicySourceStatus } from '../../policy/policies-loader.js';
 
 // Owner-only (router default). The report names vault-relative paths and
 // parse errors, never file contents.
 export function registerVaultRoutes(router, { eventBus }) {
   router.get('/api/vault', async (_req, res) => {
-    sendJson(res, 200, { vaultDir: getVaultDir(), lastIndex: getLastVaultReport() });
+    loadPolicies(); // refresh the policy file status without changing the running engine
+    sendJson(res, 200, { vaultDir: getVaultDir(), lastIndex: getLastVaultReport(), policy: getPolicySourceStatus() });
   });
 
   router.post('/api/vault/reindex', async (_req, res) => {

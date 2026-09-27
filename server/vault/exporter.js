@@ -4,6 +4,7 @@ import yaml from 'js-yaml';
 import { getDb } from '../db/connection.js';
 import { COLLECTIONS, getVaultDir, ensureVaultLayout } from './vault-dir.js';
 import { listMarkdownFiles, readVaultFile } from './markdown.js';
+import { policiesPath, ensureDefaultPolicies } from '../policy/policies-loader.js';
 
 // One-shot migration of database memory into owned vault files (#359,
 // docs/vault.md). Each file carries `id:` so re-indexing describes the same
@@ -19,6 +20,7 @@ export function exportMemoryToVault({ vaultDir = getVaultDir() } = {}) {
   const db = getDb();
   const ownerEntityId = db.prepare('SELECT entity_id FROM owners WHERE entity_id IS NOT NULL LIMIT 1').get()?.entity_id || null;
   const report = { vaultDir, written: [], skippedExisting: [], inferredFactsLeftOut: 0, reservedKeysLeftOut: 0 };
+  exportPolicies(vaultDir, report);
   const taken = new Set();
   const describedIds = idsAlreadyInVault(vaultDir);
 
@@ -97,6 +99,23 @@ function idsAlreadyInVault(vaultDir) {
     }
   }
   return ids;
+}
+
+/**
+ * Moves delegated authority into the vault: the current home policy is
+ * copied unchanged, so behaviour is identical and the vault file becomes
+ * the one the owner edits. An existing vault policy is never replaced.
+ */
+function exportPolicies(vaultDir, report) {
+  ensureDefaultPolicies();
+  const header = '# What U2OS may do on your behalf (docs/policies.md).\n# Levels: always, autonomous (act without asking), confirm (ask first), never.\n# This file overrides U2OS_HOME/policies/policies.yaml per domain operation.\n\n';
+  try {
+    fs.writeFileSync(path.join(vaultDir, 'policies.yaml'), header + fs.readFileSync(policiesPath(), 'utf8'), { flag: 'wx', mode: 0o600 });
+    report.written.push('policies.yaml');
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+    report.skippedExisting.push('policies.yaml');
+  }
 }
 
 function uniquePath(vaultDir, dir, entity, taken) {
