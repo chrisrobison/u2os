@@ -46,7 +46,8 @@ Allergic to peanuts. Prefers texts to calls.
 | `id` | Optional. Binds the file to an existing record, for example one imported from contacts or exported from the database, instead of creating a new one. It must name a known record that no other file describes, and it cannot name the owner. |
 | `name` or `title` | Display name. Falls back to the first `# Heading`, then the file name. |
 | `classification` | `public`, `personal` (default), `private` or `sensitive`. Applies to the entity and all its facts. It decides which facts may reach a local or remote model ([policies](policies.md)). An unknown value makes the file invalid rather than silently less private. |
-| `sensitive_keys` | List of keys classified `sensitive` regardless of the file classification. |
+| `sensitive_keys` | List of keys (including `notes`) classified `sensitive` regardless of the file classification. |
+| `classifications` | Optional per-key levels, for example `{ email: public, phone: private }`. An unknown level makes the file invalid. `sensitive_keys` wins if a key is in both. |
 | any other key | Becomes a fact with that key and value. Lists and nested values are kept as JSON. |
 | body | Stored as a `notes` fact. |
 
@@ -75,6 +76,33 @@ U2OS checks the vault every 5 seconds (`U2OS_VAULT_POLL_MS`) and re-indexes when
 - `GET /api/vault` returns the vault location and the last index report (counts, file paths and parse errors, never contents).
 - `POST /api/vault/reindex` indexes immediately and returns the report.
 
+## Editing from the UI
+
+Owner edits made in the Memory view or through the memory API are written back to the vault file, so the file and U2OS never disagree. Each edit is applied in three steps:
+
+1. The file is changed first.
+2. The database records the edit for audit.
+3. The vault is re-indexed.
+
+| You do | The file |
+|---|---|
+| Correct a fact | Its line is replaced. The body is replaced for `notes`, and a changed key is renamed. |
+| Delete a fact | Its key is removed (the body is cleared for `notes`). |
+| Reclassify a fact | It is added to or removed from `sensitive_keys` (see below). |
+| Accept a memory suggestion on a vault record | The key is added (a `notes` suggestion is appended to the body). |
+| Delete a vault-backed record | The file moves to `.trash/` in the vault (hidden, not indexed, recoverable). |
+
+This applies to records with a vault file and to facts about you. Facts about you go to `me.md`, which is created if missing. Records that exist only in the database stay database-only until you export them.
+
+Some rules keep the file safe:
+
+- **Minimal edits.** Only the affected lines change, so comments, ordering and formatting elsewhere are kept. If a targeted edit cannot be proven to produce exactly the intended file, the frontmatter is re-serialized, which drops frontmatter comments.
+- **Atomic writes, conflict-aware.** The file is replaced atomically. If it changed on disk while the edit was prepared (for example you saved in your editor), the edit is refused with `409` and your save wins.
+- **Exact privacy.** A reclassification is written exactly as chosen. A level equal to the file's `classification` needs no entry, `sensitive` goes into `sensitive_keys`, and any other level goes into `classifications`. U2OS never changes a level you did not ask to change.
+- **File-only fields.** `id`, `name`, `title`, `classification`, `sensitive_keys` and `classifications` are edited in the file itself (except `name` in `me.md`).
+- **Invalid files are never rewritten.** A file that does not currently parse is left alone, and the edit is refused until you fix it.
+- **Vault relationships are changed in the file.** A commitment's link to you is removed by setting `status: done` or deleting the file, not through the relationship API.
+
 ## Moving existing memory into the vault
 
 Installations that stored people, projects, commitments and facts about you before the vault existed can export them into files:
@@ -91,7 +119,7 @@ The export works as follows:
 - It never overwrites an existing file. `me.md` is skipped if you already wrote one, and a name collision gets a `-2` suffix.
 - It never deletes database records. Once indexed, a vault value supersedes the identical database fact, so the file becomes the authority.
 - It includes only explicit and imported facts. Inferred guesses stay out of your files and in U2OS's memory for review.
-- It never lowers privacy. The file's `classification` is the highest non-sensitive level among its facts, and sensitive facts are listed in `sensitive_keys`. A sensitive note is left out of the file and stays in the database.
+- It preserves every fact's classification exactly. The file carries the record's level, facts that differ are listed in `sensitive_keys` or `classifications`, and notes are included at their own level.
 
 The report lists written and skipped files and how many facts were left out.
 
@@ -107,5 +135,4 @@ The default vault lives inside `U2OS_HOME`, so `npm run backup` includes it. Bac
 
 ## Not yet supported
 
-- Editing a vault fact in the Memory UI is not written back to the file, and the next change to that file wins ([#361](https://github.com/chrisrobison/u2os/issues/361)). Edit the file instead.
 - A journal of observations and actions ([#360](https://github.com/chrisrobison/u2os/issues/360)) and vault policies ([#362](https://github.com/chrisrobison/u2os/issues/362)).

@@ -31,6 +31,7 @@ Each file may start with YAML frontmatter:
     relationship: sister
     classification: personal   # public | personal | private | sensitive
     sensitive_keys: [phone]    # keys that must never reach a remote model
+    classifications: { email: public }   # optional per-key levels
     ---
     Free-form notes go here.
 

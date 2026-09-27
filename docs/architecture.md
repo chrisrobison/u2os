@@ -17,9 +17,10 @@ The vault ([vault](vault.md)) lives at `U2OS_VAULT`, then config `vaultDir`, the
   - Changed values supersede, while removed keys and files soft-delete.
   - Facts from other sources are never modified; a conflicting explicit value becomes `disputed`.
   - A file with `id:` describes an existing record instead of creating one. Export relies on this, so it never duplicates people.
-  - `classification` and `sensitive_keys` set the data-processing classification. An invalid classification rejects the file, never silently lowering privacy.
+  - `classification`, `sensitive_keys` and per-key `classifications` set the data-processing classification. An invalid classification rejects the file, never silently lowering privacy.
 - `watcher.js` polls stat signatures (`U2OS_VAULT_POLL_MS`, default 5 s) and re-indexes on change, including when the owner link changes. It starts before triggers and routines, so they act on current memory.
-- `exporter.js` writes database memory into new vault files (`npm run vault:export`, `POST /api/vault/export`). It never overwrites or deletes, leaves inferred facts out, and never lowers privacy.
+- `writeback.js` writes owner edits from the memory API (correct, delete, reclassify, accepted candidates, record deletion to `.trash/`) back into the file first, with minimal line edits, atomic conflict-aware replacement and exactly the classification the owner chose. The route then applies the audited database change and re-indexes.
+- `exporter.js` writes database memory into new vault files (`npm run vault:export`, `POST /api/vault/export`). It never overwrites or deletes, leaves inferred facts out, and preserves each fact's classification exactly.
 
 Because vault facts are ordinary explicit facts, context assembly, dashboards, memory views and explainability use them without special cases. Owner-only `GET /api/vault` and `POST /api/vault/reindex` report status, and a `vault.indexed` event carries counts only.
 
@@ -231,7 +232,7 @@ docs/devices.md.
 - Voice similarity is simplified and is not identity. All registered dashboard primitives are implemented and schema-validated; maps are deliberately local CSS plots rather than a full mapping service.
 - SSE cursor recovery, heartbeats, multi-tab fan-out, and broad Playwright coverage are implemented. Automated checks and manual improvements cover core accessibility behavior, but this is not a claim of a complete external accessibility audit.
 - CalDAV and skill network-permission enforcement are not implemented. IMAP/SMTP exist but have not been validated against live accounts.
-- Memory-UI edits to vault-sourced facts are not yet written back to the files ([#361](https://github.com/chrisrobison/u2os/issues/361)), action policy is not yet in the vault ([#362](https://github.com/chrisrobison/u2os/issues/362)), and there is no vault journal ([#360](https://github.com/chrisrobison/u2os/issues/360)). There are no browser views for the vault or routines yet.
+- Action policy is not yet in the vault ([#362](https://github.com/chrisrobison/u2os/issues/362)), and there is no vault journal ([#360](https://github.com/chrisrobison/u2os/issues/360)). There are no browser views for the vault or routines yet.
 - Nothing has been validated in daily use with a real model and real accounts ([PLAN.md](../PLAN.md), Milestone B).
 - `node:sqlite` remains experimental. Manual audited retention and backup/restore exist; automated retention and a production rollback system do not.
 - Device/capability subsystem gaps (real cryptographic pairing, policy-gating the remaining owner-only debug routes, `listen()`, unifying more connectors) are listed in full in docs/devices.md's own "Known gaps" section rather than duplicated here.

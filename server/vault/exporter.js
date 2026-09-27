@@ -11,14 +11,14 @@ import { listMarkdownFiles, readVaultFile } from './markdown.js';
 // overwritten and no database record is deleted.
 
 const RANK = { public: 0, personal: 1, private: 2, sensitive: 3 };
-const RESERVED = new Set(['id', 'name', 'title', 'classification', 'sensitive_keys', 'notes']);
+const RESERVED = new Set(['id', 'name', 'title', 'classification', 'sensitive_keys', 'classifications', 'notes']);
 const DIR_FOR_TYPE = Object.fromEntries(Object.entries(COLLECTIONS).map(([dir, type]) => [type, dir]));
 
 export function exportMemoryToVault({ vaultDir = getVaultDir() } = {}) {
   ensureVaultLayout(vaultDir);
   const db = getDb();
   const ownerEntityId = db.prepare('SELECT entity_id FROM owners WHERE entity_id IS NOT NULL LIMIT 1').get()?.entity_id || null;
-  const report = { vaultDir, written: [], skippedExisting: [], inferredFactsLeftOut: 0, reservedKeysLeftOut: 0, sensitiveNotesLeftOut: 0 };
+  const report = { vaultDir, written: [], skippedExisting: [], inferredFactsLeftOut: 0, reservedKeysLeftOut: 0 };
   const taken = new Set();
   const describedIds = idsAlreadyInVault(vaultDir);
 
@@ -50,14 +50,18 @@ function writeRecord(db, vaultDir, relativePath, entity, { owner, report }) {
     if (RESERVED.has(fact.key) && fact.key !== 'notes') { report.reservedKeysLeftOut += 1; continue; }
     kept.push(fact);
   }
-  // Never lower privacy on the way through the file format: the file level
-  // is the highest non-sensitive classification present, and sensitive
-  // facts are listed individually.
-  const levels = [entity.classification || 'personal', ...kept.filter((fact) => fact.classification !== 'sensitive').map((fact) => fact.classification)];
-  const classification = entity.classification === 'sensitive' ? 'sensitive' : levels.reduce((max, level) => (RANK[level] > RANK[max] ? level : max), 'personal');
+  // Preserve every fact's classification exactly: the file carries the
+  // entity's level, and facts that differ are listed per key.
+  const classification = RANK[entity.classification] !== undefined ? entity.classification : 'personal';
   frontmatter.classification = classification;
-  const sensitiveKeys = [...new Set(kept.filter((fact) => fact.classification === 'sensitive' && fact.key !== 'notes').map((fact) => fact.key))];
-  if (sensitiveKeys.length && classification !== 'sensitive') frontmatter.sensitive_keys = sensitiveKeys;
+  const sensitiveKeys = [];
+  const perKey = {};
+  for (const fact of kept) {
+    if (fact.classification === classification || RANK[fact.classification] === undefined) continue;
+    if (fact.classification === 'sensitive') sensitiveKeys.push(fact.key); else perKey[fact.key] = fact.classification;
+  }
+  if (sensitiveKeys.length) frontmatter.sensitive_keys = [...new Set(sensitiveKeys)];
+  if (Object.keys(perKey).length) frontmatter.classifications = perKey;
 
   let notes = '';
   for (const fact of kept) {
@@ -70,10 +74,6 @@ function writeRecord(db, vaultDir, relativePath, entity, { owner, report }) {
     if (attributes.status !== undefined) frontmatter.status = attributes.status;
     if (attributes.due !== undefined && frontmatter.due === undefined) frontmatter.due = attributes.due;
   }
-  // A sensitive note would have to raise the whole file; keep it out of the
-  // file rather than silently lowering or raising other facts.
-  const noteFact = kept.find((fact) => fact.key === 'notes');
-  if (noteFact?.classification === 'sensitive' && classification !== 'sensitive') { notes = ''; report.sensitiveNotesLeftOut += 1; }
 
   const text = `---\n${yaml.dump(frontmatter, { schema: yaml.CORE_SCHEMA, lineWidth: -1, noRefs: true })}---\n${notes ? `${notes}\n` : ''}`;
   try {
