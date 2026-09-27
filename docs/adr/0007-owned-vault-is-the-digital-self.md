@@ -20,7 +20,7 @@ The system also acted meaningfully only through the chat planner. Unattended tri
 ## Consequences
 
 - Owner-authored knowledge survives U2OS itself: deleting the database loses runtime history, not who the owner is.
-- The file is the authority for vault-sourced facts. Edits made elsewhere must be written back to the file ([#361](https://github.com/chrisrobison/u2os/issues/361)), or they are reverted on the next index.
+- The file is the authority for vault-sourced facts. Owner edits made through U2OS are written back to the file first ([#361](https://github.com/chrisrobison/u2os/issues/361)); anything else that changes a vault-sourced row is reverted on the next index.
 - Entity identity for vault records comes from the file path unless the file names an existing record with `id:`. Exported files always do, so moving memory into the vault never duplicates people.
 - Backups become simpler to reason about: the vault is the irreplaceable part, and it is ordinary files.
 - Infrastructure hardening is deferred unless real use of the vault and routines surfaces a need.

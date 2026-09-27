@@ -33,7 +33,7 @@ Tracking issue: [#355](https://github.com/chrisrobison/u2os/issues/355).
 - [x] [#357](https://github.com/chrisrobison/u2os/issues/357) Run owner-written routine files unattended through policy ([routines](docs/routines.md))
 - [x] [#359](https://github.com/chrisrobison/u2os/issues/359) Export existing database memory into vault files, bound by `id:`
 - [x] [#367](https://github.com/chrisrobison/u2os/issues/367) Align all documentation with the vault architecture and roadmap
-- [ ] [#361](https://github.com/chrisrobison/u2os/issues/361) Write owner memory edits and accepted memory candidates back to vault files
+- [x] [#361](https://github.com/chrisrobison/u2os/issues/361) Write owner memory edits and accepted memory candidates back to vault files
 - [ ] [#362](https://github.com/chrisrobison/u2os/issues/362) Move action policies into the vault (`policies.yaml`)
 - [ ] [#360](https://github.com/chrisrobison/u2os/issues/360) Append observations and action outcomes to a vault journal (`journal/YYYY-MM.jsonl`)
 

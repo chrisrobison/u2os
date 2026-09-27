@@ -75,6 +75,33 @@ U2OS checks the vault every 5 seconds (`U2OS_VAULT_POLL_MS`) and re-indexes when
 - `GET /api/vault` returns the vault location and the last index report (counts, file paths and parse errors, never contents).
 - `POST /api/vault/reindex` indexes immediately and returns the report.
 
+## Editing from the UI
+
+Owner edits made in the Memory view or through the memory API are written back to the vault file, so the file and U2OS never disagree. Each edit is applied in three steps:
+
+1. The file is changed first.
+2. The database records the edit for audit.
+3. The vault is re-indexed.
+
+| You do | The file |
+|---|---|
+| Correct a fact | Its line is replaced. The body is replaced for `notes`, and a changed key is renamed. |
+| Delete a fact | Its key is removed (the body is cleared for `notes`). |
+| Reclassify a fact | It is added to or removed from `sensitive_keys` (see below). |
+| Accept a memory suggestion on a vault record | The key is added (a `notes` suggestion is appended to the body). |
+| Delete a vault-backed record | The file moves to `.trash/` in the vault (hidden, not indexed, recoverable). |
+
+This applies to records with a vault file and to facts about you. Facts about you go to `me.md`, which is created if missing. Records that exist only in the database stay database-only until you export them.
+
+Some rules keep the file safe:
+
+- **Minimal edits.** Only the affected lines change, so comments, ordering and formatting elsewhere are kept. If a targeted edit cannot be proven to produce exactly the intended file, the frontmatter is re-serialized, which drops frontmatter comments.
+- **Atomic writes, conflict-aware.** The file is replaced atomically. If it changed on disk while the edit was prepared (for example you saved in your editor), the edit is refused with `409` and your save wins.
+- **Privacy never lowered.** A file holds one `classification` plus per-key `sensitive_keys`. Asking for a level more restrictive than the file marks the key sensitive; asking for a less restrictive one keeps the file's level. `notes` always follow the file, and restricting them further is refused: change `classification` in the file.
+- **File-only fields.** `id`, `name`, `title`, `classification` and `sensitive_keys` are edited in the file itself (except `name` in `me.md`).
+- **Invalid files are never rewritten.** A file that does not currently parse is left alone, and the edit is refused until you fix it.
+- **Vault relationships are changed in the file.** A commitment's link to you is removed by setting `status: done` or deleting the file, not through the relationship API.
+
 ## Moving existing memory into the vault
 
 Installations that stored people, projects, commitments and facts about you before the vault existed can export them into files:
@@ -107,5 +134,4 @@ The default vault lives inside `U2OS_HOME`, so `npm run backup` includes it. Bac
 
 ## Not yet supported
 
-- Editing a vault fact in the Memory UI is not written back to the file, and the next change to that file wins ([#361](https://github.com/chrisrobison/u2os/issues/361)). Edit the file instead.
 - A journal of observations and actions ([#360](https://github.com/chrisrobison/u2os/issues/360)) and vault policies ([#362](https://github.com/chrisrobison/u2os/issues/362)).

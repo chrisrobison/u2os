@@ -49,7 +49,7 @@ U2OS is a working **pre-alpha**, not a production product. Everything below is i
 - Markdown vault with YAML frontmatter: `me.md`, `people/`, `projects/`, `commitments/`, `routines/`. It is indexed on start and on every change, and its location is set with `U2OS_VAULT` or `vaultDir`.
 - Vault facts are explicit memory with `vault:<path>` provenance. Edits supersede, removals soft-delete, and other sources are never modified.
 - Per-file `classification` and `sensitive_keys` control what can reach a model.
-- `npm run vault:export` moves existing database memory into vault files, bound to the same records with `id:`.
+- `npm run vault:export` moves existing database memory into vault files, bound to the same records with `id:`. Memory-UI edits are written back to the files.
 - Standing routines run on daily, interval or event triggers. Each slot runs once, even across restarts, and runs go through policy and approval, with a runaway limit.
 
 **Acting safely on your behalf**
@@ -75,7 +75,7 @@ U2OS is a working **pre-alpha**, not a production product. Everything below is i
 | Status | Current scope |
 |---|---|
 | **Implemented** | Vault indexing and export, routines, persistent event/memory state, destination-aware context privacy, model routing, policy/approval/audit, durable actions, explainability, fact controls, dashboards, real Google/IMAP/Brave/webhook connectors, backup/export |
-| **Not yet** | Writing UI memory edits back to vault files ([#361](https://github.com/chrisrobison/u2os/issues/361)), vault policy ([#362](https://github.com/chrisrobison/u2os/issues/362)), vault journal ([#360](https://github.com/chrisrobison/u2os/issues/360)), browser views for vault and routines |
+| **Not yet** | Vault policy ([#362](https://github.com/chrisrobison/u2os/issues/362)), vault journal ([#360](https://github.com/chrisrobison/u2os/issues/360)), browser views for vault and routines |
 | **Demo only** | The deterministic planner and connector mocks, in an explicit demo home |
 | **Experimental** | `node:sqlite`, simplified voice similarity, the device/capability subsystem, semantic retrieval |
 | **Unavailable** | CalDAV, Deepgram, ElevenLabs, cryptographic device pairing, native mobile apps, any U2OS-hosted service |
