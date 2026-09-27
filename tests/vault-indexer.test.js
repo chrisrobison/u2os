@@ -201,3 +201,29 @@ function nativeUnauthenticated(url) {
   // A different origin key than the authenticated helper recognises.
   return fetch(url.replace('127.0.0.1', 'localhost'));
 }
+
+test('deleting the database and starting over rebuilds vault memory from the files', () => {
+  const { dir, write, vault } = fixture();
+  try {
+    write('me.md', '---\nhome_city: Oakland\n---\n');
+    write('people/alice.md', '---\nemail: alice@example.com\nclassifications:\n  email: private\n---\nSister.\n');
+    write('commitments/report.md', '---\ntitle: Send the report\n---\n');
+    indexVault();
+
+    // Lose the database entirely (files stay), then set up a fresh owner.
+    closeAllForTests();
+    fs.rmSync(path.join(dir, 'db'), { recursive: true, force: true });
+    const db = getDb();
+    const ownerEntityId = createEntity({ type: 'Person', name: 'Owner' }).id;
+    db.prepare("INSERT INTO owners (id, entity_id, passphrase_hash, salt, scrypt_params, created_at) VALUES ('owner_2', ?, 'x', 'x', '{}', ?)").run(ownerEntityId, new Date().toISOString());
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM facts').get().n, 0);
+
+    const report = indexVault({ vaultDir: vault });
+    assert.deepEqual(report.errors, []);
+    assert.deepEqual(facts(ownerEntityId), { home_city: 'Oakland' });
+    const alice = getFacts(vaultEntityId('people/alice.md'));
+    assert.deepEqual(Object.fromEntries(alice.map((fact) => [fact.key, [fact.value, fact.classification]])),
+      { email: ['alice@example.com', 'private'], notes: ['Sister.', 'personal'] });
+    assert.equal(selectMemoryCandidates({ ownerEntityId }).commitments.length, 1, 'open commitments come back too');
+  } finally { cleanup(dir); }
+});

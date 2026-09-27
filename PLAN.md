@@ -4,7 +4,7 @@ U2OS consolidates the owner's digital self into **files they own**, and acts on 
 
 Work is ordered by product value:
 
-1. Make the owned vault the complete digital self.
+1. Make the owned vault the complete digital self (done: Milestone A).
 2. Prove the product in real daily use.
 3. Widen what U2OS may do on the owner's behalf, safely.
 4. Only then broaden into voice, more connectors, and packaging.
@@ -24,9 +24,9 @@ The foundations built so far (security boundary, policy, durable actions, privac
 - Clearly label mock, simplified, unavailable, and degraded behaviour.
 - Existing `U2OS_HOME` installations upgrade additively, and migrations never delete owner data.
 
-## Milestone A — The owned digital self (current)
+## Milestone A — The owned digital self (complete)
 
-Tracking issue: [#355](https://github.com/chrisrobison/u2os/issues/355).
+Tracking issue: [#355](https://github.com/chrisrobison/u2os/issues/355). Each acceptance criterion below has automated evidence: the vault indexer, write-back, policy, journal and routine suites, including a rebuild from files after deleting the database. None of it has yet been validated in daily use; that is Milestone B.
 
 - [x] [#358](https://github.com/chrisrobison/u2os/issues/358) Re-centre the direction on the owned vault (ADR 0007)
 - [x] [#356](https://github.com/chrisrobison/u2os/issues/356) Index the owner-authored Markdown vault into memory ([vault](docs/vault.md))
@@ -36,6 +36,7 @@ Tracking issue: [#355](https://github.com/chrisrobison/u2os/issues/355).
 - [x] [#361](https://github.com/chrisrobison/u2os/issues/361) Write owner memory edits and accepted memory candidates back to vault files
 - [x] [#362](https://github.com/chrisrobison/u2os/issues/362) Move action policies into the vault (`policies.yaml`)
 - [x] [#360](https://github.com/chrisrobison/u2os/issues/360) Append observations and action outcomes to a vault journal (`journal/YYYY-MM.jsonl`)
+- [x] [#372](https://github.com/chrisrobison/u2os/issues/372) Prove Milestone A acceptance and make Milestone B current
 
 ### Acceptance criteria
 
@@ -44,7 +45,7 @@ Tracking issue: [#355](https://github.com/chrisrobison/u2os/issues/355).
 - Editing memory in the UI and editing the file converge on the same state.
 - At least one owner-written routine runs unattended on schedule and on an event, with consequential actions still gated by policy.
 
-## Milestone B — Living with it
+## Milestone B — Living with it (current)
 
 The product has not yet been used day to day with real accounts and a real model. This milestone proves (or disproves) that it is worth using, and turns what real use reveals into the next issues.
 

@@ -199,7 +199,7 @@ data/         repository placeholder; runtime data lives in U2OS_HOME and your v
 
 [PLAN.md](PLAN.md) orders work by product value:
 
-1. Finish the owned digital self (write-back, vault policy, journal).
+1. The owned digital self (complete).
 2. Prove it in daily use with real accounts and models.
 3. Widen delegated authority safely.
 4. Only then broaden voice, connectors and packaging.
