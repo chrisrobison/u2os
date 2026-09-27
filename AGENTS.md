@@ -8,6 +8,7 @@ When choosing what to work on:
 2. Prefer work that makes the vault more complete, routines more capable, or daily use by the owner possible.
 3. Do not start speculative hardening of recovery, backup, connector or timeout edge cases unless it blocks a PLAN.md item, fixes a real reported bug, or closes a security/privacy regression. Record such ideas as issues under PLAN.md's "Later" section instead.
 4. Every issue states which milestone it serves.
+5. Extensions follow [ADR 0009](docs/adr/0009-extension-model-mcp-tools-vault-skills-routines.md): new tools come from MCP servers through the action gate, skills are vault Markdown, and unattended work is a routine. Do not add features to the frozen package workflow language, expression interpreter or automation runtime.
 
 # GitHub Development Workflow
 

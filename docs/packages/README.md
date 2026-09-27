@@ -1,5 +1,7 @@
 # Writing U2OS packages
 
+> **Direction update ([ADR 0009](../adr/0009-extension-model-mcp-tools-vault-skills-routines.md)):** packages, permissions, the single action gate, package policy and audit described here stand. The declarative workflow language for skills and automations is **frozen**: no new features, and it will be retired once the reference Job Hunter runs on MCP-provided tools, vault skills and routines ([#397](https://github.com/chrisrobison/u2os/issues/397)). Do not build new packages on it.
+
 A package adds behaviour to U2OS without changing its core. It is a directory with a `u2os.yaml` manifest that exports any mix of:
 
 - **capabilities**: primitive actions with typed input and output ([capability guide](capabilities.md))

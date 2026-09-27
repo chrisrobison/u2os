@@ -1,5 +1,7 @@
 # Automation author guide
 
+> **Direction update ([ADR 0009](../adr/0009-extension-model-mcp-tools-vault-skills-routines.md)):** packages, permissions, the single action gate, package policy and audit described here stand. The declarative workflow language for skills and automations is **frozen**: no new features, and it will be retired once the reference Job Hunter runs on MCP-provided tools, vault skills and routines ([#397](https://github.com/chrisrobison/u2os/issues/397)). Do not build new packages on it.
+
 An automation is a durable, triggered workflow with persistent state: `job-hunter`, `inbox-triage`, `server-watchdog`. It is not an LLM loop. U2OS stores its progress as structured data after every step, so it survives restarts, waits for approvals and events, and never repeats an action it already proposed.
 
 ```yaml

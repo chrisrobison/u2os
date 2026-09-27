@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted.
+Accepted; partially superseded by [0009](0009-extension-model-mcp-tools-vault-skills-routines.md). Packaging, permissions, the single gate, tighten-only package policy and audit stand. The declarative workflow language for skills and automations is frozen and will be retired in favour of MCP tools, vault skills and routines.
 
 ## Context
 

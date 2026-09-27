@@ -90,6 +90,16 @@ Tracking issue: [#376](https://github.com/chrisrobison/u2os/issues/376). The own
 - [x] [#390](https://github.com/chrisrobison/u2os/issues/390) Reference Job Hunter package
 - [x] Author guides and hardening ([docs/packages](docs/packages/README.md))
 
+## Extension model (ADR 0009)
+
+Tracking issue: [#397](https://github.com/chrisrobison/u2os/issues/397). Packages stay the unit of installation and permission review. Tools come from MCP servers (out of process, through the gate), skills are Markdown instructions in the vault, and automations are routines. The package workflow language is frozen and will be retired at parity ([ADR 0009](docs/adr/0009-extension-model-mcp-tools-vault-skills-routines.md)). This runs alongside Milestone B, which stays the priority.
+
+- [x] [#398](https://github.com/chrisrobison/u2os/issues/398) ADR 0009 and the freeze
+- [ ] [#399](https://github.com/chrisrobison/u2os/issues/399) Vault skills referenced by routines; Job Hunter as a routine and a skill
+- [ ] [#400](https://github.com/chrisrobison/u2os/issues/400) MCP servers as capability providers through the gate
+- [ ] [#401](https://github.com/chrisrobison/u2os/issues/401) Package permission grants and settings in the vault
+- [ ] [#402](https://github.com/chrisrobison/u2os/issues/402) Packages ship routines and skills; retire the workflow engine at parity
+
 ## Later — deferred until the product is proven
 
 These remain valid, but are scheduled after Milestones A–C unless real use makes one urgent.
@@ -107,7 +117,7 @@ These remain valid, but are scheduled after Milestones A–C unless real use mak
 - Google token revocation and clearer re-authorization, plus Gmail MIME, attachment, thread and real draft support.
 - CalDAV. IMAP/SMTP exist but need live-account validation.
 - Package signing and a registry; enforced outbound network host allow-lists for packages.
-- Package platform follow-ups: isolate `module` code (worker threads or a separate process with Node's permission model); `llm.generate`/`llm.evaluate` capabilities through the model router and data-processing policy; `browser.*` and scoped `filesystem.*` capabilities; package-provided alternatives to core capabilities; `watch` triggers; serving package `ui.dashboard`; counting automation work in recovery quarantine.
+- Package platform follow-ups not superseded by ADR 0009: `browser.*` and scoped `filesystem.*` capabilities (likely via MCP servers); serving package `ui.dashboard`. Isolating in-process `module` code and extending the workflow engine (`watch` triggers, `llm.*` workflow steps) are replaced by MCP out-of-process tools and routines.
 
 ### Distribution
 

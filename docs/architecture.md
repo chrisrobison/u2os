@@ -227,7 +227,7 @@ docs/devices.md.
 
 ## Package platform
 
-Installable packages add capabilities, skills and automations without core changes ([plugin architecture](plugin-architecture.md), [ADR 0008](adr/0008-packages-capabilities-skills-automations.md)). `server/packages/platform.js` builds the registries (every core tool is a capability under its existing id), a `CapabilityInvoker` over the agent's gate, the durable `WorkflowEngine`, the `AutomationRuntime` (started with the other background workers) and the `PackageManager`, which loads installed packages at startup. Package actions are ordinary audited actions with a tighten-only package authority overlay ([policies](policies.md#package-authority)); package capabilities are hidden from the planner.
+Installable packages add capabilities, skills and automations without core changes ([plugin architecture](plugin-architecture.md), [ADR 0008](adr/0008-packages-capabilities-skills-automations.md)). [ADR 0009](adr/0009-extension-model-mcp-tools-vault-skills-routines.md) keeps the packaging, permissions, gate, policy and audit described here, and freezes the declarative workflow language in favour of MCP tools, vault skills and routines. `server/packages/platform.js` builds the registries (every core tool is a capability under its existing id), a `CapabilityInvoker` over the agent's gate, the durable `WorkflowEngine`, the `AutomationRuntime` (started with the other background workers) and the `PackageManager`, which loads installed packages at startup. Package actions are ordinary audited actions with a tighten-only package authority overlay ([policies](policies.md#package-authority)); package capabilities are hidden from the planner.
 
 ## Known gaps
 
