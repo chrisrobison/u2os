@@ -1,0 +1,18 @@
+# A mock company directory keyed by company name. Read-only.
+id: mock.company-profile
+version: 1.0.0
+description: Look up a company profile in a mock directory (fixture data).
+effect: read
+permissions: [network]
+inputSchema:
+  type: object
+  required: [company]
+  properties:
+    company: { type: string, minLength: 1, maxLength: 200 }
+implementation:
+  type: fixture
+  file: fixtures/companies.json
+  output:
+    company: "{{ input.company }}"
+    found: "{{ input.company in data.companies }}"
+    profile: "{{ coalesce(data.companies[input.company], null) }}"

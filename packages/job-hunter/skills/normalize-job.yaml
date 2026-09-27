@@ -1,0 +1,26 @@
+# Turns a raw board posting into the shape every other skill expects.
+id: normalize-job
+version: 1.0.0
+description: Normalize a raw job posting.
+inputSchema:
+  type: object
+  required: [posting]
+  properties:
+    posting: { type: object }
+outputSchema:
+  type: object
+  required: [id, title, company]
+steps:
+  - id: normalized
+    use: transform
+    with:
+      value:
+        id: "{{ inputs.posting.id }}"
+        title: "{{ inputs.posting.title }}"
+        company: "{{ inputs.posting.company }}"
+        location: "{{ coalesce(inputs.posting.location, 'Unknown') }}"
+        remote: "{{ contains(coalesce(inputs.posting.location, ''), 'remote') }}"
+        salary: "{{ coalesce(inputs.posting.compensation.max, inputs.posting.compensation.min, 0) }}"
+        description: "{{ lower(coalesce(inputs.posting.description, '')) }}"
+        url: "{{ inputs.posting.url }}"
+output: "{{ steps.normalized.output }}"

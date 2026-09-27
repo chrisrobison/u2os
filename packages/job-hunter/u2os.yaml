@@ -1,0 +1,87 @@
+# Reference package for the U2OS package platform (docs/plugin-architecture.md).
+# A deliberately small Job Hunter: it searches a MOCK job board, normalizes and
+# scores postings with deterministic skills, researches strong matches, emits
+# job.candidate events, and notifies you through a SIMULATED email capability.
+# It never contacts real services and never submits applications.
+apiVersion: u2os/v1
+kind: Package
+
+metadata:
+  id: com.u2os.job-hunter
+  name: Job Hunter (reference)
+  version: 0.1.0
+  description: Finds, scores and researches job postings from a mock board, and tells you about strong matches.
+  license: MIT
+
+requires:
+  u2os: ">=0.1.0"
+
+exports:
+  capabilities:
+    - id: mock.job-search
+      file: capabilities/mock-job-search.yaml
+    - id: mock.company-profile
+      file: capabilities/mock-company-profile.yaml
+    - id: mock.email-send
+      file: capabilities/mock-email-send.yaml
+  skills:
+    - id: normalize-job
+      file: skills/normalize-job.yaml
+    - id: score-job
+      file: skills/score-job.yaml
+    - id: company-research
+      file: skills/company-research.yaml
+  automations:
+    - id: job-hunter
+      entrypoint: automations/job-hunter.yaml
+
+# What the package may do at all. Nothing is granted until you grant it.
+permissions:
+  network: true            # mock.job-search and mock.company-profile stand in for web lookups
+  notifications:
+    send: true             # mock.email-send (simulated)
+
+# Whether a specific action may happen without asking you. Evaluated by
+# U2OS code over structured facts; your policies.yaml can only make it stricter.
+policies:
+  notifyCandidate:
+    description: Email me automatically about very strong matches
+    all:
+      - "input.score >= settings.autoNotifyScore"
+    approval: automatic
+
+settings:
+  query:
+    type: string
+    default: staff engineer
+    description: What to search for.
+  minimumSalary:
+    type: number
+    default: 170000
+  allowedLocations:
+    type: array
+    items: { type: string }
+    default: [Remote, San Francisco]
+  keywords:
+    type: array
+    items: { type: string }
+    default: [distributed systems, platform, privacy]
+  candidateScore:
+    type: number
+    default: 60
+    minimum: 0
+    maximum: 100
+    description: Minimum score to research and announce a job.
+  autoNotifyScore:
+    type: number
+    default: 85
+    minimum: 0
+    maximum: 100
+    description: Minimum score to email you without asking (subject to policies.yaml).
+  notifyEmail:
+    type: string
+    default: owner@example.com
+
+events:
+  emits:
+    - job.candidate

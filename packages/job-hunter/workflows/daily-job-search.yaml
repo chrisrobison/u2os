@@ -1,0 +1,83 @@
+# scheduled trigger → search → normalize → score → research strong matches
+#   → emit job.candidate → notify (policy-gated) → remember what was seen
+inputs:
+  query: { type: string }
+steps:
+  - id: discover
+    use: capability:mock.job-search
+    with:
+      query: "{{ coalesce(inputs.query, settings.query) }}"
+    retry: { attempts: 3, backoff: 5s }
+
+  # Durable de-duplication: automation state survives restarts.
+  - id: fresh
+    use: filter
+    with:
+      source: "{{ steps.discover.output.jobs }}"
+      where: "not (item.id in state.seen)"
+
+  - id: normalize
+    foreach: "{{ steps.fresh.output }}"
+    use: skill:normalize-job
+    with:
+      posting: "{{ item }}"
+
+  - id: score
+    foreach: "{{ steps.normalize.output }}"
+    use: skill:score-job
+    with:
+      job: "{{ item }}"
+      preferences:
+        minimumSalary: "{{ settings.minimumSalary }}"
+        allowedLocations: "{{ settings.allowedLocations }}"
+        keywords: "{{ settings.keywords }}"
+
+  - id: candidates
+    use: filter
+    with:
+      source: "{{ steps.score.output }}"
+      where: "item.score >= settings.candidateScore"
+
+  - id: research
+    foreach: "{{ steps.candidates.output }}"
+    use: skill:company-research
+    with:
+      company: "{{ item.company }}"
+
+  - id: announce
+    foreach: "{{ steps.candidates.output }}"
+    use: emit
+    with:
+      type: job.candidate
+      subject: { type: job, id: "{{ item.id }}" }
+      data:
+        title: "{{ item.title }}"
+        company: "{{ item.company }}"
+        score: "{{ item.score }}"
+        reasons: "{{ item.reasons }}"
+        openRoles: "{{ steps.research.output[index].openRoles }}"
+
+  # Policy-gated: only very strong matches qualify, and policies.yaml
+  # (mock.email-send) still decides whether U2OS asks you first.
+  - id: notify
+    foreach: "{{ steps.candidates.output }}"
+    use: capability:mock.email-send
+    policy: notifyCandidate
+    with:
+      to: "{{ settings.notifyEmail }}"
+      subject: "Strong match: {{ item.title }} at {{ item.company }} ({{ item.score }})"
+      body: "{{ steps.research.output[index].summary }} Why: {{ join(item.reasons) }}. {{ item.url }}"
+      score: "{{ item.score }}"
+
+  - id: remember
+    use: state
+    with:
+      set:
+        seen: "{{ slice(unique(concat(state.seen, pluck(steps.fresh.output, 'id'))), -500) }}"
+        runs: "{{ state.runs + 1 }}"
+        candidates: "{{ state.candidates + len(steps.candidates.output) }}"
+
+output:
+  searched: "{{ len(steps.discover.output.jobs) }}"
+  new: "{{ len(steps.fresh.output) }}"
+  candidates: "{{ pluck(steps.candidates.output, 'title') }}"

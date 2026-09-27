@@ -1,0 +1,24 @@
+id: job-hunter
+name: Job Hunter
+description: Weekday-morning search that researches strong matches and tells you about them.
+triggers:
+  - type: schedule
+    cron: "0 8 * * 1-5"
+  - type: manual
+  - type: event
+    event: job.search.requested
+    with:
+      query: "{{ coalesce(trigger.event.data.query, settings.query) }}"
+state:
+  schema:
+    type: object
+    properties:
+      seen: { type: array, items: { type: string }, maxItems: 500 }
+      runs: { type: number }
+      candidates: { type: number }
+  initial:
+    seen: []
+    runs: 0
+    candidates: 0
+concurrency: single
+workflow: workflows/daily-job-search.yaml

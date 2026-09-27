@@ -322,11 +322,15 @@ export class WorkflowEngine {
     // Capability calls act with the grants of the package the owner
     // delegated to (the root automation's), never a skill's own package, so
     // composing another package's skill cannot borrow its permissions.
+    // The audit names the automation that initiated the work, even from
+    // inside a composed skill's child run.
+    const root = run.rootRunId && run.rootRunId !== run.id ? getRun(run.rootRunId) : run;
     const ctx = {
       packageId: run.principalPackageId,
-      automationId: run.kind === 'automation' ? run.definitionId : null,
+      automationId: root?.kind === 'automation' ? root.definitionId : null,
       skillId: run.kind === 'skill' ? run.definitionId : null,
       workflowRunId: run.id,
+      rootRunId: root?.id || run.id,
       stepId: step.id,
       actionId,
       correlationId: run.correlationId,

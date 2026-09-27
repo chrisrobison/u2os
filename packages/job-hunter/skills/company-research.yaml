@@ -1,0 +1,40 @@
+# Reusable research skill: the job-hunter automation calls it instead of
+# carrying its own research logic. Composes two capabilities.
+id: company-research
+version: 1.0.0
+description: Summarize what is known about a company and its open roles.
+requires:
+  capabilities:
+    mock.company-profile: ^1.0
+    mock.job-search: ^1.0
+inputSchema:
+  type: object
+  required: [company]
+  properties:
+    company: { type: string, minLength: 1 }
+outputSchema:
+  type: object
+  required: [company, openRoles]
+steps:
+  - id: profile
+    use: capability:mock.company-profile
+    with:
+      company: "{{ inputs.company }}"
+    retry: { attempts: 3, backoff: 0s }
+    timeout: 30s
+  - id: board
+    use: capability:mock.job-search
+    with:
+      query: "{{ inputs.company }}"
+  - id: openings
+    use: filter
+    with:
+      source: "{{ steps.board.output.jobs }}"
+      where: "item.company == inputs.company"
+output:
+  company: "{{ inputs.company }}"
+  known: "{{ steps.profile.output.found }}"
+  industry: "{{ coalesce(steps.profile.output.profile.industry, 'unknown') }}"
+  size: "{{ coalesce(steps.profile.output.profile.size, 'unknown') }}"
+  summary: "{{ coalesce(steps.profile.output.profile.summary, 'No profile found.') }}"
+  openRoles: "{{ len(steps.openings.output) }}"

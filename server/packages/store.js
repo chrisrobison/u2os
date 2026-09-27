@@ -161,7 +161,7 @@ export function listPackageAudit({ packageId = null, automationId = null, runId 
     context: JSON.parse(row.package_context), createdAt: row.created_at, updatedAt: row.updated_at,
   })).filter((entry) => (!packageId || entry.context.package === packageId)
     && (!automationId || entry.context.automation === automationId)
-    && (!runId || entry.context.run === runId)).slice(0, Math.min(Math.max(Number(limit) || 100, 1), 1000));
+    && (!runId || entry.context.run === runId || entry.context.rootRun === runId)).slice(0, Math.min(Math.max(Number(limit) || 100, 1), 1000));
 }
 
 function notFound(message) {
