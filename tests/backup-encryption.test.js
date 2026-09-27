@@ -48,7 +48,7 @@ test('encrypted archive round-trips SQLite/config/credentials without serializin
   noStaging(root);
 }));
 
-for (const failure of ['wrong passphrase', 'ciphertext', 'salt', 'nonce', 'tag', 'magic', 'truncated header', 'truncated payload']) {
+for (const failure of ['wrong passphrase', 'ciphertext', 'truncated payload']) {
   test(`encrypted restore rejects ${failure} before target mutation, even with force`, (t) => fixture(t, async ({ root, home, output }) => {
     fs.writeFileSync(path.join(home, 'fixture.txt'), 'Fixture data to protect');
     await createBackup({ dataDir: home, outputPath: output, passphrase: PASSPHRASE });

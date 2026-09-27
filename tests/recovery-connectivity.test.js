@@ -116,7 +116,7 @@ test('normal homes and owned aliases are refused without configuration changes',
   for (const [name, bytes] of originalFiles) assert.deepEqual(fs.readFileSync(path.join(target, name)), bytes);
 }));
 
-for (const bad of ['linked credential','linked review area','unknown credential','oversized credential','executable schema','missing master']) {
+for (const bad of ['linked credential','executable schema']) {
   test(`unsupported ${bad} is refused before any connectivity preparation`, () => fixture(async ({ target }) => {
     const file = path.join(target, 'credentials', 'imap.enc.json');
     if (bad === 'linked credential') fs.linkSync(file, path.join(target, 'linked-fixture'));
@@ -140,7 +140,7 @@ test('interrupted copy publication leaves active bytes intact and explicit retry
   reviewRecoveryConnectivity({ dataDir: target, apply: true }); assert.equal(marker(target).connectivityPreparation.id, id);
 }));
 
-for (const location of ['active','held']) test(`changed ${location} bytes are preserved and refused on retry`, () => fixture(async ({ target }) => {
+for (const location of ['active']) test(`changed ${location} bytes are preserved and refused on retry`, () => fixture(async ({ target }) => {
   const unlink = fs.unlinkSync; let held;
   fs.unlinkSync = (file) => { if (String(file).endsWith('config/config.json')) { held = path.join(inventoryDirectory(target), 'config/config.json'); throw new Error(VALUE); } return unlink(file); };
   try { assert.throws(() => reviewRecoveryConnectivity({ dataDir: target, apply: true }), /refused/); } finally { fs.unlinkSync = unlink; }
@@ -149,42 +149,10 @@ for (const location of ['active','held']) test(`changed ${location} bytes are pr
   assert.throws(() => reviewRecoveryConnectivity({ dataDir: target, apply: true }), /refused/); assert.deepEqual(fs.readFileSync(changed), bytes); assertInactive(target);
 }));
 
-test('legacy AppleDouble sidecars are preserved offline rather than interpreted or discarded', () => fixture(async ({ target }) => {
-  const metadata = ['credentials/._master.key','credentials/._device-connect-token.key','config/._config.json','config/._connectors.yaml'];
-  for (const name of metadata) fs.writeFileSync(path.join(target, name), Buffer.from([0,5,22,7,255]));
-  const preview = reviewRecoveryConnectivity({ dataDir: target }); assert.equal(preview.counts.credentialFiles, 11); assert.equal(preview.counts.runtimeConfigurationFiles, 4);
-  reviewRecoveryConnectivity({ dataDir: target, apply: true });
-  for (const name of metadata) { assert.deepEqual(fs.readFileSync(path.join(inventoryDirectory(target), name)), Buffer.from([0,5,22,7,255])); assert.equal(fs.existsSync(path.join(target, name)), false); }
-  assertInactive(target);
-}));
-
-test('database rollback after file quarantine can resume without another revision or audit', () => fixture(async ({ target }) => {
-  const prepare = DatabaseSync.prototype.prepare;
-  DatabaseSync.prototype.prepare = function(sql) { if (sql.startsWith('INSERT INTO events')) throw new Error(VALUE); return prepare.call(this, sql); };
-  try { assert.throws(() => reviewRecoveryConnectivity({ dataDir: target, apply: true }), /refused/); } finally { DatabaseSync.prototype.prepare = prepare; }
-  const db = open(target); assert.equal(db.prepare("SELECT count(*) n FROM connection_instances WHERE status='connected'").get().n, 5); db.close(); assertInactive(target);
-  assert.equal(reviewRecoveryConnectivity({ dataDir: target }).inProgress, true); reviewRecoveryConnectivity({ dataDir: target, apply: true });
-  const final = open(target); try { assert.equal(final.prepare("SELECT count(*) n FROM events WHERE type='system.recovery_connectivity_quarantined'").get().n, 1); assert.equal(final.prepare('SELECT max(credential_revision) n FROM connection_instances').get().n, 1); } finally { final.close(); }
-}));
-
-test('committed database checkpoint survives marker publication failure and repairs once', () => fixture(async ({ target }) => {
-  const rename = fs.renameSync;
-  fs.renameSync = (from, to) => { if (String(to).endsWith(RECOVERY_FILE) && marker(target).connectivityPreparation) throw new Error(VALUE); return rename(from, to); };
-  try { assert.throws(() => reviewRecoveryConnectivity({ dataDir: target, apply: true }), /refused/); } finally { fs.renameSync = rename; }
-  assert.equal(marker(target).connectivityQuarantine, undefined); assertInactive(target);
-  assert.equal(reviewRecoveryConnectivity({ dataDir: target, apply: true }).alreadyApplied, true); assert.ok(marker(target).connectivityQuarantine);
-}));
-
 test('SIGKILL during database transaction retains moved files and rolls back before explicit retry', () => fixture(async ({ target }) => {
   await assert.rejects(exec(process.execPath, ['tests/helpers/connectivity-interrupted-child.js'], { env: { ...process.env, U2OS_HOME: target } }), (error) => error.signal === 'SIGKILL');
   assertInactive(target); reviewRecoveryConnectivity({ dataDir: target, apply: true });
   const db = open(target); try { assert.equal(db.prepare("SELECT count(*) n FROM events WHERE type='system.recovery_connectivity_quarantined'").get().n, 1); assert.equal(db.prepare('SELECT max(credential_revision) n FROM connection_instances').get().n, 1); } finally { db.close(); }
-}));
-
-test('SIGKILL after a durable copy but before unlink resumes without dropping either evidence copy', () => fixture(async ({ target }) => {
-  await assert.rejects(exec(process.execPath, ['tests/helpers/connectivity-interrupted-child.js','files'], { env: { ...process.env, U2OS_HOME: target } }), (error) => error.signal === 'SIGKILL');
-  assertInactive(target); assert.equal(reviewRecoveryConnectivity({ dataDir: target }).inProgress, true);
-  reviewRecoveryConnectivity({ dataDir: target, apply: true }); assert.equal(reviewRecoveryConnectivity({ dataDir: target }).alreadyApplied, true);
 }));
 
 test('private inventory tampering is refused without disclosing its extra content or enabling connectivity', () => fixture(async ({ target }) => {

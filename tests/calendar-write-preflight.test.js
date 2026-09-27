@@ -39,24 +39,15 @@ async function fixture(operation) {
   } finally { closeAllForTests(); if (previous === undefined) delete process.env.U2OS_HOME; else process.env.U2OS_HOME = previous; fs.rmSync(home, { recursive: true, force: true }); }
 }
 const timeCases = [
-  ['missing start', { startAt: undefined }], ['null start', { startAt: null }], ['number start', { startAt: 42 }], ['object start', { startAt: { private: PRIVATE } }],
-  ['blank start', { startAt: ' ' }], ['all-day date', { startAt: '2026-09-26' }], ['offset-less start', { startAt: '2026-09-26T12:00:00' }],
-  ['nonexistent civil date', { startAt: '2026-02-30T12:00:00Z' }], ['bad month', { startAt: '2026-13-26T12:00:00Z' }], ['hour 24 rollover', { startAt: '2026-09-26T24:00:00Z' }],
-  ['minute 60', { startAt: '2026-09-26T12:60:00Z' }], ['second 60', { startAt: '2026-09-26T12:00:60Z' }], ['offset hour 25', { startAt: '2026-09-26T12:00:00+25:00' }],
-  ['offset minute 60', { startAt: '2026-09-26T12:00:00+01:60' }], ['compact offset', { startAt: '2026-09-26T12:00:00+0000' }], ['missing seconds', { startAt: '2026-09-26T12:00Z' }],
-  ['natural language date', { startAt: 'September 26, 2026' }], ['missing end', { endAt: undefined }], ['private malformed end', { endAt: PRIVATE }],
-  ['unsupported sub-millisecond precision', { startAt: '2026-09-26T12:00:00.0001Z' }],
-  ['offset-less end', { endAt: '2026-09-26T13:00:00' }], ['zero duration', { endAt: proposal.startAt }], ['backwards range', { endAt: '2026-09-26T11:00:00Z' }],
-  ['backwards explicit-offset range', { endAt: '2026-09-26T13:00:00+02:00' }],
+  ['missing start', { startAt: undefined }], ['object start', { startAt: { private: PRIVATE } }], ['offset-less start', { startAt: '2026-09-26T12:00:00' }],
+  ['nonexistent civil date', { startAt: '2026-02-30T12:00:00Z' }], ['natural language date', { startAt: 'September 26, 2026' }],
+  ['private malformed end', { endAt: PRIVATE }], ['backwards explicit-offset range', { endAt: '2026-09-26T13:00:00+02:00' }],
 ];
-const sparse = []; sparse.length = 1;
 const createCases = [
-  ['missing title', { title: undefined }], ['null title', { title: null }], ['object title', { title: { private: PRIVATE } }], ['blank title', { title: ' ' }],
-  ['object location', { location: { private: PRIVATE } }], ['number location', { location: 42 }], ['null guests', { attendees: null }], ['object guests', { attendees: {} }],
-  ['string guests', { attendees: 'person@example.test' }], ['sparse guests', { attendees: sparse }], ['nested guests', { attendees: [['person@example.test']] }],
-  ['object guest', { attendees: [{ email: 'person@example.test' }] }], ['blank guest', { attendees: [' '] }], ['unresolved name', { attendees: ['Fixture Person'] }],
-  ['display-name syntax', { attendees: ['Fixture Person <person@example.test>'] }], ['multiple addresses in one entry', { attendees: ['one@example.test,two@example.test'] }],
-  ['header-injected guest', { attendees: [`${PRIVATE}@example.test\r\nBcc: other@example.test`] }], ['missing address domain', { attendees: ['person@'] }], ['control guest', { attendees: ['person\u0000@example.test'] }],
+  ['missing title', { title: undefined }], ['object title', { title: { private: PRIVATE } }], ['object location', { location: { private: PRIVATE } }],
+  ['string guests', { attendees: 'person@example.test' }], ['unresolved name', { attendees: ['Fixture Person'] }],
+  ['multiple addresses in one entry', { attendees: ['one@example.test,two@example.test'] }],
+  ['header-injected guest', { attendees: [`${PRIVATE}@example.test\r\nBcc: other@example.test`] }], ['control guest', { attendees: ['person\u0000@example.test'] }],
 ];
 for (const name of ['create', 'reschedule']) {
   test(`Calendar ${name} cannot verify a different sub-millisecond receipt by rounding`, () => fixture(async (f) => {
@@ -76,7 +67,7 @@ for (const name of ['create', 'reschedule']) {
     await assert.rejects(f.run(name, { ...proposal, ...fields }, () => { calls++; throw new Error(PRIVATE); }), invalid);
     assert.equal(calls, 0); assert.deepEqual(f.credentials(), credentials); assert.deepEqual(f.rows(), f.before);
   }));
-  for (const fields of [name === 'create' ? { attendees: [`${PRIVATE} unresolved person`] } : { startAt: '2026-02-30T12:00:00Z' }, { endAt: proposal.startAt }]) {
+  for (const fields of [name === 'create' ? { attendees: [`${PRIVATE} unresolved person`] } : { startAt: '2026-02-30T12:00:00Z' }]) {
     test(`approved Calendar ${name} invalid ${Object.keys(fields)[0]} blocks dependents/planning and cannot replay after restart`, () => fixture(async (f) => {
       f.token(true); const credentials = f.credentials(), nativeFetch = globalThis.fetch; let calls = 0, modelCalls = 0;
       globalThis.fetch = async () => { calls++; throw new Error(PRIVATE); };

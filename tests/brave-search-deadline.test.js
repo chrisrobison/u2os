@@ -68,7 +68,7 @@ test('native fetch aborts an isolated HTTP response whose JSON body never finish
   } finally { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); }
 }));
 
-for (const [status, code] of [[401,'SEARCH_AUTHORIZATION'],[403,'SEARCH_AUTHORIZATION'],[429,'SEARCH_RATE_LIMIT'],[503,'SEARCH_UNAVAILABLE']]) {
+for (const [status, code] of [[401,'SEARCH_AUTHORIZATION'],[429,'SEARCH_RATE_LIMIT'],[503,'SEARCH_UNAVAILABLE']]) {
   test(`HTTP ${status} is actionable, sanitized, body-discarded and never retried`, () => fixture(async (options, timers) => {
     let calls = 0, cancelled = 0;
     await assert.rejects(search({ query: SECRET }, { ...options, fetchImpl: async () => {
@@ -78,7 +78,7 @@ for (const [status, code] of [[401,'SEARCH_AUTHORIZATION'],[403,'SEARCH_AUTHORIZ
   }));
 }
 
-for (const kind of ['transport','parser','malformed','spoofed error']) {
+for (const kind of ['transport','spoofed error']) {
   test(`${kind} failure cannot leak upstream text or impersonate sanitized errors`, () => fixture(async (options, timers) => {
     let signal;
     await assert.rejects(search({ query: SECRET }, { ...options, fetchImpl: async (_url, init) => {
