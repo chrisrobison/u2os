@@ -110,7 +110,7 @@ Agent
 
 `server/agent/context-assembler.js` assembles the context a real provider receives for a planning request -- it does NOT dump the database into the prompt. For the current user message ("objective"), it ranks:
 
-- **people**: `Person` candidates ranked by the shared hybrid score; matching current facts can promote an otherwise older person before the people cap. Each person carries bounded top facts and its authoritative entity classification.
+- **people**: the owner is always included first, with up to 20 current facts (the `me.md` profile), in addition to up to 5 other `Person` candidates ranked by the shared hybrid score; matching current facts can promote an otherwise older person before the people cap. Each person carries bounded top facts and its authoritative entity classification.
 - **relevantFacts**: top current facts belonging to projects, documents, unselected people, or other structured entities, with entity identity, authority, source, classification, and compact nonzero relevance contributions. Facts already nested under a selected person are not duplicated here; the ranking layer retains the complete inspectable score breakdown.
 - **commitments**: the owner's still-open `Commitment` entities (via `promised` relationships), selected by the same hybrid rank before the commitment cap and carrying the relationship classification.
 - **recentEvents**: an explicit allowlist of context-worthy event types, ranked before the event cap. Internal bookkeeping events never enter the pool. Each summary inherits classification from its email/calendar/task source where available.

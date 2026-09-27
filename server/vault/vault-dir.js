@@ -11,6 +11,7 @@ export const COLLECTIONS = Object.freeze({
 });
 
 export const ROUTINES_DIR = 'routines';
+export const SKILLS_DIR = 'skills';
 
 const README = `# Your U2OS vault
 
@@ -22,6 +23,7 @@ can edit it with any text editor, keep it in git, or sync it however you like.
 - \`projects/\`: one file per project.
 - \`commitments/\`: things you have promised (\`status: open\` or \`done\`).
 - \`routines/\`: standing instructions U2OS carries out on your behalf.
+- \`skills/\`: how you want things done; routines name the skills they use.
 - \`policies.yaml\` (optional): what U2OS may do without asking you.
 - \`journal/\`: written by U2OS, one line per thing it did or you decided (\`YYYY-MM.jsonl\`).
 
@@ -58,7 +60,7 @@ export function getVaultDir() {
 /** Creates the default layout without touching anything that already exists. */
 export function ensureVaultLayout(vaultDir = getVaultDir()) {
   fs.mkdirSync(vaultDir, { recursive: true });
-  for (const dir of [...Object.keys(COLLECTIONS), ROUTINES_DIR]) fs.mkdirSync(path.join(vaultDir, dir), { recursive: true });
+  for (const dir of [...Object.keys(COLLECTIONS), ROUTINES_DIR, SKILLS_DIR]) fs.mkdirSync(path.join(vaultDir, dir), { recursive: true });
   const readme = path.join(vaultDir, 'README.md');
   try { fs.writeFileSync(readme, README, { flag: 'wx' }); } catch (error) { if (error.code !== 'EEXIST') throw error; }
   return vaultDir;

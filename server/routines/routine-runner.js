@@ -126,6 +126,8 @@ export function objectiveFor(routine, triggerKind, event) {
     lines.push(`Triggering event: ${event.type} (event id ${event.id}${event.subject?.id ? `, ${event.subject.type || 'item'} id ${event.subject.id}` : ''})`);
   }
   lines.push('', routine.instruction);
+  // Owner-authored skills from the vault: instructions, like the routine's own text.
+  for (const skill of routine.skills || []) lines.push('', `Skill "${skill.name}" (how I want this done):`, skill.instructions);
   return lines.join('\n');
 }
 
@@ -136,7 +138,7 @@ export function listRoutineStatus() {
     const run = last.get(routine.path);
     return {
       path: routine.path, name: routine.name, enabled: routine.enabled, error: routine.error,
-      trigger: routine.trigger, schedule: describeTrigger(routine.trigger), instruction: routine.instruction,
+      trigger: routine.trigger, schedule: describeTrigger(routine.trigger), instruction: routine.instruction, skills: (routine.skills || []).map((skill) => skill.name),
       lastRun: run ? { status: run.status, trigger: run.trigger_kind, runId: run.run_id, reason: run.reason, startedAt: run.created_at, completedAt: run.completed_at } : null,
     };
   });

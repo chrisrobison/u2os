@@ -8,7 +8,7 @@ It is not a chatbot. The digital self is a **vault of plain Markdown files** tha
 
 - who you are (`me.md`)
 - the people and projects in your life, and what you have promised
-- the standing routines you want carried out
+- the standing routines you want carried out, and skills describing how you want things done
 
 U2OS indexes that vault, watches the accounts you connect, and runs your routines unattended. Every action goes through a policy engine that sits outside the model. The agent is just a tool that uses this information, and the model is replaceable infrastructure. The name means "the second you" plus "operating system".
 
@@ -50,7 +50,7 @@ U2OS is a working **pre-alpha**, not a production product. Everything below is i
 - Vault facts are explicit memory with `vault:<path>` provenance. Edits supersede, removals soft-delete, and other sources are never modified.
 - Per-file `classification` and `sensitive_keys` control what can reach a model.
 - `npm run vault:export` moves existing database memory into vault files, bound to the same records with `id:`. Memory-UI edits are written back to the files, `policies.yaml` in the vault states what U2OS may do without asking (an invalid file fails closed), and `journal/` records what it did on your behalf.
-- Standing routines run on daily, interval or event triggers. Each slot runs once, even across restarts, and runs go through policy and approval, with a runaway limit.
+- Standing routines run on daily, interval or event triggers. Each slot runs once, even across restarts, and runs go through policy and approval, with a runaway limit. Routines can use vault **skills** (Markdown instructions) such as the [example Job Hunter](examples/vault/README.md).
 
 **Acting safely on your behalf**
 - A policy engine outside the model, plus audited approvals, hard blocks and owner-facing **Why?** views (`GET /api/actions/:id/explain`, `GET /api/recommendations/:id/explain`). They show stored summaries, never model chain-of-thought.
@@ -165,7 +165,7 @@ Raw device debug routes are disabled outside explicit non-production development
 
 ## Documentation
 
-- **Start here:** [Overview](docs/overview.md), [The vault](docs/vault.md), [Routines](docs/routines.md)
+- **Start here:** [Overview](docs/overview.md), [The vault](docs/vault.md), [Routines and skills](docs/routines.md), [Skills vs packages](docs/skills-vs-packages.md)
 - **Design:** [Architecture](docs/architecture.md), [Architecture decisions](docs/adr/README.md), [Events](docs/events.md), [Policies](docs/policies.md), [Tools](docs/tools.md)
 - **Subsystems:**
   - [Automation](docs/automation.md), [Bounded goals](docs/goals.md), [Dashboards](docs/dashboards.md), [Feedback](docs/feedback.md)

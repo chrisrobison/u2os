@@ -12,6 +12,9 @@ const DEFAULTS = {
   maxChars: 6000,
   maxPeople: 5,
   maxFactsPerPerson: 5,
+  // The owner's own profile (me.md) is what most requests and routines act
+  // on, so it is always included and gets a larger, still bounded, share.
+  maxOwnerFacts: 20,
   maxRelevantFacts: 10,
   maxCommitments: 10,
   maxRecentEvents: 15,
@@ -162,18 +165,22 @@ export class ContextAssembler {
         if (a.nameMentioned !== b.nameMentioned) return a.nameMentioned ? -1 : 1;
         return (b.lastActivityAt || '').localeCompare(a.lastActivityAt || '');
       })
-      .slice(0, this.options.maxPeople);
+      ;
+    // The owner is always included, in addition to the most relevant others.
+    const owner = ranked.find((item) => item.person.id === this.ownerEntityId);
+    const selected = [...(owner ? [owner] : []), ...ranked.filter((item) => item !== owner).slice(0, this.options.maxPeople)];
 
     const results = [];
-    for (const { person, nameMentioned, facts, relationships, retrievalCandidate } of ranked) {
+    for (const { person, nameMentioned, facts, relationships, retrievalCandidate } of selected) {
+      const isOwner = person.id === this.ownerEntityId;
       results.push({
         id: person.id,
         name: person.name,
-        matchedOn: nameMentioned
+        matchedOn: isOwner ? 'the owner' : nameMentioned
           ? 'objective mentions this name'
           : retrievalCandidate?.matchedFactIds?.length ? 'objective matches a current fact'
             : retrievalCandidate?._relevance.semantic > 0 ? 'hybrid semantic and structural relevance' : 'recently active',
-        facts: await this._rankFacts(facts, objectiveRaw, semanticOmitted),
+        facts: await this._rankFacts(facts, objectiveRaw, semanticOmitted, isOwner ? this.options.maxOwnerFacts : this.options.maxFactsPerPerson),
         relationshipCount: relationships.length,
         classification: person.classification || 'personal',
         ...(retrievalCandidate ? { relevance: compactRelevance(retrievalCandidate._relevance) } : {}),
@@ -204,7 +211,7 @@ export class ContextAssembler {
   // Confidence+recency by default; blends in semantic similarity (and an
   // exact-word-overlap signal, and an inferred-fact penalty) when an
   // embeddingProvider is configured -- see server/memory/semantic-retrieval.js.
-  async _rankFacts(facts, objectiveRaw, semanticOmitted = []) {
+  async _rankFacts(facts, objectiveRaw, semanticOmitted = [], limit = this.options.maxFactsPerPerson) {
     const normalized = facts.map((f) => ({
       id: f.id,
       key: f.key,
@@ -227,7 +234,7 @@ export class ContextAssembler {
       ranked = normalized.slice().sort((a, b) => b.confidence - a.confidence || (b.observedAt || '').localeCompare(a.observedAt || ''));
     }
 
-    return ranked.slice(0, this.options.maxFactsPerPerson).map((f) => ({
+    return ranked.slice(0, limit).map((f) => ({
       factId: f.id,
       key: f.key,
       value: f.value,

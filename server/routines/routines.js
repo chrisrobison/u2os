@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { getVaultDir, ROUTINES_DIR } from '../vault/vault-dir.js';
 import { listMarkdownFiles, readVaultFile, fileSignature } from '../vault/markdown.js';
+import { loadSkills, skillsSignature, SKILL_NAME } from '../vault/skills.js';
 
 // Standing routines are owner-written vault files (docs/routines.md):
 //
@@ -16,6 +17,8 @@ import { listMarkdownFiles, readVaultFile, fileSignature } from '../vault/markdo
 export const MIN_EVERY_MINUTES = 15;
 const DAY_NAMES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const MAX_INSTRUCTION_CHARS = 4_000;
+const MAX_SKILLS = 5;
+const MAX_TOTAL_SKILL_CHARS = 16_000;
 // Events a routine may not react to: its own lifecycle (self-recursion) and
 // U2OS's internal bookkeeping.
 const FORBIDDEN_EVENT_PREFIXES = ['routine.', 'vault.', 'agent.', 'action.', 'run.'];
@@ -26,15 +29,17 @@ let cache = { key: null, routines: [] };
 
 export function loadRoutines(vaultDir = getVaultDir()) {
   const files = listMarkdownFiles(vaultDir, ROUTINES_DIR);
-  const key = `${vaultDir}|${files.map((file) => `${file}=${fileSignature(vaultDir, file)}`).join('|')}`;
+  const key = `${vaultDir}|${files.map((file) => `${file}=${fileSignature(vaultDir, file)}`).join('|')}|skills:${skillsSignature(vaultDir)}`;
   if (cache.key === key) return cache.routines;
+  const skills = loadSkills(vaultDir);
   const routines = files.map((relativePath) => {
     try {
       const { frontmatter, body } = readVaultFile(vaultDir, relativePath);
-      return { path: relativePath, ...parseRoutine(relativePath, frontmatter, body), error: null };
+      const routine = parseRoutine(relativePath, frontmatter, body);
+      return { path: relativePath, ...routine, skills: resolveSkills(routine.skillNames, skills), error: null };
     } catch (error) {
       if (error.code !== 'VAULT_INVALID' && error.code !== 'ENOENT') throw error;
-      return { path: relativePath, name: defaultName(relativePath), enabled: false, trigger: null, instruction: '', error: error.message };
+      return { path: relativePath, name: defaultName(relativePath), enabled: false, trigger: null, instruction: '', skillNames: [], skills: [], error: error.message };
     }
   });
   cache = { key, routines };
@@ -47,7 +52,31 @@ export function parseRoutine(relativePath, frontmatter, body) {
   if (instruction.length > MAX_INSTRUCTION_CHARS) throw invalid(`Instructions are limited to ${MAX_INSTRUCTION_CHARS} characters`);
   if (frontmatter.enabled !== undefined && typeof frontmatter.enabled !== 'boolean') throw invalid('enabled must be true or false');
   const name = (typeof frontmatter.name === 'string' && frontmatter.name.trim()) || body.match(/^#\s+(.+)$/m)?.[1]?.trim() || defaultName(relativePath);
-  return { name, enabled: frontmatter.enabled !== false, trigger: parseTrigger(frontmatter.when), instruction };
+  return { name, enabled: frontmatter.enabled !== false, trigger: parseTrigger(frontmatter.when), instruction, skillNames: parseSkillNames(frontmatter.skills) };
+}
+
+function parseSkillNames(value) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.some((name) => typeof name !== 'string' || !SKILL_NAME.test(name))) throw invalid('skills must be a list of skill file names such as [job-hunting]');
+  if (value.length > MAX_SKILLS) throw invalid(`A routine can use at most ${MAX_SKILLS} skills`);
+  return [...new Set(value)];
+}
+
+/**
+ * A routine never runs with part of its instructions missing: an unknown or
+ * invalid skill makes the routine invalid until the owner fixes it.
+ */
+function resolveSkills(names, skills) {
+  const resolved = names.map((name) => {
+    const skill = skills.get(name);
+    if (!skill) throw invalid(`Unknown skill "${name}" (expected skills/${name}.md)`);
+    if (skill.error) throw invalid(`Skill "${name}" is invalid: ${skill.error}`);
+    return { name, description: skill.description, instructions: skill.instructions };
+  });
+  if (resolved.reduce((total, skill) => total + skill.instructions.length, 0) > MAX_TOTAL_SKILL_CHARS) {
+    throw invalid(`A routine's skills are limited to ${MAX_TOTAL_SKILL_CHARS} characters in total`);
+  }
+  return resolved;
 }
 
 export function parseTrigger(when) {

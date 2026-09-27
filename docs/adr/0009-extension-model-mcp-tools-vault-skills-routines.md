@@ -40,7 +40,7 @@ Its programming model has four problems for a single-owner system whose premise 
 - The model does what the model is good at (interpreting intent and data) and policy code decides what may happen, instead of hand-coding judgement in YAML.
 - Isolation for third-party code comes from the process boundary, not from future sandboxing work.
 - One mechanism for unattended work. Triggers and goals can later become routines too.
-- Routines lack some guarantees that deterministic workflows give, such as exact de-duplication across runs. These are added deliberately, as small structured features, when real use needs them, and the Job Hunter comparison in [#399](https://github.com/chrisrobison/u2os/issues/399) documents them.
+- Routines lack some guarantees that deterministic workflows give, such as exact de-duplication across runs. These are added deliberately, as small structured features, when real use needs them, and the [Job Hunter comparison](../skills-vs-packages.md) documents them.
 - Migration is tracked in [#397](https://github.com/chrisrobison/u2os/issues/397):
   - vault skills ([#399](https://github.com/chrisrobison/u2os/issues/399))
   - MCP providers ([#400](https://github.com/chrisrobison/u2os/issues/400))
