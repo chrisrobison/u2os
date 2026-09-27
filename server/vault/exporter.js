@@ -31,7 +31,7 @@ export function exportMemoryToVault({ vaultDir = getVaultDir() } = {}) {
 
   const types = Object.keys(DIR_FOR_TYPE).map(() => '?').join(',');
   const rows = db.prepare(`SELECT * FROM entities WHERE type IN (${types}) AND COALESCE(status, 'active') != 'deleted'
-    AND json_extract(attributes, '$.vaultPath') IS NULL AND id != ? ORDER BY created_at, id`).all(...Object.keys(DIR_FOR_TYPE), ownerEntityId || '');
+    AND json_extract(attributes, '$.vaultPath') IS NULL AND id != ? ORDER BY created_at, rowid`).all(...Object.keys(DIR_FOR_TYPE), ownerEntityId || '');
   for (const entity of rows) {
     if (describedIds.has(entity.id)) { report.skippedExisting.push(describedIds.get(entity.id)); continue; }
     const relativePath = uniquePath(vaultDir, DIR_FOR_TYPE[entity.type], entity, taken);
@@ -41,7 +41,7 @@ export function exportMemoryToVault({ vaultDir = getVaultDir() } = {}) {
 }
 
 function writeRecord(db, vaultDir, relativePath, entity, { owner, report }) {
-  const facts = db.prepare("SELECT * FROM facts WHERE entity_id = ? AND status = 'current' AND source NOT LIKE 'vault:%' ORDER BY created_at, id").all(entity.id);
+  const facts = db.prepare("SELECT * FROM facts WHERE entity_id = ? AND status = 'current' AND source NOT LIKE 'vault:%' ORDER BY created_at, rowid").all(entity.id);
   const frontmatter = {};
   if (!owner) frontmatter.id = entity.id;
   if (entity.name) frontmatter.name = entity.name;
