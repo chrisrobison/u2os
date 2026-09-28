@@ -64,13 +64,24 @@ test.describe('auth lifecycle (#14)', () => {
       await expect(passphrase.evaluate((el) => el.checkValidity())).resolves.toBe(true);
       await submit.click();
 
-      await expect(page.locator('u2-nav')).toBeVisible();
+      // #413: a truly first-run owner (created through the real form, not
+      // tests/e2e/helpers.js's createOwner(), which marks onboarding
+      // complete on the owner's behalf for every other spec) lands in the
+      // onboarding wizard, not the dashboard shell. tests/e2e/onboarding.spec.js
+      // covers the wizard itself end to end, including reaching the
+      // dashboard on finish.
+      await expect(page.locator('u2-onboarding')).toBeVisible();
+      await expect(page.locator('u2-nav')).toHaveCount(0);
       await expect(page.locator('.load-error')).toHaveCount(0);
     });
   });
 
   test('logout clears the session and the auth form reappears', async ({ page }) => {
     await withDedicatedServer(page, {}, async ({ baseURL }) => {
+      // createOwner() rather than the real setup form -- this test's
+      // subject is logout, not #413's onboarding wizard; see helpers.js's
+      // createOwner() doc comment.
+      await createOwner(baseURL, PASSPHRASE);
       await page.goto(baseURL);
       await page.locator('input[name="passphrase"]').fill(PASSPHRASE);
       await page.locator('form button[type="submit"]').click();
@@ -128,6 +139,10 @@ test.describe('auth lifecycle (#14)', () => {
 
   test('an idle-expired session falls back to the auth form on reload', async ({ page }) => {
     await withDedicatedServer(page, {}, async ({ baseURL, handle }) => {
+      // createOwner() (rather than the real setup form) so this test's
+      // subject -- session-expiry handling -- isn't coupled to #413's
+      // onboarding wizard; see helpers.js's createOwner() doc comment.
+      await createOwner(baseURL, PASSPHRASE);
       await page.goto(baseURL);
       await page.locator('input[name="passphrase"]').fill(PASSPHRASE);
       await page.locator('form button[type="submit"]').click();
@@ -152,6 +167,9 @@ test.describe('auth lifecycle (#14)', () => {
 
   test('an invalid/cleared session shows the auth form, not a broken page', async ({ page, context }) => {
     await withDedicatedServer(page, {}, async ({ baseURL }) => {
+      // createOwner() rather than the real setup form -- see the
+      // idle-expiry test above for why.
+      await createOwner(baseURL, PASSPHRASE);
       await page.goto(baseURL);
       await page.locator('input[name="passphrase"]').fill(PASSPHRASE);
       await page.locator('form button[type="submit"]').click();

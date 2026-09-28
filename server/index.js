@@ -56,6 +56,7 @@ import { registerModelRoutes } from './api/routes/model.js';
 import { registerDeviceRoutes } from './api/routes/devices.js';
 import { registerDiagnosticsRoutes } from './api/routes/diagnostics.js';
 import { registerVaultRoutes } from './api/routes/vault.js';
+import { registerOnboardingRoutes } from './api/routes/onboarding.js';
 import { registerJobApplicationRoutes } from './api/routes/job-applications.js';
 import { startVaultWatcher } from './vault/watcher.js';
 import { startJournal } from './vault/journal.js';
@@ -268,6 +269,7 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
     developmentMode: deviceDebugEnabled });
   registerDiagnosticsRoutes(router, { db, dbPath, dataDir, startTime, sseHub, modelRouter, embeddingProvider });
   registerVaultRoutes(router, { eventBus, toolRegistry });
+  registerOnboardingRoutes(router);
   registerJobApplicationRoutes(router);
   registerRoutineRoutes(router, { eventBus, agent });
   registerPackageRoutes(router, { packages });

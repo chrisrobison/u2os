@@ -513,3 +513,12 @@ export function reindexVault() { return request('/api/vault/reindex', { method: 
 export function restartMcpServers() { return request('/api/vault/mcp/restart', { method: 'POST' }); }
 export function getVaultJournal(params = {}) { return request(`/api/vault/journal${qs(params)}`); }
 export function getJobApplications(params = {}) { return request(`/api/job-applications${qs(params)}`); }
+
+// First-run onboarding wizard (docs/onboarding.md, u2-onboarding.js).
+export function getOnboardingStatus() { return request('/api/onboarding'); }
+export function completeOnboarding() { return request('/api/onboarding', { method: 'POST', headers: JSON_HEADERS, body: '{}' }); }
+export function getMeFile() { return request('/api/vault/me'); }
+export function saveMeFile(content) { return request('/api/vault/me', { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify({ content }) }); }
+export function relocateVault(vaultDir) { return request('/api/vault/location', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ vaultDir }) }); }
+export function getStarterRoutines() { return request('/api/vault/starter-routines'); }
+export function installStarterRoutines(ids) { return request('/api/vault/starter-routines', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ ids }) }); }

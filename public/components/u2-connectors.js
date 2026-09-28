@@ -99,6 +99,7 @@ export class U2Connectors extends HTMLElement {
     this._banner = null; // { variant, message } from the OAuth redirect, shown once
     this._busySyncDomains = new Set();
     this._domainMessages = {}; // domain -> { text, isError } (provider switch / sync result)
+    this._filterDomains = null; // onboarding embed (#413): restrict to given domains, e.g. ['calendar','email','contacts']
 
     this._onChange = this._onChange.bind(this);
     this._onClick = this._onClick.bind(this);
@@ -186,8 +187,26 @@ export class U2Connectors extends HTMLElement {
     this.querySelector('u2-connector-setup')?.setDomains(connectors);
   }
 
-  _render() {
+  // Onboarding step 4 (#413) embeds this component to offer just Gmail/
+  // Calendar/Contacts, without duplicating any connector logic. Only the
+  // 'google' catalog entry has a services[] array, so restricting to those
+  // three domains naturally narrows the catalog to just that one entry.
+  set filterDomains(domains) {
+    this._filterDomains = domains || null;
+    if (this._connectors) this._render();
+  }
+
+  _visibleConnectors() {
     const connectors = this._connectors || [];
+    return this._filterDomains ? connectors.filter((d) => this._filterDomains.includes(d.domain)) : connectors;
+  }
+
+  _visibleCatalog() {
+    const catalog = this._catalog || [];
+    return this._filterDomains ? catalog.filter((def) => (def.setup?.services || []).some((s) => this._filterDomains.includes(s.domain))) : catalog;
+  }
+
+  _render() {
     const ctx = {
       busySyncDomains: this._busySyncDomains,
       domainMessages: this._domainMessages,
@@ -199,25 +218,25 @@ export class U2Connectors extends HTMLElement {
       ? `<u2-alert variant="${escapeHtml(this._banner.variant)}" message="${escapeHtml(this._banner.message)}"></u2-alert>`
       : '';
 
-    const domainCards = connectors.map((d) => renderDomainCard(d, ctx)).join('');
+    const domainCards = this._visibleConnectors().map((d) => renderDomainCard(d, ctx)).join('');
 
     this.innerHTML = `
-      <div class="workspace__header">
+      ${this._filterDomains ? '' : `<div class="workspace__header">
         <div class="workspace__title">Connectors</div>
         <div class="workspace__subtitle">Real accounts instead of built-in mock data</div>
-      </div>
+      </div>`}
       ${bannerHtml}
-      <p class="connectors__intro">
+      ${this._filterDomains ? '' : `<p class="connectors__intro">
         Connect U2OS to your real Google Calendar, Gmail, and Contacts, to Brave web search, and to a webhook for
         notifications. Everything here is optional -- the built-in mock providers keep working forever if you never
         connect anything real. Credentials you paste in below stay on this machine, encrypted at rest, and are sent
         only directly to the provider you're connecting to -- U2OS never runs a cloud relay for your accounts. For
         step-by-step Google Cloud Console setup and the full details of what each connector needs, see
         <span class="mono">docs/connectors.md</span>.
-      </p>
+      </p>`}
       <div class="connectors__grid">${domainCards}</div>
       <div class="connectors__section-title">Connector catalog</div>
-      <div class="connector-table" role="list">${this._catalog.map((definition) => this._renderCatalogRow(definition)).join('')}</div>
+      <div class="connector-table" role="list">${this._visibleCatalog().map((definition) => this._renderCatalogRow(definition)).join('')}</div>
       <u2-connector-setup></u2-connector-setup>
     `;
   }

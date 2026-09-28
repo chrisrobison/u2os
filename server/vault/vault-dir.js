@@ -43,6 +43,21 @@ Each file may start with YAML frontmatter:
 See docs/vault.md in the U2OS repository for the full format.
 `;
 
+// Default me.md content offered by GET /api/vault/me and used to create the
+// file on first PUT -- same "owner-facing sane default" convention as
+// README above and the policy/data-processing loaders' default files.
+// Frontmatter keys become facts (docs/vault.md); the body becomes the
+// `notes` fact.
+export const DEFAULT_ME_MD = `---
+name:
+classification: personal
+---
+
+Write a little about yourself here. Frontmatter keys above become facts
+U2OS can use -- for example \`email:\`, \`timezone:\`, or anything else worth
+remembering. This paragraph becomes a \`notes\` fact.
+`;
+
 /**
  * Vault location: U2OS_VAULT, then config.json `vaultDir`, then
  * U2OS_HOME/vault. Read fresh on every call so tests can point separate
@@ -56,6 +71,23 @@ export function getVaultDir() {
     if (typeof config.vaultDir === 'string' && config.vaultDir.trim()) return path.resolve(dataDir, config.vaultDir);
   } catch { /* no config yet */ }
   return path.join(dataDir, 'vault');
+}
+
+/**
+ * Writes `vaultDir` into config.json, preserving every other key (same
+ * read-merge-write pattern as server/agent/provider-config.js's
+ * saveModelConfig()). Callers are responsible for validating the target
+ * first -- this only persists the choice. Has no effect on U2OS_VAULT,
+ * which always wins over config.json when set.
+ */
+export function setVaultDir(vaultDir, dataDir = getDataDir()) {
+  const file = path.join(dataDir, 'config', 'config.json');
+  let config = {};
+  try { config = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* no config yet */ }
+  config.vaultDir = vaultDir;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
+  return vaultDir;
 }
 
 /** Creates the default layout without touching anything that already exists. */

@@ -22,7 +22,11 @@ dependent draft and final model continuation. Missing receipts require owner
 attention, without dependent work, further planning, requeue or replay after
 restart/wakes. These messages are new follow-ups, not proof of reply threading.
 This is not live model judgment, UI/OAuth onboarding, all historical schemas,
-or a consolidated proof of all six workflows.
+or a consolidated proof of all six workflows. (A first-run onboarding wizard
+now exists -- vault location, `me.md`, model, connecting Gmail/Calendar/
+Contacts, starter routines, a review step and finish, see
+[onboarding.md](onboarding.md) -- but this API-only harness does not drive
+it; `tests/e2e/onboarding.spec.js` covers the wizard itself separately.)
 
 Configured personal-browser approval acceptance is separately repeatable with
 `npm run test:e2e -- tests/e2e/personal-approval-workflow.spec.js`.
