@@ -51,12 +51,13 @@ U2OS is a working **pre-alpha**, not a production product. Everything below is i
 - Per-file `classification` and `sensitive_keys` control what can reach a model.
 - `npm run vault:export` moves existing database memory into vault files, bound to the same records with `id:`. Memory-UI edits are written back to the files, `policies.yaml` in the vault states what U2OS may do without asking (an invalid file fails closed), and `journal/` records what it did on your behalf.
 - Standing routines run on daily, interval or event triggers. Each slot runs once, even across restarts, and runs go through policy and approval, with a runaway limit. Routines can use vault **skills** (Markdown instructions) such as the [example Job Hunter](examples/vault/README.md).
+- Tools from **MCP servers** declared in your vault's `mcp.yaml` run out of process, behind the same policy gate ([MCP tools](docs/mcp.md)). The first-party **job-hunt server** searches Greenhouse and Lever boards and applies in a headless browser, with an application ledger in your vault ([job hunting](docs/job-hunt.md)).
 
 **Acting safely on your behalf**
 - A policy engine outside the model, plus audited approvals, hard blocks and owner-facing **Why?** views (`GET /api/actions/:id/explain`, `GET /api/recommendations/:id/explain`). They show stored summaries, never model chain-of-thought.
 - Durable SQLite action delivery with atomic leases, restart recovery, bounded retries, explicit provider idempotency contracts, execution-time policy/approval/freshness checks, and a sanitized Operations view. Uncertain external outcomes stop for your review instead of risking a duplicate send.
 - Timers, schedules, event rules, condition watches, proactive evaluators, and bounded read-only goals.
-- Installable **packages** of capabilities, skills and durable automations (`npm run u2 -- package install ./packages/job-hunter`, or the Packages view): owner-granted permissions, deterministic package policies that can only tighten `policies.yaml`, restart-safe workflows, and one audit trail ([plugin architecture](docs/plugin-architecture.md)). Direction ([ADR 0009](docs/adr/0009-extension-model-mcp-tools-vault-skills-routines.md)): new tools will come from MCP servers, skills from vault Markdown and automations from routines; the package workflow language is frozen.
+- Installable **packages** of capabilities, skills and durable automations (`npm run u2 -- package install ./packages/job-hunter`, or the Packages view): owner-granted permissions, deterministic package policies that can only tighten `policies.yaml`, restart-safe workflows, and one audit trail ([plugin architecture](docs/plugin-architecture.md)). Direction ([ADR 0009](docs/adr/0009-extension-model-mcp-tools-vault-skills-routines.md)): new tools come from MCP servers, skills from vault Markdown and automations from routines; the package workflow language is frozen.
 
 **Memory and intelligence**
 - Append-only event log with correlation, provenance and SSE delivery.
@@ -175,6 +176,7 @@ Raw device debug routes are disabled outside explicit non-production development
   - [Progress record](docs/personal-agent-progress.md)
   - [Personal acceptance and dogfooding](docs/personal-acceptance.md)
   - [Job research walkthrough](docs/job-research-walkthrough.md)
+- **Extensions:** [MCP tools](docs/mcp.md), [job hunting](docs/job-hunt.md), [skills vs packages](docs/skills-vs-packages.md)
 - **Packages:** [Plugin architecture](docs/plugin-architecture.md), [writing packages](docs/packages/README.md), [reference Job Hunter package](packages/job-hunter/README.md)
 - **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md)
 
@@ -192,6 +194,7 @@ server/       persistent service
   integrations/, tools/, triggers/, devices/, voice/, security/, backup/, api/
 public/       browser client: native ES modules and Web Components, no build step
 packages/     installable packages; packages/job-hunter is the reference package
+mcp/          first-party MCP tool servers (mcp/jobs: job search and applications)
 skills/       connector manifests and declared permissions
 tests/        Node suites and Playwright e2e
 docs/         product, architecture, subsystem contracts, decisions

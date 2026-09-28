@@ -1,0 +1,4 @@
+# What U2OS may do without asking (docs/policies.md).
+jobs:
+  apply: confirm        # set to autonomous to apply without asking
+  skip_job: autonomous
