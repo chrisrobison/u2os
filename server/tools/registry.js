@@ -16,8 +16,10 @@ export class ToolRegistry {
     return tool;
   }
 
+  // Hidden package capabilities and `removable` tools (MCP tools, whose
+  // servers the owner can reconfigure) can be unregistered.
   unregister(name) {
-    if (!this._hidden.has(name)) throw new Error(`Only hidden tools can be unregistered: ${name}`);
+    if (!this._hidden.has(name) && this._tools.get(name)?.removable !== true) throw new Error(`Only hidden or removable tools can be unregistered: ${name}`);
     this._tools.delete(name);
     this._hidden.delete(name);
   }

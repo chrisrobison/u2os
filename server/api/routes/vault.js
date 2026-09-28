@@ -3,13 +3,19 @@ import { getVaultDir } from '../../vault/vault-dir.js';
 import { indexVault, getLastVaultReport } from '../../vault/indexer.js';
 import { exportMemoryToVault } from '../../vault/exporter.js';
 import { loadPolicies, getPolicySourceStatus } from '../../policy/policies-loader.js';
+import { getMcpStatus, startMcpServers } from '../../mcp/mcp-tools.js';
 
 // Owner-only (router default). The report names vault-relative paths and
 // parse errors, never file contents.
-export function registerVaultRoutes(router, { eventBus }) {
+export function registerVaultRoutes(router, { eventBus, toolRegistry }) {
   router.get('/api/vault', async (_req, res) => {
     loadPolicies(); // refresh the policy file status without changing the running engine
-    sendJson(res, 200, { vaultDir: getVaultDir(), lastIndex: getLastVaultReport(), policy: getPolicySourceStatus() });
+    sendJson(res, 200, { vaultDir: getVaultDir(), lastIndex: getLastVaultReport(), policy: getPolicySourceStatus(), mcp: getMcpStatus() });
+  });
+
+  // Restarts the MCP servers after the owner edits mcp.yaml.
+  router.post('/api/vault/mcp/restart', async (_req, res) => {
+    sendJson(res, 200, { mcp: await startMcpServers({ toolRegistry }) });
   });
 
   router.post('/api/vault/reindex', async (_req, res) => {

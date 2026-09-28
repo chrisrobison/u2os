@@ -54,10 +54,20 @@ export function filterObservationsForDestination(observations, destination, poli
   return { observations: allowed, omitted };
 }
 
+// Floors the owner declared for MCP tools in the vault's mcp.yaml
+// (server/mcp/config.js). Set by the server, never by a tool or its output.
+const declaredFloors = new Map();
+
+export function setObservationFloor(tool, classification) {
+  if (CLASSIFICATIONS.includes(classification)) declaredFloors.set(tool, classification);
+}
+
 export function classifyObservation(tool, item, historical = false) {
-  // Only public web search gets a permissive floor; account-backed or
-  // unknown results default private if the source does not classify them.
-  const floor = tool === 'web.search' && !historical ? 'public' : 'private';
+  // Only public web search and owner-declared MCP tools get a permissive
+  // floor; account-backed or unknown results default private if the source
+  // does not classify them. Historical results are never below private.
+  const declared = declaredFloors.get(tool) ?? (tool === 'web.search' ? 'public' : 'private');
+  const floor = historical && CLASSIFICATIONS.indexOf(declared) < CLASSIFICATIONS.indexOf('private') ? 'private' : declared;
   // Wrapped results (e.g. web.search.results[]) may classify individual
   // entries. Conservatively tighten the entire item for any nested label;
   // nesting must never erase a more restrictive classification.

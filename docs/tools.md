@@ -8,6 +8,8 @@ Most tools (`email.*`, `calendar.*`, `contacts.search`, `web.search`, `notificat
 
 Every tool listed in `server/packages/core-capabilities.js` is also a **core capability** under the same id that installed packages may invoke, with the permissions it maps to ([capabilities guide](packages/capabilities.md)). Package-defined capabilities are registered in the same registry as **hidden** tools (`register(tool, { hidden: true })`): the gate and durable queue can execute them, but `list()` never shows them to the planner and plan validation refuses them.
 
+Tools from **MCP servers** declared in the vault's `mcp.yaml` are registered as ordinary planner-visible tools named `<server>.<tool>` ([MCP tools](mcp.md)). They are `read` only when the owner's file says so, otherwise `consequential`, and their policy domain is the server name.
+
 ## `Tool` interface (`server/tools/tool.js`)
 
 ```js
