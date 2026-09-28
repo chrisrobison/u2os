@@ -61,6 +61,21 @@ Never apply or contact employers.
 
 The [example vault](../examples/vault/README.md) builds Job Hunter this way, and [skills vs packages](skills-vs-packages.md) compares it with the package workflow ([ADR 0009](adr/0009-extension-model-mcp-tools-vault-skills-routines.md)).
 
+## Starter routines
+
+Four ready-to-copy examples live under `examples/vault/`: **Morning brief**
+(`routines/morning-brief.md`, a daily digest of today's meetings,
+commitments due soon and urgent email), **Meeting prep**
+(`routines/meeting-prep.md`, an `event: calendar.event_approaching`
+routine that briefs you on who's in a meeting and your history with them),
+**Commitment follow-up** (`routines/commitment-follow-up.md`, a daily
+routine that drafts follow-ups for open commitments due or overdue) and
+**Job hunter** (above). Copy a routine's file, and its skill's file if it
+has one, into your vault's `routines/` and `skills/` to try it, or install
+one programmatically with `installStarterContent()` in
+`server/vault/starter-content.js`, which never overwrites a file you
+already have at that path.
+
 The body is the instruction, up to 4,000 characters. A routine with an invalid trigger or an empty body is reported and never runs.
 
 ## How a routine runs
