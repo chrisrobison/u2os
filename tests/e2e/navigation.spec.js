@@ -246,7 +246,7 @@ test.describe.serial('navigation shell (#15)', () => {
     const checkOnly = async (activeHash) => {
       for (const [hash] of [
         ['#/home'], ['#/briefing'], ['#/memory'], ['#/mail'], ['#/calendar'], ['#/tasks'],
-        ['#/projects'], ['#/dashboards'], ['#/activity'], ['#/operations'], ['#/automation'], ['#/diagnostics'],
+        ['#/projects'], ['#/dashboards'], ['#/activity'], ['#/operations'], ['#/routines'], ['#/automation'], ['#/vault'], ['#/diagnostics'],
         ['#/connectors'], ['#/devices'], ['#/voice'],
       ]) {
         const link = navLink(hash);

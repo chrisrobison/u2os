@@ -2,7 +2,7 @@ import { escapeHtml, formatTime, emptyState } from './util.js';
 import { getEvents } from '../services/api.js';
 import './u2-why.js';
 
-const EVENT_LABELS = {
+export const EVENT_LABELS = {
   'calendar.event_added': 'Added a calendar event',
   'calendar.event_changed': 'Rescheduled a calendar event',
   'calendar.event_approaching': 'Noticed an event coming up',
@@ -23,6 +23,16 @@ const EVENT_LABELS = {
   'memory.fact_recorded': 'Remembered something new',
   'memory.relationship_recorded': 'Recorded a relationship',
   'commitment.made': 'Noted a commitment',
+  'memory.fact_corrected': 'Corrected something it knew',
+  'memory.fact_reclassified': 'Changed how private something is',
+  'memory.fact_deleted': 'Forgot something',
+  'memory.entity_deleted': 'Forgot a record',
+  'agent.memory_candidate.proposed': 'Suggested something to remember',
+  'agent.memory_candidate.rejected': 'You declined a memory suggestion',
+  'routine.fired': 'Started a routine',
+  'routine.completed': 'Finished a routine',
+  'routine.failed': 'A routine did not finish',
+  'vault.indexed': 'Read your vault',
 };
 
 function humanizeEvent(evt) {

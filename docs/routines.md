@@ -79,6 +79,10 @@ The body is the instruction, up to 4,000 characters. A routine with an invalid t
 - **Owner account required:** nothing runs before an owner account exists.
 - **Model required:** personal mode needs a configured model. Otherwise runs fail with an error code, and nothing is substituted.
 
+## In the app
+
+The **Routines** view lists every routine with its schedule, skills, any error and its last run, and runs one on request (**Run now**). Routines are still edited as files.
+
 ## API
 
 Owner-only:

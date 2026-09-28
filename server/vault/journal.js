@@ -77,3 +77,42 @@ export function startJournal({ eventBus }) {
     }
   });
 }
+
+const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+const MAX_READ_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Recent journal entries for the owner-only UI: one month (default the
+ * latest), newest first. Lines that are not valid JSON are skipped; a very
+ * large month is read from its end.
+ */
+export function readJournal({ month = null, limit = 100, vaultDir = getVaultDir() } = {}) {
+  const dir = path.join(vaultDir, 'journal');
+  let months = [];
+  try { months = fs.readdirSync(dir).filter((name) => MONTH.test(name.replace(/\.jsonl$/, '')) && name.endsWith('.jsonl')).map((name) => name.slice(0, 7)).sort().reverse(); } catch { /* no journal yet */ }
+  if (month !== null && !MONTH.test(month)) throw Object.assign(new Error('month must look like 2026-09'), { code: 'INVALID_MONTH' });
+  const selected = month || months[0] || null;
+  const max = Math.min(Math.max(Number.parseInt(limit, 10) || 100, 1), 500);
+  if (!selected || !months.includes(selected)) return { months, month: selected, entries: [] };
+  const file = path.join(dir, `${selected}.jsonl`);
+  const stat = fs.lstatSync(file);
+  if (!stat.isFile()) return { months, month: selected, entries: [] };
+  let text;
+  if (stat.size > MAX_READ_BYTES) {
+    const fd = fs.openSync(file, 'r');
+    try {
+      const buffer = Buffer.alloc(MAX_READ_BYTES);
+      fs.readSync(fd, buffer, 0, MAX_READ_BYTES, stat.size - MAX_READ_BYTES);
+      text = buffer.toString('utf8').split('\n').slice(1).join('\n'); // drop the partial first line
+    } finally { fs.closeSync(fd); }
+  } else {
+    text = fs.readFileSync(file, 'utf8');
+  }
+  const entries = [];
+  const lines = text.split('\n');
+  for (let index = lines.length - 1; index >= 0 && entries.length < max; index--) {
+    if (!lines[index].trim()) continue;
+    try { entries.push(JSON.parse(lines[index])); } catch { /* skip a damaged line */ }
+  }
+  return { months, month: selected, entries };
+}
