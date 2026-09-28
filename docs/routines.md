@@ -76,6 +76,11 @@ one programmatically with `installStarterContent()` in
 `server/vault/starter-content.js`, which never overwrites a file you
 already have at that path.
 
+Meeting prep only fires once you also add a `calendar_approaching`
+[condition-watch trigger](automation.md) in the Triggers view -- personal
+homes do not create one automatically, and the routine sits installed but
+silent without it.
+
 The body is the instruction, up to 4,000 characters. A routine with an invalid trigger or an empty body is reported and never runs.
 
 ## How a routine runs
