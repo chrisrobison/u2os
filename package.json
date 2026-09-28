@@ -39,5 +39,8 @@
     "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.63.0",
     "smtp-server": "^3.19.13"
+  },
+  "optionalDependencies": {
+    "playwright": "^1.63.0"
   }
 }

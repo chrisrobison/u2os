@@ -1,0 +1,85 @@
+# Job hunting on your behalf
+
+U2OS can search job boards and apply for you, unattended, within the limits you set. It is built from the parts every U2OS extension uses ([ADR 0009](adr/0009-extension-model-mcp-tools-vault-skills-routines.md)):
+
+- a **routine** that says when to run and what to do (`routines/job-hunter.md`)
+- a **skill** that says how you judge postings and how to answer for you (`skills/job-hunting.md`)
+- the **job-hunt MCP server** (`mcp/jobs/`), which searches boards and fills in applications in a real, headless Chromium
+- your **policy**, which decides whether an application needs your approval
+
+## What it can and cannot do
+
+It searches the public job boards of the companies you list, on **Greenhouse** and **Lever**, two of the most common applicant-tracking systems. It applies on the boards' own hosted application forms.
+
+It does not use LinkedIn, Indeed or other sites whose terms prohibit automated applications or that require logging in. It never tries to solve or evade a CAPTCHA: when one appears, the application is handed to you.
+
+## Setup
+
+1. **Browser.** In the U2OS folder, run `npm install` and `npx playwright install chromium`. To use a Chromium you already have, set `JOBS_BROWSER_PATH` under the server's `env:` in `mcp.yaml`.
+2. **Copy the example** from [`examples/vault`](../examples/vault/README.md) into your vault:
+   - `mcp.yaml`
+   - `policies.yaml` (or merge its `jobs:` section into yours)
+   - `routines/job-hunter.md`
+   - `skills/job-hunting.md`
+   - `job-hunt/profile.md`
+3. **Your preferences** go in `me.md`: target roles, minimum salary, locations and industries to avoid. The skill uses only what you state there.
+4. **Your applicant profile** is `job-hunt/profile.md`, and everything in it may be sent to employers you apply to:
+   - name, email, phone, location, current company and links
+   - `resume:` a file next to the profile, such as `resume.pdf`
+   - `boards:` the companies to search, such as `greenhouse:acme` for `job-boards.greenhouse.io/acme` and `lever:globex` for `jobs.lever.co/globex`
+   - `answers:` your standard answers, matched by words in a question (`authorized to work: "Yes"`)
+   - `max_applications_per_day:` default 5
+   - `submit:` `false` fills forms without submitting them
+   - the body: a default cover letter
+5. **A model.** The routine needs a configured planning model; the built-in demo planner does not understand it.
+6. Restart U2OS (or `POST /api/vault/mcp/restart`), check `GET /api/vault` shows the `jobs` server running, and set `enabled: true` in the routine.
+
+Start with `submit: false`. Each run then fills real forms and saves screenshots in `job-hunt/applications/` without sending anything. When the forms look right, set `submit: true`.
+
+## How a run goes
+
+1. The routine searches your boards (`jobs.search_jobs`). Jobs you already applied to or skipped are left out. Greenhouse results include each application's questions.
+2. The planner scores each posting with your skill. It proposes `jobs.apply` for strong matches, with answers and a short cover letter, and `jobs.skip_job` for the rest.
+3. `jobs.apply` requires your approval unless your policy says otherwise. Approve it in the U2OS approvals view; the application is submitted then.
+4. The server opens the form and fills your identity and resume from your profile. It fills the answers, submits, and waits for the board's confirmation.
+5. You get one notification summarising the run.
+
+To let U2OS apply without asking, set this in your vault `policies.yaml`:
+
+```yaml
+jobs:
+  apply: autonomous
+```
+
+The daily limit and the ledger still apply.
+
+## The ledger: `job-hunt/applications/`
+
+Every attempt is a Markdown file in your vault. It records the company, title, form address, status, the answers given, the cover letter and screenshots. It is your record of what was sent in your name, and it is what makes applying exactly-once.
+
+| Status | Meaning | Applied again? |
+|---|---|---|
+| `applied` | Submitted and confirmed by the board | Never |
+| `unconfirmed` | Submitted, but no confirmation appeared | Never; check it yourself |
+| `needs_owner` | A CAPTCHA or challenge appeared | Never; finish it yourself |
+| `needs_answers` | Required questions were unanswered; nothing was sent | Yes, once answered |
+| `dry_run` | Filled but not submitted (`submit: false`) | Yes |
+| `failed` | The board rejected the form; nothing was sent | Yes |
+| `skipped` | You (or the routine) passed on it | Never |
+
+To re-open a job, edit its status or delete its file.
+
+## Safety and privacy
+
+- **Identity comes from your files, not the model.** The model only picks jobs and writes answers and cover letters. It cannot change your name, email, phone, links or resume.
+- **Demographic questions** (gender, race, veteran status, disability and similar) are only ever answered from your own profile `answers`, never by the model.
+- **The model never supplies a web address.** Form addresses are built from board and job ids, so the browser only goes to Greenhouse and Lever application pages.
+- **Unanswerable questions stop the application** before anything is sent.
+- **Submission is recorded before the click.** A crash can never cause a second application.
+- **Server and board data stay local**, except what the forms send to the employer. Search results and application outcomes reach your planning model at the classification set in `mcp.yaml` (`personal` in the example), under your [data-processing policy](policies.md).
+
+## Limits
+
+- Only companies on Greenhouse or Lever, listed by you. Discovering new companies is up to you (or a future tool).
+- Hosted forms vary. Unusual custom widgets may be reported as `needs_answers` or `failed`; the screenshots show why.
+- Lever's application questions are discovered when the form is first opened. The first attempt at a Lever job therefore often returns `needs_answers`, and the next run answers them.

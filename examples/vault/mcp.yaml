@@ -1,0 +1,11 @@
+# Tool servers U2OS may start for you (docs/mcp.md).
+servers:
+  jobs:
+    command: node
+    args: ["${U2OS_ROOT}/mcp/jobs/server.js", "--vault", "${VAULT}"]
+    timeout_seconds: 180
+    tools:
+      search_jobs: { read: true, classification: personal }
+      list_applications: { read: true, classification: personal }
+      apply: { classification: personal }
+      skip_job: { classification: personal }

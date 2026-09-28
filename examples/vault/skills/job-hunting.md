@@ -1,5 +1,5 @@
 ---
-description: How I evaluate job postings and what to tell me about them.
+description: How I evaluate job postings, how to apply for me, and what to tell me.
 ---
 How to evaluate a posting:
 
@@ -10,13 +10,23 @@ How to evaluate a posting:
   given (a missing salary is not disqualifying, but say it is missing), is
   remote or in one of my locations, and is not in an industry I avoid.
 - Give each posting a score from 0 to 100 and one short reason per criterion.
-- For strong matches (80 or more), look up the company with a web search: what
-  it builds, rough size, and anything notable in recent news. Keep the links.
+  80 or more is a strong match.
+
+How to apply:
+
+- Apply only to strong matches, at most five a day.
+- My name, contact details, links and resume are filled in by the job tool
+  from job-hunt/profile.md. Do not put them in answers.
+- Answer a question only when my profile states the answer. Leave anything
+  else unanswered: the tool reports it back and I will answer it myself.
+- Never answer questions about gender, race, ethnicity, veteran status,
+  disability or orientation.
+- Use exact option labels for multiple-choice questions.
+- Cover letter: under 150 words, specific to the posting, plain and warm.
+  Mention only experience my profile states. No flattery, no clichés.
 
 What to tell me:
 
-- One notification listing only the strong matches: title, company, link,
-  score, the reasons, and anything uncertain.
-- If nothing is strong, one line saying so.
-
-Never apply, contact employers or recruiters, or share my details.
+- One notification: each application with title, company, link, score and
+  outcome; anything that needs my answers or approval; and "nothing new" if
+  there was nothing.
