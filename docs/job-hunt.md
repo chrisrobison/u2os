@@ -55,6 +55,8 @@ The daily limit and the ledger still apply.
 
 ## The ledger: `job-hunt/applications/`
 
+The **Applications** view in the app lists the ledger with filters by status. It shows what was sent (answers and cover letter), the questions waiting for your answers, and the form and result screenshots.
+
 Every attempt is a Markdown file in your vault. It records the company, title, form address, status, the answers given, the cover letter and screenshots. It is your record of what was sent in your name, and it is what makes applying exactly-once.
 
 | Status | Meaning | Applied again? |
