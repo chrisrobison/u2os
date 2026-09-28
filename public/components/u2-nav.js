@@ -10,6 +10,7 @@ const ROUTES = [
   ['#/activity', 'Activity'],
   ['#/operations', 'Operations'],
   ['#/routines', 'Routines'],
+  ['#/applications', 'Applications'],
   ['#/goals', 'Goals'],
   ['#/automation', 'Automation'],
   ['#/packages', 'Packages'],

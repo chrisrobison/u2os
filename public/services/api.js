@@ -512,3 +512,4 @@ export function getVaultStatus() { return request('/api/vault'); }
 export function reindexVault() { return request('/api/vault/reindex', { method: 'POST' }); }
 export function restartMcpServers() { return request('/api/vault/mcp/restart', { method: 'POST' }); }
 export function getVaultJournal(params = {}) { return request(`/api/vault/journal${qs(params)}`); }
+export function getJobApplications(params = {}) { return request(`/api/job-applications${qs(params)}`); }
