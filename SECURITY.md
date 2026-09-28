@@ -6,4 +6,6 @@ Current releases require first-run owner setup and an authenticated session for 
 
 Routines run unattended but have no authority beyond the action policy. A routine's instruction and triggering event content can never authorize an action or change policy.
 
+MCP tool servers declared in the vault's `mcp.yaml` ([docs/mcp.md](docs/mcp.md)) run as separate processes with your user's permissions and a minimal environment that excludes U2OS's secrets. Declare only servers you trust; anyone who can edit your vault can declare one. Their actions are gated by the action policy (confirmation by default), and their results are untrusted data.
+
 To report a vulnerability, use GitHub's private vulnerability-reporting feature for this repository. Do not open a public issue containing exploit details, credentials, tokens, or personal data. If private reporting is unavailable, contact the repository owner privately through the contact method on their GitHub profile.

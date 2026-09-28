@@ -62,6 +62,7 @@ import { registerRoutineRoutes } from './api/routes/routines.js';
 import { registerPackageRoutes } from './api/routes/packages.js';
 import { startRoutineRunner, stopRoutineRunner } from './routines/routine-runner.js';
 import { createPackagePlatform } from './packages/platform.js';
+import { startMcpServers, stopMcpServers } from './mcp/mcp-tools.js';
 
 export async function startServer(options = {}) {
   const home = canonicalDataHome(getDataDir());
@@ -265,7 +266,7 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
   registerDeviceRoutes(router, { deviceRegistry, capabilityRegistry, eventBus, deviceConnectToken, streamRegistry,
     developmentMode: deviceDebugEnabled });
   registerDiagnosticsRoutes(router, { db, dbPath, dataDir, startTime, sseHub, modelRouter, embeddingProvider });
-  registerVaultRoutes(router, { eventBus });
+  registerVaultRoutes(router, { eventBus, toolRegistry });
   registerRoutineRoutes(router, { eventBus, agent });
   registerPackageRoutes(router, { packages });
 
@@ -351,6 +352,7 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
       Promise.resolve().then(() => mdnsHandle?.stop()),
       Promise.resolve().then(() => vaultWatcher?.stop()),
       Promise.resolve().then(() => stopJournal?.()),
+      stopMcpServers(),
     ]).then((results) => {
       if (results.some((result) => result.status === 'rejected')) throw new Error('Background cleanup failed; inspect durable state before restarting');
     });
@@ -363,6 +365,9 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
     vaultWatcher = startVaultWatcher({ eventBus });
     // What U2OS does on the owner's behalf is also recorded in their vault.
     stopJournal = startJournal({ eventBus });
+    // Tools from the MCP servers the vault declares (docs/mcp.md), registered
+    // before the queue can resume an action that needs one.
+    await startMcpServers({ toolRegistry });
     startSyncScheduler({ db, eventBus, dataDir });
     actionQueueTimer = setInterval(runQueueTick, Number(process.env.U2OS_ACTION_QUEUE_TICK_MS) || 1_000);
     actionQueueTimer.unref?.();

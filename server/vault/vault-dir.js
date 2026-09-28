@@ -25,6 +25,7 @@ can edit it with any text editor, keep it in git, or sync it however you like.
 - \`routines/\`: standing instructions U2OS carries out on your behalf.
 - \`skills/\`: how you want things done; routines name the skills they use.
 - \`policies.yaml\` (optional): what U2OS may do without asking you.
+- \`mcp.yaml\` (optional): tool servers U2OS may start for you.
 - \`journal/\`: written by U2OS, one line per thing it did or you decided (\`YYYY-MM.jsonl\`).
 
 Each file may start with YAML frontmatter:
