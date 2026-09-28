@@ -6,7 +6,7 @@ import path from 'node:path';
 import { getDb, closeAllForTests } from '../server/db/connection.js';
 import { EventBus } from '../server/events/event-bus.js';
 import { getVaultDir } from '../server/vault/vault-dir.js';
-import { startJournal, journalEntry, journalPath } from '../server/vault/journal.js';
+import { startJournal, journalEntry, journalPath, readJournal } from '../server/vault/journal.js';
 import { startServer } from './helpers/authed-server.js';
 
 function fixture(t) {
@@ -79,4 +79,22 @@ test('a routine run on a live server is journaled in the vault', async (t) => {
   assert.ok(types.includes('routine.fired') && types.includes('routine.completed'));
   assert.ok(entries.some((entry) => entry.type === 'agent.action.completed' && entry.data?.tool === 'tasks.create'), 'what it did on my behalf');
   assert.doesNotMatch(fs.readFileSync(journalPath(Date.now(), process.env.U2OS_VAULT), 'utf8'), /water the plants/, 'no content');
+  const api = await (await fetch(`http://127.0.0.1:${handle.port}/api/vault/journal`)).json();
+  assert.equal(api.entries[0].type, 'routine.completed', 'newest first');
+  assert.equal((await fetch(`http://127.0.0.1:${handle.port}/api/vault/journal?month=../../etc`)).status, 400);
+});
+
+test('the journal reader lists months and returns the newest entries, skipping damaged lines', (t) => {
+  const { vault } = fixture(t);
+  fs.mkdirSync(path.join(vault, 'journal'), { recursive: true });
+  const line = (i) => JSON.stringify({ ts: `2026-08-0${i}T00:00:00Z`, type: 'task.created', eventId: `evt_${i}` });
+  fs.writeFileSync(path.join(vault, 'journal', '2026-08.jsonl'), `${line(1)}\n{broken\n${line(2)}\n${line(3)}\n`);
+  fs.writeFileSync(path.join(vault, 'journal', '2026-07.jsonl'), `${line(4)}\n`);
+  fs.writeFileSync(path.join(vault, 'journal', 'notes.txt'), 'ignored');
+  const latest = readJournal({ vaultDir: vault, limit: 2 });
+  assert.deepEqual(latest.months, ['2026-08', '2026-07']);
+  assert.deepEqual(latest.entries.map((entry) => entry.eventId), ['evt_3', 'evt_2']);
+  assert.deepEqual(readJournal({ vaultDir: vault, month: '2026-07' }).entries.map((entry) => entry.eventId), ['evt_4']);
+  assert.deepEqual(readJournal({ vaultDir: vault, month: '2026-01' }).entries, []);
+  assert.throws(() => readJournal({ vaultDir: vault, month: '../x' }), /month must/);
 });

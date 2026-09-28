@@ -75,9 +75,12 @@ The folders map to entity types as follows:
 - Deleting a file with `id` keeps the record and what other sources know about it; only the vault's facts are removed. Deleting a file without `id` soft-deletes its record.
 - `me.md` is applied once an owner account exists.
 
+The **Vault** view in the app shows the same: the index report with a **Re-read vault** button, whether `policies.yaml` is in effect or invalid, the tool servers with **Restart tool servers**, and the journal.
+
 U2OS checks the vault every 5 seconds (`U2OS_VAULT_POLL_MS`) and re-indexes when a file is added, removed or changed. The owner-only API:
 
-- `GET /api/vault` returns the vault location and the last index report (counts, file paths and parse errors, never contents).
+- `GET /api/vault` returns the vault location, the last index report (counts, file paths and parse errors, never contents), the vault policy status and the [MCP server](mcp.md) status.
+- `GET /api/vault/journal?month=YYYY-MM&limit=100` returns the journal months and one month's entries, newest first (the latest month by default).
 - `POST /api/vault/reindex` indexes immediately and returns the report.
 
 ## Editing from the UI

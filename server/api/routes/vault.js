@@ -4,6 +4,7 @@ import { indexVault, getLastVaultReport } from '../../vault/indexer.js';
 import { exportMemoryToVault } from '../../vault/exporter.js';
 import { loadPolicies, getPolicySourceStatus } from '../../policy/policies-loader.js';
 import { getMcpStatus, startMcpServers } from '../../mcp/mcp-tools.js';
+import { readJournal } from '../../vault/journal.js';
 
 // Owner-only (router default). The report names vault-relative paths and
 // parse errors, never file contents.
@@ -11,6 +12,16 @@ export function registerVaultRoutes(router, { eventBus, toolRegistry }) {
   router.get('/api/vault', async (_req, res) => {
     loadPolicies(); // refresh the policy file status without changing the running engine
     sendJson(res, 200, { vaultDir: getVaultDir(), lastIndex: getLastVaultReport(), policy: getPolicySourceStatus(), mcp: getMcpStatus() });
+  });
+
+  // The owner's journal: what U2OS did on their behalf, newest first.
+  router.get('/api/vault/journal', async (req, res) => {
+    try {
+      sendJson(res, 200, readJournal({ month: req.query?.month || null, limit: req.query?.limit }));
+    } catch (error) {
+      if (error.code !== 'INVALID_MONTH') throw error;
+      sendJson(res, 400, { error: error.message });
+    }
   });
 
   // Restarts the MCP servers after the owner edits mcp.yaml.

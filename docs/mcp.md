@@ -29,7 +29,7 @@ servers:
 
 Each tool is named `<server>.<tool>`, such as `jobs.apply`. Server names use lowercase letters, digits and `_`. Names used by built-in tools (`email`, `calendar`, `web`, and so on) are refused, so a server can never inherit their policy.
 
-Servers start with U2OS, from the vault directory. After editing `mcp.yaml`, restart U2OS or call `POST /api/vault/mcp/restart`. `GET /api/vault` reports each server's state, its registered tools, tools you listed that the server does not offer, and errors. An invalid `mcp.yaml` starts no servers.
+Servers start with U2OS, from the vault directory. After editing `mcp.yaml`, restart U2OS, use **Restart tool servers** in the Vault view, or call `POST /api/vault/mcp/restart`. The app's **Vault** view, and `GET /api/vault`, report each server's state, its registered tools, tools you listed that the server does not offer, and errors. An invalid `mcp.yaml` starts no servers.
 
 ## What a tool may do without asking
 

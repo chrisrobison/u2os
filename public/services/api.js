@@ -504,3 +504,11 @@ export function getAutomation(id) { return request(`/api/automations/${enc(id)}`
 export function getAutomationRun(runId) { return request(`/api/automations/runs/${enc(runId)}`); }
 export function automationOperation(id, operation) { return postJson(`/api/automations/${enc(id)}/${operation}`); }
 export function runAutomation(id, inputs = {}) { return postJson(`/api/automations/${enc(id)}/run`, { inputs }); }
+
+// Vault routines, status and journal (docs/routines.md, docs/vault.md, docs/mcp.md).
+export function getRoutines() { return request('/api/routines'); }
+export function runRoutine(path) { return request('/api/routines/run', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ path }) }); }
+export function getVaultStatus() { return request('/api/vault'); }
+export function reindexVault() { return request('/api/vault/reindex', { method: 'POST' }); }
+export function restartMcpServers() { return request('/api/vault/mcp/restart', { method: 'POST' }); }
+export function getVaultJournal(params = {}) { return request(`/api/vault/journal${qs(params)}`); }
