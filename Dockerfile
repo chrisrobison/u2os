@@ -12,10 +12,14 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
-# Application code.
+# Application code. examples/ ships the starter-content catalog's source
+# files (server/vault/starter-content.js reads examples/vault/... at
+# runtime to provision starter routines into an owner's vault), so it has
+# to be present in the image, not just in a git checkout.
 COPY server/ ./server/
 COPY public/ ./public/
 COPY skills/ ./skills/
+COPY examples/ ./examples/
 
 # Local-first data directory (see docs/architecture.md's "Local-first data
 # directory" section) -- inside the container this is a mounted volume,

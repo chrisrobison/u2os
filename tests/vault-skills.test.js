@@ -92,7 +92,10 @@ test('the example Job Hunter vault parses, indexes and gives the planner the ful
   db.prepare("INSERT INTO owners (id, entity_id, passphrase_hash, salt, scrypt_params, created_at) VALUES ('o', ?, 'x', 'x', '{}', ?)").run(owner, new Date().toISOString());
   assert.deepEqual(indexVault().errors, []);
   assert.equal([...loadSkills().values()].filter((skill) => skill.error).length, 0);
-  const [routine] = loadRoutines();
+  const routines = loadRoutines();
+  assert.ok(routines.length > 1, 'the example vault now also ships general-purpose starter routines');
+  const routine = routines.find((entry) => entry.path === 'routines/job-hunter.md');
+  assert.ok(routine, 'expected routines/job-hunter.md in the example vault');
   assert.equal(routine.error, null);
   assert.equal(routine.enabled, false, 'the example ships disabled');
   assert.deepEqual(routine.skills.map((skill) => skill.name), ['job-hunting']);
