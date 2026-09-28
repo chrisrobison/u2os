@@ -91,7 +91,14 @@ export async function withDedicatedServer(page, options, run) {
 }
 
 /** POSTs directly to /api/auth/setup to create the owner outside the browser
- * (see auth.spec.js for the scenario that instead drives the real form). */
+ * (see auth.spec.js for the scenario that instead drives the real form).
+ *
+ * Also marks first-run onboarding (#413) complete using the session this
+ * setup call returns: every spec using this helper is testing something
+ * other than onboarding itself and expects the dashboard shell to render
+ * immediately after login, the same behavior as before #413 introduced the
+ * wizard gate in u2-app.js. tests/e2e/onboarding.spec.js exercises the
+ * actual wizard end to end instead of going through this helper. */
 export async function createOwner(baseURL, passphrase) {
   const res = await fetch(`${baseURL}/api/auth/setup`, {
     method: 'POST',
@@ -99,6 +106,14 @@ export async function createOwner(baseURL, passphrase) {
     body: JSON.stringify({ passphrase }),
   });
   if (res.status !== 201) throw new Error(`owner setup failed: ${res.status}`);
+  const { csrfToken } = await res.json();
+  const cookie = res.headers.get('set-cookie').split(';')[0];
+  const onboarding = await fetch(`${baseURL}/api/onboarding`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', cookie, origin: baseURL, 'x-u2os-csrf': csrfToken },
+    body: '{}',
+  });
+  if (!onboarding.ok) throw new Error(`onboarding completion failed: ${onboarding.status}`);
 }
 
 /** Expire only this isolated server's session after its browser shell is

@@ -22,6 +22,7 @@ import './u2-triggers.js';
 import './u2-packages.js';
 import './u2-diagnostics.js';
 import './u2-model.js';
+import './u2-onboarding.js';
 
 // Dashboard contexts the #/dashboards picker offers, per PROMPT.md section
 // 10's examples + docs/dashboards.md's Phase 2 contexts. 'before-meeting'
@@ -69,6 +70,20 @@ export class U2App extends HTMLElement {
     try {
       const status = await api.getAuthStatus();
       if (!status.authenticated) return this._renderAuth(status.setupRequired);
+    } catch (err) {
+      this.innerHTML = `<main class="workspace"><div class="load-error">Unable to contact U2OS: ${escapeHtml(err.message)}</div></main>`;
+      return;
+    }
+
+    // First-run onboarding (#413, docs/onboarding.md): a brand-new owner is
+    // walked through the wizard instead of being dropped straight into the
+    // full shell. An owner who already completed it goes straight to the
+    // dashboard below, same as today. Reopening the wizard later happens
+    // through the #/onboarding route instead (see _route()), which never
+    // re-gates an already onboarded owner.
+    try {
+      const onboarding = await api.getOnboardingStatus();
+      if (!onboarding.completed) return this._renderOnboarding();
     } catch (err) {
       this.innerHTML = `<main class="workspace"><div class="load-error">Unable to contact U2OS: ${escapeHtml(err.message)}</div></main>`;
       return;
@@ -190,6 +205,19 @@ export class U2App extends HTMLElement {
     });
   }
 
+  // Full-page takeover for a brand-new owner (see connectedCallback()).
+  // Finishing marks onboarding complete server-side, then this follows the
+  // exact same "start over" idiom _renderAuth()'s submit handler uses to
+  // (re-)run connectedCallback() from scratch, which now finds onboarding
+  // complete and proceeds to the normal shell.
+  _renderOnboarding() {
+    this.innerHTML = `<main class="workspace" style="max-width:48rem;margin:4vh auto"><u2-onboarding></u2-onboarding></main>`;
+    this.querySelector('u2-onboarding').addEventListener('u2-onboarding-complete', () => {
+      this._built = false;
+      this.connectedCallback();
+    }, { once: true });
+  }
+
   _toggleTheme() {
     const current = document.documentElement.dataset.theme || effectiveTheme();
     const next = current === 'dark' ? 'light' : 'dark';
@@ -279,6 +307,9 @@ export class U2App extends HTMLElement {
         break;
       case 'model':
         this._setWorkspace('', document.createElement('u2-model'));
+        break;
+      case 'onboarding':
+        this._renderOnboardingRoute();
         break;
       case 'voice':
         this._renderVoice();
@@ -584,6 +615,16 @@ export class U2App extends HTMLElement {
 
   _renderDiagnostics() {
     this._setWorkspace('', document.createElement('u2-diagnostics'));
+  }
+
+  // Reopening the wizard from the nav/Settings (#413): unlike
+  // _renderOnboarding()'s full-page first-run takeover, this never re-gates
+  // an already onboarded owner -- finishing just marks onboarding complete
+  // again (idempotent) and returns to the dashboard.
+  _renderOnboardingRoute() {
+    const el = document.createElement('u2-onboarding');
+    el.addEventListener('u2-onboarding-complete', () => { window.location.hash = '#/home'; }, { once: true });
+    this._setWorkspace('', el);
   }
 
   _isCurrentRoute(generation) {

@@ -123,6 +123,13 @@ export async function withPersonalWorkflow({ existing = false, research = false,
     const setup = await nativeFetch(`http://127.0.0.1:${handle.port}/api/auth/setup`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passphrase: PERSONAL_FIXTURE_PASSPHRASE }) });
     assert.equal(setup.status, 201); cookie = setup.headers.get('set-cookie').split(';')[0]; csrf = (await setup.json()).csrfToken;
     fixture.ownerEntityId = handle.auth.ownerEntity().id;
+    // #413: mark first-run onboarding complete on the fixture owner's
+    // behalf, the same as tests/e2e/helpers.js's createOwner() -- this
+    // fixture's scenarios test personal-mode workflows, not the onboarding
+    // wizard, and the e2e spec built on it (personal-approval-workflow.spec.js)
+    // expects the real login form to land straight in the dashboard/agent
+    // panel afterward, exactly as before the wizard existed.
+    await fixture.api('/api/onboarding', {});
     assert.equal((await fixture.api('/api/model')).plannerStatus, 'configuration-required');
     if (existing) {
       previousContact = createEntity({ type: 'Person', name: 'Previously saved fixture contact' });

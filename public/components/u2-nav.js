@@ -20,6 +20,7 @@ const ROUTES = [
   ['#/model', 'Model'],
   ['#/devices', 'Devices'],
   ['#/voice', 'Voice'],
+  ['#/onboarding', 'Setup wizard'],
 ];
 
 // Left navigation. Highlights the current hash route and stays in sync
