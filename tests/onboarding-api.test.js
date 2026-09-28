@@ -141,6 +141,20 @@ test('POST /api/vault/location rejects a non-empty target directory and a target
   assert.equal((await emptyInputRes.json()).code, 'INVALID_INPUT');
 });
 
+test('POST /api/vault/location refuses to relocate while U2OS_VAULT overrides config.json', async (t) => {
+  const { post, dir } = await fixture(t);
+  const previous = process.env.U2OS_VAULT;
+  process.env.U2OS_VAULT = path.join(dir, 'env-pinned-vault');
+  t.after(() => { if (previous === undefined) delete process.env.U2OS_VAULT; else process.env.U2OS_VAULT = previous; });
+
+  const res = await post('/api/vault/location', { vaultDir: path.join(dir, 'wherever') });
+  assert.equal(res.status, 409);
+  const body = await res.json();
+  assert.equal(body.code, 'VAULT_ENV_OVERRIDE');
+  // Refused before touching config.json or the filesystem target at all.
+  assert.equal(fs.existsSync(path.join(dir, 'wherever')), false);
+});
+
 test('starter routines: list reflects installed state, install is additive and rejects unknown ids', async (t) => {
   const { get, post, vault } = await fixture(t);
 

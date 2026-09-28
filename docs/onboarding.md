@@ -97,6 +97,7 @@ All routes are owner-only, like the rest of the vault API.
   | HTTP | `code` | Meaning |
   |---|---|---|
   | 400 | `INVALID_INPUT` | `vaultDir` missing/blank, or resolves to a filesystem root. |
+  | 409 | `VAULT_ENV_OVERRIDE` | `U2OS_VAULT` is set. It always overrides `config.json`'s `vaultDir` (see [vault.md](vault.md#location)), so writing `vaultDir` would be a silent no-op; the route refuses outright instead of reporting a relocation that never takes effect. |
   | 409 | `VAULT_NOT_EMPTY` | The current vault already has `me.md` or indexed vault facts. |
   | 400 | `TARGET_NOT_DIRECTORY` | The target path exists and is not a directory. |
   | 409 | `TARGET_NOT_EMPTY` | The target directory exists and already has files in it. |
@@ -105,10 +106,6 @@ All routes are owner-only, like the rest of the vault API.
 
   On success the new location gets the standard layout
   (`ensureVaultLayout()`) and is reindexed immediately.
-  `U2OS_VAULT` always overrides `config.json`'s `vaultDir`, same as
-  everywhere else in the vault location precedence (see
-  [vault.md](vault.md#location)) -- relocating through this route has no
-  effect while that environment variable is set.
 - `GET /api/vault/starter-routines` -- `{ catalog: [...], installed:
   [id, ...] }`, using #412's `listStarterContent()` and checking which
   catalog items' files already exist in the live vault.

@@ -88,6 +88,15 @@ export function registerVaultRoutes(router, { eventBus, toolRegistry }) {
   // Onboarding step 1: relocate the vault, but only while it is still
   // empty, so this can never risk an existing owner's data (#413).
   router.post('/api/vault/location', async (req, res) => {
+    if (process.env.U2OS_VAULT) {
+      // U2OS_VAULT always overrides config.json's vaultDir in getVaultDir()
+      // (server/vault/vault-dir.js), so writing vaultDir here would be a
+      // silent no-op: the response would claim success while every future
+      // getVaultDir() call kept resolving to the env-pinned path. Refuse
+      // outright rather than report a relocation that never actually takes
+      // effect (docs/onboarding.md).
+      return sendJson(res, 409, { error: 'U2OS_VAULT is set and always overrides the configured vault location; unset it to relocate the vault through this API.', code: 'VAULT_ENV_OVERRIDE' });
+    }
     const requested = req.body?.vaultDir;
     if (typeof requested !== 'string' || !requested.trim()) {
       return sendJson(res, 400, { error: 'vaultDir is required', code: 'INVALID_INPUT' });
