@@ -22,7 +22,9 @@ const LEVER = [{
 const page = (body) => `<!doctype html><html><head><meta charset="utf-8"><title>Apply</title></head><body>${body}</body></html>`;
 
 function greenhouseForm(id) {
-  return page(`<h1>${GH_JOBS.find((job) => job.id === id).title}</h1>
+  // A site search form comes first, as on real career pages.
+  return page(`<form action="/search"><input name="q" aria-label="Search jobs"><button type="submit">Search</button></form>
+<h1>${GH_JOBS.find((job) => job.id === id).title}</h1>
 <form method="post" enctype="multipart/form-data" action="/gh-board/acme/jobs/${id}/submit">
   <label for="first_name">First Name *</label><input id="first_name" name="first_name" required>
   <label for="last_name">Last Name *</label><input id="last_name" name="last_name" required>

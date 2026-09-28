@@ -118,7 +118,8 @@ function readFields(page) {
       return text.replace(/\s+/g, ' ').trim().slice(0, 300);
     };
     const groups = new Map();
-    const form = document.querySelector('form');
+    // The application form is the largest form on the page (not, say, a search box).
+    const form = [...document.forms].sort((a, b) => b.elements.length - a.elements.length)[0];
     for (const element of form.querySelectorAll('input, textarea, select')) {
       const type = element.tagName === 'INPUT' ? (element.type || 'text') : element.tagName.toLowerCase();
       if (['hidden', 'submit', 'button', 'reset', 'image'].includes(type)) continue;
@@ -220,7 +221,8 @@ function matchOption(options = [], value) {
 }
 
 async function clickSubmit(page) {
-  const button = page.locator('form button[type="submit"], form input[type="submit"], form button:has-text("Submit")').first();
+  const index = await page.evaluate(() => { const forms = [...document.forms]; return forms.indexOf(forms.slice().sort((a, b) => b.elements.length - a.elements.length)[0]); });
+  const button = page.locator('form').nth(index).locator('button[type="submit"], input[type="submit"], button:has-text("Submit")').first();
   await button.click();
 }
 
