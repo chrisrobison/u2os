@@ -6,8 +6,9 @@ import path from 'node:path';
 import { closeAllForTests } from '../server/db/connection.js';
 import { writeRecord, recordFile } from '../mcp/jobs/ledger.js';
 import { startServer } from './helpers/authed-server.js';
+import { tinyPng } from './helpers/png.js';
 
-const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a5c40000000049454e44ae426082', 'hex');
+const PNG = tinyPng();
 
 async function fixture(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-job-api-'));
