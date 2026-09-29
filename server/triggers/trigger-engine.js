@@ -342,7 +342,7 @@ async function checkCalendarApproaching(trigger, { eventBus, agent, now }) {
   const leadMinutes = trigger.config?.params?.leadMinutes ?? 60;
   const windowEnd = new Date(now.getTime() + leadMinutes * 60000);
   const provider = getProvider('calendar');
-  const events = provider.listEvents({ from: now.toISOString(), to: windowEnd.toISOString() });
+  const events = await provider.listEvents({ from: now.toISOString(), to: windowEnd.toISOString() });
 
   for (const event of events) {
     if (event.status === 'cancelled') continue;

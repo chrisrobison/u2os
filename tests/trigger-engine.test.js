@@ -15,6 +15,9 @@ import { runSeed } from '../server/seed/seed.js';
 import { ensureInstallationMode } from '../server/seed/installation-mode.js';
 import * as tasksProvider from '../server/integrations/mock-tasks-provider.js';
 import * as triggerEngine from '../server/triggers/trigger-engine.js';
+import { createConnectionInstance, findInstance } from '../server/integrations/connection-instances.js';
+import { storeTokens } from '../server/integrations/oauth/google-oauth.js';
+import { loadConnectorsConfig, saveConnectorsConfig } from '../server/integrations/connectors-config.js';
 
 function tempHome() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-trigger-test-'));
@@ -368,6 +371,68 @@ test('stopAll() clears the interval -- no dangling timer keeps firing after it i
     assert.equal(countAfterStop, countAtStop, 'no further firings must happen after stopAll()');
   } finally {
     // stopAll() again is a harmless no-op -- proves it's idempotent too.
+    await cleanup(dir);
+  }
+});
+
+// Regression (#416): the Google calendar provider is async. The check used to
+// iterate the un-awaited Promise ("events is not iterable") and the orphaned
+// rejection crashed the process.
+function useAsyncGoogleCalendar(home, fetchImpl) {
+  const db = getDb();
+  const created = createConnectionInstance(db, { connectorId: 'google', label: 'Fixture account', status: 'connected', dataDir: home });
+  const row = findInstance(db, 'google', created.id);
+  storeTokens(row.vault_key, 'calendar', { access_token: 'fixture-access', refresh_token: 'fixture-refresh', expires_in: 3600 }, home);
+  const config = loadConnectorsConfig(home);
+  config.calendar = { active: 'google-calendar', activeInstanceId: created.id };
+  saveConnectorsConfig(config, home);
+  const original = globalThis.fetch;
+  globalThis.fetch = fetchImpl;
+  return () => { globalThis.fetch = original; };
+}
+
+test('condition_watch (calendar_approaching) awaits the async Google calendar provider', async () => {
+  const dir = tempHome();
+  let restore;
+  try {
+    const { db, eventBus, agent } = buildAgent();
+    const start = new Date(Date.now() + 30 * 60000), end = new Date(start.getTime() + 3600000);
+    const item = { id: 'gcal_soon', summary: 'Soon', start: { dateTime: start.toISOString() }, end: { dateTime: end.toISOString() } };
+    restore = useAsyncGoogleCalendar(dir, async () => ({ ok: true, status: 200, json: async () => ({ items: [item] }) }));
+    const trigger = triggerEngine.createTrigger({
+      name: 'Test: calendar approaching', kind: 'condition_watch', source: 'user',
+      config: { check: 'calendar_approaching', params: { leadMinutes: 60 }, action: { kind: 'notify', title: 'Soon', body: 'Meeting soon.' } },
+    });
+    await triggerEngine.runTick({ eventBus, agent });
+    const fired = db.prepare('SELECT * FROM trigger_fired_log WHERE trigger_id = ?').all(trigger.id);
+    assert.equal(fired.length, 1);
+    assert.ok(db.prepare("SELECT 1 FROM events WHERE type = 'calendar.event_approaching' AND metadata LIKE ?").get(`%trigger:${trigger.id}%`));
+  } finally {
+    restore?.();
+    await cleanup(dir);
+  }
+});
+
+test('condition_watch (calendar_approaching) surfaces a failing async provider without an unhandled rejection', async () => {
+  const dir = tempHome();
+  let restore;
+  const unhandled = [];
+  const onUnhandled = (reason) => unhandled.push(reason);
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    const { db, eventBus, agent } = buildAgent();
+    restore = useAsyncGoogleCalendar(dir, async () => { throw new Error('network down'); });
+    triggerEngine.createTrigger({
+      name: 'Test: calendar approaching', kind: 'condition_watch', source: 'user',
+      config: { check: 'calendar_approaching', params: { leadMinutes: 60 }, action: { kind: 'notify', title: 'Soon', body: 'Meeting soon.' } },
+    });
+    await triggerEngine.runTick({ eventBus, agent }).catch(() => {});
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.deepEqual(unhandled, []);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM events WHERE type = 'calendar.event_approaching'").get().n, 0);
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+    restore?.();
     await cleanup(dir);
   }
 });
