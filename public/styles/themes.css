@@ -64,6 +64,13 @@
   --accent-pending-soft: #F5E7CC;
   --accent-danger: #A8402F;
   --accent-danger-soft: #F5DED9;
+  /* --accent-strong: accent for fills and for text on surfaces; --on-accent:
+     the text that sits on an accent fill. --accent-active is a mid tone for
+     borders and dots and does not reach WCAG AA as text or as a white-text
+     fill (#421). */
+  --accent-strong: #167367;
+  --on-accent: #FFFFFF;
+  color-scheme: light;
 
   --focus-ring: #1E8F82;
   --scrollbar-thumb: #C2CACC;
@@ -89,6 +96,9 @@
     --accent-pending-soft: #423619;
     --accent-danger: #D97C6B;
     --accent-danger-soft: #3F241F;
+    --accent-strong: #4BC2B3;
+    --on-accent: #0D1116;
+    color-scheme: dark;
 
     --focus-ring: #4BC2B3;
     --scrollbar-thumb: #303A44;
@@ -115,6 +125,9 @@
   --accent-pending-soft: #F5E7CC;
   --accent-danger: #A8402F;
   --accent-danger-soft: #F5DED9;
+  --accent-strong: #167367;
+  --on-accent: #FFFFFF;
+  color-scheme: light;
 
   --focus-ring: #1E8F82;
   --scrollbar-thumb: #C2CACC;
@@ -139,6 +152,9 @@
   --accent-pending-soft: #423619;
   --accent-danger: #D97C6B;
   --accent-danger-soft: #3F241F;
+  --accent-strong: #4BC2B3;
+  --on-accent: #0D1116;
+  color-scheme: dark;
 
   --focus-ring: #4BC2B3;
   --scrollbar-thumb: #303A44;
