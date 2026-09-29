@@ -39,7 +39,7 @@ export function createModelProvider(dataDir = getDataDir()) {
 }
 
 function modelUnavailable() {
-  const error = new Error('Planner unavailable: configure a local or remote model for personal mode, then restart U2OS');
+  const error = new Error('Planner unavailable: configure a local or remote model for personal mode');
   error.code = 'MODEL_UNAVAILABLE';
   error.status = 503;
   return error;
@@ -90,12 +90,29 @@ function instantiateSingleProvider(config, dataDir) {
  * shape keeps using `model-<providerType>` for backward compatibility.
  */
 export function createModelRouter(dataDir = getDataDir()) {
+  const { config, allowMock } = readRouterConfig(dataDir);
+  return new ModelRouter(config, { allowMock });
+}
+
+/**
+ * Re-reads the saved model configuration (and its vault secrets) and hot-swaps
+ * it into a running router. Throws, leaving the router untouched, if the saved
+ * configuration cannot be loaded. Never loosens the mock/demo restriction:
+ * allowMock is derived from the installation mode exactly as at startup.
+ */
+export function reloadModelRouter(modelRouter, dataDir = getDataDir()) {
+  const { config, allowMock } = readRouterConfig(dataDir);
+  modelRouter.reload(config, { allowMock });
+  return modelRouter;
+}
+
+function readRouterConfig(dataDir) {
   const config = loadModelConfig(dataDir);
   const allowMock = readInstallationMode(dataDir) === 'demo';
 
   if (!config.providers) {
     const secret = config.provider && config.provider !== 'mock' ? readEncryptedFile(`model-${config.provider}`, dataDir) : null;
-    return new ModelRouter({ ...config, apiKey: secret?.apiKey }, { allowMock });
+    return { config: { ...config, apiKey: secret?.apiKey }, allowMock };
   }
 
   const providers = {};
@@ -107,5 +124,5 @@ export function createModelRouter(dataDir = getDataDir()) {
     const secret = readEncryptedFile(`model-provider-${providerConfig.apiKeyRef || name}`, dataDir);
     providers[name] = { ...providerConfig, apiKey: secret?.apiKey };
   }
-  return new ModelRouter({ providers, roles: config.roles, fallback: config.fallback }, { allowMock });
+  return { config: { providers, roles: config.roles, fallback: config.fallback }, allowMock };
 }

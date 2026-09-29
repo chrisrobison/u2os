@@ -48,7 +48,8 @@ Model view's save flow.
 3. **Choose intelligence.** Embeds the existing, self-contained
    `<u2-model>` component unmodified -- the same component the Model nav
    entry uses. Saving here follows that component's own explicit-consent
-   save flow and restart requirement.
+   save flow. The save is hot-reloaded into the running server, so the wizard
+   continues straight on with no restart (see [models](models.md#hot-reload)).
 4. **Connect your world.** Embeds `<u2-connectors>`, restricted (via a
    `filterDomains` property) to just Gmail, Calendar and Contacts -- the
    same connector setup used by the full Connectors view, without

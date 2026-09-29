@@ -17,12 +17,15 @@ by this form; supply keys only through its password field. Keys use the existing
 encrypted vault, are never prefilled or stored by the UI, and the field clears
 on submission or leaving the view. Blank keeps a selected provider's existing key.
 
-Saving requires an explicit server restart followed by browser reload; it is
-not hot reload or proof of connectivity/model quality. The composer remains
-disabled when saved settings await restart, including after browser reload or a
-lost save confirmation discovered through metadata. Advanced multi-provider
-configurations have a read-only role summary here; use the API/config file below
-to edit them. No roles/fallbacks are replaced by the simple form.
+Saving applies immediately: the running server hot-reloads its model router, so
+no restart or browser reload is needed (this is what makes first-run onboarding
+work end to end). It is still not proof of connectivity/model quality, and the
+form sends no test prompt. The composer re-enables itself once the server
+reports a usable planner, including after a lost save confirmation that the
+server nevertheless applied. It stays disabled only while saved settings could
+not be adopted (see below). Advanced multi-provider configurations have a
+read-only role summary here; use the API below to edit them (also applied
+immediately). No roles/fallbacks are replaced by the simple form.
 
 ## Configuring providers (HTTP API)
 
@@ -44,21 +47,30 @@ or, for Anthropic:
 { "provider": "anthropic", "model": "claude-...", "apiKey": "sk-ant-..." }
 ```
 
-The endpoint and model name are stored in `U2OS_HOME/config/config.json`; a supplied API key is encrypted in the existing credential vault under `model-<provider>` and is never returned by `GET /api/model`. Restart U2OS after changing providers. Only an isolated demo home may select `{ "provider": "mock" }`; personal homes reject that choice.
+The endpoint and model name are stored in `U2OS_HOME/config/config.json`; a supplied API key is encrypted in the existing credential vault under `model-<provider>` and is never returned by `GET /api/model`. A successful save takes effect without a restart (see [hot reload](#hot-reload)). Only an isolated demo home may select `{ "provider": "mock" }`; personal homes reject that choice.
 
-`GET /api/model` reports saved `plannerStatus` as `configuration-required`, `configured`, or `demo`, plus the booted router's `runtimePlannerStatus` and `restartRequired`. Any successful API save (including key-only changes), or changed non-secret model settings on disk, reports restart required until the server restarts. This metadata is not endpoint reachability. In a personal home with no configured running real/local planner, chat and voice planning return HTTP 503 with an actionable message, no action is proposed, and the agent panel disables its composer. A configured provider can still be unavailable at request time, in which case a sanitized error is reported rather than retrying through a mock.
+`GET /api/model` reports saved `plannerStatus` as `configuration-required`, `configured`, or `demo`, plus the live router's `runtimePlannerStatus` and `restartRequired`. A successful API save (including key-only changes) is adopted by the running router and reports `restartRequired: false`. `restartRequired` is true only if the router could not adopt a save, or if the non-secret model settings on disk were changed outside the API (for example by editing `config.json`), since the server does not watch that file. This metadata is not endpoint reachability. In a personal home with no configured running real/local planner, chat and voice planning return HTTP 503 with an actionable message, no action is proposed, and the agent panel disables its composer. A configured provider can still be unavailable at request time, in which case a sanitized error is reported rather than retrying through a mock.
 
 The response also includes a non-secret `configurationRevision`. Sending it in
 either POST shape makes the save conditional: a stale/malformed revision returns
 409 before config/vault writes. The browser always uses it. It hashes redacted
 model configuration (including non-secret vault references), not secret values
 or the whole config file, so key-only
-changes do not alter it; restart state still changes. Legacy API callers may omit
+changes do not alter it, but a key-only save is still hot-reloaded. Legacy API callers may omit
 it and retain unconditional behavior. The UI does not expose key deletion or
-concurrent-secret reconciliation. API runtime planning behavior remains unchanged;
-the browser's pending-restart guard is not a new server execution/policy boundary.
+concurrent-secret reconciliation. The browser's composer guard is not a new server execution/policy boundary.
 
-The same endpoint also accepts the multi-provider shape shown below. Provider API keys may be supplied inside their provider entries; they are removed from `config.json` and encrypted in the vault. Changes currently require a restart.
+The same endpoint also accepts the multi-provider shape shown below. Provider API keys may be supplied inside their provider entries; they are removed from `config.json` and encrypted in the vault. Changes are hot-reloaded like the single-provider shape.
+
+### Hot reload
+
+`POST /api/model` writes the configuration, then calls `ModelRouter.reload()` with the freshly read config and vault secrets. The response reports `reloaded: true` and `restartRequired: false` when the running router adopted it. Properties:
+
+- **Atomic.** The config and the provider cache are swapped together, so no call sees a new config with a stale cached provider. A provider instance a call already holds finishes on it; the next `resolve()` builds from the new config, even for a key-only change.
+- **Same restrictions.** Reload derives `allowMock` from the installation mode exactly as startup does, so a save can never enable the mock planner in a personal home, and it changes no policy or data-processing rule.
+- **Embeddings follow.** After a reload the context assembler re-resolves the `embeddings` role, so semantic ranking is enabled, changed or turned off with the new config.
+- **Honest on failure.** If the reload throws, the previous router keeps serving, the response has `reloaded: false` and `restartRequired: true`, and `GET /api/model` keeps reporting it until a later save is adopted or the server restarts.
+- **Not watched.** Editing `config.json` by hand is not picked up; restart U2OS (or save through the API) to apply it.
 
 ## ModelRouter and roles
 

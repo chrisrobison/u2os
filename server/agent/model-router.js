@@ -32,6 +32,32 @@ export class ModelRouter {
     this.createProvider = createProvider;
     this.allowMock = allowMock;
     this._cache = new Map();
+    this._reloadListeners = new Set();
+  }
+
+  /**
+   * Hot reload: adopt a new config without restarting the process. The config
+   * is normalized first, so an invalid one throws before anything changes and
+   * the previous config stays in force. The swap itself is synchronous, so no
+   * resolve() can observe a new config with old cached providers. Calls that
+   * already hold a provider finish on it; the next resolve() builds from the
+   * new config. Listeners run after the swap, and a failing listener never
+   * undoes a completed reload.
+   */
+  reload(config = {}, { allowMock = this.allowMock } = {}) {
+    const next = normalizeConfig(config);
+    this.config = next;
+    this.allowMock = allowMock;
+    this._cache = new Map();
+    for (const listener of this._reloadListeners) {
+      try { listener(this); } catch (error) { console.error(`[model-router] reload listener failed: ${error?.message || error}`); }
+    }
+  }
+
+  /** Subscribe to completed reloads (e.g. to re-resolve a captured provider). Returns an unsubscribe function. */
+  onReload(listener) {
+    this._reloadListeners.add(listener);
+    return () => this._reloadListeners.delete(listener);
   }
 
   /** @returns {import('./model-provider.js').ModelProvider} */
@@ -68,7 +94,7 @@ export class ModelRouter {
       throw new Error(`ModelRouter: role "${role}" references unknown provider "${providerName}"`);
     }
     if (!this.allowMock && isMock(providerConfig)) {
-      const error = new Error('Planner unavailable: configure a local or remote model for personal mode, then restart U2OS');
+      const error = new Error('Planner unavailable: configure a local or remote model for personal mode');
       error.code = 'MODEL_UNAVAILABLE';
       error.status = 503;
       throw error;

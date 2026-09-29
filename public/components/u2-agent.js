@@ -47,6 +47,21 @@ export class U2Agent extends HTMLElement {
     if (this._voiceMode) this._stopVoice();
   }
 
+  // Counterpart of _disablePlanner for when the server reports a usable planner
+  // (e.g. right after a model save is hot-reloaded), so the owner never has to
+  // reload the browser. Mic availability still follows browser support.
+  _enablePlanner() {
+    if (!this._plannerUnavailable) return;
+    this._plannerUnavailable = false;
+    this._input.disabled = false; this._sendBtn.disabled = false;
+    const support = AudioPipeline.supported;
+    this._micBtn.disabled = !(support.mic && support.audioContext && support.recognition);
+  }
+
+  _hidePlannerNotice() {
+    if (/^(Saved model settings|Planner unavailable|Planner status unavailable|Demo planner)/.test(this._notice.textContent)) this._notice.hidden = true;
+  }
+
   async _loadPlannerStatus() {
     const generation = this._modelStatusGeneration = (this._modelStatusGeneration || 0) + 1;
     try {
@@ -54,13 +69,17 @@ export class U2Agent extends HTMLElement {
       if (!this.isConnected || generation !== this._modelStatusGeneration) return;
       if (model.restartRequired || (model.runtimePlannerStatus || model.plannerStatus) === 'configuration-required') {
         this._disablePlanner();
-        this._notice.textContent = model.restartRequired ? 'Model settings changed. Restart U2OS before planning with saved settings. Review ' : 'Planner unavailable. Configure a local or remote model in ';
+        this._notice.textContent = model.restartRequired ? 'Saved model settings are not in use by the running planner. Review ' : 'Planner unavailable. Configure a local or remote model in ';
         const setup = document.createElement('a'); setup.href = '#/model'; setup.textContent = 'Model setup';
-        this._notice.append(setup, ', then restart U2OS.');
+        this._notice.append(setup, model.restartRequired ? ' (a restart applies settings edited outside the app).' : '.');
         this._notice.hidden = false;
       } else if (model.plannerStatus === 'demo') {
+        this._enablePlanner();
         this._notice.textContent = 'Demo planner: responses and actions use deterministic fixtures, not personal reasoning.';
         this._notice.hidden = false;
+      } else {
+        this._enablePlanner();
+        this._hidePlannerNotice();
       }
     } catch {
       if (!this.isConnected || generation !== this._modelStatusGeneration) return;

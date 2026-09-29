@@ -1,7 +1,8 @@
 import { getModelStatus, saveModelConfiguration } from '../services/api.js';
 
-// Explicit owner configuration only: no endpoint probing, model calls, secret
-// retrieval, hot reload or automatic restart. Advanced configs are read-only.
+// Explicit owner configuration only: no endpoint probing, model calls or secret
+// retrieval. A successful save is applied to the running server immediately
+// (server-side hot reload); no restart. Advanced configs are read-only.
 export class U2Model extends HTMLElement {
   connectedCallback() { this._generation = (this._generation || 0) + 1; this._load(this._generation); }
   disconnectedCallback() { this._generation++; if (this._key) this._key.value = ''; }
@@ -22,15 +23,15 @@ export class U2Model extends HTMLElement {
   _render(config) {
     this.innerHTML = `
       <div class="workspace__header"><div class="workspace__title">Model setup</div></div>
-      <p>Saved configuration is not a connection test or proof that the running planner uses it. Changes take effect only after you restart U2OS.</p>
+      <p>Saving applies your changes to the running planner immediately, with no restart. It is not a connection test: reachability is only checked when the planner is first used.</p>
       <p>Choose an endpoint and model you control or explicitly trust. Remote models may receive context allowed by your privacy policies; setup itself sends no model requests.</p>
       <p class="model-status" role="status"></p>
       <div class="model-content"></div>`;
     this.querySelector('.model-status').textContent = config.plannerStatus === 'configuration-required' ? 'Personal planner requires configuration.' : config.plannerStatus === 'demo' ? 'Saved demo planner: isolated fixtures, not personal reasoning.' : 'Planning adapter is configured in saved settings; reachability has not been checked.';
-    if (config.restartRequired) this.querySelector('.model-status').append(' Restart is still required; the running planner has not adopted saved changes.');
+    if (config.restartRequired) this.querySelector('.model-status').append(' The running planner has not adopted the saved changes (they may have been edited outside this form); restart U2OS to apply them.');
     const content = this.querySelector('.model-content');
     if (config.providers || config.roles || (config.provider && !['mock', 'openai-compatible', 'anthropic'].includes(config.provider))) {
-      const note = document.createElement('p'); note.textContent = 'Advanced model configuration is read-only here. This form will not replace provider roles or fallback settings. Use the existing model API or config file to edit them, then restart.';
+      const note = document.createElement('p'); note.textContent = 'Advanced model configuration is read-only here. This form will not replace provider roles or fallback settings. Use the existing model API to edit them (applied immediately); after editing the config file directly, restart U2OS.';
       const list = document.createElement('ul');
       for (const [role, name] of Object.entries(config.roles || {})) {
         const row = document.createElement('li'); row.textContent = `${role}: ${name}`; list.appendChild(row);
@@ -46,7 +47,7 @@ export class U2Model extends HTMLElement {
         <label class="connector-field">API key (optional)<input name="apiKey" type="password" autocomplete="off"></label>
         <p>Keys use the encrypted server vault, are never loaded into this form, and are cleared from this input when submitted or you leave the view. Leave blank to keep the selected provider's existing key. A key may be unnecessary for a local endpoint.</p>
         <p class="model-key-status"></p>
-        <p>OpenAI-compatible requires an HTTP(S) endpoint; Anthropic can leave it blank to use its existing adapter default. Saving neither restarts U2OS nor sends a test prompt.</p>
+        <p>OpenAI-compatible requires an HTTP(S) endpoint; Anthropic can leave it blank to use its existing adapter default. Saving applies immediately without restarting U2OS, and sends no test prompt.</p>
         <button type="submit" class="btn">Save model configuration</button>
         <p class="model-save-status" role="status" aria-live="polite"></p>
       </form>`;
@@ -84,10 +85,25 @@ export class U2Model extends HTMLElement {
     try {
       const result = await saveModelConfiguration(payload);
       if (!this.isConnected || generation !== this._generation) return;
-      if (result?.configured !== true || result.restartRequired !== true) throw new Error('Unconfirmed save');
-      this.querySelector('.model-status').textContent = 'Saved configuration changed; restart is required. Running planner and reachability have not been changed or checked.';
+      if (result?.configured !== true) throw new Error('Unconfirmed save');
+      if (result.reloaded === true && result.restartRequired !== true) {
+        // Applied to the running server. Re-read the saved configuration so a
+        // further edit starts from the current revision instead of a stale one.
+        // A failed refresh must not be reported as a failed save.
+        let fresh = null;
+        try { fresh = await getModelStatus(); } catch { /* fall through to the reload hint */ }
+        if (!this.isConnected || generation !== this._generation) return;
+        if (typeof fresh?.configurationRevision === 'string' && /^[a-f0-9]{64}$/.test(fresh.configurationRevision)) {
+          this._render(fresh);
+          this.querySelector('.model-save-status').textContent = 'Saved and applied to the running planner; no restart needed. Reachability has not been tested.';
+        } else {
+          status.textContent = 'Saved and applied to the running planner. Reload this view before editing again.';
+        }
+        return;
+      }
+      this.querySelector('.model-status').textContent = 'Saved, but the running server could not adopt the change; restart is required. Reachability has not been checked.';
       form.querySelector('.model-key-status').textContent = 'Reload this view to inspect current key-presence metadata; stored key values are never available here.';
-      status.textContent = 'Configuration saved. Restart U2OS yourself, then reload the browser. Reachability and planning have not been tested; the running planner has not been changed.';
+      status.textContent = 'Configuration saved but not applied. Restart U2OS, then reload the browser.';
       // Keep controls disabled: a second save requires reloading the current
       // revision, and must never reuse the now-stale snapshot.
     } catch {
