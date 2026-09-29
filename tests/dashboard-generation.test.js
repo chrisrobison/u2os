@@ -75,6 +75,20 @@ test('generateDashboard({context: "morning"}) returns a schema that passes valid
   }
 });
 
+test('morning dashboard omits email bodies so oversized mail cannot exceed the component limit', () => {
+  const dir = tempHome();
+  try {
+    seedDemoData();
+    getDb().prepare("INSERT INTO emails (id, from_addr, to_addr, subject, body, folder, is_read, received_at, created_at) VALUES ('huge-1', 'a@example.com', '[]', 'Big', ?, 'inbox', 0, datetime('now'), datetime('now'))")
+      .run('x'.repeat(200000));
+    const schema = generateDashboard({ context: 'morning' });
+    const email = schema.components.find((item) => item.type === 'email-summary');
+    assert.ok(email.data.emails.every((row) => !('body' in row)));
+  } finally {
+    cleanup(dir);
+  }
+});
+
 test('the shared dashboard source registry resolves every allowlisted source and rejects unknown names', () => {
   const dir = tempHome();
   try {
