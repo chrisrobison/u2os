@@ -62,8 +62,8 @@ export class U2Onboarding extends HTMLElement {
       </ol>
       <div class="dashboard-card onboarding-step" data-step-body></div>
       <div class="onboarding-nav">
-        <button type="button" data-prev ${this._step === 0 ? 'disabled' : ''}>Back</button>
-        ${last ? '' : '<button type="button" data-skip>Skip for now</button>'}
+        <button type="button" class="btn" data-prev ${this._step === 0 ? 'disabled' : ''}>Back</button>
+        ${last ? '' : '<button type="button" class="btn" data-skip>Skip for now</button>'}
         ${last ? '' : '<button type="button" class="btn btn-primary" data-next>Next</button>'}
       </div>
     `;
