@@ -32,17 +32,23 @@ const readConfig = (dedicated) => {
   return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
 };
 
-test('fresh personal owner saves encrypted model setup through notice, stays unavailable across browser reload, and adopts it only after explicit server restart', async ({ page }) => withPage(page, async (dedicated) => {
+test('fresh personal owner saves encrypted model setup and the running planner adopts it immediately, without a restart or browser reload', async ({ page }) => withPage(page, async (dedicated) => {
   await expect(page.locator('.agent-panel__input')).toBeDisabled(); await page.getByRole('link', { name: 'Model setup', exact: true }).click();
   await expect(page.locator('u2-model .model-status')).toContainText('requires configuration');
   const secret = 'fixture-model-key-not-browser-storage'; await fill(page, secret);
   await page.getByRole('button', { name: 'Save model configuration', exact: true }).click();
-  await expect(page.locator('.model-save-status')).toContainText('Restart U2OS yourself'); await expect(page.locator('u2-model input[name="apiKey"]')).toHaveValue('');
-  await expect(page.locator('.agent-panel__input')).toBeDisabled(); await expect(page.locator('.agent-panel')).toContainText('Model settings changed');
+  await expect(page.locator('.model-save-status')).toContainText('Saved and applied'); await expect(page.locator('u2-model input[name="apiKey"]')).toHaveValue('');
+  await expect(page.locator('.agent-panel__input')).toBeEnabled(); await expect(page.locator('.agent-panel__notice')).toBeHidden();
+  await expect(page.locator('u2-model')).not.toContainText('Restart U2OS yourself');
   expect(readConfig(dedicated)).not.toContain(secret); expect(readEncryptedFile('model-openai-compatible', dedicated._dataDir).apiKey).toBe(secret);
   const state = await page.evaluate(async () => ({ model: await (await fetch('/api/model')).json(), storage: JSON.stringify([localStorage, sessionStorage]) }));
-  expect(JSON.stringify(state)).not.toContain(secret); expect(state.model.runtimePlannerStatus).toBe('configuration-required'); expect(state.model.restartRequired).toBe(true);
-  await page.reload(); await expect(page.locator('u2-model .model-status')).toContainText('Restart is still required'); await expect(page.locator('.agent-panel__input')).toBeDisabled();
+  expect(JSON.stringify(state)).not.toContain(secret); expect(state.model.runtimePlannerStatus).toBe('configured'); expect(state.model.restartRequired).toBe(false);
+  // The form was refreshed to the current revision, so a further edit needs no reload.
+  await page.locator('u2-model input[name="model"]').fill('fixture-second-planner');
+  await page.getByRole('button', { name: 'Save model configuration', exact: true }).click();
+  await expect(page.locator('.model-save-status')).toContainText('Saved and applied');
+  await page.reload(); await expect(page.locator('u2-model .model-status')).toContainText('reachability has not been checked'); await expect(page.locator('.agent-panel__input')).toBeEnabled();
+  // An ordinary restart still lands on the same saved configuration.
   await page.goto('about:blank'); await dedicated.handle.shutdown(); dedicated.handle = await startServer({ port: 0 }); dedicated.baseURL = `http://127.0.0.1:${dedicated.handle.port}`;
   await page.goto(`${dedicated.baseURL}/#/model`); await expect(page.locator('u2-model .model-status')).toContainText('reachability has not been checked');
   await expect(page.locator('.agent-panel__input')).toBeEnabled(); await expect(page.locator('u2-model input[name="apiKey"]')).toHaveValue('');
@@ -95,13 +101,13 @@ test('leaving an unsaved view clears its detached key input without changing con
 
 test('Anthropic setup uses existing default endpoint and does not create or expose a key when left blank', async ({ page }) => withPage(page, async (dedicated) => {
   await open(page); await page.locator('u2-model select[name="provider"]').selectOption('anthropic'); await page.locator('u2-model input[name="model"]').fill('fixture-anthropic-model');
-  await page.getByRole('button', { name: 'Save model configuration', exact: true }).click(); await expect(page.locator('.model-save-status')).toContainText('Configuration saved');
+  await page.getByRole('button', { name: 'Save model configuration', exact: true }).click(); await expect(page.locator('.model-save-status')).toContainText('Saved and applied');
   const config = JSON.parse(readConfig(dedicated)).model; expect(config.provider).toBe('anthropic'); expect(config.baseUrl).toBeUndefined(); expect(config.apiKey).toBeUndefined();
   expect(readEncryptedFile('model-anthropic', dedicated._dataDir)).toBeNull();
   await page.reload(); await expect(page.locator('u2-model select[name="provider"]')).toHaveValue('anthropic'); await expect(page.locator('.model-key-status')).toContainText('No key is reported');
 }));
 
-test('a saved POST with a lost confirmation disables the previously running composer after metadata refresh without retrying', async ({ page }) => withPage(page, async (dedicated) => {
+test('a saved POST with a lost confirmation leaves the composer usable, because the server already applied it, and never retries', async ({ page }) => withPage(page, async (dedicated) => {
   expect((await api(page, { provider: 'openai-compatible', baseUrl: 'http://127.0.0.1:9', model: 'fixture-original-model' })).status).toBe(200);
   await page.goto('about:blank'); await dedicated.handle.shutdown(); dedicated.handle = await startServer({ port: 0 }); dedicated.baseURL = `http://127.0.0.1:${dedicated.handle.port}`;
   await page.goto(dedicated.baseURL); await expect(page.locator('.agent-panel__input')).toBeEnabled(); await open(page); await fill(page); let saves = 0;
@@ -112,7 +118,8 @@ test('a saved POST with a lost confirmation disables the previously running comp
   });
   await page.getByRole('button', { name: 'Save model configuration', exact: true }).click();
   await expect(page.locator('.model-save-status')).toContainText('Save could not be confirmed');
-  await expect(page.locator('.agent-panel__input')).toBeDisabled(); await expect(page.locator('.agent-panel')).toContainText('Model settings changed');
+  await expect(page.locator('.agent-panel__input')).toBeEnabled(); await expect(page.locator('.agent-panel__notice')).toBeHidden();
   expect(saves).toBe(1); expect(JSON.parse(readConfig(dedicated)).model.model).toBe('fixture-unreachable-planner');
+  expect(dedicated.handle.modelRouter.resolve('planner').model).toBe('fixture-unreachable-planner');
   await expect(page.locator('u2-model')).not.toContainText('fixture-private-lost-save-confirmation');
 }));

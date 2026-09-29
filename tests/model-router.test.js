@@ -197,3 +197,39 @@ test('model-call accounting includes each primary and fallback provider attempt'
     if (++calls > 1) { const error = new Error('model limit'); error.code = 'MODEL_CALL_LIMIT'; throw error; }
   } }, 'test'), { code: 'MODEL_CALL_LIMIT' });
 });
+
+test('reload() swaps config and drops cached providers, while providers already handed out are untouched', () => {
+  const router = new ModelRouter({ providers: { a: { type: 'mock', tag: 'old' } }, roles: { planner: 'a' } }, { createProvider: (cfg) => fakeProvider(cfg.tag) });
+  const held = router.resolve('planner');
+  assert.equal(held.id, 'old');
+  router.reload({ providers: { a: { type: 'mock', tag: 'new' } }, roles: { planner: 'a' } });
+  assert.equal(router.resolve('planner').id, 'new', 'same provider name must not hit the pre-reload cache');
+  assert.equal(held.id, 'old');
+  assert.deepEqual(router.listRoles(), ['planner']);
+});
+
+test('reload() accepts the legacy single-provider shape and can change allowMock', () => {
+  const router = new ModelRouter({ providers: { a: { type: 'mock' } }, roles: { planner: 'a' } }, { createProvider: (cfg) => fakeProvider(cfg.type), allowMock: true });
+  router.reload({ provider: 'openai-compatible', baseUrl: 'http://127.0.0.1:1', model: 'm' }, { allowMock: false });
+  assert.equal(router.config.providers.default.type, 'openai-compatible');
+  assert.equal(router.allowMock, false);
+  assert.equal(router.resolve('planner').id, 'openai-compatible');
+  // Omitting options keeps the router's existing allowMock rather than silently re-enabling mocks.
+  router.reload({ provider: 'mock' });
+  assert.equal(router.allowMock, false);
+  assert.throws(() => router.resolve('planner'), (error) => error.code === 'MODEL_UNAVAILABLE');
+});
+
+test('onReload() listeners run after the swap, can unsubscribe, and a failing listener never undoes the reload', () => {
+  const router = new ModelRouter({ providers: { a: { type: 'mock', tag: 'v1' } }, roles: { planner: 'a' } }, { createProvider: (cfg) => fakeProvider(cfg.tag) });
+  const seen = [];
+  const off = router.onReload((r) => seen.push(r.resolve('planner').id));
+  router.onReload(() => { throw new Error('fixture listener failure'); });
+  const originalError = console.error; console.error = () => {};
+  try { router.reload({ providers: { a: { type: 'mock', tag: 'v2' } }, roles: { planner: 'a' } }); } finally { console.error = originalError; }
+  assert.deepEqual(seen, ['v2'], 'listener sees the new config');
+  assert.equal(router.resolve('planner').id, 'v2');
+  off();
+  router.reload({ providers: { a: { type: 'mock', tag: 'v3' } }, roles: { planner: 'a' } });
+  assert.deepEqual(seen, ['v2']);
+});

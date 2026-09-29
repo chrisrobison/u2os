@@ -189,14 +189,16 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
   // 'embeddings' would hand ContextAssembler something whose .embed() does
   // not exist. Only resolve when an `embeddings` role was EXPLICITLY
   // configured (the multi-provider config shape).
-  let embeddingProvider = null;
-  if (modelRouter.listRoles().includes('embeddings')) {
+  const resolveEmbeddingProvider = () => {
+    if (!modelRouter.listRoles().includes('embeddings')) return null;
     try {
-      embeddingProvider = modelRouter.resolve('embeddings');
+      return modelRouter.resolve('embeddings');
     } catch {
       // misconfigured -- semantic ranking simply stays off, never crashes startup.
+      return null;
     }
-  }
+  };
+  let embeddingProvider = resolveEmbeddingProvider();
 
   const demoOwnerEntityId = installationMode === 'demo' ? runSeed({ eventBus }) : null;
   const ownerEntityId = auth.ensureOwnerEntityLink()?.id || null;
@@ -216,6 +218,13 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
   ensureConnectionInstancesMigrated({ db, dataDir });
 
   const agent = new Agent({ modelRouter, policyEngine, toolRegistry, eventBus, ownerEntityId, embeddingProvider, dataProcessingPolicy });
+  // Saving model settings hot-reloads the router (see registerModelRoutes). The
+  // context assembler captured its embeddings provider at construction, so
+  // re-point it; otherwise semantic ranking would keep the pre-save provider.
+  modelRouter.onReload(() => {
+    embeddingProvider = resolveEmbeddingProvider();
+    agent.contextAssembler.embeddingProvider = embeddingProvider;
+  });
   // Package platform (docs/plugin-architecture.md): installed packages'
   // capabilities, skills and automations, invoking through the agent's gate.
   const packages = createPackagePlatform({ agent, eventBus, dataDir });
@@ -400,7 +409,7 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
 
   log.info('server', 'U2OS server listening', { bind: resolvedBind, port: boundPort, dataDir, dbPath });
 
-  return { server, port: boundPort, bind: resolvedBind, dataDir, dbPath, agent, eventBus, toolRegistry, policyEngine, auth, packages, mdns: mdnsHandle, deviceRegistry, capabilityRegistry, streamRegistry, stopActionQueue, stopBackgroundWorkers, drainRequests };
+  return { server, port: boundPort, bind: resolvedBind, dataDir, dbPath, agent, modelRouter, eventBus, toolRegistry, policyEngine, auth, packages, mdns: mdnsHandle, deviceRegistry, capabilityRegistry, streamRegistry, stopActionQueue, stopBackgroundWorkers, drainRequests };
 }
 
 function readConfig(dataDir) { try { return JSON.parse(fs.readFileSync(path.join(dataDir, 'config', 'config.json'), 'utf8')); } catch { return {}; } }

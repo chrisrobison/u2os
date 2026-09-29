@@ -1,5 +1,5 @@
 import { sendJson } from '../router.js';
-import { loadModelConfig, saveModelConfig, saveMultiProviderConfig } from '../../agent/provider-config.js';
+import { loadModelConfig, saveModelConfig, saveMultiProviderConfig, reloadModelRouter } from '../../agent/provider-config.js';
 import { readEncryptedFile } from '../../security/vault.js';
 import { readInstallationMode } from '../../seed/installation-mode.js';
 import { createHash } from 'node:crypto';
@@ -8,16 +8,36 @@ const PROVIDERS_REQUIRING_MODEL = ['openai-compatible', 'anthropic'];
 
 export function registerModelRoutes(router, { modelRouter } = {}) {
   const initialConfig = loadModelConfig();
-  const initialRevision = configurationRevision(initialConfig);
+  // Revision of the config the running router is using. A save hot-reloads the
+  // router and advances it; only a save the router could not adopt leaves the
+  // server needing a restart. (Without a router, e.g. a bare test harness,
+  // every save still requires one.)
+  let runningRevision = configurationRevision(initialConfig);
+  let pendingRestart = false;
   const demo = readInstallationMode() === 'demo';
-  const runtimePlannerStatus = plannerStatus(modelRouter?.config || initialConfig, demo);
-  let savedSinceStart = false;
+  // Adopts what was just saved. Returns true when the running planner now uses
+  // it. On failure the previous router keeps serving and the owner is told the
+  // truth via restartRequired.
+  const adoptSaved = () => {
+    if (!modelRouter?.reload) { pendingRestart = true; return false; }
+    try {
+      reloadModelRouter(modelRouter);
+      runningRevision = configurationRevision(loadModelConfig());
+      pendingRestart = false;
+      return true;
+    } catch (error) {
+      console.error(`[model] saved configuration could not be hot-reloaded: ${error?.message || error}`);
+      pendingRestart = true;
+      return false;
+    }
+  };
   router.get('/api/model', async (_req, res) => {
     const config = loadModelConfig();
     const apiKeyConfigured = config.provider && config.provider !== 'mock' ? Boolean(readEncryptedFile(`model-${config.provider}`)?.apiKey) : false;
     const revision = configurationRevision(config);
-    sendJson(res, 200, { ...redactSecrets(config), apiKeyConfigured, plannerStatus: plannerStatus(config, demo), runtimePlannerStatus,
-      restartRequired: savedSinceStart || revision !== initialRevision, configurationRevision: revision });
+    sendJson(res, 200, { ...redactSecrets(config), apiKeyConfigured, plannerStatus: plannerStatus(config, demo),
+      runtimePlannerStatus: plannerStatus(modelRouter?.config || initialConfig, demo),
+      restartRequired: pendingRestart || revision !== runningRevision, configurationRevision: revision });
   });
   router.post('/api/model', async (req, res) => {
     // Optional optimistic concurrency for owner setup forms. No model or vault
@@ -30,8 +50,8 @@ export function registerModelRoutes(router, { modelRouter } = {}) {
       try {
         const { config, secrets } = validateMultiProvider(req.body);
         saveMultiProviderConfig(config, secrets);
-        savedSinceStart = true;
-        return sendJson(res, 200, { configured: true, restartRequired: true, mode: 'multi-provider' });
+        const reloaded = adoptSaved();
+        return sendJson(res, 200, { configured: true, reloaded, restartRequired: !reloaded, mode: 'multi-provider' });
       } catch (err) {
         return sendJson(res, 400, { error: err.message });
       }
@@ -62,8 +82,8 @@ export function registerModelRoutes(router, { modelRouter } = {}) {
       { provider, ...(PROVIDERS_REQUIRING_MODEL.includes(provider) ? { baseUrl, model, timeoutMs: Number(timeoutMs) || 30000 } : {}) },
       apiKey
     );
-    savedSinceStart = true;
-    sendJson(res, 200, { configured: true, restartRequired: true, provider });
+    const reloaded = adoptSaved();
+    sendJson(res, 200, { configured: true, reloaded, restartRequired: !reloaded, provider });
   });
 }
 
