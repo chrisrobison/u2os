@@ -38,10 +38,26 @@ button press within that step, the same explicit-consent spirit as the
 Model view's save flow.
 
 1. **Where your vault lives.** Shows the current `vaultDir`
-   (`GET /api/vault`) and an optional form to relocate it
-   (`POST /api/vault/location`). Relocation only succeeds while the current
-   vault is empty (see below); leaving the field blank and continuing keeps
-   the default location.
+   (`GET /api/vault`). To use a different folder, enter its path and press
+   **Check folder**: U2OS reports what it found (`GET /api/vault/inspect`)
+   before anything changes.
+   - *Does not exist* or *empty*: set up as a new vault.
+   - *An existing vault* (it has `me.md`, `policies.yaml`, `mcp.yaml`, or any
+     of `people/`, `projects/`, `commitments/`, `routines/`, `skills/`): the
+     counts are shown and **Use this vault** adopts it. U2OS reads its files
+     as they are; it never edits, moves or deletes them, and may only add
+     missing standard folders and a `README.md`. A `policies.yaml` in it
+     applies immediately. If it declares tool servers (`mcp.yaml`), they are
+     programs that would run on this computer, so they start **only** if you
+     tick the checkbox; the previous vault's tool servers are unloaded.
+   - *A folder with other files*: it needs the explicit **Use this folder
+     anyway** confirmation; U2OS then adds the standard folders inside it and
+     leaves your files alone.
+   - Your previous vault's files are left where they are. Leaving the field
+     blank and continuing keeps the current location.
+   Switching is allowed while setup is still in progress even if the current
+   vault already has content; once setup is complete a populated vault is
+   protected and the switch is refused (`VAULT_NOT_EMPTY`).
 2. **Who you are.** A plain-text editor over `me.md`'s raw content
    (`GET`/`PUT /api/vault/me`). Frontmatter keys become facts U2OS can use,
    exactly as in the rest of the vault (see [vault.md](vault.md)).
@@ -88,7 +104,23 @@ All routes are owner-only, like the rest of the vault API.
   not `null`) is that specific reindex error for `me.md` -- for example an
   unrecognized `classification` value -- so the wizard can show it instead
   of silently accepting a broken save.
-- `POST /api/vault/location` -- body `{ vaultDir: string }`. Relocates the
+- `GET /api/vault/inspect?path=` -- read-only summary of a candidate folder:
+  `exists`, `isDirectory`, `empty` (ignoring `.git` and `.DS_Store`),
+  `writable`, `looksLikeVault`, `hasMe`, `hasPolicies`, `hasMcp`, per-folder
+  Markdown `counts`, declared `mcpServers` names (parsed, never started) and
+  any `mcpError`, plus `envOverride` and `current`. It returns names and
+  counts only, never file contents, and creates and runs nothing.
+- `POST /api/vault/location` with `adopt: true` -- body `{ vaultDir, adopt:
+  true, useNonEmpty?: boolean, startToolServers?: boolean }`. Switches to an
+  existing vault, or any folder with `useNonEmpty`, without modifying its
+  files. Refuses a non-empty folder that does not look like a vault unless
+  `useNonEmpty` is set (`409 TARGET_NOT_A_VAULT`); a file
+  (`TARGET_NOT_DIRECTORY`) and an unwritable folder (`TARGET_NOT_WRITABLE`) are
+  refused as below. The previous vault's tool servers are always unloaded; the
+  new vault's start only with `startToolServers`. Returns `previousVaultDir`,
+  the `inspection`, the reindex `report` and the `mcp` status. Choosing the
+  current location returns `unchanged: true`.
+- `POST /api/vault/location` (without `adopt`) -- body `{ vaultDir: string }`. Relocates the
   vault by writing `vaultDir` into `config.json`, but **only when the
   current vault is empty** (no `me.md`, no facts sourced from the vault).
   This never deletes or moves existing files; it only changes where U2OS
@@ -116,6 +148,13 @@ All routes are owner-only, like the rest of the vault API.
   present, the same never-overwrite semantics #412 established.
 
 ## Testing
+
+- `tests/onboarding-api.test.js` also covers `GET /api/vault/inspect` (no
+  content returned, nothing launched), adopting an existing vault with files
+  byte-identical and the old vault untouched, the non-vault confirmation,
+  the onboarding-complete guard, and tool servers starting only on opt-in.
+- `tests/e2e/onboarding-vault.spec.js` drives the step 1 UI for an existing
+  vault (its `me.md` appears in step 2), a non-vault folder, and a new folder.
 
 - `tests/onboarding-api.test.js` covers all four route groups: onboarding
   status get/set, `me.md` read/write with reindex-on-write and rejection of

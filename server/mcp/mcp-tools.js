@@ -3,7 +3,7 @@ import { log } from '../logging/logger.js';
 import { getVaultDir } from '../vault/vault-dir.js';
 import { setObservationFloor } from '../agent/observation-filter.js';
 import { McpClient } from './client.js';
-import { loadMcpConfig } from './config.js';
+import { loadMcpConfig, mcpConfigPath } from './config.js';
 
 // MCP servers declared in the owner's vault (docs/mcp.md, ADR 0009) become
 // ordinary planner-visible tools named `<server>.<tool>`. Nothing about the
@@ -138,6 +138,18 @@ export async function startMcpServers({ toolRegistry, vaultDir = getVaultDir() }
     }
   }));
   return getMcpStatus();
+}
+
+/**
+ * Stops every running server and unregisters its tools, without starting
+ * anything. Used when the vault changes: servers declared by the previous
+ * vault must not keep serving, and the new vault's servers start only when the
+ * owner asks (they are programs its mcp.yaml would launch).
+ */
+export async function unloadMcpServers({ toolRegistry, vaultDir = getVaultDir() } = {}) {
+  await stopMcpServers();
+  for (const tool of toolRegistry.list()) if (tool instanceof McpTool) toolRegistry.unregister(tool.name);
+  state = { path: mcpConfigPath(vaultDir), error: null, servers: [] };
 }
 
 export async function stopMcpServers() {
