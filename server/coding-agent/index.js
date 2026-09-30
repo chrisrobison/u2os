@@ -22,5 +22,3 @@ export function createCodingAgentRegistry({ configLoader = loadCodingAgentConfig
 export function createCodingAgentService({ eventBus = null, configLoader } = {}) {
   return new CodingAgentService({ registry: createCodingAgentRegistry({ configLoader }), eventBus });
 }
-
-export { CAPABILITY_ID } from './types.js';

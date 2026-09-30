@@ -5,7 +5,7 @@
 // It validates the task, resolves a provider through the registry, records
 // the run, executes it through the provider, and publishes events. Callers
 // never touch an adapter and never branch on a vendor.
-import { normalizeTask, CodingAgentError } from './types.js';
+import { normalizeTask, TERMINAL_STATUSES } from './types.js';
 import { resolveWorkingDirectory } from './cwd.js';
 import { redact } from './redact.js';
 import { gitSnapshot, changedFiles } from './git.js';
@@ -97,7 +97,7 @@ export class CodingAgentService {
       });
 
       const after = await gitSnapshot(task.cwd);
-      const status = ['completed', 'failed', 'cancelled', 'needs_input'].includes(outcome.status) ? outcome.status : 'failed';
+      const status = TERMINAL_STATUSES.includes(outcome.status) ? outcome.status : 'failed';
       const final = updateRun(run.id, {
         status,
         exitCode: outcome.exitCode,
@@ -141,5 +141,3 @@ function cap(text, max) {
 function tail(text, max) {
   return typeof text === 'string' && text.length > max ? `…${text.slice(text.length - max + 1)}` : text;
 }
-
-export { CodingAgentError };

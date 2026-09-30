@@ -116,10 +116,10 @@ export class CliCodingAgentProvider extends CodingAgentProvider {
   }
 }
 
-export function firstLine(text) {
+function firstLine(text) {
   return String(text || '').split('\n').map((line) => line.trim()).find(Boolean) || '';
 }
 
-export function lastNonEmptyLine(text) {
+function lastNonEmptyLine(text) {
   return String(text || '').split('\n').map((line) => line.trim()).filter(Boolean).at(-1) || undefined;
 }

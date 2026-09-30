@@ -137,6 +137,10 @@ Actions requested by installed packages ([plugin architecture](plugin-architectu
 
 Package capabilities use their id as `domain.operation` here (`mock.email-send` → domain `mock`, operation `email-send`); with no rule they require confirmation. Audit rows carry `requested_by = package:<id>` and a `package_context` JSON column naming the package, automation, skill, run, step, permission and policy decision. When a queued package action executes, the worker re-checks that the package is still installed, enabled and granted, and blocks it otherwise (or when no package runtime is attached).
 
+## Coding agents
+
+`coding.agent` (domain `coding`, operation `agent`) is consequential and planner-hidden. With no rule it requires confirmation; `coding: { agent: never }` forbids it. A run started by the owner at the terminal is the owner's own action and does not pass the gate; see [coding agents](coding-agents.md#as-a-capability-codingagent).
+
 ## Data-processing privacy policy (separate from the above)
 
 Assistant transcript outputs also inherit a runtime classification floor from the exact filtered inputs used for their model call. The runtime records `private` or `sensitive` on the run; sensitive contributing context, history, summaries or observations tighten the output, and later rounds/continuations cannot lower it. Model JSON cannot supply this authority. Historical assistant turns use the stricter of their stored label and the run floor before each destination's history/summary filtering. Ordinary known-private outputs remain reusable under owner policy.

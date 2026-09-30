@@ -8,7 +8,7 @@
 
 export const CAPABILITY_ID = 'coding.agent';
 
-export const RUN_STATUSES = Object.freeze(['queued', 'running', 'completed', 'failed', 'cancelled', 'needs_input']);
+// queued -> running -> one terminal status. ("created" in the product spec is `queued`.)
 export const TERMINAL_STATUSES = Object.freeze(['completed', 'failed', 'cancelled', 'needs_input']);
 
 export const FILESYSTEM_LEVELS = Object.freeze(['none', 'read', 'project', 'unrestricted']);

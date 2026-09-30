@@ -80,3 +80,17 @@ test('gate: policy never blocks the run', async () => {
     assert.equal(codingAgents.list().length, 0);
   } finally { await cleanup(); }
 });
+
+test('gate: the tool passes only schema fields to the service', async () => {
+  const { project, cleanup, agent, codingAgents } = setup({ coding: { agent: 'autonomous' } });
+  try {
+    const seen = [];
+    const original = codingAgents.run.bind(codingAgents);
+    codingAgents.run = (request) => { seen.push(request); return original(request); };
+    const outcome = await agent.evaluateAndMaybeExecute({ tool: 'coding.agent', arguments: { task: 'x', cwd: project, environment: { EVIL: '1' }, metadata: { a: 1 }, requestedBy: 'spoof' }, requestedBy: 'package:p', actor: { type: 'package', id: 'p' }, reasoningSummary: 'test' });
+    assert.equal(outcome.status, 'executed');
+    assert.equal(seen[0].environment, undefined);
+    assert.equal(seen[0].metadata, undefined);
+    assert.equal(seen[0].requestedBy, 'package:p');
+  } finally { await cleanup(); }
+});

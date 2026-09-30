@@ -46,7 +46,10 @@ export class CodingAgentTool extends Tool {
 
   async execute(args, context = {}) {
     const actor = context.actor ? `${context.actor.type}:${context.actor.id}` : 'unknown';
-    const run = await this._service.run({ ...args, requestedBy: actor, correlationId: context.correlationId || null });
+    // Only the declared fields: a caller cannot add environment variables or
+    // metadata that the capability's schema does not offer.
+    const { task, cwd, provider, preference, permissions, timeout } = args;
+    const run = await this._service.run({ task, cwd, provider, preference, permissions, timeout, requestedBy: actor, correlationId: context.correlationId || null });
     return {
       runId: run.id,
       provider: run.provider,

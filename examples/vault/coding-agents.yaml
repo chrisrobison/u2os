@@ -1,0 +1,13 @@
+# Which coding agents U2OS may launch (docs/coding-agents.md). Copy to the top
+# of your vault. U2OS runs the official CLI; the CLI owns your sign-in.
+default: codex
+preference: [codex, claude-code]
+roots: [~/Projects]          # runs may only work inside these folders
+timeout_seconds: 1800
+providers:
+  codex:
+    enabled: true
+    executable: codex
+  claude-code:
+    enabled: true
+    executable: claude
