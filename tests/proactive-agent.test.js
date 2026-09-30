@@ -150,9 +150,9 @@ test('calendar.event_changed detects authoritative interval conflicts and ignore
   const dir = tempHome();
   try {
     const { db, agent } = buildAgent();
-    const changed = calendarProvider.createEvent({ title: 'Changed meeting', startAt: '2026-10-01T10:00:00.000Z', endAt: '2026-10-01T11:00:00.000Z' });
-    const overlap = calendarProvider.createEvent({ title: 'Existing focus block', startAt: '2026-10-01T05:30:00-05:00', endAt: '2026-10-01T06:30:00-05:00' });
-    calendarProvider.createEvent({ title: 'Later meeting', startAt: '2026-10-01T12:00:00.000Z', endAt: '2026-10-01T13:00:00.000Z' });
+    const changed = calendarProvider.createEvent({ title: 'Changed meeting', startAt: '2031-03-01T10:00:00.000Z', endAt: '2031-03-01T11:00:00.000Z' });
+    const overlap = calendarProvider.createEvent({ title: 'Existing focus block', startAt: '2031-03-01T05:30:00-05:00', endAt: '2031-03-01T06:30:00-05:00' });
+    calendarProvider.createEvent({ title: 'Later meeting', startAt: '2031-03-01T12:00:00.000Z', endAt: '2031-03-01T13:00:00.000Z' });
 
     const conflict = await agent.evaluateEvent({ type: 'calendar.event_changed', subject: { type: 'calendar_event', id: changed.id }, data: { after: changed } });
     assert.equal(conflict.decision, 'notify');
@@ -161,7 +161,7 @@ test('calendar.event_changed detects authoritative interval conflicts and ignore
     assert.equal(conflict.outcome.tool, 'notifications.send');
     assert.equal(db.prepare("SELECT count(*) AS count FROM events WHERE type = 'notification.sent'").get().count, 1);
 
-    const isolated = calendarProvider.createEvent({ title: 'Isolated event', startAt: '2026-10-02T10:00:00.000Z', endAt: '2026-10-02T11:00:00.000Z' });
+    const isolated = calendarProvider.createEvent({ title: 'Isolated event', startAt: '2031-03-02T10:00:00.000Z', endAt: '2031-03-02T11:00:00.000Z' });
     const noConflict = await agent.evaluateEvent({ type: 'calendar.event_changed', subject: { type: 'calendar_event', id: isolated.id }, data: { after: isolated } });
     assert.equal(noConflict.decision, 'ignore');
     assert.equal(db.prepare("SELECT count(*) AS count FROM events WHERE type = 'notification.sent'").get().count, 1);
