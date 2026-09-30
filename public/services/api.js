@@ -519,6 +519,7 @@ export function getOnboardingStatus() { return request('/api/onboarding'); }
 export function completeOnboarding() { return request('/api/onboarding', { method: 'POST', headers: JSON_HEADERS, body: '{}' }); }
 export function getMeFile() { return request('/api/vault/me'); }
 export function saveMeFile(content) { return request('/api/vault/me', { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify({ content }) }); }
-export function relocateVault(vaultDir) { return request('/api/vault/location', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ vaultDir }) }); }
+export function relocateVault(vaultDir, options = {}) { return request('/api/vault/location', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ vaultDir, ...options }) }); }
+export function inspectVault(path) { return request(`/api/vault/inspect?path=${encodeURIComponent(path)}`); }
 export function getStarterRoutines() { return request('/api/vault/starter-routines'); }
 export function installStarterRoutines(ids) { return request('/api/vault/starter-routines', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ ids }) }); }

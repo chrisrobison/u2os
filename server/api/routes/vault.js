@@ -5,7 +5,9 @@ import { getVaultDir, ensureVaultLayout, setVaultDir, DEFAULT_ME_MD } from '../.
 import { indexVault, getLastVaultReport } from '../../vault/indexer.js';
 import { exportMemoryToVault } from '../../vault/exporter.js';
 import { loadPolicies, getPolicySourceStatus } from '../../policy/policies-loader.js';
-import { getMcpStatus, startMcpServers } from '../../mcp/mcp-tools.js';
+import { getMcpStatus, startMcpServers, unloadMcpServers } from '../../mcp/mcp-tools.js';
+import { inspectVaultCandidate } from '../../vault/vault-inspect.js';
+import { getOnboardingStatus } from '../../onboarding/onboarding-config.js';
 import { readJournal } from '../../vault/journal.js';
 import { parseMarkdown, MAX_VAULT_FILE_BYTES } from '../../vault/markdown.js';
 import { getDb, getDataDir } from '../../db/connection.js';
@@ -85,8 +87,24 @@ export function registerVaultRoutes(router, { eventBus, toolRegistry }) {
     sendJson(res, 200, { content, exists: true, report, error: meError });
   });
 
-  // Onboarding step 1: relocate the vault, but only while it is still
-  // empty, so this can never risk an existing owner's data (#413).
+  // Onboarding step 1: choose where the vault lives (#413), or point U2OS at
+  // an existing vault (#423). Choosing never deletes, moves or rewrites a file:
+  // it only changes where U2OS looks.
+  const resolveCandidate = (requested) => {
+    if (typeof requested !== 'string' || !requested.trim()) return { error: { status: 400, body: { error: 'vaultDir is required', code: 'INVALID_INPUT' } } };
+    const resolved = path.resolve(getDataDir(), requested.trim());
+    if (resolved === path.parse(resolved).root) return { error: { status: 400, body: { error: 'vaultDir must not resolve to a filesystem root', code: 'INVALID_INPUT' } } };
+    return { resolved };
+  };
+
+  // Read-only summary of a candidate folder so the owner can see what U2OS
+  // found before committing: names and counts only, nothing is created or run.
+  router.get('/api/vault/inspect', async (req, res) => {
+    const candidate = resolveCandidate(req.query?.path);
+    if (candidate.error) return sendJson(res, candidate.error.status, candidate.error.body);
+    sendJson(res, 200, { ...inspectVaultCandidate(candidate.resolved), envOverride: Boolean(process.env.U2OS_VAULT), current: candidate.resolved === getVaultDir() });
+  });
+
   router.post('/api/vault/location', async (req, res) => {
     if (process.env.U2OS_VAULT) {
       // U2OS_VAULT always overrides config.json's vaultDir in getVaultDir()
@@ -97,22 +115,49 @@ export function registerVaultRoutes(router, { eventBus, toolRegistry }) {
       // effect (docs/onboarding.md).
       return sendJson(res, 409, { error: 'U2OS_VAULT is set and always overrides the configured vault location; unset it to relocate the vault through this API.', code: 'VAULT_ENV_OVERRIDE' });
     }
-    const requested = req.body?.vaultDir;
-    if (typeof requested !== 'string' || !requested.trim()) {
-      return sendJson(res, 400, { error: 'vaultDir is required', code: 'INVALID_INPUT' });
-    }
+    const candidate = resolveCandidate(req.body?.vaultDir);
+    if (candidate.error) return sendJson(res, candidate.error.status, candidate.error.body);
+    const { resolved } = candidate;
     const dataDir = getDataDir();
-    const resolved = path.resolve(dataDir, requested.trim());
-    if (resolved === path.parse(resolved).root) {
-      return sendJson(res, 400, { error: 'vaultDir must not resolve to a filesystem root', code: 'INVALID_INPUT' });
+    const currentVaultDir = getVaultDir();
+    const currentHasContent = () => fs.existsSync(path.join(currentVaultDir, ME_FILE))
+      || Boolean(getDb().prepare("SELECT 1 FROM facts WHERE source LIKE 'vault:%' LIMIT 1").get());
+
+    if (req.body?.adopt === true) {
+      // Explicit owner intent to switch vaults. While onboarding is still in
+      // progress the previous vault may hold content (a saved me.md, starter
+      // routines); its files are left exactly where they are. Once onboarding
+      // is complete a populated vault is protected as before.
+      const inspection = inspectVaultCandidate(resolved);
+      if (resolved === currentVaultDir) return sendJson(res, 200, { vaultDir: resolved, previousVaultDir: currentVaultDir, unchanged: true, inspection, mcp: getMcpStatus() });
+      if (getOnboardingStatus().completed && currentHasContent()) {
+        return sendJson(res, 409, { error: 'The current vault already has records; once setup is complete it cannot be switched from here.', code: 'VAULT_NOT_EMPTY' });
+      }
+      if (inspection.exists && !inspection.isDirectory) return sendJson(res, 400, { error: `${resolved} exists and is not a directory`, code: 'TARGET_NOT_DIRECTORY' });
+      if (inspection.exists && !inspection.writable) return sendJson(res, 400, { error: `${resolved} is not writable`, code: 'TARGET_NOT_WRITABLE' });
+      if (inspection.exists && !inspection.empty && !inspection.looksLikeVault && req.body?.useNonEmpty !== true) {
+        return sendJson(res, 409, { error: `${resolved} has files but does not look like a U2OS vault; confirm to use it anyway`, code: 'TARGET_NOT_A_VAULT' });
+      }
+      if (!inspection.exists) {
+        try { fs.mkdirSync(resolved, { recursive: true }); }
+        catch (error) { return sendJson(res, 400, { error: `Could not create ${resolved}: ${error.message}`, code: 'TARGET_CREATE_FAILED' }); }
+      }
+      setVaultDir(resolved, dataDir);
+      ensureVaultLayout(resolved);
+      // The previous vault's tool servers must not keep serving. The new
+      // vault's own servers are programs its mcp.yaml would launch, so they
+      // start only when the owner asked for that.
+      await unloadMcpServers({ toolRegistry, vaultDir: resolved });
+      if (req.body?.startToolServers === true && inspection.mcpServers.length) await startMcpServers({ toolRegistry, vaultDir: resolved });
+      return sendJson(res, 200, {
+        vaultDir: resolved, previousVaultDir: currentVaultDir, unchanged: false,
+        adopted: inspection.looksLikeVault && !inspection.empty, inspection,
+        report: indexVault({ eventBus }), mcp: getMcpStatus(),
+      });
     }
 
-    const currentVaultDir = getVaultDir();
-    if (fs.existsSync(path.join(currentVaultDir, ME_FILE))) {
-      return sendJson(res, 409, { error: 'The current vault already has me.md; relocation is only allowed for an empty vault.', code: 'VAULT_NOT_EMPTY' });
-    }
-    if (getDb().prepare("SELECT 1 FROM facts WHERE source LIKE 'vault:%' LIMIT 1").get()) {
-      return sendJson(res, 409, { error: 'The current vault already has indexed records; relocation is only allowed for an empty vault.', code: 'VAULT_NOT_EMPTY' });
+    if (currentHasContent()) {
+      return sendJson(res, 409, { error: 'The current vault already has records; relocation is only allowed for an empty vault.', code: 'VAULT_NOT_EMPTY' });
     }
 
     let stat = null;
