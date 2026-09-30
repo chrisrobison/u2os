@@ -11,7 +11,7 @@ export const RESERVED_EVENT_DOMAINS = Object.freeze([
   'agent', 'action', 'run', 'vault', 'routine', 'automation', 'package', 'capability', 'skill', 'workflow',
   'device', 'stream', 'email', 'mail', 'calendar', 'contact', 'contacts', 'task', 'tasks', 'memory', 'commitment',
   'notification', 'user', 'system', 'goal', 'trigger', 'voice', 'connector', 'auth', 'owner', 'recommendation',
-  'feedback', 'presentation', 'message', 'subscription', 'project', 'document', 'purchase', 'location',
+  'feedback', 'coding', 'presentation', 'message', 'subscription', 'project', 'document', 'purchase', 'location',
 ]);
 
 export function isValidEventType(type) {

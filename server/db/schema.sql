@@ -727,3 +727,32 @@ CREATE TABLE IF NOT EXISTS automation_event_cursor (
   last_rowid INTEGER NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+-- Coding agent runs (docs/coding-agents.md). One row per delegated task to an
+-- official coding CLI. Holds what U2OS needs to show and audit a run: the
+-- task, directory, outcome and a redacted, size-capped tail of the output.
+-- Never provider credentials: the provider CLI owns those.
+CREATE TABLE IF NOT EXISTS coding_agent_runs (
+  id TEXT PRIMARY KEY,
+  provider TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued',
+  task TEXT NOT NULL,
+  cwd TEXT NOT NULL,
+  permissions TEXT NOT NULL DEFAULT '{}',
+  requested_by TEXT NOT NULL DEFAULT 'owner',
+  correlation_id TEXT,
+  pid INTEGER,
+  exit_code INTEGER,
+  summary TEXT,
+  output TEXT,
+  stderr TEXT,
+  error TEXT,
+  files_changed TEXT,
+  metadata TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  started_at TEXT,
+  completed_at TEXT,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_coding_agent_runs_created ON coding_agent_runs(created_at);
+CREATE INDEX IF NOT EXISTS idx_coding_agent_runs_status ON coding_agent_runs(status);
