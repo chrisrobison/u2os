@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CodexProvider } from '../server/coding-agent/providers/codex.js';
+import { ClaudeCodeProvider } from '../server/coding-agent/providers/claude-code.js';
 import { createCodingAgentRegistry } from '../server/coding-agent/index.js';
 import { defaultCodingAgentConfig } from '../server/coding-agent/config.js';
 import { normalizeTask } from '../server/coding-agent/types.js';
@@ -24,26 +25,26 @@ before(() => {
 after(() => { fs.rmSync(bin, { recursive: true, force: true }); fs.rmSync(project, { recursive: true, force: true }); });
 
 const codex = (config = {}) => new CodexProvider({ providerConfig: () => ({ executable: path.join(bin, 'codex'), ...config }) });
+const claude = (config = {}) => new ClaudeCodeProvider({ providerConfig: () => ({ executable: path.join(bin, 'claude'), ...config }) });
 const task = (extra = {}) => ({ ...normalizeTask({ task: 'fix the tests', cwd: project, ...extra }), cwd: project });
 const reported = (outcome) => JSON.parse(outcome.summary);
 const flag = (argv, name) => argv[argv.indexOf(name) + 1];
 
 // --- detection ----------------------------------------------------------------
 
-test('codex detects its CLI, reports its version, and a missing one is unavailable', async () => {
+test('both adapters detect their CLI, report versions, and find a missing one unavailable', async () => {
   assert.deepEqual(await codex().probe(), { available: true, version: 'codex-cli 9.9.9' });
+  assert.deepEqual(await claude().probe(), { available: true, version: '9.9.9 (Claude Code)' });
   const missing = await new CodexProvider({ providerConfig: () => ({ executable: path.join(bin, 'nope') }) }).probe();
   assert.equal(missing.available, false);
   assert.match(missing.reason, /not found/);
 });
 
-test('registry discovers codex, honours a custom executable and skips it when unavailable', async () => {
-  const config = (executable) => () => ({ ...defaultCodingAgentConfig(), providers: { codex: { enabled: true, executable } } });
-  const found = await createCodingAgentRegistry({ configLoader: config(path.join(bin, 'codex')) }).discover();
-  assert.deepEqual(found.map((p) => [p.id, p.name, p.available]), [['codex', 'OpenAI Codex CLI', true]]);
-  const registry = createCodingAgentRegistry({ configLoader: config(path.join(bin, 'nope')) });
-  assert.equal((await registry.discover())[0].available, false);
-  await assert.rejects(registry.resolve({ provider: 'auto' }), (error) => error.code === 'no_provider');
+test('registry discovers the built-in adapters, honours custom executables and auto-selects by preference', async () => {
+  const registry = createCodingAgentRegistry({ configLoader: () => ({ ...defaultCodingAgentConfig(), preference: ['codex', 'claude-code'], providers: { codex: { enabled: true, executable: path.join(bin, 'nope') }, 'claude-code': { enabled: true, executable: path.join(bin, 'claude') } } }) });
+  const found = await registry.discover();
+  assert.deepEqual(found.map((p) => [p.id, p.name, p.available]), [['codex', 'OpenAI Codex CLI', false], ['claude-code', 'Claude Code', true]]);
+  assert.equal((await registry.resolve({ provider: 'auto' })).id, 'claude-code');
   await assert.rejects(registry.resolve({ provider: 'codex' }), (error) => error.code === 'provider_unavailable');
 });
 
@@ -113,8 +114,58 @@ test('codex: failures are normalized (nonzero exit, turn.failed with exit 0)', a
   assert.equal(failed.error, 'model exploded');
 });
 
-test('codex reports what it can and cannot enforce', async () => {
-  for (const provider of [codex()]) {
+// --- Claude Code --------------------------------------------------------------
+
+test('claude: read-only task -> print mode, plan permissions, shell/network tools denied, task on stdin', async () => {
+  const outcome = await claude().run(task(), {});
+  assert.equal(outcome.status, 'completed');
+  const { argv, stdin } = reported(outcome);
+  assert.deepEqual(argv.slice(0, 5), ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode']);
+  assert.equal(flag(argv, '--permission-mode'), 'plan');
+  assert.deepEqual(flag(argv, '--disallowedTools').split(','), ['Bash', 'WebFetch', 'WebSearch']);
+  assert.ok(!argv.includes('--allowedTools'));
+  assert.ok(!argv.includes('fix the tests'));
+  assert.ok(stdin.endsWith('fix the tests'));
+});
+
+test('claude: a project-write task with shell, git and network pre-approves those tools', async () => {
+  const { argv } = reported(await claude().run(task({ permissions: { filesystem: 'project', shell: true, git: true, network: true } }), {}));
+  assert.equal(flag(argv, '--permission-mode'), 'acceptEdits');
+  assert.deepEqual(flag(argv, '--allowedTools').split(','), ['Bash', 'WebFetch', 'WebSearch']);
+  assert.ok(!argv.includes('--disallowedTools'));
+  const noGit = reported(await claude().run(task({ permissions: { filesystem: 'project', shell: true } }), {}));
+  assert.ok(flag(noGit.argv, '--disallowedTools').split(',').includes('Bash(git *)'));
+  const none = reported(await claude().run(task({ permissions: { filesystem: 'none' } }), {}));
+  assert.ok(flag(none.argv, '--disallowedTools').split(',').includes('Read'));
+});
+
+test('claude: output is normalized; bookkeeping events are hidden; result becomes the summary', async () => {
+  const shown = [];
+  const outcome = await claude({ model: 'sonnet' }).run(task(), { onOutput: (stream, text) => shown.push(text) });
+  assert.deepEqual(shown, ['working\n→ Bash: npm test']);
+  assert.equal(outcome.metadata.sessionId, 'sess-1');
+  assert.equal(outcome.metadata.costUsd, 0.01);
+  assert.equal(flag(reported(outcome).argv, '--model'), 'sonnet');
+  assert.equal(reported(outcome).hasAnthropicKey, false);
+});
+
+test('claude: denied tools make the run needs_input; errors fail it; a missing result fails it', async () => {
+  const denied = await claude().run(task({ environment: { FAKE_SCENARIO: 'denied' } }), {});
+  assert.equal(denied.status, 'needs_input');
+  assert.match(denied.error, /Bash, Edit/);
+  assert.deepEqual(denied.metadata.permissionDenials, ['Bash', 'Edit']);
+  const error = await claude().run(task({ environment: { FAKE_SCENARIO: 'error' } }), {});
+  assert.equal(error.status, 'failed');
+  assert.equal(error.error, 'login required');
+  const none = await claude().run(task({ environment: { FAKE_SCENARIO: 'no-result' } }), {});
+  assert.equal(none.status, 'failed');
+  const exit = await claude().run(task({ environment: { FAKE_SCENARIO: 'exit2' } }), {});
+  assert.equal(exit.status, 'failed');
+  assert.equal(exit.exitCode, 2);
+});
+
+test('both adapters report what they can and cannot enforce', async () => {
+  for (const provider of [codex(), claude()]) {
     const caps = await provider.capabilities();
     assert.equal(caps.streaming, true);
     assert.equal(caps.cancel, true);

@@ -5,9 +5,10 @@ import { CodingAgentRegistry } from './registry.js';
 import { CodingAgentService } from './service.js';
 import { loadCodingAgentConfig } from './config.js';
 import { CodexProvider } from './providers/codex.js';
+import { ClaudeCodeProvider } from './providers/claude-code.js';
 
 // Built-in adapters: [ProviderClass]. Nothing else in the core names a vendor.
-const adapters = [CodexProvider];
+const adapters = [CodexProvider, ClaudeCodeProvider];
 
 export function createCodingAgentRegistry({ configLoader = loadCodingAgentConfig } = {}) {
   const registry = new CodingAgentRegistry({ configLoader });
