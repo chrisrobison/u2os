@@ -60,12 +60,14 @@ test('scheduled automations run once per slot', async () => {
 
 test('a schedule missed during long downtime is recorded, not replayed', async () => {
   const fx = createPackageFixture();
-  let now = new Date('2026-09-28T07:30:00Z');
+  // The cron is evaluated in local time, so the fixture times are local too:
+  // enabled at 07:30 (before the 08:00 slot), ticked again at 13:00.
+  let now = new Date(2026, 8, 28, 7, 30);
   const runtime = runtimeFor(fx, () => now);
   try {
     install(fx, { triggers: [{ type: 'schedule', cron: '0 8 * * *' }], steps: [{ id: 'note', use: 'capability:watch.note', with: { text: 'x' } }] });
     runtime.enable('watcher');
-    now = new Date('2026-09-28T13:00:00Z');
+    now = new Date(2026, 8, 28, 13, 0);
     await runtime.tick(now);
     const runs = rootRuns();
     assert.equal(runs.length, 1);
