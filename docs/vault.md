@@ -12,6 +12,8 @@ The first match wins:
 
 On first start U2OS creates the default layout and a `README.md`. It never overwrites existing files.
 
+You can point U2OS at a vault you already have (or any folder) from the first-run wizard, or with `vaultDir`. Choosing a location only changes where U2OS looks: it does not edit, move or delete files that are already there, and a previous vault's files stay where they are. See [onboarding](onboarding.md#the-seven-steps).
+
 ```text
 vault/
   README.md

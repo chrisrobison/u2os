@@ -1402,6 +1402,7 @@ u2-device-panel .u2-card {
 .onboarding-step textarea.onboarding-textarea { width: 100%; min-height: 16rem; padding: var(--space-3); border-radius: var(--radius-sm); border: var(--border-width) solid var(--border-color); background: var(--bg-input); color: var(--text-primary); font-family: var(--font-mono, monospace); font-size: var(--text-sm); resize: vertical; }
 .onboarding-checkbox { display: flex; gap: var(--space-2); align-items: flex-start; padding: var(--space-2) 0; }
 .onboarding-checkbox input { margin-top: 3px; }
-.onboarding-message { min-height: 1.5rem; color: var(--accent-active); font-size: var(--text-sm); }
+.onboarding-message { min-height: 1.5rem; color: var(--accent-strong); font-size: var(--text-sm); }
+.onboarding-check { display: flex; gap: var(--space-2); align-items: flex-start; font-size: var(--text-sm); }
 .onboarding-message.is-error { color: var(--accent-danger); }
 .onboarding-nav { display: flex; gap: var(--space-3); margin-top: var(--space-4); }

@@ -185,3 +185,144 @@ test('starter routines: list reflects installed state, install is additive and r
   const emptyRes = await post('/api/vault/starter-routines', { ids: [] });
   assert.equal(emptyRes.status, 400);
 });
+
+// Issue #423: point the wizard at an existing vault. Choosing never modifies,
+// moves or deletes a file that is already there.
+function tree(root) {
+  const out = {};
+  const walk = (directory) => { for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const file = path.join(directory, entry.name);
+    if (entry.isDirectory()) walk(file); else out[path.relative(root, file)] = fs.readFileSync(file, 'utf8');
+  } };
+  if (fs.existsSync(root)) walk(root);
+  return out;
+}
+function makeVault(root, extra = {}) {
+  const files = {
+    'me.md': '---\nname: Existing Owner\nclassification: personal\n---\nMy own notes.\n',
+    'people/alice.md': '---\nname: Alice Chen\nrelationship: sister\n---\nAlice.\n',
+    'people/bob.md': '---\nname: Bob Ng\n---\nBob.\n',
+    'projects/apollo.md': '---\nname: Apollo\n---\nA project.\n',
+    'routines/brief.md': '---\nwhen:\n  daily: "07:00"\n---\nBrief me.\n',
+    ...extra,
+  };
+  for (const [file, content] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+    fs.writeFileSync(path.join(root, file), content);
+  }
+  return files;
+}
+// An mcp.yaml whose server, if it were ever launched, leaves a marker file behind.
+const touchSpec = (name, marker) => `servers:\n  ${name}:\n    command: node\n    args: ${JSON.stringify(['-e', `require('fs').writeFileSync(${JSON.stringify(marker)}, 'x')`])}\n    tools:\n      ping: { read: true }\n`;
+const inspect = async (get, target) => (await get(`/api/vault/inspect?path=${encodeURIComponent(target)}`)).json();
+
+test('GET /api/vault/inspect summarizes a candidate folder from names and counts only, and runs nothing', async (t) => {
+  const { dir, get } = await fixture(t);
+  const marker = path.join(dir, 'server-was-launched');
+  const existing = path.join(dir, 'mine');
+  makeVault(existing, { 'mcp.yaml': touchSpec('probe', marker) });
+  const found = await inspect(get, existing);
+  assert.deepEqual([found.exists, found.isDirectory, found.empty, found.writable, found.looksLikeVault], [true, true, false, true, true]);
+  assert.deepEqual([found.hasMe, found.hasPolicies, found.hasMcp], [true, false, true]);
+  assert.deepEqual(found.counts, { people: 2, projects: 1, commitments: 0, routines: 1, skills: 0 });
+  assert.deepEqual(found.mcpServers, [{ name: 'probe', enabled: true }]);
+  assert.ok(!JSON.stringify(found).includes('My own notes') && !JSON.stringify(found).includes('Alice'), 'no file content is returned');
+  assert.equal(fs.existsSync(marker), false, 'inspecting never launches a declared tool server');
+
+  assert.equal((await inspect(get, path.join(dir, 'nowhere'))).exists, false);
+  const empty = path.join(dir, 'empty'); fs.mkdirSync(path.join(empty, '.git'), { recursive: true }); fs.writeFileSync(path.join(empty, '.DS_Store'), '');
+  const gitOnly = await inspect(get, empty);
+  assert.deepEqual([gitOnly.exists, gitOnly.empty, gitOnly.looksLikeVault], [true, true, false]);
+  const other = path.join(dir, 'documents'); fs.mkdirSync(other); fs.writeFileSync(path.join(other, 'taxes.pdf'), 'x');
+  assert.deepEqual([(await inspect(get, other)).empty, (await inspect(get, other)).looksLikeVault], [false, false]);
+  const file = path.join(dir, 'a-file'); fs.writeFileSync(file, 'x');
+  assert.deepEqual([(await inspect(get, file)).exists, (await inspect(get, file)).isDirectory], [true, false]);
+  assert.equal((await get('/api/vault/inspect')).status, 400);
+  assert.equal((await get(`/api/vault/inspect?path=${encodeURIComponent(path.parse(dir).root)}`)).status, 400);
+});
+
+test('adopt: an existing vault is used as-is, its files stay byte-identical and its records are indexed', async (t) => {
+  const { dir, vault, get, post, put } = await fixture(t);
+  await put('/api/vault/me', { content: '---\nname: Default Home Owner\nclassification: personal\n---\nOld default vault.\n' });
+  const oldBefore = tree(vault);
+  const existing = path.join(dir, 'my-real-vault');
+  const files = makeVault(existing);
+  const response = await post('/api/vault/location', { vaultDir: existing, adopt: true });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.vaultDir, existing); assert.equal(body.previousVaultDir, vault); assert.equal(body.adopted, true); assert.equal(body.unchanged, false);
+  const after = tree(existing);
+  for (const [file, content] of Object.entries(files)) assert.equal(after[file], content, `${file} is unchanged`);
+  const added = Object.keys(after).filter((file) => !(file in files));
+  assert.deepEqual(added, ['README.md'], 'only the standard README is added; existing files are never touched');
+  assert.deepEqual(tree(vault), { ...oldBefore }, 'the previous vault is left exactly as it was');
+  assert.equal((await (await get('/api/vault')).json()).vaultDir, existing);
+  const me = await (await get('/api/vault/me')).json();
+  assert.equal(me.exists, true); assert.match(me.content, /Existing Owner/);
+  assert.ok(body.report.errors.length === 0, JSON.stringify(body.report.errors));
+  assert.ok(body.inspection.counts.people === 2);
+  // Choosing the location you are already using is a harmless no-op.
+  const again = await (await post('/api/vault/location', { vaultDir: existing, adopt: true })).json();
+  assert.equal(again.unchanged, true);
+});
+
+test('adopt: a non-vault folder with files needs explicit confirmation and none of its files are changed', async (t) => {
+  const { dir, post } = await fixture(t);
+  const documents = path.join(dir, 'documents');
+  fs.mkdirSync(path.join(documents, 'taxes'), { recursive: true }); fs.writeFileSync(path.join(documents, 'taxes', 'return.txt'), 'private'); fs.writeFileSync(path.join(documents, 'notes.md'), 'hello');
+  const before = tree(documents);
+  const refused = await post('/api/vault/location', { vaultDir: documents, adopt: true });
+  assert.equal(refused.status, 409); assert.equal((await refused.json()).code, 'TARGET_NOT_A_VAULT');
+  assert.deepEqual(tree(documents), before, 'a refused choice writes nothing');
+  const accepted = await post('/api/vault/location', { vaultDir: documents, adopt: true, useNonEmpty: true });
+  assert.equal(accepted.status, 200); assert.equal((await accepted.json()).adopted, false);
+  const after = tree(documents);
+  for (const [file, content] of Object.entries(before)) assert.equal(after[file], content);
+  // A file, and a folder that does not exist yet, keep their own outcomes.
+  const file = path.join(dir, 'plain-file'); fs.writeFileSync(file, 'x');
+  assert.equal((await (await post('/api/vault/location', { vaultDir: file, adopt: true })).json()).code, 'TARGET_NOT_DIRECTORY');
+  const fresh = path.join(dir, 'brand', 'new');
+  const created = await post('/api/vault/location', { vaultDir: fresh, adopt: true });
+  assert.equal(created.status, 200); assert.ok(fs.statSync(path.join(fresh, 'people')).isDirectory());
+});
+
+test('adopt: once onboarding is complete a populated vault is still protected, but an empty one may switch', async (t) => {
+  const { dir, vault, post, put } = await fixture(t);
+  const existing = path.join(dir, 'other-vault'); makeVault(existing);
+  await put('/api/vault/me', { content: '---\nname: Owner\nclassification: personal\n---\nHello\n' });
+  await post('/api/onboarding');
+  const refused = await post('/api/vault/location', { vaultDir: existing, adopt: true });
+  assert.equal(refused.status, 409); assert.equal((await refused.json()).code, 'VAULT_NOT_EMPTY');
+  assert.equal(fs.readFileSync(path.join(vault, 'me.md'), 'utf8').includes('Owner'), true);
+});
+
+test('adopt: an onboarded owner whose current vault is empty may still switch', async (t) => {
+  const { dir, post } = await fixture(t);
+  const existing = path.join(dir, 'other-vault'); makeVault(existing);
+  await post('/api/onboarding');
+  const switched = await post('/api/vault/location', { vaultDir: existing, adopt: true });
+  assert.equal(switched.status, 200); assert.equal((await switched.json()).adopted, true);
+});
+
+test('adopt: tool servers declared by the chosen vault start only when the owner opts in, and the old ones are unloaded', async (t) => {
+  const { dir, post, get } = await fixture(t);
+  const marker = path.join(dir, 'launched.txt');
+  const spec = (name) => touchSpec(name, marker);
+  const withServers = path.join(dir, 'with-servers'); makeVault(withServers, { 'mcp.yaml': spec('probe') });
+  const declined = await (await post('/api/vault/location', { vaultDir: withServers, adopt: true })).json();
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(fs.existsSync(marker), false, 'adopting a folder never launches what its mcp.yaml declares');
+  assert.deepEqual(declined.mcp.servers, []); assert.equal(declined.mcp.path, path.join(withServers, 'mcp.yaml'));
+  assert.deepEqual(declined.inspection.mcpServers, [{ name: 'probe', enabled: true }]);
+
+  const second = path.join(dir, 'second'); makeVault(second, { 'mcp.yaml': spec('probe2') });
+  const started = await (await post('/api/vault/location', { vaultDir: second, adopt: true, startToolServers: true })).json();
+  for (let i = 0; i < 40 && !fs.existsSync(marker); i++) await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(fs.existsSync(marker), true, 'opting in starts the declared server');
+  assert.deepEqual(started.mcp.servers.map((server) => server.name), ['probe2']);
+  // Moving on to a vault with no servers unloads the previous vault's.
+  const plain = path.join(dir, 'plain'); makeVault(plain);
+  const moved = await (await post('/api/vault/location', { vaultDir: plain, adopt: true })).json();
+  assert.deepEqual(moved.mcp.servers, []);
+  assert.deepEqual((await (await get('/api/vault')).json()).mcp.servers, []);
+});

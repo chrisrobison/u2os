@@ -102,43 +102,102 @@ export class U2Onboarding extends HTMLElement {
       if (this._stepBody() !== body) return;
       body.innerHTML = `
         <p>Your vault is a folder of Markdown files you own (see <span class="mono">docs/vault.md</span>). It currently lives at:</p>
-        <p class="mono">${escapeHtml(status.vaultDir)}</p>
-        <p>You can move it now, while it is still empty, or keep this default and move on -- this can only relocate an empty vault, never one with your files in it.</p>
+        <p class="mono" data-vault-current>${escapeHtml(status.vaultDir)}</p>
+        <p>Keep this location, or point U2OS at a folder of your own: a new folder, or a vault you already have. U2OS never edits, moves or deletes files that are already in it.</p>
         <form data-vault-form>
-          <label class="connector-field">New vault location (absolute path -- leave blank to keep the current one)
+          <label class="connector-field">Vault folder (absolute path; leave blank to keep the current one)
             <input name="vaultDir" placeholder="${escapeHtml(status.vaultDir)}" autocomplete="off">
           </label>
-          <button type="submit" class="btn">Save location</button>
-          <p class="onboarding-message" role="status" aria-live="polite"></p>
+          <button type="submit" class="btn">Check folder</button>
         </form>
+        <div data-vault-result></div>
+        <p class="onboarding-message" role="status" aria-live="polite"></p>
       `;
     } catch (err) {
       body.innerHTML = `<div class="load-error">Couldn't load vault status: ${escapeHtml(err.message)}</div>`;
     }
   }
 
-  async _saveVaultLocation(form) {
+  // Looks at the folder first (names and counts only, nothing is created or
+  // run) so the owner sees what will happen before anything changes.
+  async _checkVault(form) {
     const value = form.elements.vaultDir.value.trim();
-    const status = form.querySelector('.onboarding-message');
-    if (!value) {
-      status.classList.remove('is-error');
-      status.textContent = 'Enter a path to move the vault, or use Next to keep the current location.';
-      return;
-    }
+    const message = this._stepBody().querySelector('.onboarding-message');
+    const result = this._stepBody().querySelector('[data-vault-result]');
+    result.replaceChildren();
+    message.classList.remove('is-error');
+    if (!value) { message.textContent = 'Enter a folder to check, or use Next to keep the current location.'; return; }
     const button = form.querySelector('button[type="submit"]');
     button.disabled = true;
-    status.classList.remove('is-error');
-    status.textContent = 'Moving vault…';
+    message.textContent = 'Checking folder…';
     try {
-      const result = await api.relocateVault(value);
-      status.textContent = `Vault moved to ${result.vaultDir}.`;
-      form.elements.vaultDir.value = '';
-      form.elements.vaultDir.placeholder = result.vaultDir;
+      const found = await api.inspectVault(value);
+      message.textContent = '';
+      this._renderVaultCandidate(result, found);
     } catch (err) {
-      status.classList.add('is-error');
-      status.textContent = err.message;
+      message.classList.add('is-error');
+      message.textContent = err.message;
     } finally {
       button.disabled = false;
+    }
+  }
+
+  _renderVaultCandidate(container, found) {
+    const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+    const path = `<span class="mono">${escapeHtml(found.path)}</span>`;
+    let html = ''; let action = null; let blocked = true;
+    if (found.envOverride) html = '<p class="onboarding-message is-error">The U2OS_VAULT environment variable pins the vault location, so it cannot be changed here. Unset it and restart U2OS to choose another folder.</p>';
+    else if (found.current) html = `<p>${path} is already your vault location.</p>`;
+    else if (found.exists && !found.isDirectory) html = `<p class="onboarding-message is-error">${path} is a file, not a folder.</p>`;
+    else if (found.exists && !found.writable) html = `<p class="onboarding-message is-error">${path} is not writable, so U2OS cannot use it.</p>`;
+    else if (!found.exists) { html = `<p>${path} does not exist yet. U2OS will create it as a new, empty vault.</p>`; action = 'Create vault here'; blocked = false; }
+    else if (found.empty) { html = `<p>${path} is empty. U2OS will set up a new vault here.</p>`; action = 'Use this folder'; blocked = false; }
+    else if (found.looksLikeVault) {
+      const c = found.counts;
+      html = `<p>Found an existing vault at ${path}:</p><ul>
+        <li>${found.hasMe ? '<span class="mono">me.md</span> (about you)' : 'no <span class="mono">me.md</span> yet'}</li>
+        <li>${plural(c.people, 'person file')}, ${plural(c.projects, 'project')}, ${plural(c.commitments, 'commitment')}</li>
+        <li>${plural(c.routines, 'routine')}, ${plural(c.skills, 'skill')}</li>
+        ${found.hasPolicies ? '<li><span class="mono">policies.yaml</span> is present and will apply immediately</li>' : ''}
+      </ul><p>U2OS will read these files as they are. It may add the standard empty folders and a <span class="mono">README.md</span> if they are missing, and will not change anything else.</p>`;
+      if (found.mcpServers.length) html += `<label class="onboarding-check"><input type="checkbox" data-vault-start-tools> Also start the ${plural(found.mcpServers.length, 'tool server')} this vault declares (${found.mcpServers.map((server) => escapeHtml(server.name)).join(', ')}). They are programs that run on this computer.</label>`;
+      if (found.mcpError) html += `<p class="onboarding-message is-error">Its <span class="mono">mcp.yaml</span> has a problem and will be ignored: ${escapeHtml(found.mcpError)}</p>`;
+      action = 'Use this vault'; blocked = false;
+    } else {
+      html = `<p>${path} has files but does not look like a U2OS vault. If you use it, U2OS adds the standard folders (<span class="mono">people/</span>, <span class="mono">projects/</span>, …) inside it and leaves your files alone.</p>
+        <label class="onboarding-check"><input type="checkbox" data-vault-confirm> Use this folder anyway</label>`;
+      action = 'Use this folder'; blocked = true;
+    }
+    if (action) html += `<button type="button" class="btn btn-primary" data-vault-use ${blocked ? 'disabled' : ''}>${action}</button>`;
+    container.innerHTML = html;
+    const confirm = container.querySelector('[data-vault-confirm]');
+    const use = container.querySelector('[data-vault-use]');
+    if (confirm && use) confirm.addEventListener('change', () => { use.disabled = !confirm.checked; });
+    if (use) use.addEventListener('click', () => this._useVault(found, container));
+  }
+
+  async _useVault(found, container) {
+    const message = this._stepBody().querySelector('.onboarding-message');
+    const use = container.querySelector('[data-vault-use]');
+    use.disabled = true;
+    message.classList.remove('is-error');
+    message.textContent = 'Switching vault…';
+    try {
+      const result = await api.relocateVault(found.path, {
+        adopt: true,
+        useNonEmpty: Boolean(container.querySelector('[data-vault-confirm]')?.checked),
+        startToolServers: Boolean(container.querySelector('[data-vault-start-tools]')?.checked),
+      });
+      const body = this._stepBody();
+      body.querySelector('[data-vault-current]').textContent = result.vaultDir;
+      body.querySelector('input[name="vaultDir"]').value = '';
+      body.querySelector('input[name="vaultDir"]').placeholder = result.vaultDir;
+      container.replaceChildren();
+      message.textContent = `Now using ${result.vaultDir}.${result.previousVaultDir && result.previousVaultDir !== result.vaultDir ? ` Your previous vault at ${result.previousVaultDir} was left untouched.` : ''}`;
+    } catch (err) {
+      message.classList.add('is-error');
+      message.textContent = err.message;
+      use.disabled = false;
     }
   }
 
@@ -325,7 +384,7 @@ export class U2Onboarding extends HTMLElement {
   }
 
   _onSubmit(event) {
-    if (event.target.matches('[data-vault-form]')) { event.preventDefault(); this._saveVaultLocation(event.target); return; }
+    if (event.target.matches('[data-vault-form]')) { event.preventDefault(); this._checkVault(event.target); return; }
     if (event.target.matches('[data-me-form]')) { event.preventDefault(); this._saveMe(event.target); return; }
     if (event.target.matches('[data-routines-form]')) { event.preventDefault(); this._installRoutines(event.target); }
   }
