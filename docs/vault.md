@@ -25,10 +25,11 @@ vault/
   skills/          # how you want things done; routines name them (see routines.md)
   policies.yaml    # optional: what U2OS may do without asking
   mcp.yaml         # optional: tool servers U2OS may start (see mcp.md)
+  coding-agents.yaml  # optional: which coding CLIs U2OS may launch (see coding-agents.md)
   journal/         # written by U2OS: what it did on your behalf
 ```
 
-Routine files are described in [routines](routines.md), and `policies.yaml` (what U2OS may do without asking) in [policies](policies.md#where-the-policy-lives), and `mcp.yaml` (tools from MCP servers) in [MCP tools](mcp.md). The rest of this page covers identity and memory files.
+Routine files are described in [routines](routines.md), and `policies.yaml` (what U2OS may do without asking) in [policies](policies.md#where-the-policy-lives), `mcp.yaml` (tools from MCP servers) in [MCP tools](mcp.md), and `coding-agents.yaml` (Codex and Claude Code) in [coding agents](coding-agents.md). The rest of this page covers identity and memory files.
 
 ## File format
 

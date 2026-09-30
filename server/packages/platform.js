@@ -9,11 +9,15 @@ import { CapabilityInvoker } from './invoker.js';
 import { WorkflowEngine } from './workflow-engine.js';
 import { AutomationRuntime } from './automation-runtime.js';
 import { PackageManager } from './manager.js';
+import { registerCodingAgentCapability } from '../coding-agent/tool.js';
 import { log } from '../logging/logger.js';
 
-export function createPackagePlatform({ agent, eventBus, dataDir, clock } = {}) {
+export function createPackagePlatform({ agent, eventBus, dataDir, clock, codingAgents = null } = {}) {
   const registries = new PlatformRegistries();
   registerCoreCapabilities(registries.capabilities, agent.toolRegistry);
+  // coding.agent (docs/coding-agents.md): a hidden, gated capability over the
+  // owner's installed coding CLIs. Only registered where a service exists.
+  if (codingAgents) registerCodingAgentCapability({ capabilityRegistry: registries.capabilities, toolRegistry: agent.toolRegistry, service: codingAgents });
   const invoker = new CapabilityInvoker({ registries, gate: agent });
   const engine = new WorkflowEngine({ registries, invoker, eventBus, ...(clock ? { clock } : {}) });
   const runtime = new AutomationRuntime({ registries, engine, eventBus, ...(clock ? { clock } : {}) });

@@ -98,6 +98,7 @@ Tracking issue: [#397](https://github.com/chrisrobison/u2os/issues/397). Package
 - [x] [#399](https://github.com/chrisrobison/u2os/issues/399) Vault skills referenced by routines; Job Hunter as a routine and a skill
 - [x] [#400](https://github.com/chrisrobison/u2os/issues/400) MCP servers as capability providers through the gate
 - [x] [#405](https://github.com/chrisrobison/u2os/issues/405) Job-hunt MCP server: search Greenhouse and Lever, apply in a browser, ledger in the vault ([guide](docs/job-hunt.md))
+- [x] [#428](https://github.com/chrisrobison/u2os/issues/428) `coding.agent` capability over the official Codex and Claude Code CLIs, credentials stay with the tools ([guide](docs/coding-agents.md))
 - [ ] [#401](https://github.com/chrisrobison/u2os/issues/401) Package permission grants and settings in the vault
 - [ ] [#402](https://github.com/chrisrobison/u2os/issues/402) Packages ship routines and skills; retire the workflow engine at parity
 

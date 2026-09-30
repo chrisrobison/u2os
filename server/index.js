@@ -64,6 +64,7 @@ import { registerRoutineRoutes } from './api/routes/routines.js';
 import { registerPackageRoutes } from './api/routes/packages.js';
 import { startRoutineRunner, stopRoutineRunner } from './routines/routine-runner.js';
 import { createPackagePlatform } from './packages/platform.js';
+import { createCodingAgentService } from './coding-agent/index.js';
 import { startMcpServers, stopMcpServers } from './mcp/mcp-tools.js';
 
 export async function startServer(options = {}) {
@@ -227,7 +228,9 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
   });
   // Package platform (docs/plugin-architecture.md): installed packages'
   // capabilities, skills and automations, invoking through the agent's gate.
-  const packages = createPackagePlatform({ agent, eventBus, dataDir });
+  const codingAgents = createCodingAgentService({ eventBus });
+  codingAgents.recoverInterrupted();
+  const packages = createPackagePlatform({ agent, eventBus, dataDir, codingAgents });
   let queueTick = null;
   let runWake = null;
   let queueStopped = false;

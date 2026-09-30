@@ -51,6 +51,7 @@ U2OS is a working **pre-alpha**, not a production product. Everything below is i
 - Per-file `classification` and `sensitive_keys` control what can reach a model.
 - `npm run vault:export` moves existing database memory into vault files, bound to the same records with `id:`. Memory-UI edits are written back to the files, `policies.yaml` in the vault states what U2OS may do without asking (an invalid file fails closed), and `journal/` records what it did on your behalf.
 - Standing routines run on daily, interval or event triggers. Each slot runs once, even across restarts, and runs go through policy and approval, with a runaway limit. Routines can use vault **skills** (Markdown instructions) such as the [example Job Hunter](examples/vault/README.md).
+- **Coding agents**: hand a software task to the Codex CLI or Claude Code you already use. U2OS launches the official tool and never holds its credentials ([coding agents](docs/coding-agents.md)).
 - Tools from **MCP servers** declared in your vault's `mcp.yaml` run out of process, behind the same policy gate ([MCP tools](docs/mcp.md)). The first-party **job-hunt server** searches Greenhouse and Lever boards and applies in a headless browser, with an application ledger in your vault ([job hunting](docs/job-hunt.md)).
 
 **Acting safely on your behalf**
@@ -176,7 +177,7 @@ Raw device debug routes are disabled outside explicit non-production development
   - [Progress record](docs/personal-agent-progress.md)
   - [Personal acceptance and dogfooding](docs/personal-acceptance.md)
   - [Job research walkthrough](docs/job-research-walkthrough.md)
-- **Extensions:** [MCP tools](docs/mcp.md), [job hunting](docs/job-hunt.md), [skills vs packages](docs/skills-vs-packages.md)
+- **Extensions:** [MCP tools](docs/mcp.md), [coding agents](docs/coding-agents.md), [job hunting](docs/job-hunt.md), [skills vs packages](docs/skills-vs-packages.md)
 - **Packages:** [Plugin architecture](docs/plugin-architecture.md), [writing packages](docs/packages/README.md), [reference Job Hunter package](packages/job-hunter/README.md)
 - **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md)
 
