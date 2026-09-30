@@ -4,12 +4,17 @@
 import { CodingAgentRegistry } from './registry.js';
 import { CodingAgentService } from './service.js';
 import { loadCodingAgentConfig } from './config.js';
+import { CodexProvider } from './providers/codex.js';
 
-const adapters = []; // filled in by the adapter phases
+// Built-in adapters: [ProviderClass]. Nothing else in the core names a vendor.
+const adapters = [CodexProvider];
 
 export function createCodingAgentRegistry({ configLoader = loadCodingAgentConfig } = {}) {
   const registry = new CodingAgentRegistry({ configLoader });
-  for (const create of adapters) registry.register(create({ providerConfig: (id) => registry.config().providers[id] || {} }));
+  for (const Adapter of adapters) {
+    const provider = new Adapter({ providerConfig: () => registry.config().providers[provider.id] || {} });
+    registry.register(provider);
+  }
   return registry;
 }
 
