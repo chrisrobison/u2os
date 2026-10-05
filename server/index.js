@@ -265,7 +265,7 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
   registerGoalRoutes(router, { agent });
   registerActionRoutes(router, { agent, eventBus });
   registerEventRoutes(router, { db, sseHub });
-  registerCalendarRoutes(router);
+  registerCalendarRoutes(router, { agent });
   registerTaskRoutes(router, { agent });
   registerEmailRoutes(router);
   registerContactsRoutes(router);

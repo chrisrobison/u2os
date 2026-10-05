@@ -85,6 +85,17 @@ Tasks is the first section on the pattern: `+` creates a task, and a row opens i
 
 A date-only field is stored as the end of that local day.
 
+### Calendar views
+
+The Calendar section ([#437](https://github.com/chrisrobison/u2os/issues/437)) has **List**, **Day**, **Week** and **Month** views. Day, week and month have previous, next and today controls, and the view you chose is remembered in the browser.
+
+- All views read the local cache of the selected calendar. Day, week and month ask `GET /api/calendar/events?from=…&to=…` for the events overlapping `[from, to)` (at most 100 days; invalid or reversed ranges are a 400).
+- Events appear on every day they touch, and an event ending exactly at midnight does not spill into the next day. Days are calendar days in your local time, so daylight-saving changes cannot move an event.
+- The month view is a real table. Each day number opens that day, and a day with more than three events shows "+N more".
+- The week starts on the day your browser's locale says (Sunday if it does not say).
+- Selecting an event, in any view, opens its details in the record dialog. `+` opens a **New event** dialog. Creating an event is an action on your behalf: `POST /api/calendar/events` goes through the policy-gated pipeline, so depending on your `policies.yaml` it is created straight away or waits for your approval, and the dialog says which.
+- Editing and rescheduling existing events, recurring events and drag-and-drop are not part of this.
+
 ## Live updates
 
 Dashboard instances subscribe to the shared authenticated SSE event stream while they are connected. Task, calendar, email, action, recommendation, and memory events trigger a short debounced reload through the same server-side generator that produced the current view. Dynamic dashboards retain their selected context and entity parameters. Existing cards remain visible if a refresh fails, with an owner-readable inline error instead of replacing the dashboard.

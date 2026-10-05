@@ -129,8 +129,18 @@ export function createBugBundle() {
   });
 }
 
+// `range` is a name ('upcoming', 'today') or { from, to } ISO dates for the
+// month, week and day views.
 export function getCalendarEvents(range = 'upcoming') {
-  return request(`/api/calendar/events${qs({ range })}`);
+  return request(`/api/calendar/events${qs(typeof range === 'string' ? { range } : range)}`);
+}
+
+export function createCalendarEvent({ title, startAt, endAt, location } = {}) {
+  return request('/api/calendar/events', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ title, startAt, endAt, location }),
+  });
 }
 
 export function getDashboard() {

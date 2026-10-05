@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateValues, dateInputToIso, isoToDateInput } from '../public/components/record-form.js';
+import { validateValues, dateInputToIso, isoToDateInput, datetimeInputToIso, isoToDatetimeInput } from '../public/components/record-form.js';
 
 const fields = [
   { name: 'title', label: 'Title', type: 'text', required: true, maxLength: 10 },
@@ -45,4 +45,16 @@ test('dates round trip through the local calendar day, and impossible dates are 
   assert.equal(dateInputToIso('08/03/2026'), null);
   assert.equal(isoToDateInput('not a date'), '');
   assert.match(validateValues(fields, { title: 'a', dueAt: '2026-02-31' }).errors.dueAt, /valid date/);
+});
+
+test('date and time round trips through local time and rejects impossible values', () => {
+  const iso = datetimeInputToIso('2026-03-08T09:30');
+  assert.equal(isoToDatetimeInput(iso), '2026-03-08T09:30');
+  assert.equal(datetimeInputToIso('2026-02-31T09:30'), null);
+  assert.equal(datetimeInputToIso('2026-03-08T25:00'), null);
+  assert.equal(datetimeInputToIso('2026-03-08'), null);
+  assert.equal(isoToDatetimeInput(''), '');
+  const field = [{ name: 'at', label: 'Starts', type: 'datetime', required: true }];
+  assert.match(validateValues(field, { at: 'soon' }).errors.at, /valid date and time/);
+  assert.equal(validateValues(field, { at: '2026-03-08T09:30' }).values.at, iso);
 });
