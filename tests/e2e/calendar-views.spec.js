@@ -55,7 +55,7 @@ test.describe.serial('calendar views (#437)', () => {
     await expect(page.locator('.u2-schedule__title', { hasText: 'U2OS project standup' })).toBeVisible();
     await expect(page.locator('.u2-schedule__title', { hasText: TODAY })).toHaveCount(0);
 
-    await page.getByRole('button', { name: 'Today' }).click();
+    await page.locator('u2-calendar').getByRole('button', { name: 'Today', exact: true }).click();
     await expect(page.locator('.u2-schedule__title', { hasText: TODAY })).toBeVisible();
   });
 
