@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { startDedicatedServer, stopDedicatedServer, createOwner } from './helpers.js';
+import { startDedicatedServer, stopDedicatedServer, createOwner, gotoNav } from './helpers.js';
 
 // Issue #15: real-browser coverage of the hash-router-driven navigation
 // shell (public/components/u2-app.js's _route(), public/components/u2-nav.js's
@@ -55,7 +55,7 @@ test.describe.serial('navigation shell (#15)', () => {
   }
 
   async function goViaNav(hash) {
-    await navLink(hash).click();
+    await gotoNav(page, hash);
     await expect(page).toHaveURL(new RegExp(`${hash}$`));
   }
 
@@ -263,6 +263,57 @@ test.describe.serial('navigation shell (#15)', () => {
 
     await goViaNav('#/tasks');
     await checkOnly('#/tasks');
+  });
+
+  // ---- 2b. grouped, collapsible navigation (#435) ----
+
+  const groupToggle = (id) => page.locator(`u2-nav .nav-group__toggle[data-group="${id}"]`);
+
+  test('links are grouped, with everyday groups open and the rest collapsed', async () => {
+    await page.goto(`${dedicated.baseURL}/#/home`);
+    await page.evaluate(() => localStorage.removeItem('u2-nav-groups'));
+    await page.reload();
+    await expect(page.locator('u2-nav')).toBeVisible();
+
+    await expect(page.locator('u2-nav .nav-group__toggle')).toHaveText(['Today', 'Apps', 'Memory & automation', 'Add-ons', 'Settings', 'System']);
+    for (const id of ['today', 'apps', 'memory']) await expect(groupToggle(id)).toHaveAttribute('aria-expanded', 'true');
+    for (const id of ['addons', 'settings', 'system']) await expect(groupToggle(id)).toHaveAttribute('aria-expanded', 'false');
+
+    // Every route stays reachable from exactly one group.
+    await expect(page.locator('u2-nav a[data-route]')).toHaveCount(22);
+    await expect(navLink('#/model')).toBeHidden();
+    await expect(navLink('#/mail')).toBeVisible();
+  });
+
+  test('a group toggles with the keyboard and the choice is remembered', async () => {
+    const settings = groupToggle('settings');
+    await settings.focus();
+    await page.keyboard.press('Enter');
+    await expect(settings).toHaveAttribute('aria-expanded', 'true');
+    await expect(navLink('#/model')).toBeVisible();
+
+    await groupToggle('apps').focus();
+    await page.keyboard.press('Space');
+    await expect(groupToggle('apps')).toHaveAttribute('aria-expanded', 'false');
+    await expect(navLink('#/mail')).toBeHidden();
+
+    await page.reload();
+    await expect(groupToggle('settings')).toHaveAttribute('aria-expanded', 'true');
+    await expect(groupToggle('apps')).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('a deep link or back navigation opens the collapsed group holding the route', async () => {
+    // Apps is collapsed from the previous test; a deep link must still show Mail.
+    await page.goto(`${dedicated.baseURL}/#/mail`);
+    await page.reload();
+    await expect(groupToggle('apps')).toHaveAttribute('aria-expanded', 'true');
+    await expect(navLink('#/mail')).toHaveClass(/is-active/);
+
+    await page.evaluate(() => localStorage.removeItem('u2-nav-groups'));
+    await page.goto(`${dedicated.baseURL}/#/diagnostics`);
+    await page.reload();
+    await expect(groupToggle('system')).toHaveAttribute('aria-expanded', 'true');
+    await expect(navLink('#/diagnostics')).toBeVisible();
   });
 
   // ---- 3. browser back/forward works correctly with the hash router ----

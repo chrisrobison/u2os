@@ -6,6 +6,21 @@ Status: implemented for `morning`, `before-meeting`, and `project` contexts. Sch
 
 The LLM never emits HTML/JS. It emits a JSON **dashboard schema**. The frontend renders that schema using a fixed set of trusted Web Components. This is a hard security boundary (PROMPT.md §10, §17), not a style choice.
 
+## Navigation groups
+
+The left navigation is grouped and collapsible ([#435](https://github.com/chrisrobison/u2os/issues/435)):
+
+| Group | Routes | Starts |
+|---|---|---|
+| Today | Home, Briefing, Dashboards | open |
+| Apps | Mail, Calendar, Tasks, Projects | open |
+| Memory & automation | Memory, Routines, Goals, Applications, Automation, Activity | open |
+| Add-ons | Packages | collapsed |
+| Settings | Connectors, Model, Devices, Voice, Vault, Setup wizard | collapsed |
+| System | Operations, Diagnostics | collapsed |
+
+Each group heading is a button with `aria-expanded`, operable with Enter or Space. The owner's open/closed choices are remembered in the browser; storage is optional and the navigation works without it. The group holding the current route is always shown, so following a link or going back never lands on a hidden entry. Groups are defined in one list (`NAV_GROUPS` in `u2-nav.js`) so add-ons can contribute entries later ([ADR 0010](adr/0010-lean-core-bundled-addons.md)).
+
 ## Schema
 
 ```json

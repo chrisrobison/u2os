@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { withDedicatedServer } from './helpers.js';
+import { withDedicatedServer, gotoNav } from './helpers.js';
 
 // Issue #413: a fresh install walks the owner through the 7-step onboarding
 // wizard before reaching the dashboard; a second login for the same
@@ -99,7 +99,7 @@ test.describe('onboarding wizard (#413)', () => {
       await page.locator('form button[type="submit"]').click();
       await expect(page.locator('u2-nav')).toBeVisible();
 
-      await page.locator('u2-nav a[data-route="#/onboarding"]').click();
+      await gotoNav(page, '#/onboarding');
       await expect(page.locator('u2-onboarding')).toBeVisible();
       // Reopened mid-app: the surrounding shell (nav) stays mounted, unlike
       // the full-page first-run takeover.
