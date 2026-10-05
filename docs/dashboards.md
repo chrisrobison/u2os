@@ -85,6 +85,19 @@ Tasks is the first section on the pattern: `+` creates a task, and a row opens i
 
 A date-only field is stored as the end of that local day.
 
+### Mail
+
+Selecting a message in Mail ([#436](https://github.com/chrisrobison/u2os/issues/436)) opens it in the record dialog (From, To, Date, Subject, body). `GET /api/email/:id` reads the message from the local cache; the body is private content and is never logged.
+
+**Replying** is a link, not a send. U2OS needs no send permission for it, and nothing leaves U2OS:
+
+- Gmail messages open Gmail compose in a new tab (`https://mail.google.com/mail/?view=cm`) with the recipient, a `Re:` subject and the original quoted. `authuser` selects the account the message arrived in.
+- Other accounts get a `mailto:` link.
+- The recipient is the server's conservative parse of the From header. If the header is ambiguous there is no link and the dialog says so, rather than guessing a recipient.
+- The quoted original is cut at 2000 characters so the link stays within what browsers and mail clients accept. Subject line breaks are removed, and every part is URL-encoded so message text cannot add recipients or parameters.
+
+Marking spam and deleting need permission to change the mailbox and are tracked in [#446](https://github.com/chrisrobison/u2os/issues/446).
+
 ### Calendar views
 
 The Calendar section ([#437](https://github.com/chrisrobison/u2os/issues/437)) has **List**, **Day**, **Week** and **Month** views. Day, week and month have previous, next and today controls, and the view you chose is remembered in the browser.

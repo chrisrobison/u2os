@@ -18,6 +18,15 @@ export class U2EmailSummary extends HTMLElement {
 
   connectedCallback() {
     this._render();
+    if (this._bound) return;
+    this._bound = true;
+    // `selectable` rows are buttons that announce the chosen message (#436).
+    this.addEventListener('click', (event) => {
+      if (!this.hasAttribute('selectable')) return;
+      const row = event.target.closest('[data-email-id]');
+      const email = row && this._emails.find((e) => e.id === row.dataset.emailId);
+      if (email) this.dispatchEvent(new CustomEvent('u2-email-select', { bubbles: true, detail: { email, opener: row } }));
+    });
   }
 
   _render() {
@@ -32,14 +41,16 @@ export class U2EmailSummary extends HTMLElement {
         const unread = !email.is_read;
         const from = email.from_addr || 'Unknown sender';
         const when = formatDateTime(email.received_at);
+        const selectable = this.hasAttribute('selectable');
+        const tag = selectable ? 'button type="button"' : 'div';
         return `
-          <div class="u2-email">
+          <${tag} class="u2-email${selectable ? ' u2-email--select' : ''}" data-email-id="${escapeHtml(email.id)}">
             <div class="u2-email__from-row">
               <span class="u2-email__from ${unread ? 'is-unread' : ''}">${escapeHtml(from)}</span>
               <span class="u2-email__time">${escapeHtml(when)}</span>
             </div>
             <div class="u2-email__subject ${unread ? 'is-unread' : ''}">${escapeHtml(email.subject || '(no subject)')}</div>
-          </div>
+          </${selectable ? 'button' : 'div'}>
         `;
       })
       .join('');

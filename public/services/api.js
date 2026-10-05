@@ -171,6 +171,10 @@ export function completeTask(id) {
   return request(`/api/tasks/${encodeURIComponent(id)}/complete`, { method: 'POST', headers: JSON_HEADERS, body: '{}' });
 }
 
+export function getEmail(id) {
+  return request(`/api/email/${encodeURIComponent(id)}`);
+}
+
 export function getEmails(folder = 'inbox') {
   return request(`/api/email${qs({ folder })}`);
 }

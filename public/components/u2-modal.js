@@ -15,6 +15,7 @@ let modalCounter = 0;
 //     onSubmit: async (values) => { ... },   // throw to show the error inline
 //     actions: [{ label: 'Mark complete', onClick: async () => { ... } }],
 //     validate: (values) => ({ end: 'End must be after start.' }),  // optional, cross-field
+//     (an action with href renders as a link that opens in a new tab)
 //     opener: buttonElement,               // gets focus back on close
 //   });
 //
@@ -90,6 +91,18 @@ export class U2Modal extends HTMLElement {
     const footer = document.createElement('div');
     footer.className = 'u2-modal__footer';
     for (const action of actions) {
+      if (action.href) {
+        // A link, not a button: it hands off to another app (for example a
+        // Gmail reply) and runs no U2OS action.
+        const link = document.createElement('a');
+        link.className = `btn${action.primary ? ' btn-primary' : ''}`;
+        link.href = action.href;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = action.label;
+        footer.append(link);
+        continue;
+      }
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = `btn${action.danger ? ' btn-danger' : ''}`;
