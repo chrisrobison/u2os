@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { startDedicatedServer, stopDedicatedServer, createOwner } from './helpers.js';
+import { startDedicatedServer, stopDedicatedServer, createOwner, gotoNav } from './helpers.js';
 
 const PASSPHRASE = 'correct horse battery staple';
 
@@ -13,7 +13,7 @@ test('owner can inspect durable action delivery without seeing action payloads',
 
     await page.locator('.agent-panel__input').fill('Remind me to review the routine report.');
     await page.locator('.agent-panel__composer button[type="submit"]').click();
-    await page.locator('u2-nav a[data-route="#/operations"]').click();
+    await gotoNav(page, '#/operations');
 
     await expect(page.getByRole('heading', { name: 'Completed' })).toBeVisible();
     const card = page.locator('u2-operations .operation-card[data-status="completed"]').first();
@@ -45,7 +45,7 @@ test.describe('original account and uncertain delivery metadata', () => {
           smtpIdentity: { label: 'Original SMTP fixture', instanceId: 'fixture-original-sender', from: 'owner@example.test', password: 'fixture-private-password' },
           access_token: 'fixture-private-token' }, arguments: { body: 'fixture-private-body' }, last_error: 'fixture-private-upstream-error' }], counts: { failed: 1 },
     } }));
-    await page.locator('u2-nav a[data-route="#/operations"]').click();
+    await gotoNav(page, '#/operations');
     const card = page.locator('u2-operations .operation-card').first();
     await expect(card.locator('.operation-card__meta')).toHaveText('outcome uncertain · 1 attempt');
     await expect(card).toContainText(`Original account: ${label} (imap; fixture-original-inbox)`);
@@ -63,7 +63,7 @@ test.describe('original account and uncertain delivery metadata', () => {
         { id: 'fixture-mock', tool: 'email.send', status: 'completed', attemptCount: 1, account: { label: 'Mock', providerId: 'mock', instanceId: null } },
       ], counts: { failed: 2, completed: 1 },
     } }));
-    await page.locator('u2-nav a[data-route="#/operations"]').click();
+    await gotoNav(page, '#/operations');
     const known = page.locator('u2-operations .operation-card').filter({ hasText: 'tasks.create' });
     await expect(known.locator('.operation-card__meta')).toHaveText('failed · 1 attempt'); await expect(known).toContainText('non retryable');
     const uncertain = page.locator('u2-operations [data-outcome="uncertain"]');
@@ -82,7 +82,7 @@ test.describe('original account and uncertain delivery metadata', () => {
         account: { label, providerId: 'gmail', instanceId } }], counts: { failed: 1 },
     } }));
     await page.getByRole('button', { name: 'Toggle navigation', exact: true }).click();
-    await page.locator('u2-nav a[data-route="#/operations"]').click();
+    await gotoNav(page, '#/operations');
     const card = page.locator('u2-operations .operation-card'); await expect(card).toContainText(label); await expect(card).toContainText(instanceId);
     const bounds = await card.evaluate((element) => ({ scroll: element.scrollWidth, client: element.clientWidth }));
     expect(bounds.scroll).toBeLessThanOrEqual(bounds.client);
@@ -99,7 +99,7 @@ test('restored operation metadata explains unknown outcome without claiming fail
         errorClass: 'recovery_review_required', arguments: { body: 'fixture private archived payload' } }], counts: { failed: 1 },
     } }));
     await page.goto(dedicated.baseURL); await page.getByLabel('Passphrase').fill(PASSPHRASE);
-    await page.locator('form button[type="submit"]').click(); await page.locator('u2-nav a[data-route="#/operations"]').click();
+    await page.locator('form button[type="submit"]').click(); await gotoNav(page, '#/operations');
     const card = page.locator('u2-operations .operation-card').first();
     await expect(card).toContainText('outcome unknown from restored snapshot'); await expect(card).toContainText('1 recorded attempt');
     await expect(card).toContainText('Archived approval cannot be retried'); await expect(card).not.toContainText('private archived payload');

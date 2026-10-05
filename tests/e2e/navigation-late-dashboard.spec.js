@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { startDedicatedServer, stopDedicatedServer, createOwner } from './helpers.js';
+import { startDedicatedServer, stopDedicatedServer, createOwner, gotoNav } from './helpers.js';
 
 const deferred = () => { let resolve; const promise = new Promise((done) => { resolve = done; }); return { promise, resolve }; };
 for (const outcome of ['success', 'failure']) {
@@ -19,7 +19,7 @@ for (const outcome of ['success', 'failure']) {
         await route.fulfill(actual ? { response: actual } : { status: 503, json: { error: 'fixture-private-late-dashboard-error' } });
       });
       await page.locator('u2-nav a[data-route="#/briefing"]').click(); await reached.promise;
-      await page.locator('u2-nav a[data-route="#/operations"]').click(); await expect(page.locator('u2-operations .operations-summary')).toBeVisible();
+      await gotoNav(page, '#/operations'); await expect(page.locator('u2-operations .operations-summary')).toBeVisible();
       release.resolve(); await expect.poll(() => page.evaluate(() => window.fixtureLateDashboardSettled)).toBe(true);
       await expect(page.locator('u2-operations')).toBeVisible(); await expect(page.locator('#workspace u2-dashboard, #workspace .workflow-start')).toHaveCount(0);
       await expect(page.locator('#workspace')).not.toContainText('fixture-private-late-dashboard-error');

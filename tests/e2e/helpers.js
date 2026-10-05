@@ -123,3 +123,13 @@ export function expireIdleSessions(handle) {
   const result = handle.auth.db.prepare('UPDATE sessions SET last_seen_at = ?').run(new Date(0).toISOString());
   if (!result.changes) throw new Error('Expected an authenticated session to expire');
 }
+
+// Navigation groups can be collapsed (#435). Opens the group that holds
+// `hash` when it is closed, then follows the link, as an owner would.
+export async function gotoNav(page, hash) {
+  const link = page.locator(`u2-nav a[data-route="${hash}"]`);
+  if (!(await link.isVisible())) {
+    await page.locator('u2-nav .nav-group', { has: page.locator(`a[data-route="${hash}"]`) }).locator('.nav-group__toggle').click();
+  }
+  await link.click();
+}

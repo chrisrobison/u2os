@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { startServer } from '../../server/index.js';
 import { readEncryptedFile } from '../../server/security/vault.js';
-import { startDedicatedServer, stopDedicatedServer, createOwner } from './helpers.js';
+import { startDedicatedServer, stopDedicatedServer, createOwner, gotoNav } from './helpers.js';
 
 const passphrase = 'fixture-only personal model setup owner';
 async function withPage(page, operation) {
@@ -14,7 +14,7 @@ async function withPage(page, operation) {
     await expect(page.locator('#workspace u2-dashboard')).toBeVisible(); await operation(dedicated);
   } finally { await stopDedicatedServer(page, dedicated); }
 }
-const open = (page) => page.locator('u2-nav a[data-route="#/model"]').click();
+const open = (page) => gotoNav(page, '#/model');
 async function fill(page, secret = '') {
   await page.locator('u2-model input[name="baseUrl"]').fill('http://127.0.0.1:9');
   await page.locator('u2-model input[name="model"]').fill('fixture-unreachable-planner');
@@ -95,7 +95,7 @@ test('failed save clears secrets, offers no automatic retry, and checks metadata
 test('leaving an unsaved view clears its detached key input without changing configuration', async ({ page }) => withPage(page, async (dedicated) => {
   await open(page); await fill(page, 'fixture-unsaved-key'); const before = readConfig(dedicated);
   await page.locator('u2-model input[name="apiKey"]').evaluate((field) => { window.fixtureDetachedKey = field; });
-  await page.locator('u2-nav a[data-route="#/operations"]').click(); await expect(page.locator('u2-model')).toHaveCount(0);
+  await gotoNav(page, '#/operations'); await expect(page.locator('u2-model')).toHaveCount(0);
   expect(await page.evaluate(() => window.fixtureDetachedKey.value)).toBe(''); expect(readConfig(dedicated)).toBe(before);
 }));
 

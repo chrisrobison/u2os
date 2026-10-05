@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { test, expect } from '@playwright/test';
-import { startDedicatedServer, stopDedicatedServer, createOwner } from './helpers.js';
+import { startDedicatedServer, stopDedicatedServer, createOwner, gotoNav } from './helpers.js';
 
 const PASSPHRASE = 'correct horse battery staple';
 
@@ -32,7 +32,7 @@ test('owner sees routines, runs one, and reviews vault status, tool servers and 
     await expect(page.locator('.trigger-message')).toContainText('Done.');
     await expect(plants.locator('[data-last-run]')).toContainText('Completed · run by you');
 
-    await page.locator('u2-nav a[data-route="#/vault"]').click();
+    await gotoNav(page, '#/vault');
     await expect(page.locator('.workspace__title', { hasText: 'Vault' })).toBeVisible();
     await expect(page.locator('[data-vault-policy]')).toContainText('Not present');
     await expect(page.locator('[data-vault-mcp]')).toContainText('No tool servers');

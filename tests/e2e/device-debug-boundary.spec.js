@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { startDedicatedServer, stopDedicatedServer, createOwner } from './helpers.js';
+import { startDedicatedServer, stopDedicatedServer, createOwner, gotoNav } from './helpers.js';
 
 for (const scenario of [
   { name: 'normal', developmentMode: false },
@@ -19,7 +19,7 @@ for (const scenario of [
     await page.goto(dedicated.baseURL);
     await page.getByLabel('Passphrase').fill('correct horse battery staple');
     await page.locator('form button[type="submit"]').click();
-    await page.locator('u2-nav a[data-route="#/devices"]').click();
+    await gotoNav(page, '#/devices');
     const devices = page.locator('u2-devices');
     const sensor = devices.locator('[data-device-row="mock.sensor.temperature.office"]');
     await sensor.locator('[data-toggle-device]').click();

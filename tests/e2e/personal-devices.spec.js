@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { startDedicatedServer, stopDedicatedServer, createOwner } from './helpers.js';
+import { startDedicatedServer, stopDedicatedServer, createOwner, gotoNav } from './helpers.js';
 import { DeviceRegistry } from '../../server/devices/device-registry.js';
 import { MockDeviceAdapter } from '../../server/devices/adapters/mock-device-adapter.js';
 
@@ -17,7 +17,7 @@ for (const scenario of ['personal', 'demo', 'legacy']) test(`devices distinguish
     await page.goto(dedicated.baseURL);
     await page.getByLabel('Passphrase').fill('correct horse battery staple');
     await page.locator('form button[type="submit"]').click();
-    await page.locator('u2-nav a[data-route="#/devices"]').click();
+    await gotoNav(page, '#/devices');
     const devices = page.locator('u2-devices');
     await expect(devices.locator('.device-debug-status')).toBeVisible();
     const mocks = devices.locator('[data-device-row^="mock."]');
