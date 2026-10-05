@@ -6,7 +6,7 @@
 // tested and reused by any caller; `buildForm` and `readForm` are the thin
 // DOM layer on top of it.
 
-const TYPES = new Set(['text', 'textarea', 'date', 'select', 'checkbox']);
+const TYPES = new Set(['text', 'textarea', 'date', 'datetime', 'select', 'checkbox']);
 
 // <input type="date"> yields "YYYY-MM-DD". A date-only due date is stored as
 // the end of that local day so it does not read as overdue during the day.
@@ -18,6 +18,24 @@ export function dateInputToIso(value) {
   // Reject rollovers such as 2026-02-31.
   if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d) return null;
   return date.toISOString();
+}
+
+// <input type="datetime-local"> yields "YYYY-MM-DDTHH:MM" in local time.
+export function datetimeInputToIso(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(String(value || ''));
+  if (!match) return null;
+  const [, y, m, d, hh, mm] = match.map(Number);
+  const date = new Date(y, m - 1, d, hh, mm, 0, 0);
+  if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d || date.getHours() !== hh || date.getMinutes() !== mm) return null;
+  return date.toISOString();
+}
+
+export function isoToDatetimeInput(iso) {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${isoToDateInput(iso)}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 export function isoToDateInput(iso) {
@@ -56,6 +74,12 @@ export function validateValues(fields, raw = {}) {
     if (field.type === 'date') {
       const iso = dateInputToIso(text);
       if (!iso) errors[field.name] = `${field.label} must be a valid date.`;
+      else values[field.name] = iso;
+      continue;
+    }
+    if (field.type === 'datetime') {
+      const iso = datetimeInputToIso(text);
+      if (!iso) errors[field.name] = `${field.label} must be a valid date and time.`;
       else values[field.name] = iso;
       continue;
     }
@@ -112,6 +136,9 @@ export function buildForm(fields, values = {}, { idPrefix = 'rf' } = {}) {
     } else if (field.type === 'date') {
       control = el('input', { id, name: field.name, type: 'date' });
       control.value = isoToDateInput(current);
+    } else if (field.type === 'datetime') {
+      control = el('input', { id, name: field.name, type: 'datetime-local' });
+      control.value = isoToDatetimeInput(current);
     } else {
       control = el('input', { id, name: field.name, type: 'text', maxlength: field.maxLength, placeholder: field.placeholder });
       control.value = current ?? '';

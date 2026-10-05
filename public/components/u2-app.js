@@ -7,6 +7,7 @@ import './u2-nav.js';
 import './u2-agent.js';
 import './u2-dashboard.js';
 import './u2-schedule.js';
+import './u2-calendar.js';
 import './u2-task-list.js';
 import './u2-section.js';
 import { getModal } from './u2-modal.js';
@@ -561,21 +562,62 @@ export class U2App extends HTMLElement {
     }
   }
 
-  async _renderCalendar() {
-    const generation = this._routeGeneration;
-    this._setWorkspace(this._header('Calendar', 'Upcoming events'), this._loading('Loading calendar...'));
-    try {
-      const { events, cache } = await api.getCalendarEvents('upcoming');
-      if (!this._isCurrentRoute(generation)) return;
-      const el = document.createElement('u2-schedule');
-      el.events = events;
-      const content = document.createElement('div');
-      content.append(cacheNote(cache), el);
-      this._setWorkspace(this._header('Calendar', 'Upcoming events'), content);
-    } catch (err) {
-      if (!this._isCurrentRoute(generation)) return;
-      this._setWorkspace(this._header('Calendar'), this._error(err));
-    }
+  _renderCalendar() {
+    const header = document.createElement('u2-section');
+    header.heading = 'Calendar';
+    header.addLabel = 'New event';
+    const note = document.createElement('div');
+    const cal = document.createElement('u2-calendar');
+    cal.loader = (params) => api.getCalendarEvents(params);
+    cal.addEventListener('u2-calendar-loaded', (event) => note.replaceChildren(cacheNote(event.detail.cache)));
+    cal.addEventListener('u2-calendar-select', (event) => this._openEvent(event.detail.event, event.detail.opener));
+    header.addEventListener('u2-section-add', (event) => this._openNewEvent(cal, event.detail.opener));
+    const wrap = document.createElement('div');
+    wrap.append(header, note, cal);
+    this._setWorkspace('', wrap);
+  }
+
+  // "+" opens the modal empty; an event in any view opens it populated.
+  _openNewEvent(cal, opener) {
+    const start = new Date();
+    start.setMinutes(0, 0, 0);
+    start.setHours(start.getHours() + 1);
+    const end = new Date(start.getTime() + 60 * 60 * 1000);
+    getModal().open({
+      opener,
+      title: 'New event',
+      fields: [
+        { name: 'title', label: 'Title', type: 'text', required: true, maxLength: 200 },
+        { name: 'startAt', label: 'Starts', type: 'datetime', required: true },
+        { name: 'endAt', label: 'Ends', type: 'datetime', required: true },
+        { name: 'location', label: 'Location', type: 'text', maxLength: 200 },
+      ],
+      values: { startAt: start.toISOString(), endAt: end.toISOString() },
+      notice: 'Creating an event is an action on your behalf, so your policy may ask you to approve it first.',
+      submitLabel: 'Create event',
+      validate: (values) => (Date.parse(values.endAt) <= Date.parse(values.startAt) ? { endAt: 'End must be after the start.' } : null),
+      onSubmit: async (values) => {
+        requireExecuted(await api.createCalendarEvent(values), 'create the event');
+        await cal.reload();
+      },
+    });
+  }
+
+  _openEvent(event, opener) {
+    const attendees = (event.attendees || []).map((a) => a.name || a.email).filter(Boolean).join(', ');
+    getModal().open({
+      opener,
+      title: 'Event',
+      cancelLabel: 'Close',
+      fields: [
+        { name: 'title', label: 'Title', type: 'text', readOnly: true },
+        { name: 'startAt', label: 'Starts', type: 'datetime', readOnly: true },
+        { name: 'endAt', label: 'Ends', type: 'datetime', readOnly: true },
+        { name: 'location', label: 'Location', type: 'text', readOnly: true },
+        { name: 'attendees', label: 'Attendees', type: 'text', readOnly: true },
+      ],
+      values: { title: event.title, startAt: event.start_at, endAt: event.end_at, location: event.location, attendees },
+    });
   }
 
   async _renderTasks() {

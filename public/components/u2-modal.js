@@ -14,6 +14,7 @@ let modalCounter = 0;
 //     submitLabel: 'Create',
 //     onSubmit: async (values) => { ... },   // throw to show the error inline
 //     actions: [{ label: 'Mark complete', onClick: async () => { ... } }],
+//     validate: (values) => ({ end: 'End must be after start.' }),  // optional, cross-field
 //     opener: buttonElement,               // gets focus back on close
 //   });
 //
@@ -46,7 +47,7 @@ export class U2Modal extends HTMLElement {
     return Boolean(this._dialog && this._dialog.open);
   }
 
-  open({ title, fields = [], values = {}, submitLabel = 'Save', cancelLabel = 'Cancel', onSubmit = null, actions = [], notice = '', opener = null }) {
+  open({ title, fields = [], values = {}, submitLabel = 'Save', cancelLabel = 'Cancel', onSubmit = null, actions = [], notice = '', opener = null, validate = null }) {
     if (!this._dialog) this.connectedCallback();
     if (this._dialog.open) this._dialog.close();
     // Safari does not focus a button when it is clicked, so callers pass the
@@ -54,6 +55,7 @@ export class U2Modal extends HTMLElement {
     this._opener = opener || document.activeElement;
     this._fields = fields;
     this._onSubmit = onSubmit;
+    this._validate = validate;
     this._dirty = false;
     this._busy = false;
 
@@ -155,6 +157,9 @@ export class U2Modal extends HTMLElement {
     this._showStatus('');
     const { values, errors } = readForm(this._form, this._fields);
     if (showErrors(this._form, errors)) return;
+    // Rules that span fields, such as "end is after start".
+    const crossErrors = this._validate ? this._validate(values) : null;
+    if (crossErrors && showErrors(this._form, crossErrors)) return;
     this._setBusy(true);
     try {
       await this._onSubmit(values);
