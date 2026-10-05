@@ -18,6 +18,17 @@ export class U2TaskList extends HTMLElement {
 
   connectedCallback() {
     this._render();
+    if (this._bound) return;
+    this._bound = true;
+    // `selectable` rows are buttons that announce the chosen task (#434).
+    // Dashboard cards use the list without the attribute and stay read-only.
+    this.addEventListener('click', (event) => {
+      if (!this.hasAttribute('selectable')) return;
+      const row = event.target.closest('[data-task-id]');
+      if (!row) return;
+      const task = this._tasks.find((t) => t.id === row.dataset.taskId);
+      if (task) this.dispatchEvent(new CustomEvent('u2-task-select', { bubbles: true, detail: { task, opener: row } }));
+    });
   }
 
   _render() {
@@ -31,12 +42,14 @@ export class U2TaskList extends HTMLElement {
       .map((task) => {
         const isCompleted = task.status === 'completed';
         const due = task.due_at ? formatDate(task.due_at) : '';
+        const tag = this.hasAttribute('selectable') ? 'button type="button"' : 'div';
+        const end = this.hasAttribute('selectable') ? 'button' : 'div';
         return `
-          <div class="u2-task">
+          <${tag} class="u2-task${this.hasAttribute('selectable') ? ' u2-task--select' : ''}" data-task-id="${escapeHtml(task.id)}">
             <span class="status-dot ${isCompleted ? 'is-completed' : 'is-open'}"></span>
             <span class="u2-task__title ${isCompleted ? 'is-completed' : ''}">${escapeHtml(task.title)}</span>
             ${due ? `<span class="u2-task__due">${escapeHtml(due)}</span>` : ''}
-          </div>
+          </${end}>
         `;
       })
       .join('');

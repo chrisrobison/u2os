@@ -53,7 +53,7 @@ The product has not yet been used day to day with real accounts and a real model
 
 Tracking issue: [#433](https://github.com/chrisrobison/u2os/issues/433). Use on a second host found that the browser UI cannot yet carry daily work. Every data section opens on its list or dashboard, records open in a modal (populated when a row is selected, empty from the section's `+` button), and navigation is grouped.
 
-- [ ] [#434](https://github.com/chrisrobison/u2os/issues/434) Shared section pattern: list/dashboard, record modal, `+` button
+- [x] [#434](https://github.com/chrisrobison/u2os/issues/434) Shared section pattern: list/dashboard, record modal, `+` button
 - [x] [#435](https://github.com/chrisrobison/u2os/issues/435) Group navigation into collapsible categories
 - [ ] [#436](https://github.com/chrisrobison/u2os/issues/436) Mail: view, mark spam, delete, reply (Gmail compose link)
 - [ ] [#437](https://github.com/chrisrobison/u2os/issues/437) Calendar: month, week and day views
