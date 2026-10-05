@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { startDedicatedServer, stopDedicatedServer, createOwner } from './helpers.js';
+import { startDedicatedServer, stopDedicatedServer, createOwner, gotoNav } from './helpers.js';
 
 const deferred = () => { let resolve; const promise = new Promise((done) => { resolve = done; }); return { promise, resolve }; };
 async function login(page, server) {
@@ -9,7 +9,7 @@ async function login(page, server) {
   return page.evaluate(async () => (await (await fetch('/api/memory/entities?type=Person&query=Sarah')).json()).entities[0].id);
 }
 async function operations(page) {
-  await page.locator('u2-nav a[data-route="#/operations"]').click(); await expect(page.locator('u2-operations .operations-summary')).toBeVisible();
+  await gotoNav(page, '#/operations'); await expect(page.locator('u2-operations .operations-summary')).toBeVisible();
 }
 const views = [
   ['calendar', '_renderCalendar', '**/api/calendar/events*'], ['tasks', '_renderTasks', '**/api/tasks*'],

@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'js-yaml';
-import { startDedicatedServer, stopDedicatedServer, createOwner } from './helpers.js';
+import { startDedicatedServer, stopDedicatedServer, createOwner, gotoNav } from './helpers.js';
 
 const PASSPHRASE = 'correct horse battery staple';
 
@@ -59,8 +59,8 @@ test('owner reviews, installs, grants, enables and runs a package automation', a
     await automation.locator('[data-automation-run]').click();
     await expect(page.locator('.trigger-message')).toContainText('Run started');
     await expect(async () => {
-      await page.locator('u2-nav a[data-route="#/operations"]').click();
-      await page.locator('u2-nav a[data-route="#/packages"]').click();
+      await gotoNav(page, '#/operations');
+      await gotoNav(page, '#/packages');
       await page.locator('[data-automation-id="pinger"] [data-automation-history]').click();
       await expect(page.locator('[data-automation-id="pinger"] .trigger-history__status').first()).toHaveText('completed', { timeout: 1000 });
     }).toPass();

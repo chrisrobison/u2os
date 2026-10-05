@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import fs from 'node:fs';
-import { startDedicatedServer, stopDedicatedServer, createOwner } from './helpers.js';
+import { startDedicatedServer, stopDedicatedServer, createOwner, gotoNav } from './helpers.js';
 
 const PASSPHRASE = 'correct horse battery staple';
 
@@ -18,7 +18,7 @@ test('owner diagnostics is readable, redacted, responsive, and refreshes from li
     await page.getByLabel('Passphrase').fill(PASSPHRASE);
     await page.locator('form button[type="submit"]').click();
     await page.getByRole('button', { name: 'Toggle navigation' }).click();
-    await page.locator('u2-nav a[data-route="#/diagnostics"]').click();
+    await gotoNav(page, '#/diagnostics');
 
     const view = page.locator('u2-diagnostics');
     await expect(page.getByRole('heading', { name: 'Diagnostics' })).toBeVisible();

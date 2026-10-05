@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { startDedicatedServer, stopDedicatedServer, createOwner } from './helpers.js';
+import { startDedicatedServer, stopDedicatedServer, createOwner, gotoNav } from './helpers.js';
 
 const passphrase = 'fixture-only saved approval passphrase';
 const deferred = () => { let resolve; const promise = new Promise((done) => { resolve = done; }); return { promise, resolve }; };
@@ -14,7 +14,7 @@ async function withPage(page, operation, mode = 'personal') {
     await operation(dedicated);
   } finally { await stopDedicatedServer(page, dedicated); }
 }
-async function operations(page) { await page.locator('u2-nav a[data-route="#/operations"]').click(); await expect(page.getByRole('button', { name: 'Refresh operations', exact: true })).toBeVisible(); }
+async function operations(page) { await gotoNav(page, '#/operations'); await expect(page.getByRole('button', { name: 'Refresh operations', exact: true })).toBeVisible(); }
 const refreshEvent = (page) => page.evaluate(() => window.dispatchEvent(new CustomEvent('u2-event', { detail: { type: 'agent.action.queue_updated' } })));
 
 test('a real demo pending proposal is rediscovered after reload and can be rejected through unchanged runtime approval', async ({ page }) => withPage(page, async (dedicated) => {

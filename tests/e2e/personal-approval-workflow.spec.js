@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { gotoNav } from './helpers.js';
 import assert from 'node:assert/strict';
 import { withPersonalWorkflow, PERSONAL_FIXTURE_PASSPHRASE } from '../helpers/personal-workflow-fixture.js';
 import { getDb } from '../../server/db/connection.js';
@@ -34,7 +35,7 @@ function plan(outcome) {
   };
 }
 async function review(page) {
-  await page.locator('u2-nav a[data-route="#/operations"]').click();
+  await gotoNav(page, '#/operations');
   await page.getByRole('button', { name: 'Review approval', exact: true }).click();
   const card = page.locator('.operation-review u2-approval'); await expect(card).toHaveAttribute('data-status', 'pending'); return card;
 }
