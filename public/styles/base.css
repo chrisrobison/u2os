@@ -408,6 +408,65 @@ u2-app {
 
 .u2-task__due { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-tertiary); }
 
+button.u2-task--select {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-bottom: var(--border-width) solid var(--border-color);
+  border-radius: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+button.u2-task--select:hover { background: var(--bg-raised); }
+button.u2-task--select:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+
+/* ---------- section header and record modal (#434) ---------- */
+
+.u2-section { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); margin-bottom: var(--space-5); }
+.u2-section__text { min-width: 0; }
+.u2-section .workspace__title { margin: 0; }
+.u2-section__add { flex: 0 0 auto; min-width: 36px; min-height: 36px; padding: 0 var(--space-3); font-size: var(--text-lg); line-height: 1; }
+
+.u2-modal {
+  width: min(520px, calc(100vw - 2 * var(--space-4)));
+  max-height: calc(100vh - 2 * var(--space-4));
+  padding: var(--space-5);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  overflow: auto;
+}
+.u2-modal::backdrop { background: rgba(0, 0, 0, 0.5); }
+.u2-modal__title { margin: 0 0 var(--space-4); font-family: var(--font-voice); font-size: var(--text-lg); font-weight: 500; }
+.u2-modal__notice { margin: 0 0 var(--space-3); color: var(--text-secondary); font-size: var(--text-sm); }
+.u2-modal__status { margin-top: var(--space-3); }
+.u2-modal__footer { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-5); }
+.u2-modal__spacer { flex: 1; }
+
+.record-form { display: flex; flex-direction: column; gap: var(--space-4); }
+.record-form__field { display: flex; flex-direction: column; gap: var(--space-1); }
+.record-form__field.is-checkbox { flex-direction: row; align-items: center; gap: var(--space-2); }
+.record-form__field label { font-size: var(--text-sm); font-weight: 600; color: var(--text-secondary); }
+.record-form__field input[type="text"],
+.record-form__field input[type="date"],
+.record-form__field textarea,
+.record-form__field select {
+  padding: var(--space-2);
+  background: var(--bg-input);
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: var(--text-base);
+}
+.record-form__field [readonly], .record-form__field [disabled] { background: var(--bg-raised); color: var(--text-secondary); }
+.record-form__field [aria-invalid="true"] { border-color: var(--accent-danger); }
+.record-form__help { font-size: var(--text-xs); color: var(--text-tertiary); }
+.record-form__error { font-size: var(--text-xs); color: var(--accent-danger); min-height: 0; }
+.record-form__error:empty { display: none; }
+
 /* ---------- email summary ---------- */
 
 .u2-email-list { display: flex; flex-direction: column; gap: var(--space-2); }

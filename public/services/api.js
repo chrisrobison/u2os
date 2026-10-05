@@ -157,6 +157,10 @@ export function createTask({ title, dueAt, relatedEntityId } = {}) {
   });
 }
 
+export function completeTask(id) {
+  return request(`/api/tasks/${encodeURIComponent(id)}/complete`, { method: 'POST', headers: JSON_HEADERS, body: '{}' });
+}
+
 export function getEmails(folder = 'inbox') {
   return request(`/api/email${qs({ folder })}`);
 }

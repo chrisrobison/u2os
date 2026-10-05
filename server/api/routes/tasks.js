@@ -27,4 +27,22 @@ export function registerTaskRoutes(router, { agent }) {
 
     sendJson(res, outcome.status === 'failed' ? 500 : 201, outcome);
   });
+
+  router.post('/api/tasks/:id/complete', async (req, res) => {
+    const task = tasksProvider.getTask(req.params.id);
+    if (!task) return sendJson(res, 404, { error: 'No such task' });
+
+    // Same gated pipeline as creation: audited, and subject to policy.
+    const outcome = await agent.evaluateAndMaybeExecute({
+      tool: 'tasks.complete',
+      arguments: { id: task.id },
+      requestedBy: 'user',
+      requestText: `POST /api/tasks/${task.id}/complete`,
+      reasoningSummary: 'Direct task completion via API.',
+      correlationId: newId('corr'),
+      actor: { type: 'user', id: 'user' },
+    });
+
+    sendJson(res, outcome.status === 'failed' ? 500 : 200, outcome);
+  });
 }
