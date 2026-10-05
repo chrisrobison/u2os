@@ -562,7 +562,7 @@ export class U2App extends HTMLElement {
     }
   }
 
-  _renderCalendar() {
+  async _renderCalendar() {
     const header = document.createElement('u2-section');
     header.heading = 'Calendar';
     header.addLabel = 'New event';
@@ -575,6 +575,10 @@ export class U2App extends HTMLElement {
     const wrap = document.createElement('div');
     wrap.append(header, note, cal);
     this._setWorkspace('', wrap);
+    // Like every root view, settle only once the first load has been handled.
+    // A response that arrives after the owner has moved on only touches the
+    // detached calendar, never the newly selected view.
+    await cal.loaded;
   }
 
   // "+" opens the modal empty; an event in any view opens it populated.

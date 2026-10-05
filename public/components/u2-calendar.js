@@ -65,7 +65,9 @@ export class U2Calendar extends HTMLElement {
   connectedCallback() {
     this.classList.add('u2-calendar');
     this._build();
-    this.reload();
+    // Settles when the first load has been handled (it never rejects), so a
+    // view that awaits it behaves like the other async views.
+    this.loaded = this.reload();
   }
 
   _build() {
