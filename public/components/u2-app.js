@@ -11,6 +11,7 @@ import './u2-calendar.js';
 import './u2-task-list.js';
 import './u2-section.js';
 import { getModal } from './u2-modal.js';
+import { buildReplyLink } from './mail-reply.js';
 import './u2-email-summary.js';
 import './u2-connectors.js';
 import './u2-timeline.js';
@@ -555,10 +556,48 @@ export class U2App extends HTMLElement {
     try {
       const { emails, cache } = await api.getEmails(folder);
       const el = document.createElement('u2-email-summary');
+      el.setAttribute('selectable', '');
       el.emails = emails;
+      el.addEventListener('u2-email-select', (event) => this._openEmail(event.detail.email, event.detail.opener));
       body.replaceWith(cacheNote(cache), el);
     } catch (err) {
       body.replaceWith(this._error(err));
+    }
+  }
+
+  // A message opens in the shared dialog. Replying is a link to the owner's
+  // own mail client with the original quoted; U2OS sends nothing (#436).
+  async _openEmail(summary, opener) {
+    const modal = getModal();
+    const fields = [
+      { name: 'from', label: 'From', type: 'text', readOnly: true },
+      { name: 'to', label: 'To', type: 'text', readOnly: true },
+      { name: 'date', label: 'Date', type: 'text', readOnly: true },
+      { name: 'subject', label: 'Subject', type: 'text', readOnly: true },
+      { name: 'body', label: 'Message', type: 'textarea', rows: 12, readOnly: true },
+    ];
+    const show = (email, notice = '') => {
+      const reply = buildReplyLink(email);
+      modal.open({
+        opener,
+        title: 'Message',
+        cancelLabel: 'Close',
+        fields,
+        notice: notice || (reply ? '' : 'There is no verified sender address to reply to.'),
+        values: {
+          from: email.from_addr,
+          to: (email.to_addr || []).join(', '),
+          date: email.received_at ? new Date(email.received_at).toLocaleString() : '',
+          subject: email.subject || '(no subject)',
+          body: email.body || '',
+        },
+        actions: reply ? [{ label: reply.kind === 'gmail' ? 'Reply in Gmail' : 'Reply', href: reply.url, primary: true }] : [],
+      });
+    };
+    try {
+      show((await api.getEmail(summary.id)).email);
+    } catch (err) {
+      modal.open({ opener, title: 'Message', cancelLabel: 'Close', fields: [], notice: `Couldn't open this message: ${err.message}` });
     }
   }
 

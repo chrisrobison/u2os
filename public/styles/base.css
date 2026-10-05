@@ -457,6 +457,23 @@ button.u2-task--select {
 button.u2-task--select:hover { background: var(--bg-raised); }
 button.u2-task--select:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
 
+button.u2-email--select {
+  display: block;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-bottom: var(--border-width) solid var(--border-color);
+  border-radius: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+button.u2-email--select:hover { background: var(--bg-raised); }
+button.u2-email--select:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.record-form__field textarea[readonly] { resize: vertical; font-family: var(--font-ui); line-height: 1.4; }
+a.btn { display: inline-block; text-decoration: none; }
+
 /* ---------- calendar views (#437) ---------- */
 
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
