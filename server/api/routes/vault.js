@@ -11,6 +11,9 @@ import { getOnboardingStatus } from '../../onboarding/onboarding-config.js';
 import { readJournal } from '../../vault/journal.js';
 import { parseMarkdown, MAX_VAULT_FILE_BYTES } from '../../vault/markdown.js';
 import { getDb, getDataDir } from '../../db/connection.js';
+import { getEntity, findEntities } from '../../memory/entity-store.js';
+import { vaultTargetForEntity } from '../../vault/writeback.js';
+import { createVaultRecord, updateVaultRecord, readVaultRecord, RECORD_FIELDS } from '../../vault/records.js';
 import { listStarterContent, installStarterContent, STARTER_CONTENT } from '../../vault/starter-content.js';
 
 const ME_FILE = 'me.md';
@@ -37,6 +40,77 @@ export function registerVaultRoutes(router, { eventBus, toolRegistry }) {
   router.post('/api/vault/mcp/restart', async (_req, res) => {
     sendJson(res, 200, { mcp: await startMcpServers({ toolRegistry }) });
   });
+
+  // Creating and editing people and projects from the browser (#438, #439).
+  // The vault file is written first, then indexed, exactly like the other owner
+  // edits (docs/vault.md, "Editing from the UI"). Nothing here goes through the
+  // agent: the owner is editing their own files.
+  const recordRoute = async (res, handler) => {
+    try { return await handler(); } catch (error) {
+      if (error.code === 'VAULT_WRITEBACK') return sendJson(res, error.status || 409, { error: error.message, code: error.code });
+      throw error;
+    }
+  };
+
+  router.post('/api/vault/records', async (req, res) => recordRoute(res, () => {
+    const { type } = req.body || {};
+    if (!Object.hasOwn(RECORD_FIELDS, type)) return sendJson(res, 400, { error: `type must be one of: ${Object.keys(RECORD_FIELDS).join(', ')}` });
+    const { path: relativePath, entityId } = createVaultRecord(type, req.body);
+    const report = indexVault({ eventBus });
+    const problem = report.errors.find((item) => item.path === relativePath);
+    if (problem) return sendJson(res, 500, { error: `The file was written but could not be indexed: ${problem.error}` });
+    sendJson(res, 201, { entity: getEntity(entityId), path: relativePath });
+  }));
+
+  // People or projects with the values their files hold, for the list views.
+  // Bounded, and never returns notes (the dialog fetches those one at a time).
+  router.get('/api/vault/records', async (req, res) => recordRoute(res, () => {
+    const type = req.query.type;
+    if (!Object.hasOwn(RECORD_FIELDS, type)) return sendJson(res, 400, { error: `type must be one of: ${Object.keys(RECORD_FIELDS).join(', ')}` });
+    const records = [];
+    for (const entity of findEntities({ type }).slice(0, 500)) {
+      const target = vaultTargetForEntity(entity.id);
+      if (target?.owner) continue; // the owner is not one of their own contacts
+      let fields = {};
+      let vaultBacked = false;
+      if (target) {
+        try { fields = readVaultRecord(entity.id, type)?.fields ?? {}; vaultBacked = true; } catch { /* unreadable file: still list the record */ }
+      }
+      records.push({ id: entity.id, name: entity.name, vaultBacked, fields });
+    }
+    records.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    sendJson(res, 200, { records });
+  }));
+
+  router.get('/api/vault/records/:id', async (req, res) => recordRoute(res, () => {
+    const entity = getEntity(req.params.id);
+    if (!entity) return sendJson(res, 404, { error: 'Not Found' });
+    if (!Object.hasOwn(RECORD_FIELDS, entity.type)) return sendJson(res, 400, { error: `${entity.type} records cannot be edited here` });
+    let record = null;
+    try { record = readVaultRecord(entity.id, entity.type); } catch (error) {
+      if (error.code === 'VAULT_INVALID' || error.code === 'ENOENT') return sendJson(res, 409, { error: `${entity.name}'s vault file cannot be read: ${error.message}` });
+      throw error;
+    }
+    // vaultBacked: false means the record exists only in the database.
+    sendJson(res, 200, { entity, vaultBacked: Boolean(record), name: record?.name ?? entity.name, fields: record?.fields ?? {}, notes: record?.notes ?? '' });
+  }));
+
+  router.patch('/api/vault/records/:id', async (req, res) => recordRoute(res, () => {
+    const entity = getEntity(req.params.id);
+    if (!entity) return sendJson(res, 404, { error: 'Not Found' });
+    if (!Object.hasOwn(RECORD_FIELDS, entity.type)) return sendJson(res, 400, { error: `${entity.type} records cannot be edited here` });
+    const result = updateVaultRecord(entity.id, entity.type, req.body || {});
+    if (!result) {
+      return sendJson(res, 409, {
+        error: 'This record is stored only in the database, not in your vault. Export your memory to the vault first (Vault view), then edit it.',
+        code: 'NOT_VAULT_BACKED',
+      });
+    }
+    const report = indexVault({ eventBus });
+    const problem = report.errors.find((item) => item.path === result.path);
+    if (problem) return sendJson(res, 409, { error: `${result.path} could not be indexed after the edit: ${problem.error}` });
+    sendJson(res, 200, { entity: getEntity(entity.id), path: result.path });
+  }));
 
   router.post('/api/vault/reindex', async (_req, res) => {
     sendJson(res, 200, { report: indexVault({ eventBus }) });

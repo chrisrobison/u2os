@@ -187,6 +187,31 @@ export function getMemoryEntities({ type, query } = {}) {
   return request(`/api/memory/entities${qs({ type, query })}`);
 }
 
+export function getOwnerEntity() {
+  return request('/api/owner/entity');
+}
+
+// People and projects as the vault files describe them (#438, #439).
+export function getVaultRecords(type) {
+  return request(`/api/vault/records${qs({ type })}`);
+}
+
+export function getVaultRecord(id) {
+  return request(`/api/vault/records/${encodeURIComponent(id)}`);
+}
+
+export function createVaultRecord(body) {
+  return request('/api/vault/records', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(body) });
+}
+
+export function updateVaultRecord(id, body) {
+  return request(`/api/vault/records/${encodeURIComponent(id)}`, { method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify(body) });
+}
+
+export function updateTask(id, body) {
+  return request(`/api/tasks/${encodeURIComponent(id)}`, { method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify(body) });
+}
+
 export function getMemoryEntity(id) {
   return request(`/api/memory/entities/${encodeURIComponent(id)}`);
 }

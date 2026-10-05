@@ -155,6 +155,14 @@ test.describe.serial('navigation shell (#15)', () => {
       },
     },
     {
+      hash: '#/people',
+      async assert() {
+        await expect(workspaceTitle('People')).toBeVisible();
+        await expect(page.locator('.entity-row__name', { hasText: 'Sarah' })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'New person' })).toBeVisible();
+      },
+    },
+    {
       hash: '#/mail',
       async assert() {
         await expect(workspaceTitle('Mail')).toBeVisible();
@@ -280,7 +288,7 @@ test.describe.serial('navigation shell (#15)', () => {
     for (const id of ['addons', 'settings', 'system']) await expect(groupToggle(id)).toHaveAttribute('aria-expanded', 'false');
 
     // Every route stays reachable from exactly one group.
-    await expect(page.locator('u2-nav a[data-route]')).toHaveCount(22);
+    await expect(page.locator('u2-nav a[data-route]')).toHaveCount(23);
     await expect(navLink('#/model')).toBeHidden();
     await expect(navLink('#/mail')).toBeVisible();
   });

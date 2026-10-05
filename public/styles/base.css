@@ -474,6 +474,35 @@ button.u2-email--select:focus-visible { outline: 2px solid var(--focus-ring); ou
 .record-form__field textarea[readonly] { resize: vertical; font-family: var(--font-ui); line-height: 1.4; }
 a.btn { display: inline-block; text-decoration: none; }
 
+/* ---------- people and project lists (#438, #439) ---------- */
+
+.record-list { display: flex; flex-direction: column; }
+.record-search { display: block; margin-bottom: var(--space-3); }
+.record-search input { width: 100%; padding: var(--space-2) var(--space-3); background: var(--bg-input); border: var(--border-width) solid var(--border-color); border-radius: var(--radius-sm); color: var(--text-primary); font-size: var(--text-base); }
+button.record-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3);
+  background: transparent;
+  border: 0;
+  border-bottom: var(--border-width) solid var(--border-color);
+  border-radius: 0;
+  text-align: left;
+  font: inherit;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+button.record-row:hover { background: var(--bg-raised); }
+button.record-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.record-row__meta { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); font-size: var(--text-xs); color: var(--text-secondary); }
+.record-row__detail { color: var(--text-tertiary); }
+.record-row__badge { padding: 1px var(--space-2); border-radius: var(--radius-full); background: var(--bg-raised); color: var(--text-secondary); }
+.record-row__badge.is-due { background: var(--accent-pending-soft); color: var(--accent-pending); font-weight: 600; }
+@media (max-width: 520px) { button.record-row { flex-direction: column; align-items: flex-start; } .record-row__meta { justify-content: flex-start; } }
+
 /* ---------- calendar views (#437) ---------- */
 
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }

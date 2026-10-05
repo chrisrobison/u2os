@@ -31,6 +31,21 @@ export function createTask({ title, dueAt = null, relatedEntityId = null, source
   return getTask(id);
 }
 
+// Edits only the supplied fields. `dueAt: null` clears the due date.
+export function updateTask(id, { title, dueAt, status } = {}) {
+  const existing = getTask(id);
+  if (!existing) return null;
+  const db = getDb();
+  const next = {
+    title: title === undefined ? existing.title : title,
+    due_at: dueAt === undefined ? existing.due_at : dueAt,
+    status: status === undefined ? existing.status : status,
+  };
+  db.prepare('UPDATE tasks SET title = ?, due_at = ?, status = ?, updated_at = ? WHERE id = ?')
+    .run(next.title, next.due_at, next.status, new Date().toISOString(), id);
+  return { before: existing, after: getTask(id) };
+}
+
 export function completeTask(id) {
   const db = getDb();
   const now = new Date().toISOString();

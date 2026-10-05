@@ -12,6 +12,7 @@ import './u2-task-list.js';
 import './u2-section.js';
 import { getModal } from './u2-modal.js';
 import { buildReplyLink } from './mail-reply.js';
+import { contactStatus, contactLabel, matchesQuery } from './record-helpers.js';
 import './u2-email-summary.js';
 import './u2-connectors.js';
 import './u2-timeline.js';
@@ -45,6 +46,48 @@ function requireExecuted(outcome, what) {
   if (outcome && outcome.status === 'pending') throw new Error(`Policy needs your approval to ${what}. Review it in Operations.`);
   throw new Error(`Could not ${what}${outcome && outcome.reason ? `: ${outcome.reason}` : '.'}`);
 }
+
+// People and projects are vault records (#438, #439): the list shows what the
+// files say, "+" opens an empty dialog, and a row opens the same dialog filled.
+const PROJECT_STATUSES = ['active', 'planned', 'blocked', 'paused', 'done'].map((value) => ({ value, label: value[0].toUpperCase() + value.slice(1) }));
+const RECORD_KINDS = {
+  Project: {
+    type: 'Project',
+    heading: 'Projects',
+    addLabel: 'New project',
+    singular: 'Project',
+    detailBase: '#/projects',
+    empty: 'No projects yet. Use + to add one.',
+    formFields: [
+      { name: 'name', label: 'Name', type: 'text', required: true, maxLength: 200 },
+      { name: 'status', label: 'Status', type: 'select', options: PROJECT_STATUSES },
+      { name: 'deadline', label: 'Deadline', type: 'plaindate' },
+      { name: 'notes', label: 'Notes', type: 'textarea', rows: 6, maxLength: 20000 },
+    ],
+  },
+  Person: {
+    type: 'Person',
+    heading: 'People',
+    addLabel: 'New person',
+    singular: 'Person',
+    detailBase: '#/people',
+    searchable: true,
+    empty: 'No people yet. Use + to add one.',
+    formFields: [
+      { name: 'name', label: 'Name', type: 'text', required: true, maxLength: 200 },
+      { name: 'relationship', label: 'Relationship to you', type: 'text', maxLength: 100, placeholder: 'sister, colleague, recruiter...' },
+      { name: 'organization', label: 'Organization', type: 'text', maxLength: 200 },
+      { name: 'email', label: 'Email', type: 'text', maxLength: 320 },
+      { name: 'phone', label: 'Phone', type: 'text', maxLength: 64 },
+      { name: 'birthday', label: 'Birthday', type: 'plaindate' },
+      { name: 'keep_in_touch_days', label: 'Keep in touch every (days)', type: 'text', maxLength: 4, help: 'Mark this person as due when this many days pass without contact.' },
+      { name: 'last_contact', label: 'Last contact', type: 'plaindate' },
+      { name: 'notes', label: 'Notes', type: 'textarea', rows: 5, maxLength: 20000 },
+    ],
+  },
+};
+const PROJECTS = RECORD_KINDS.Project;
+const PEOPLE = RECORD_KINDS.Person;
 
 const THEME_KEY = 'u2-theme';
 const DAILY_REVIEW_PROMPT = "What's going on today? Handle anything routine that doesn't need me and tell me what I need to pay attention to.";
@@ -303,7 +346,11 @@ export class U2App extends HTMLElement {
         break;
       case 'projects':
         if (sub) this._renderEntityDetail(sub);
-        else this._renderEntityList({ title: 'Projects', linkBase: '#/projects', type: 'Project' });
+        else this._renderRecordList(PROJECTS);
+        break;
+      case 'people':
+        if (sub) this._renderEntityDetail(sub);
+        else this._renderRecordList(PEOPLE);
         break;
       case 'mail':
         this._renderMail();
@@ -565,6 +612,161 @@ export class U2App extends HTMLElement {
     }
   }
 
+  // People and projects: the list opens first, "+" creates, a row edits.
+  async _renderRecordList(kind) {
+    const generation = this._routeGeneration;
+    this._setWorkspace('', this._loading(`Loading ${kind.heading.toLowerCase()}...`));
+    try {
+      const { records } = await api.getVaultRecords(kind.type);
+      if (!this._isCurrentRoute(generation)) return;
+      const header = document.createElement('u2-section');
+      header.heading = kind.heading;
+      header.addLabel = kind.addLabel;
+      const list = document.createElement('div');
+      list.className = 'record-list';
+      let query = '';
+      const draw = () => {
+        const shown = records.filter((record) => (kind.searchable ? matchesQuery(record, query) : true));
+        list.textContent = '';
+        if (!shown.length) {
+          const empty = document.createElement('div');
+          empty.className = 'empty-state';
+          empty.textContent = records.length ? 'No one matches that search.' : kind.empty;
+          list.append(empty);
+          return;
+        }
+        for (const record of shown) list.append(this._recordRow(kind, record));
+      };
+      const wrap = document.createElement('div');
+      wrap.append(header);
+      if (kind.searchable) {
+        const label = document.createElement('label');
+        label.className = 'record-search';
+        const text = document.createElement('span');
+        text.className = 'sr-only';
+        text.textContent = `Search ${kind.heading.toLowerCase()}`;
+        const input = document.createElement('input');
+        input.type = 'search';
+        input.placeholder = `Search ${kind.heading.toLowerCase()}`;
+        input.addEventListener('input', () => { query = input.value; draw(); });
+        label.append(text, input);
+        wrap.append(label);
+      }
+      wrap.append(list);
+      this._reloadRecords = async () => {
+        const fresh = await api.getVaultRecords(kind.type);
+        if (!this._isCurrentRoute(generation)) return;
+        records.splice(0, records.length, ...fresh.records);
+        draw();
+      };
+      header.addEventListener('u2-section-add', (event) => this._openRecord(kind, null, event.detail.opener));
+      list.addEventListener('click', (event) => {
+        const row = event.target.closest('[data-record-id]');
+        const record = row && records.find((item) => item.id === row.dataset.recordId);
+        if (record) this._openRecord(kind, record, row);
+      });
+      draw();
+      this._setWorkspace('', wrap);
+    } catch (err) {
+      if (!this._isCurrentRoute(generation)) return;
+      this._setWorkspace(this._header(kind.heading), this._error(err));
+    }
+  }
+
+  _recordRow(kind, record) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'record-row';
+    row.dataset.recordId = record.id;
+    const name = document.createElement('span');
+    name.className = 'entity-row__name';
+    name.textContent = record.name;
+    row.append(name);
+    const meta = document.createElement('span');
+    meta.className = 'record-row__meta';
+    const fields = record.fields || {};
+    const chip = (text, className = 'entity-row__type') => {
+      const el = document.createElement('span');
+      el.className = className;
+      el.textContent = text;
+      return el;
+    };
+    if (kind.type === 'Project') {
+      meta.append(chip(fields.status || 'Project'));
+      if (fields.deadline) meta.append(chip(`Due ${fields.deadline}`, 'record-row__detail'));
+    } else {
+      if (fields.relationship) meta.append(chip(fields.relationship));
+      if (fields.organization) meta.append(chip(fields.organization, 'record-row__detail'));
+      const status = contactStatus(fields);
+      const label = contactLabel(status);
+      if (label) {
+        const badge = chip(label, `record-row__badge${status.state === 'due' ? ' is-due' : ''}`);
+        meta.append(badge);
+      }
+    }
+    if (!record.vaultBacked) meta.append(chip('Database only', 'record-row__detail'));
+    row.append(meta);
+    return row;
+  }
+
+  // "+" opens the dialog empty, a row opens it with what the file says. The
+  // file is the authority, so the form is filled from it, not from the database.
+  async _openRecord(kind, record, opener) {
+    const modal = getModal();
+    const reload = () => this._reloadRecords?.();
+    const payload = (values) => {
+      const { name, notes, ...rest } = values;
+      const fields = {};
+      for (const [key, value] of Object.entries(rest)) fields[key] = value ?? '';
+      return { name, fields, notes: notes ?? '' };
+    };
+    if (!record) {
+      modal.open({
+        opener,
+        title: kind.addLabel,
+        fields: kind.formFields,
+        submitLabel: `Create ${kind.singular.toLowerCase()}`,
+        notice: 'This is saved as a file in your vault.',
+        onSubmit: async (values) => {
+          await api.createVaultRecord({ type: kind.type, ...payload(values) });
+          await reload();
+        },
+      });
+      return;
+    }
+    const detailsAction = { label: 'Open details', onClick: async () => { window.location.hash = `${kind.detailBase}/${encodeURIComponent(record.id)}`; } };
+    try {
+      const current = await api.getVaultRecord(record.id);
+      if (!current.vaultBacked) {
+        modal.open({
+          opener,
+          title: kind.singular,
+          cancelLabel: 'Close',
+          fields: kind.formFields.map((field) => ({ ...field, readOnly: true })),
+          values: { name: current.name },
+          notice: 'This record is stored only in the database, not in your vault, so it cannot be edited here. Export your memory to the vault from the Vault view, then edit it.',
+          actions: [detailsAction],
+        });
+        return;
+      }
+      modal.open({
+        opener,
+        title: kind.singular,
+        fields: kind.formFields,
+        values: { name: current.name, ...current.fields, notes: current.notes },
+        submitLabel: 'Save',
+        notice: `Saved to ${current.path || 'your vault'}.`,
+        onSubmit: async (values) => {
+          await api.updateVaultRecord(record.id, payload(values));
+          await reload();
+        },
+        actions: [detailsAction],
+      });
+    } catch (err) {
+      modal.open({ opener, title: kind.singular, cancelLabel: 'Close', fields: [], notice: `Couldn't open this record: ${err.message}` });
+    }
+  }
+
   // A message opens in the shared dialog. Replying is a link to the owner's
   // own mail client with the original quoted; U2OS sends nothing (#436).
   async _openEmail(summary, opener) {
@@ -696,8 +898,8 @@ export class U2App extends HTMLElement {
   _openTask(task, opener = null) {
     const modal = getModal();
     const fields = [
-      { name: 'title', label: 'Title', type: 'text', required: true, maxLength: 200, readOnly: Boolean(task) },
-      { name: 'dueAt', label: 'Due date', type: 'date', readOnly: Boolean(task) },
+      { name: 'title', label: 'Title', type: 'text', required: true, maxLength: 200 },
+      { name: 'dueAt', label: 'Due date', type: 'date' },
     ];
     if (!task) {
       modal.open({
@@ -713,20 +915,21 @@ export class U2App extends HTMLElement {
       return;
     }
     const completed = task.status === 'completed';
+    const reload = () => this._reloadTasks();
     modal.open({
       opener,
       title: 'Task',
-      fields,
+      fields: fields.map((field) => ({ ...field, readOnly: false })),
       values: { title: task.title, dueAt: task.due_at },
       notice: completed ? 'This task is completed.' : '',
-      actions: completed ? [] : [{
-        label: 'Mark complete',
-        onClick: async () => {
-          requireExecuted(await api.completeTask(task.id), 'complete the task');
-          await this._reloadTasks();
-        },
-      }],
-      cancelLabel: 'Close',
+      submitLabel: 'Save',
+      onSubmit: async (values) => {
+        await api.updateTask(task.id, { title: values.title, dueAt: values.dueAt });
+        await reload();
+      },
+      actions: [completed
+        ? { label: 'Reopen', onClick: async () => { await api.updateTask(task.id, { status: 'open' }); await reload(); } }
+        : { label: 'Mark complete', onClick: async () => { requireExecuted(await api.completeTask(task.id), 'complete the task'); await reload(); } }],
     });
   }
 
