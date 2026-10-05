@@ -8,6 +8,8 @@ import './u2-agent.js';
 import './u2-dashboard.js';
 import './u2-schedule.js';
 import './u2-task-list.js';
+import './u2-section.js';
+import { getModal } from './u2-modal.js';
 import './u2-email-summary.js';
 import './u2-connectors.js';
 import './u2-timeline.js';
@@ -33,6 +35,14 @@ const DASHBOARD_CONTEXTS = [
   { id: 'before-meeting', label: 'Before a meeting', eventPicker: true, paramKey: 'eventId' },
   { id: 'project', label: 'Project', entityType: 'Project', paramKey: 'projectId' },
 ];
+
+// Gated actions can finish as pending (awaiting approval) or blocked rather
+// than executed. Tell the owner instead of closing the dialog as if it worked.
+function requireExecuted(outcome, what) {
+  if (outcome && outcome.status === 'executed') return outcome;
+  if (outcome && outcome.status === 'pending') throw new Error(`Policy needs your approval to ${what}. Review it in Operations.`);
+  throw new Error(`Could not ${what}${outcome && outcome.reason ? `: ${outcome.reason}` : '.'}`);
+}
 
 const THEME_KEY = 'u2-theme';
 const DAILY_REVIEW_PROMPT = "What's going on today? Handle anything routine that doesn't need me and tell me what I need to pay attention to.";
@@ -570,17 +580,69 @@ export class U2App extends HTMLElement {
 
   async _renderTasks() {
     const generation = this._routeGeneration;
-    this._setWorkspace(this._header('Tasks'), this._loading('Loading tasks...'));
+    this._setWorkspace('', this._loading('Loading tasks...'));
     try {
       const { tasks } = await api.getTasks();
       if (!this._isCurrentRoute(generation)) return;
-      const el = document.createElement('u2-task-list');
-      el.tasks = tasks;
-      this._setWorkspace(this._header('Tasks'), el);
+      const header = document.createElement('u2-section');
+      header.heading = 'Tasks';
+      header.addLabel = 'New task';
+      header.addEventListener('u2-section-add', (event) => this._openTask(null, event.detail.opener));
+      const list = document.createElement('u2-task-list');
+      list.setAttribute('selectable', '');
+      list.tasks = tasks;
+      list.addEventListener('u2-task-select', (event) => this._openTask(event.detail.task, event.detail.opener));
+      const wrap = document.createElement('div');
+      wrap.append(header, list);
+      this._setWorkspace('', wrap);
+      // Reloads replace only the list, so the "+" button that opened the
+      // modal stays in the page and can take focus back when it closes.
+      this._reloadTasks = async () => {
+        const fresh = await api.getTasks();
+        if (this._isCurrentRoute(generation)) list.tasks = fresh.tasks;
+      };
     } catch (err) {
       if (!this._isCurrentRoute(generation)) return;
       this._setWorkspace(this._header('Tasks'), this._error(err));
     }
+  }
+
+  // "+" opens the modal empty; a list row opens it populated (#434).
+  _openTask(task, opener = null) {
+    const modal = getModal();
+    const fields = [
+      { name: 'title', label: 'Title', type: 'text', required: true, maxLength: 200, readOnly: Boolean(task) },
+      { name: 'dueAt', label: 'Due date', type: 'date', readOnly: Boolean(task) },
+    ];
+    if (!task) {
+      modal.open({
+        opener,
+        title: 'New task',
+        fields,
+        submitLabel: 'Create task',
+        onSubmit: async (values) => {
+          requireExecuted(await api.createTask({ title: values.title, dueAt: values.dueAt }), 'create the task');
+          await this._reloadTasks();
+        },
+      });
+      return;
+    }
+    const completed = task.status === 'completed';
+    modal.open({
+      opener,
+      title: 'Task',
+      fields,
+      values: { title: task.title, dueAt: task.due_at },
+      notice: completed ? 'This task is completed.' : '',
+      actions: completed ? [] : [{
+        label: 'Mark complete',
+        onClick: async () => {
+          requireExecuted(await api.completeTask(task.id), 'complete the task');
+          await this._reloadTasks();
+        },
+      }],
+      cancelLabel: 'Close',
+    });
   }
 
   _renderConnectors() {

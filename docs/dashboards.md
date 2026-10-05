@@ -48,6 +48,28 @@ The LLM never emits HTML/JS. It emits a JSON **dashboard schema**. The frontend 
 
 All reserved primitives are implemented. Person, project, conversation, and document cards consume bounded domain structures and render supplied text through DOM text nodes. Chart accepts up to four labeled finite-number series, map accepts bounded valid coordinates and uses a local CSS plot (no mapping SDK or tile requests), and photo-grid accepts only local media paths or bounded image data URLs. `<u2-agent-status>` exposes the agent's current observable state. No primitive accepts HTML, JavaScript, or arbitrary component code.
 
+## Data sections: list, record modal and `+`
+
+Sections that hold records follow one pattern ([#434](https://github.com/chrisrobison/u2os/issues/434)), so every one behaves the same way:
+
+- The section opens on its **list** (or a dashboard), never on a detail form.
+- A **`+` button** in the section header opens the record dialog **empty**, to create.
+- Selecting a **list item** opens the same dialog **populated**.
+- Nothing is saved until the owner submits. Writes go through the same policy-gated pipeline as every other action, so a result of "needs approval" or "blocked" is shown in the dialog instead of closing it as if it worked.
+
+The pieces are plain Web Components with no dependencies:
+
+| Piece | Role |
+|---|---|
+| `u2-section` | Header with title, optional subtitle and the `+` button. Fires `u2-section-add`. |
+| `u2-modal` | A native `<dialog>`: focus is trapped, `Escape` and the backdrop close it, closing with unsaved edits asks first, and focus returns to the control that opened it. |
+| `record-form.js` | Builds a form from a field schema (`text`, `textarea`, `date`, `select`, `checkbox`) and validates it. Every control has a real label, and errors are announced next to the field. |
+| `u2-task-list[selectable]` | Rows become buttons that fire `u2-task-select`. Without the attribute (dashboard cards) rows stay read-only. |
+
+Tasks is the first section on the pattern: `+` creates a task, and a row opens it with a **Mark complete** action. Editing task fields, and the other sections (mail, calendar, projects, people), follow in their own issues under [#433](https://github.com/chrisrobison/u2os/issues/433).
+
+A date-only field is stored as the end of that local day.
+
 ## Live updates
 
 Dashboard instances subscribe to the shared authenticated SSE event stream while they are connected. Task, calendar, email, action, recommendation, and memory events trigger a short debounced reload through the same server-side generator that produced the current view. Dynamic dashboards retain their selected context and entity parameters. Existing cards remain visible if a refresh fails, with an owner-readable inline error instead of replacing the dashboard.
