@@ -13,7 +13,7 @@ async function operations(page) {
 }
 const views = [
   ['calendar', '_renderCalendar', '**/api/calendar/events*'], ['tasks', '_renderTasks', '**/api/tasks*'],
-  ['memory', '_renderMemory', '**/api/memory/entities'], ['projects', '_renderEntityList', '**/api/memory/entities?type=Project'],
+  ['memory', '_renderMemory', '**/api/memory/entities'], ['projects', '_renderRecordList', '**/api/vault/records?type=Project'], ['people', '_renderRecordList', '**/api/vault/records?type=Person'],
   ['detail', '_renderEntityDetail', null],
 ];
 for (const [view, method, url] of views) for (const outcome of ['success', 'failure']) {

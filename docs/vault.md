@@ -102,6 +102,8 @@ Owner edits made in the Memory view or through the memory API are written back t
 | Accept a memory suggestion on a vault record | The key is added (a `notes` suggestion is appended to the body). |
 | Delete a vault-backed record | The file moves to `.trash/` in the vault (hidden, not indexed, recoverable). |
 
+You can also create and edit whole **people and project** records from the People and Projects views ([dashboards](dashboards.md#projects-and-people)). A new record is written as a new file and never over an existing one, and an edit changes only the fields you supplied.
+
 This applies to records with a vault file and to facts about you. Facts about you go to `me.md`, which is created if missing. Records that exist only in the database stay database-only until you export them.
 
 Some rules keep the file safe:

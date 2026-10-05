@@ -58,8 +58,9 @@ Tracking issue: [#433](https://github.com/chrisrobison/u2os/issues/433). Use on 
 - [x] [#436](https://github.com/chrisrobison/u2os/issues/436) Mail: view a message and reply through a Gmail link
 - [ ] [#446](https://github.com/chrisrobison/u2os/issues/446) Mail: mark spam and delete (needs a mailbox write permission decision)
 - [x] [#437](https://github.com/chrisrobison/u2os/issues/437) Calendar: month, week and day views
-- [ ] [#438](https://github.com/chrisrobison/u2os/issues/438) Tasks and projects: create and edit in modals
-- [ ] [#439](https://github.com/chrisrobison/u2os/issues/439) People: contacts section and relationship management
+- [x] [#438](https://github.com/chrisrobison/u2os/issues/438) Tasks and projects: create and edit in modals (projects are vault files)
+- [x] [#439](https://github.com/chrisrobison/u2os/issues/439) People: contacts section and relationship management
+- [ ] [#448](https://github.com/chrisrobison/u2os/issues/448) People: person-to-person relationships in vault files (follow-up)
 
 ### Other Milestone B items
 

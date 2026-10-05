@@ -24,3 +24,16 @@ test('every browser module parses', () => {
     assert.doesNotThrow(() => execFileSync(process.execPath, ['--check', file], { stdio: 'pipe' }), `${path.relative(root, file)} has a syntax error`);
   }
 });
+
+// A class may define a method twice without a syntax error, and the later one
+// silently wins. That is almost always an editing mistake, so catch it.
+test('no browser component defines the same method twice', () => {
+  for (const file of modules(root)) {
+    const names = [...fs.readFileSync(file, 'utf8').matchAll(/^  (?:static )?(?:async )?(?:get |set )?([A-Za-z_$][\w$]*)\([^)]*\)\s*\{/gm)].map((m) => m[0].replace(/\([^)]*\)\s*\{$/, '').trim());
+    const seen = new Set();
+    for (const name of names.filter((n) => !/^(if|for|while|switch|catch|function|return)\b/.test(n))) {
+      assert.ok(!seen.has(name), `${path.relative(root, file)} defines "${name}" more than once`);
+      seen.add(name);
+    }
+  }
+});

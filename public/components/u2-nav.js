@@ -13,6 +13,7 @@ export const NAV_GROUPS = [
     ['#/calendar', 'Calendar'],
     ['#/tasks', 'Tasks'],
     ['#/projects', 'Projects'],
+    ['#/people', 'People'],
   ] },
   { id: 'memory', label: 'Memory & automation', open: true, routes: [
     ['#/memory', 'Memory'],

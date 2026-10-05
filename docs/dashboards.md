@@ -98,6 +98,26 @@ Selecting a message in Mail ([#436](https://github.com/chrisrobison/u2os/issues/
 
 Marking spam and deleting need permission to change the mailbox and are tracked in [#446](https://github.com/chrisrobison/u2os/issues/446).
 
+### Projects and people
+
+Projects and People ([#438](https://github.com/chrisrobison/u2os/issues/438), [#439](https://github.com/chrisrobison/u2os/issues/439)) are lists of vault records. `+` creates a file, and a row opens the same dialog filled from **what the file says today** (the file is the authority, not the database copy).
+
+- **Create** writes `projects/<name>.md` or `people/<name>.md` in your vault, never over an existing file (a taken name gets `-2`, `-3`...), then indexes it. The file name is a safe slug of the name.
+- **Edit** changes only the fields you supplied, in one atomic write. Comments, other keys and your `classification`, `sensitive_keys`, `id` and `classifications` are left exactly as you wrote them; privacy cannot be changed from the dialog. A file that no longer parses, or that you saved while the dialog was open, is refused rather than overwritten.
+- A record that exists **only in the database** (for example one imported from contacts) is listed with a "Database only" note and opens read-only, with a pointer to export your memory to the vault first.
+- The owner is not listed as one of their own contacts.
+
+| Record | Fields you can set |
+|---|---|
+| Project | name, status (`active`, `planned`, `blocked`, `paused`, `done`), deadline, notes |
+| Person | name, relationship to you, organization, email, phone, birthday, keep in touch every N days, last contact, notes |
+
+**Staying in touch.** Set *Keep in touch every* and *Last contact* and the People list shows how each person stands: "Next in 9 days", "Overdue by 4 days" (highlighted), or "No contact recorded" when a cadence has no last contact. Days are counted on the calendar, so daylight-saving changes cannot shift them. Search matches name, relationship, organization and email, ignoring case and accents.
+
+The API is owner-only: `GET /api/vault/records?type=Person|Project` (file values, never notes), `GET`/`PATCH /api/vault/records/:id`, and `POST /api/vault/records`. Person-to-person relationships ("Alice is Bob's sister") are not part of the file format yet; see [#448](https://github.com/chrisrobison/u2os/issues/448).
+
+**Tasks** can now be edited (title and due date), completed and reopened. Like memory and vault edits, these are the owner changing their own data, so `PATCH /api/tasks/:id` is applied directly and recorded as a `task.updated` event (without the new values) rather than going through the agent's action pipeline.
+
 ### Calendar views
 
 The Calendar section ([#437](https://github.com/chrisrobison/u2os/issues/437)) has **List**, **Day**, **Week** and **Month** views. Day, week and month have previous, next and today controls, and the view you chose is remembered in the browser.
