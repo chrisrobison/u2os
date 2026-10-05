@@ -49,6 +49,19 @@ Tracking issue: [#355](https://github.com/chrisrobison/u2os/issues/355). Each ac
 
 The product has not yet been used day to day with real accounts and a real model. This milestone proves (or disproves) that it is worth using, and turns what real use reveals into the next issues.
 
+### Usable daily UI (from dogfooding notes)
+
+Tracking issue: [#433](https://github.com/chrisrobison/u2os/issues/433). Use on a second host found that the browser UI cannot yet carry daily work. Every data section opens on its list or dashboard, records open in a modal (populated when a row is selected, empty from the section's `+` button), and navigation is grouped.
+
+- [ ] [#434](https://github.com/chrisrobison/u2os/issues/434) Shared section pattern: list/dashboard, record modal, `+` button
+- [ ] [#435](https://github.com/chrisrobison/u2os/issues/435) Group navigation into collapsible categories
+- [ ] [#436](https://github.com/chrisrobison/u2os/issues/436) Mail: view, mark spam, delete, reply (Gmail compose link)
+- [ ] [#437](https://github.com/chrisrobison/u2os/issues/437) Calendar: month, week and day views
+- [ ] [#438](https://github.com/chrisrobison/u2os/issues/438) Tasks and projects: create and edit in modals
+- [ ] [#439](https://github.com/chrisrobison/u2os/issues/439) People: contacts section and relationship management
+
+### Other Milestone B items
+
 - Browser views for the vault (index status, errors, file locations) and routines (schedule, last run, run now, awaiting approval).
 - Onboarding that starts from the vault: choose its location, write or export `me.md`, add a first routine, configure a model.
 - Starter routines: morning brief, meeting preparation, recruiter/important-sender triage, commitment follow-up.
@@ -99,12 +112,21 @@ Tracking issue: [#397](https://github.com/chrisrobison/u2os/issues/397). Package
 - [x] [#400](https://github.com/chrisrobison/u2os/issues/400) MCP servers as capability providers through the gate
 - [x] [#405](https://github.com/chrisrobison/u2os/issues/405) Job-hunt MCP server: search Greenhouse and Lever, apply in a browser, ledger in the vault ([guide](docs/job-hunt.md))
 - [x] [#428](https://github.com/chrisrobison/u2os/issues/428) `coding.agent` capability over the official Codex and Claude Code CLIs, credentials stay with the tools ([guide](docs/coding-agents.md))
+- [ ] [#440](https://github.com/chrisrobison/u2os/issues/440) ADR 0010: lean core with bundled add-ons (packages own metadata and MCP servers; bundled add-ons may run in process, installed ones out of process; the vault keeps owner decisions); then migrate built-ins to the contract, calendar first
 - [ ] [#401](https://github.com/chrisrobison/u2os/issues/401) Package permission grants and settings in the vault
 - [ ] [#402](https://github.com/chrisrobison/u2os/issues/402) Packages ship routines and skills; retire the workflow engine at parity
 
 ## Later — deferred until the product is proven
 
 These remain valid, but are scheduled after Milestones A–C unless real use makes one urgent.
+
+### Long-running limits
+
+[#441](https://github.com/chrisrobison/u2os/issues/441): measure per-routine duration, tokens, cost and context size; decide the overrun policy for a late tick (the scheduler lease already prevents concurrent runs, missed runs are not caught up); retention and rollup for events, journal and audit; spend caps; approval expiry. Measure first, then decide.
+
+### Core language
+
+A rewrite of the core (for example in Rust, for single-binary distribution and a smaller footprint) is not planned. Revisit only once the add-on contract of ADR 0010 has been stable through real use and a concrete distribution, stability or isolation problem exists. Out-of-process add-ons keep the choice open.
 
 ### Voice and satellites
 
