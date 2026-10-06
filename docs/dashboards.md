@@ -19,7 +19,9 @@ The left navigation is grouped and collapsible ([#435](https://github.com/chrisr
 | Settings | Connectors, Model, Devices, Voice, Vault, Setup wizard | collapsed |
 | System | Operations, Diagnostics | collapsed |
 
-Each group heading is a button with `aria-expanded`, operable with Enter or Space. The owner's open/closed choices are remembered in the browser; storage is optional and the navigation works without it. The group holding the current route is always shown, so following a link or going back never lands on a hidden entry. Groups are defined in one list (`NAV_GROUPS` in `u2-nav.js`) so add-ons can contribute entries later ([ADR 0010](adr/0010-lean-core-bundled-addons.md)).
+Each group heading is a button with `aria-expanded`, operable with Enter or Space. The owner's open/closed choices are remembered in the browser; storage is optional and the navigation works without it. The group holding the current route is always shown, so following a link or going back never lands on a hidden entry. Every entry has an icon ([#450](https://github.com/chrisrobison/u2os/issues/450)). The icons are [Font Awesome Free](https://fontawesome.com) 6.5.2 (solid), **shipped with U2OS** in `public/vendor/fontawesome/` rather than loaded from a CDN: the Content-Security-Policy allows only this origin, and a CDN would make every page view contact a third party. The licence (icons CC BY 4.0, font SIL OFL 1.1, code MIT) is alongside the font. `public/styles/icons.css` lists only the codepoints in use. To add an icon, add one `.u2-icon--name::before` rule with its codepoint and name it in `NAV_GROUPS`. Icons are decorative (`aria-hidden`); the text label is the link's name.
+
+Groups are defined in one list (`NAV_GROUPS` in `u2-nav.js`) so add-ons can contribute entries later ([ADR 0010](adr/0010-lean-core-bundled-addons.md)).
 
 ## Schema
 

@@ -324,6 +324,39 @@ test.describe.serial('navigation shell (#15)', () => {
     await expect(navLink('#/diagnostics')).toBeVisible();
   });
 
+  // ---- 2c. navigation icons (#450) ----
+
+  test('every navigation link has a decorative icon and keeps its text name', async () => {
+    await page.goto(`${dedicated.baseURL}/#/home`);
+    await page.evaluate(() => localStorage.setItem('u2-nav-groups', JSON.stringify({ addons: true, settings: true, system: true })));
+    await page.reload();
+    const links = page.locator('u2-nav a[data-route]');
+    await expect(links).toHaveCount(23);
+    await expect(page.locator('u2-nav a[data-route] .u2-icon[aria-hidden="true"]')).toHaveCount(23);
+    // The accessible name is the label alone, not the glyph.
+    await expect(page.getByRole('link', { name: 'Mail', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Setup wizard', exact: true })).toBeVisible();
+    // Each icon resolves to a real glyph.
+    const contents = await page.locator('u2-nav .u2-icon').evaluateAll((icons) => icons.map((icon) => getComputedStyle(icon, '::before').content));
+    expect(contents.every((c) => c && c !== 'none' && c !== 'normal' && c.length > 2)).toBe(true);
+  });
+
+  test('the icon font is served by U2OS itself and nothing is requested from elsewhere', async () => {
+    const origin = new URL(dedicated.baseURL).origin;
+    const foreign = [];
+    page.on('request', (request) => { if (!request.url().startsWith(origin) && !/^(data|blob|about):/.test(request.url())) foreign.push(request.url()); });
+    await page.reload();
+    // Fetched directly: after a reload some browsers reuse the cached font and make no request.
+    const served = await page.evaluate(async () => {
+      const res = await fetch('/vendor/fontawesome/fa-solid-900.woff2');
+      return { status: res.status, type: res.headers.get('content-type') };
+    });
+    expect(served).toEqual({ status: 200, type: 'font/woff2' });
+    await page.evaluate(() => document.fonts.ready);
+    expect(await page.evaluate(() => document.fonts.check('900 1em "U2 Icons"'))).toBe(true);
+    expect(foreign).toEqual([]);
+  });
+
   // ---- 3. browser back/forward works correctly with the hash router ----
 
   test('browser back/forward navigates the hash router correctly', async () => {

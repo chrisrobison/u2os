@@ -1,0 +1,51 @@
+/*
+ * Icons (#450): Font Awesome Free 6.5.2, solid, shipped in public/vendor/fontawesome
+ * (licence and notes there). Only the codepoints U2OS uses are listed. Icons
+ * are decorative: markup puts aria-hidden="true" on them and the text label
+ * carries the meaning.
+ */
+@font-face {
+  font-family: "U2 Icons";
+  font-style: normal;
+  font-weight: 900;
+  font-display: swap;
+  src: url("/vendor/fontawesome/fa-solid-900.woff2") format("woff2");
+}
+
+.u2-icon {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 1.25em;
+  text-align: center;
+  font-family: "U2 Icons";
+  font-style: normal;
+  font-weight: 900;
+  font-variant: normal;
+  line-height: 1;
+  text-rendering: auto;
+  -webkit-font-smoothing: antialiased;
+}
+
+.u2-icon--house::before { content: "\f015"; }
+.u2-icon--sun::before { content: "\f185"; }
+.u2-icon--chart-pie::before { content: "\f200"; }
+.u2-icon--envelope::before { content: "\f0e0"; }
+.u2-icon--calendar-days::before { content: "\f073"; }
+.u2-icon--list-check::before { content: "\f0ae"; }
+.u2-icon--diagram-project::before { content: "\f542"; }
+.u2-icon--user-group::before { content: "\f500"; }
+.u2-icon--brain::before { content: "\f5dc"; }
+.u2-icon--repeat::before { content: "\f363"; }
+.u2-icon--bullseye::before { content: "\f140"; }
+.u2-icon--briefcase::before { content: "\f0b1"; }
+.u2-icon--bolt::before { content: "\f0e7"; }
+.u2-icon--clock-rotate-left::before { content: "\f1da"; }
+.u2-icon--puzzle-piece::before { content: "\f12e"; }
+.u2-icon--plug::before { content: "\f1e6"; }
+.u2-icon--microchip::before { content: "\f2db"; }
+.u2-icon--display::before { content: "\e163"; }
+.u2-icon--microphone::before { content: "\f130"; }
+.u2-icon--vault::before { content: "\e2c5"; }
+.u2-icon--wand-magic-sparkles::before { content: "\e2ca"; }
+.u2-icon--gears::before { content: "\f085"; }
+.u2-icon--stethoscope::before { content: "\f0f1"; }

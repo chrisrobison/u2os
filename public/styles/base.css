@@ -291,6 +291,10 @@ u2-app {
   border-left: 2px solid transparent;
 }
 
+.nav-list__item .u2-icon { color: var(--text-tertiary); font-size: var(--text-sm); }
+.nav-list__item a:hover .u2-icon { color: var(--text-primary); }
+.nav-list__item a.is-active .u2-icon { color: var(--accent-strong); }
+
 .nav-list__item a:hover {
   background: var(--bg-raised);
   color: var(--text-primary);
