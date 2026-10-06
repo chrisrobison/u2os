@@ -2,13 +2,15 @@
 
 Every tool declares whether it is `read`, `draft`, or `consequential` — the policy engine uses this classification plus a `domain` to decide the autonomy level. Tools never call the LLM and never call each other; only the agent orchestrates calls, and only through the registry, via `evaluateAndMaybeExecute()`'s policy-gated pipeline. That holds for every source of intent: chat, voice, triggers, goals, proactive evaluators and unattended vault [routines](routines.md).
 
-Most tools (`email.*`, `calendar.*`, `contacts.search`, `web.search`, `notifications.send`) are **provider-agnostic**: `execute()` calls `getProvider(domain)` and runs against whichever provider is currently configured -- mock providers for every domain (used only in explicit demo homes), plus real Google Calendar/Gmail/Google Contacts, IMAP/SMTP, Brave Search and generic webhook/ntfy notification adapters (see docs/connectors.md for exactly which are real vs MOCK-only, and how to configure one). `tasks.*` remains local-only; no external task-manager integration exists yet.
+Most tools (`email.*`, `calendar.*`, `contacts.search`, `web.search`, `notifications.send`) are **provider-agnostic**: `execute()` calls `getProvider(domain)` and runs against whichever provider is currently configured -- mock providers for every domain (used only in explicit demo homes), plus real Google Calendar/Gmail/Google Contacts, IMAP/SMTP, Brave Search and generic webhook/ntfy notification adapters (see docs/connectors.md for exactly which are real vs MOCK-only, and how to configure one). `tasks.*` is local-only: it reads and writes the native `tasks` table, and no external task-manager integration exists yet. The browser also edits tasks directly through `PATCH /api/tasks/:id` ([dashboards](dashboards.md)).
 
 `presentation.present`/`presentation.notify` (docs/devices.md) are a different shape from every other tool here: instead of calling a connector provider, they call `invokeCapability()` (server/devices/capabilities.js), which resolves an eligible *device* deterministically (trust/privacy/ownership-aware, never LLM-driven) and delegates to that device's adapter. They also take their dependencies via constructor injection (`deviceRegistry`/`capabilityRegistry`) rather than a module-level provider accessor -- see server/tools/presentation-tools.js's header comment for why.
 
 Every tool listed in `server/packages/core-capabilities.js` is also a **core capability** under the same id that installed packages may invoke, with the permissions it maps to ([capabilities guide](packages/capabilities.md)). Package-defined capabilities are registered in the same registry as **hidden** tools (`register(tool, { hidden: true })`): the gate and durable queue can execute them, but `list()` never shows them to the planner and plan validation refuses them.
 
 Tools from **MCP servers** declared in the vault's `mcp.yaml` are registered as ordinary planner-visible tools named `<server>.<tool>` ([MCP tools](mcp.md)). They are `read` only when the owner's file says so, otherwise `consequential`, and their policy domain is the server name.
+
+The `coding.agent` capability is not a planner tool: it is started from the `u2 coding-agent` CLI and reaches the gate as a capability ([coding agents](coding-agents.md)).
 
 ## `Tool` interface (`server/tools/tool.js`)
 
@@ -39,9 +41,9 @@ class Tool {
 | `calendar.create` | calendar | consequential | `{ title, startAt, endAt, attendees?, location? }` | active provider → `calendar.event_added` |
 | `calendar.reschedule` | calendar | consequential | `{ eventId, newStartAt, newEndAt }` | captured account, with event ownership checked → `calendar.event_changed` |
 | `contacts.search` | contacts | read | `{ query }` | active provider (mock or real Google Contacts) |
-| `tasks.list` | tasks | read | `{ status? }` | MOCK/STUB only -- reads the local `tasks` table |
-| `tasks.create` | tasks | consequential | `{ title, dueAt?, relatedEntityId? }` | MOCK/STUB only -- inserts a local row → `task.created` |
-| `tasks.complete` | tasks | consequential | `{ id }` | MOCK/STUB only -- updates local status → `task.completed` |
+| `tasks.list` | tasks | read | `{ status? }` | reads the local `tasks` table |
+| `tasks.create` | tasks | consequential | `{ title, dueAt?, relatedEntityId? }` | inserts a local row → `task.created` |
+| `tasks.complete` | tasks | consequential | `{ id }` | updates local status → `task.completed` |
 | `web.search` | web | read | `{ query }` | active provider (mock canned results, or real Brave Search) |
 | `notifications.send` | notifications | consequential | `{ title, body, priority? }` | active provider: local mock audit event or real bounded JSON/ntfy webhook delivery → `notification.sent` only after success |
 | `presentation.present` | presentation | consequential | `{ audience, privacy?, content }` | resolves a device via `ui.render` and invokes it → `capability.invoked`/`capability.failed` (docs/devices.md) |

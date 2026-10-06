@@ -225,6 +225,20 @@ agent-reachable. Not yet implemented: the semantic `listen()` API, real
 cryptographic pairing, and extending unification to more connectors. See
 docs/devices.md.
 
+## Owner UI and records
+
+The browser's data sections (mail, calendar, tasks, projects, people) share one pattern: a list or dashboard, a record dialog and a `+` button ([dashboards](dashboards.md)). Edits to the owner's own data (vault records, tasks) are applied directly and recorded as events. Actions on the world still go through the gate:
+
+- Projects and people are vault files. `POST/GET/PATCH /api/vault/records` write a new file or edit one through the same write-back path as memory edits ([vault](vault.md)).
+- `PATCH /api/tasks/:id` and `GET /api/email/:id` back the task and mail dialogs. Replies to mail open in Gmail rather than being sent by U2OS.
+- `POST /api/calendar/events` creates an event through `evaluateAndMaybeExecute()`, so policy decides whether it runs at once or waits for approval.
+- `GET/PUT /api/vault/me`, `GET /api/vault/inspect`, `POST /api/vault/location` and the starter-routine routes support the first-run wizard ([onboarding](onboarding.md)).
+- The Routines, Vault, Job applications and Packages views show routine runs, the vault index and journal, the application ledger and the package registry.
+
+## Extension points
+
+Beyond built-in tools, U2OS gains tools from MCP servers declared in `mcp.yaml` (`server/mcp/`, [MCP tools](mcp.md)), and can delegate software tasks to the Codex or Claude Code CLIs through the `coding.agent` capability (`server/coding-agent/`, [coding agents](coding-agents.md)). Both pass the gate like every other action. [ADR 0010](adr/0010-lean-core-bundled-addons.md) sets the direction of a lean core with bundled add-ons; migrating built-ins to that contract has not started ([#453](https://github.com/chrisrobison/u2os/issues/453)).
+
 ## Package platform
 
 Installable packages add capabilities, skills and automations without core changes ([plugin architecture](plugin-architecture.md), [ADR 0008](adr/0008-packages-capabilities-skills-automations.md)). [ADR 0009](adr/0009-extension-model-mcp-tools-vault-skills-routines.md) keeps the packaging, permissions, gate, policy and audit described here, and freezes the declarative workflow language in favour of MCP tools, vault skills and routines. `server/packages/platform.js` builds the registries (every core tool is a capability under its existing id), a `CapabilityInvoker` over the agent's gate, the durable `WorkflowEngine`, the `AutomationRuntime` (started with the other background workers) and the `PackageManager`, which loads installed packages at startup. Package actions are ordinary audited actions with a tighten-only package authority overlay ([policies](policies.md#package-authority)); package capabilities are hidden from the planner.
@@ -238,7 +252,7 @@ Installable packages add capabilities, skills and automations without core chang
 - Voice similarity is simplified and is not identity. All registered dashboard primitives are implemented and schema-validated; maps are deliberately local CSS plots rather than a full mapping service.
 - SSE cursor recovery, heartbeats, multi-tab fan-out, and broad Playwright coverage are implemented. Automated checks and manual improvements cover core accessibility behavior, but this is not a claim of a complete external accessibility audit.
 - CalDAV and skill network-permission enforcement are not implemented. IMAP/SMTP exist but have not been validated against live accounts.
-- There are no browser views for the vault or routines yet.
+- Onboarding progress is not persisted, so an interrupted wizard restarts ([#424](https://github.com/chrisrobison/u2os/issues/424)). Mail cannot yet be marked spam or deleted ([#446](https://github.com/chrisrobison/u2os/issues/446)).
 - Nothing has been validated in daily use with a real model and real accounts ([PLAN.md](../PLAN.md), Milestone B).
 - `node:sqlite` remains experimental. Manual audited retention and backup/restore exist; automated retention and a production rollback system do not.
 - Device/capability subsystem gaps (real cryptographic pairing, policy-gating the remaining owner-only debug routes, `listen()`, unifying more connectors) are listed in full in docs/devices.md's own "Known gaps" section rather than duplicated here.

@@ -33,7 +33,7 @@ U2OS starts from James Burke's description of an "online digital you" in *Connec
 
 ## How it's meant to be used
 
-1. **Write down your digital self.** Start with `me.md` and a few people, projects and commitments in the vault ([format](vault.md)), or export what an existing install already knows with `npm run vault:export`.
+1. **Write down your digital self.** The first-run [wizard](onboarding.md) walks you through choosing a vault, describing yourself, adding a first routine and configuring a model. Or start with `me.md` and a few people, projects and commitments in the vault ([format](vault.md)), or export what an existing install already knows with `npm run vault:export`.
 2. **Connect what you're comfortable with.** Calendar, mail, contacts and search are optional; so is a remote model, since a local one works. Use a separate demo home to explore safely first ([demo](demo.md)).
 3. **Delegate with routines.** Write the standing instructions you want carried out ([routines](routines.md)). U2OS runs them on schedule or when events arrive, acts autonomously where policy allows, and asks you before anything consequential.
 4. **Stay in control.** Every action has a **Why?** view, pending approvals wait for you, uncertain outcomes stop for your review, and feedback shapes prioritisation without ever widening authority.
