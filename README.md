@@ -12,7 +12,7 @@ It is not a chatbot. The digital self is a **vault of plain Markdown files** tha
 
 U2OS indexes that vault, watches the accounts you connect, and runs your routines unattended. Every action goes through a policy engine that sits outside the model. The agent is just a tool that uses this information, and the model is replaceable infrastructure. The name means "the second you" plus "operating system".
 
-Start with the [overview](docs/overview.md), then [the vault](docs/vault.md) and [routines](docs/routines.md). [ADR 0007](docs/adr/0007-owned-vault-is-the-digital-self.md) records why the vault is the centre, and [PLAN.md](PLAN.md) is the roadmap. [PROMPT.md](PROMPT.md) is the historical product specification, not onboarding documentation.
+Start with the [overview](docs/overview.md), then [the vault](docs/vault.md) and [routines](docs/routines.md). [ADR 0007](docs/adr/0007-owned-vault-is-the-digital-self.md) records why the vault is the centre, and [PLAN.md](PLAN.md) is the roadmap. [ADR 0010](docs/adr/0010-lean-core-bundled-addons.md) sets the direction for a lean core with bundled add-ons. [PROMPT.md](PROMPT.md) is the historical product specification, not onboarding documentation.
 
 ## How it works
 
@@ -67,7 +67,9 @@ U2OS is a working **pre-alpha**, not a production product. Everything below is i
 - OpenAI-compatible and Anthropic providers selected per role by a `ModelRouter`, plus a strict plan schema and prompt-injection containment tests.
 
 **Interfaces and integrations**
-- Native Web Component UI with morning, meeting and project dashboards, chat, approvals, Operations and Diagnostics.
+- Native Web Component UI with morning, meeting and project dashboards, chat, approvals, Operations and Diagnostics, plus a first-run **onboarding wizard** that takes a fresh install to a working dashboard ([onboarding](docs/onboarding.md)).
+- Daily-use sections that share one pattern (a list or dashboard, a record dialog, a `+` button): mail with message view and a Gmail reply link, calendar month/week/day views, tasks, projects and people created and edited in dialogs (projects and people are vault files). Navigation is grouped into collapsible categories with self-hosted Font Awesome Free icons.
+- **Routines**, **Vault** and **Job applications** views show routine schedules and runs, vault/policy/MCP status and the journal, and the application ledger. Starter routine templates cover morning brief, meeting preparation and commitment follow-up.
 - Google Calendar, Gmail, Google Contacts, IMAP/SMTP, Brave Search and webhook/ntfy connectors, with named accounts and exact account binding. Mocks run only in explicit demo homes.
 - Browser voice (VAD, STT/TTS, barge-in, enrollment). Voice similarity is **not** authentication.
 - A device/capability subsystem with a deterministic resolver, a realtime device bus, and the browser as a device ([devices](docs/devices.md)).
@@ -78,7 +80,7 @@ U2OS is a working **pre-alpha**, not a production product. Everything below is i
 | Status | Current scope |
 |---|---|
 | **Implemented** | Vault indexing and export, routines, persistent event/memory state, destination-aware context privacy, model routing, policy/approval/audit, durable actions, explainability, fact controls, dashboards, real Google/IMAP/Brave/webhook connectors, backup/export |
-| **Not yet** | Browser views for vault and routines, real-model and live-account validation |
+| **Not yet** | Real-model and live-account validation, mail spam/delete (#446), person-to-person relationships (#448), resumable onboarding (#424) |
 | **Demo only** | The deterministic planner and connector mocks, in an explicit demo home |
 | **Experimental** | `node:sqlite`, simplified voice similarity, the device/capability subsystem, semantic retrieval |
 | **Unavailable** | CalDAV, Deepgram, ElevenLabs, cryptographic device pairing, native mobile apps, any U2OS-hosted service |
@@ -168,7 +170,7 @@ Raw device debug routes are disabled outside explicit non-production development
 ## Documentation
 
 - **Start here:** [Overview](docs/overview.md), [The vault](docs/vault.md), [Routines and skills](docs/routines.md), [Skills vs packages](docs/skills-vs-packages.md)
-- **Design:** [Architecture](docs/architecture.md), [Architecture decisions](docs/adr/README.md), [Events](docs/events.md), [Policies](docs/policies.md), [Tools](docs/tools.md)
+- **Design:** [Architecture](docs/architecture.md), [Onboarding](docs/onboarding.md), [Architecture decisions](docs/adr/README.md), [Events](docs/events.md), [Policies](docs/policies.md), [Tools](docs/tools.md)
 - **Subsystems:**
   - [Automation](docs/automation.md), [Bounded goals](docs/goals.md), [Dashboards](docs/dashboards.md), [Feedback](docs/feedback.md)
   - [Model providers](docs/models.md), [Connectors](docs/connectors.md), [Voice](docs/voice.md), [Devices and capabilities](docs/devices.md), [Local iMessage read helper](docs/imsg.md)
@@ -187,13 +189,16 @@ Raw device debug routes are disabled outside explicit non-production development
 server/       persistent service
   vault/      vault location, Markdown parsing, indexer, watcher, exporter
   routines/   routine parsing and the unattended runner
+  coding-agent/  coding.agent capability over the Codex and Claude Code CLIs
+  mcp/        MCP client: servers declared in the vault, tools through the gate
+  onboarding/ first-run wizard state
   packages/   package platform: manifests, registries, invoker, workflow engine, automation runtime, loader, CLI
   agent/      context assembly, planner, policy evaluation, execution, approvals, runs, goals
   memory/     entities, facts, relationships, projections, retrieval
   policy/     action policy and data-processing policy
   events/     event log, SSE, maintenance
   integrations/, tools/, triggers/, devices/, voice/, security/, backup/, api/
-public/       browser client: native ES modules and Web Components, no build step
+public/       browser client: native ES modules and Web Components, no build step (public/vendor: self-hosted third-party assets)
 packages/     installable packages; packages/job-hunter is the reference package
 mcp/          first-party MCP tool servers (mcp/jobs: job search and applications)
 skills/       connector manifests and declared permissions
@@ -208,6 +213,6 @@ data/         repository placeholder; runtime data lives in U2OS_HOME and your v
 [PLAN.md](PLAN.md) orders work by product value:
 
 1. The owned digital self (complete).
-2. Prove it in daily use with real accounts and models.
-3. Widen delegated authority safely.
+2. Prove it in daily use with real accounts and models (current: Milestone B).
+3. Widen delegated authority safely, alongside the extension model (MCP tools, vault skills, routines; lean core with bundled add-ons).
 4. Only then broaden voice, connectors and packaging.

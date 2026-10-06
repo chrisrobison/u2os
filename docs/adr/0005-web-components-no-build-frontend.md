@@ -18,6 +18,7 @@ Use vanilla JavaScript, native ES modules, Web Components, HTML, and CSS served 
 - Components expose explicit browser-standard boundaries and can be tested against the real server with Playwright.
 - Shared conventions must be maintained without a framework enforcing them.
 - Compatibility targets follow browser web standards rather than framework abstractions.
+- Third-party assets are vendored and served by the app, not loaded from a CDN. Navigation icons come from self-hosted Font Awesome Free (`public/vendor/fontawesome`, with its license).
 - Rich dashboard behavior requires trusted components and server-side schemas rather than model-authored markup.
 
 See [dashboards](../dashboards.md) and [architecture](../architecture.md).

@@ -5,7 +5,7 @@ U2OS consolidates the owner's digital self into **files they own**, and acts on 
 Work is ordered by product value:
 
 1. Make the owned vault the complete digital self (done: Milestone A).
-2. Prove the product in real daily use.
+2. Prove the product in real daily use (current: Milestone B).
 3. Widen what U2OS may do on the owner's behalf, safely.
 4. Only then broaden into voice, more connectors, and packaging.
 
@@ -65,9 +65,17 @@ Tracking issue: [#433](https://github.com/chrisrobison/u2os/issues/433). Use on 
 
 ### Other Milestone B items
 
-- Browser views for the vault (index status, errors, file locations) and routines (schedule, last run, run now, awaiting approval).
-- Onboarding that starts from the vault: choose its location, write or export `me.md`, add a first routine, configure a model.
-- Starter routines: morning brief, meeting preparation, recruiter/important-sender triage, commitment follow-up.
+Done:
+
+- [x] [#408](https://github.com/chrisrobison/u2os/issues/408) Browser views for the vault (index status, errors, file locations, journal) and routines (schedule, runs) ([#409](https://github.com/chrisrobison/u2os/issues/409) adds a Job applications view over the vault ledger)
+- [x] [#413](https://github.com/chrisrobison/u2os/issues/413), [#423](https://github.com/chrisrobison/u2os/issues/423) First-run onboarding wizard from a fresh install to the dashboard, including using an existing vault directory ([onboarding](docs/onboarding.md))
+- [x] [#412](https://github.com/chrisrobison/u2os/issues/412) Starter routine templates: morning brief, meeting preparation, commitment follow-up
+- [x] [#419](https://github.com/chrisrobison/u2os/issues/419) Model settings hot-reload the planner
+
+Open:
+
+- [ ] [#424](https://github.com/chrisrobison/u2os/issues/424) Onboarding: persist wizard progress, make setup resumable and skippable
+- Recruiter/important-sender triage routine (starter templates cover the other three).
 - Real-model quality evaluation: a small fixed set of owner tasks scored for usefulness, not just schema validity, against at least one local and one hosted model.
 - Confirm Google OAuth behaviour for owner-created clients in "Testing" status (refresh-token lifetime), and document the setup that keeps a personal install connected.
 - The [personal acceptance walkthrough and two-week dogfooding](docs/personal-acceptance.md), extended to vault and routine workflows, with results recorded honestly.
@@ -115,7 +123,8 @@ Tracking issue: [#397](https://github.com/chrisrobison/u2os/issues/397). Package
 - [x] [#400](https://github.com/chrisrobison/u2os/issues/400) MCP servers as capability providers through the gate
 - [x] [#405](https://github.com/chrisrobison/u2os/issues/405) Job-hunt MCP server: search Greenhouse and Lever, apply in a browser, ledger in the vault ([guide](docs/job-hunt.md))
 - [x] [#428](https://github.com/chrisrobison/u2os/issues/428) `coding.agent` capability over the official Codex and Claude Code CLIs, credentials stay with the tools ([guide](docs/coding-agents.md))
-- [ ] [#440](https://github.com/chrisrobison/u2os/issues/440) ADR 0010: lean core with bundled add-ons (packages own metadata and MCP servers; bundled add-ons may run in process, installed ones out of process; the vault keeps owner decisions); then migrate built-ins to the contract, calendar first
+- [x] [#440](https://github.com/chrisrobison/u2os/issues/440) ADR 0010: lean core with bundled add-ons (packages own metadata and MCP servers; bundled add-ons may run in process, installed ones out of process; the vault keeps owner decisions). Navigation grouping from its point 7 shipped as #435
+- [ ] [#453](https://github.com/chrisrobison/u2os/issues/453) Migrate built-ins to the add-on contract with identical behaviour, calendar first
 - [ ] [#401](https://github.com/chrisrobison/u2os/issues/401) Package permission grants and settings in the vault
 - [ ] [#402](https://github.com/chrisrobison/u2os/issues/402) Packages ship routines and skills; retire the workflow engine at parity
 
