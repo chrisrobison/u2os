@@ -61,6 +61,14 @@ export function saveModelConfiguration(config) {
   return request('/api/model', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(config) });
 }
 
+export function saveModelConnections(payload) {
+  return request('/api/model/connections', { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify(payload) });
+}
+
+export function testModelConnection(id, sendPrompt = false) {
+  return request('/api/model/connections/test', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ id, sendPrompt }) });
+}
+
 export function listGoalDrafts() {
   return request('/api/goals');
 }

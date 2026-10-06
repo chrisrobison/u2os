@@ -1,5 +1,8 @@
 import { sendJson } from '../router.js';
-import { loadModelConfig, saveModelConfig, saveMultiProviderConfig, reloadModelRouter } from '../../agent/provider-config.js';
+import { loadModelConfig, saveModelConfig, saveMultiProviderConfig, reloadModelRouter, loadConnectionProvider } from '../../agent/provider-config.js';
+import { describeConnections, buildConfigFromConnections } from '../../agent/model-connections.js';
+import { testConnection } from '../../agent/model-connection-test.js';
+import { CLI_PRESETS } from '../../agent/cli-model-provider.js';
 import { readEncryptedFile } from '../../security/vault.js';
 import { readInstallationMode } from '../../seed/installation-mode.js';
 import { createHash } from 'node:crypto';
@@ -35,9 +38,44 @@ export function registerModelRoutes(router, { modelRouter } = {}) {
     const config = loadModelConfig();
     const apiKeyConfigured = config.provider && config.provider !== 'mock' ? Boolean(readEncryptedFile(`model-${config.provider}`)?.apiKey) : false;
     const revision = configurationRevision(config);
-    sendJson(res, 200, { ...redactSecrets(config), apiKeyConfigured, plannerStatus: plannerStatus(config, demo),
+    sendJson(res, 200, { ...redactSecrets(config), apiKeyConfigured, connections: describeConnections(config), cliPresets: Object.fromEntries(Object.entries(CLI_PRESETS).map(([id, p]) => [id, { label: p.label, executable: p.executable }])), plannerStatus: plannerStatus(config, demo),
       runtimePlannerStatus: plannerStatus(modelRouter?.config || initialConfig, demo),
       restartRequired: pendingRestart || revision !== runningRevision, configurationRevision: revision });
+  });
+  // Ordered list of API and CLI connections (see docs/models.md). The first
+  // working entry plans; later ones are tried in turn when it fails.
+  router.put('/api/model/connections', async (req, res) => {
+    if (req.body?.configurationRevision !== undefined && req.body.configurationRevision !== configurationRevision(loadModelConfig())) {
+      return sendJson(res, 409, { error: 'Model configuration changed. Reload its current configuration before saving.' });
+    }
+    try {
+      const existing = loadModelConfig();
+      const { config, secrets } = buildConfigFromConnections(req.body?.connections, existing.providers ? existing : {});
+      // A legacy single-provider config keeps its key under model-<type>; carry it over to the connection that replaces it.
+      if (!existing.providers && existing.provider && config.providers.default?.type === existing.provider && !secrets.default) {
+        const legacy = readEncryptedFile(`model-${existing.provider}`)?.apiKey;
+        if (legacy) secrets.default = legacy;
+      }
+      saveMultiProviderConfig(config, secrets);
+      const reloaded = adoptSaved();
+      sendJson(res, 200, { configured: true, reloaded, restartRequired: !reloaded, connections: describeConnections(config) });
+    } catch (err) {
+      sendJson(res, 400, { error: err.message });
+    }
+  });
+  const testing = new Set();
+  router.post('/api/model/connections/test', async (req, res) => {
+    const id = req.body?.id;
+    if (typeof id !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(id)) return sendJson(res, 400, { error: 'id is required' });
+    if (testing.has(id)) return sendJson(res, 409, { error: 'A test of this connection is already running' });
+    testing.add(id);
+    try {
+      let loaded;
+      try { loaded = loadConnectionProvider(id); } catch { loaded = null; }
+      if (!loaded) return sendJson(res, 404, { error: 'No saved connection with that name. Save it first, then test.' });
+      const result = await testConnection(loaded.provider, loaded.providerConfig, { sendPrompt: req.body?.sendPrompt === true });
+      sendJson(res, 200, result);
+    } finally { testing.delete(id); }
   });
   router.post('/api/model', async (req, res) => {
     // Optional optimistic concurrency for owner setup forms. No model or vault

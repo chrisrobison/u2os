@@ -9,6 +9,7 @@ test('classifyModelFailure maps network causes, HTTP statuses and timeouts', () 
   assert.equal(classifyModelFailure(net('ENOTFOUND')).code, 'host_not_found');
   assert.equal(classifyModelFailure(net('EHOSTUNREACH')).code, 'host_unreachable');
   assert.equal(classifyModelFailure(new Error('Model provider timed out')).code, 'timeout');
+  assert.equal(classifyModelFailure(new Error('Model provider is not signed in')).code, 'not_signed_in');
   assert.equal(classifyModelFailure(new Error('Model provider unavailable (HTTP 401)')).code, 'unauthorized');
   assert.equal(classifyModelFailure(new Error('Model provider unavailable (HTTP 404)')).code, 'not_found');
   assert.equal(classifyModelFailure(new Error('Model provider unavailable (HTTP 502)')).code, 'http_error');

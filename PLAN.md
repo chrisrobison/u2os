@@ -71,6 +71,8 @@ Done:
 - [x] [#413](https://github.com/chrisrobison/u2os/issues/413), [#423](https://github.com/chrisrobison/u2os/issues/423) First-run onboarding wizard from a fresh install to the dashboard, including using an existing vault directory ([onboarding](docs/onboarding.md))
 - [x] [#412](https://github.com/chrisrobison/u2os/issues/412) Starter routine templates: morning brief, meeting preparation, commitment follow-up
 - [x] [#419](https://github.com/chrisrobison/u2os/issues/419) Model settings hot-reload the planner
+- [x] [#459](https://github.com/chrisrobison/u2os/issues/459) Chat failure names the failing model and a sanitized reason
+- [x] [#458](https://github.com/chrisrobison/u2os/issues/458) Model page manages an ordered list of API and CLI (claude, codex, grok, custom) connections ([models](docs/models.md#connections-api-endpoints-and-cli-tools-in-order))
 
 Open:
 

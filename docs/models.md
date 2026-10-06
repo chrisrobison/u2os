@@ -27,6 +27,39 @@ not be adopted (see below). Advanced multi-provider configurations have a
 read-only role summary here; use the API below to edit them (also applied
 immediately). No roles/fallbacks are replaced by the simple form.
 
+## Connections: API endpoints and CLI tools, in order
+
+The **Model** page ends with a list of **connections** in order of preference. Each is either an API endpoint (OpenAI-compatible or Anthropic) or a **CLI tool**. U2OS plans with the first connection that works; if it fails, it tries the next one, and so on down the list. If every connection fails, chat reports the last failure (see the reasons above). Use Up/Down to reorder, Edit, Remove, then **Save connections**; the running planner adopts the change without a restart.
+
+### CLI tools
+
+A CLI connection runs the official command-line tool as a subprocess and uses it as a text model. The tool owns its sign-in (an OAuth login to your subscription, usually), billing and model choice. U2OS does not read or store that login, and its child process does not receive U2OS settings or `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` (the same scrubbed environment as [coding agents](coding-agents.md)).
+
+| Preset | Command | How it is used |
+|---|---|---|
+| Claude Code | `claude` | `claude -p` with all built-in tools off and no MCP servers; the prompt is sent on stdin |
+| OpenAI Codex | `codex` | `codex exec` in a read-only sandbox in an empty scratch directory; stdin prompt, answer read from a file |
+| Grok | `grok` | `grok --prompt-file` in plan mode, sub-agents and web search off |
+| Any other command | name on `PATH` or absolute path | arguments are one per line; `{promptFile}`, `{cwd}` and `{model}` are substituted; the prompt arrives on stdin or in `{promptFile}`; the answer is read from stdout |
+
+Every run happens in a throwaway empty directory, with a timeout and an output cap. The command line is never a shell string, and the prompt is never an argument. What the tool prints is parsed as a plan (a code fence or surrounding sentence is tolerated) and validated by the same plan validator as an API model's, so a CLI model cannot do more than an API model can: every action still goes through the policy engine.
+
+**Sign in as the account that runs U2OS.** The tool finds its login under the home directory of the user the U2OS server runs as. Install and sign in once in a terminal as that user (`claude`, `codex login`, `grok login`) before adding the connection. Running the web server as another user (for example Apache's) means that user needs its own login; U2OS does not work around that. If the tool is not signed in, the failure is reported as `not_signed_in`.
+
+**Buttons.** *Check installed* runs `<tool> --version`. *Send test prompt* sends one tiny prompt and so uses a little of your subscription quota; it proves the tool is signed in and answering. For API connections *Check reachable* calls the endpoint's model list (no prompt) and reports whether the configured model name is listed. Both need the connection to be saved first, and report only the fixed reasons above, never raw output.
+
+**Privacy.** A CLI tool is treated as a hosted service (`configured_remote_model`) unless you set its privacy destination to local, so your data-processing policy decides what context it may receive. A custom command runs with your account's permissions: only use commands you trust, and do not put secrets in its arguments (they are stored in `config.json`).
+
+**Usage metering.** CLI tools do not report token counts, so runs through them show incomplete metering coverage rather than zero.
+
+### Stored shape and API
+
+The list is stored in `config.json` as the router's own shape plus an `order` list (`providers`, `roles.planner` = first entry, and `order`). Older single-provider and role/fallback configs keep working, and show up as connections too. Embedding providers and non-planner roles are preserved when you save.
+
+- `GET /api/model` also returns `connections` (never any key value) and `cliPresets`.
+- `PUT /api/model/connections` with `{ "connections": [...], "configurationRevision": "..." }` replaces the list. Each item: `{ id, type: "openai-compatible"|"anthropic"|"cli", model, baseUrl, apiKey, preset, executable, args, input, timeoutMs, destination }`. A blank `apiKey` keeps the stored key; keys live in the encrypted vault under `model-provider-<id>`.
+- `POST /api/model/connections/test` with `{ "id": "...", "sendPrompt": false }` tests a saved connection.
+
 ## Configuring providers (HTTP API)
 
 `POST /api/model`:

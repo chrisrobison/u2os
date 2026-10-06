@@ -5,7 +5,7 @@ import { readEncryptedFile, writeEncryptedFile } from '../security/vault.js';
 import { MockModelProvider } from './mock-model-provider.js';
 import { OpenAICompatibleProvider } from './openai-compatible-provider.js';
 import { AnthropicProvider } from './anthropic-provider.js';
-import { ModelRouter } from './model-router.js';
+import { ModelRouter, createProviderFromConfig } from './model-router.js';
 import { readInstallationMode } from '../seed/installation-mode.js';
 
 const SINGLE_PROVIDER_TYPES = ['mock', 'openai-compatible', 'anthropic'];
@@ -106,6 +106,15 @@ export function reloadModelRouter(modelRouter, dataDir = getDataDir()) {
   return modelRouter;
 }
 
+/** The stored connection `id` as a ready ModelProvider plus its config (key resolved). For testing a saved connection. */
+export function loadConnectionProvider(id, dataDir = getDataDir()) {
+  const { config } = readRouterConfig(dataDir);
+  const normalized = new ModelRouter(config, { allowMock: false }).config;
+  const providerConfig = normalized.providers[id];
+  if (!providerConfig || !['openai-compatible', 'anthropic', 'cli'].includes(providerConfig.type)) return null;
+  return { providerConfig, provider: providerConfig.type === 'cli' ? createProviderFromConfig(providerConfig) : null };
+}
+
 function readRouterConfig(dataDir) {
   const config = loadModelConfig(dataDir);
   const allowMock = readInstallationMode(dataDir) === 'demo';
@@ -124,5 +133,5 @@ function readRouterConfig(dataDir) {
     const secret = readEncryptedFile(`model-provider-${providerConfig.apiKeyRef || name}`, dataDir);
     providers[name] = { ...providerConfig, apiKey: secret?.apiKey };
   }
-  return { config: { providers, roles: config.roles, fallback: config.fallback }, allowMock };
+  return { config: { providers, roles: config.roles, fallback: config.fallback, order: config.order }, allowMock };
 }

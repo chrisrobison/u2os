@@ -19,6 +19,7 @@ export function classifyModelFailure(error) {
     if (NETWORK_CODES[e.code]) return reason(...NETWORK_CODES[e.code]);
   }
   const message = String(error?.message || '');
+  if (/not signed in/i.test(message)) return reason('not_signed_in', 'the CLI tool is not signed in: run it once in a terminal as the account that runs U2OS (for example `grok login`, `codex login`, or `claude`)');
   if (/timed out/i.test(message)) return reason('timeout', 'the model did not answer in time');
   const http = /HTTP (\d{3})/.exec(message);
   if (http) {

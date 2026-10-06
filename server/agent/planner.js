@@ -9,6 +9,7 @@ import { log } from '../logging/logger.js';
 // Runtime-only association. Model JSON cannot create or overwrite it, and
 // overlapping calls cannot replace another returned plan's privacy context.
 const planContexts = new WeakMap();
+const PASS_THROUGH_CODES = ['MODEL_CALL_LIMIT', 'RUN_BUDGET_EXHAUSTED', 'MODEL_USAGE_INVALID', 'MODEL_USAGE_RECORD_FAILED'];
 
 /**
  * Planner: turns an objective plus assembled context into a structured
@@ -77,17 +78,25 @@ export class Planner {
       this.lastProviderId = provider.id;
       return plan;
     } catch (err) {
-      if (['MODEL_CALL_LIMIT', 'RUN_BUDGET_EXHAUSTED', 'MODEL_USAGE_INVALID', 'MODEL_USAGE_RECORD_FAILED'].includes(err.code)) throw err;
-      let fallback;
-      try { fallback = this.modelRouter.resolveFallback(this.role); }
-      catch (fallbackError) { throw ['MODEL_CALL_LIMIT', 'RUN_BUDGET_EXHAUSTED', 'MODEL_USAGE_INVALID', 'MODEL_USAGE_RECORD_FAILED'].includes(fallbackError.code) ? fallbackError : this.modelRouter.allowMock === false ? unavailableModel(fallbackError) : fallbackError; }
-      if (!fallback) throw this.modelRouter.allowMock === false ? unavailableModel(err, provider.id) : err;
-      console.error(`[planner] role "${this.role}" primary provider failed; retrying configured fallback`);
-      let plan;
-      try { plan = await this._planWith(fallback, context, objective); }
-      catch (fallbackError) { throw ['MODEL_CALL_LIMIT', 'RUN_BUDGET_EXHAUSTED', 'MODEL_USAGE_INVALID', 'MODEL_USAGE_RECORD_FAILED'].includes(fallbackError.code) ? fallbackError : this.modelRouter.allowMock === false ? unavailableModel(fallbackError, fallback.id) : fallbackError; }
-      this.lastProviderId = fallback.id;
-      return plan;
+      if (PASS_THROUGH_CODES.includes(err.code)) throw err;
+      let fallbacks;
+      try { fallbacks = this.modelRouter.resolveFallbacks(this.role); }
+      catch (fallbackError) { throw PASS_THROUGH_CODES.includes(fallbackError.code) ? fallbackError : this.modelRouter.allowMock === false ? unavailableModel(fallbackError) : fallbackError; }
+      if (!fallbacks.length) throw this.modelRouter.allowMock === false ? unavailableModel(err, provider.id) : err;
+      // Try each remaining connection in the owner's order; the last failure is the one reported.
+      let lastError = err; let lastProvider = provider;
+      for (const fallback of fallbacks) {
+        log.warn('planner', 'Model provider failed; trying the next connection', { role: this.role, failed: lastProvider.id, next: fallback.id, reason: classifyModelFailure(lastError).code });
+        try {
+          const plan = await this._planWith(fallback, context, objective);
+          this.lastProviderId = fallback.id;
+          return plan;
+        } catch (fallbackError) {
+          if (PASS_THROUGH_CODES.includes(fallbackError.code)) throw fallbackError;
+          lastError = fallbackError; lastProvider = fallback;
+        }
+      }
+      throw this.modelRouter.allowMock === false ? unavailableModel(lastError, lastProvider.id) : lastError;
     }
   }
 
