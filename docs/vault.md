@@ -85,6 +85,9 @@ U2OS checks the vault every 5 seconds (`U2OS_VAULT_POLL_MS`) and re-indexes when
 - `GET /api/vault` returns the vault location, the last index report (counts, file paths and parse errors, never contents), the vault policy status and the [MCP server](mcp.md) status.
 - `GET /api/vault/journal?month=YYYY-MM&limit=100` returns the journal months and one month's entries, newest first (the latest month by default).
 - `POST /api/vault/reindex` indexes immediately and returns the report.
+- `POST /api/vault/records`, `GET /api/vault/records` and `GET`/`PATCH /api/vault/records/:id` create, list, read and edit people and project files.
+- `GET`/`PUT /api/vault/me` read and write `me.md`.
+- `GET /api/vault/inspect` and `POST /api/vault/location` check and switch the vault location, and `GET`/`POST /api/vault/starter-routines` list and install starter routines ([onboarding](onboarding.md)).
 
 ## Editing from the UI
 

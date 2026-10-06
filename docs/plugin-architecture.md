@@ -1,5 +1,7 @@
 # Plugin architecture: capabilities, skills and automations
 
+> **Lean core:** [ADR 0010](adr/0010-lean-core-bundled-addons.md) makes packages the home of add-on metadata, including MCP servers, with bundled and installed trust tiers. Migrating built-ins is [#453](https://github.com/chrisrobison/u2os/issues/453).
+>
 > **Direction update ([ADR 0009](adr/0009-extension-model-mcp-tools-vault-skills-routines.md)):** packages, permissions, the single action gate, package policy and audit described here stand. The declarative workflow language for skills and automations is **frozen**: no new features, and it will be retired once the reference Job Hunter runs on MCP-provided tools, vault skills and routines ([#397](https://github.com/chrisrobison/u2os/issues/397)). Do not build new packages on it.
 
 U2OS grows through **packages**: installable directories that contribute **capabilities**, **skills** and **automations**. Packages compose like Lego blocks. An automation depends on skills, skills are built from capabilities, and capabilities are implemented by providers. Every invocation that leaves a package passes permission checks, deterministic policy and the existing action gate, and lands in the same audit trail as everything else U2OS does ([ADR 0008](adr/0008-packages-capabilities-skills-automations.md)).

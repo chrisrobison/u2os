@@ -218,7 +218,8 @@ and-investigate failure. File focused issues using redacted reproduction steps.
 Report unperformed workflows and unavailable sources alongside passes.
 
 Live Google read/sync validation remains [#150](https://github.com/chrisrobison/u2os/issues/150).
-No two-week dogfooding or live checks are claimed by this document. A future
-coding workspace runner is [separately deferred in #291](https://github.com/chrisrobison/u2os/issues/291):
-isolated execution, filesystem and resource boundaries, Git/tests/artifacts—not
-unrestricted shell access in the personal-agent loop.
+No two-week dogfooding or live checks are claimed by this document. Delegating
+software tasks to the Codex or Claude Code CLIs now exists as the
+`coding.agent` capability ([coding agents](coding-agents.md), #428). It is not
+part of this personal-agent acceptance loop, which has no coding workspace
+runner or unrestricted shell access ([#291](https://github.com/chrisrobison/u2os/issues/291)).
