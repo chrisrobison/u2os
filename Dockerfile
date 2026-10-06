@@ -19,6 +19,7 @@ RUN npm ci --omit=dev
 COPY server/ ./server/
 COPY public/ ./public/
 COPY skills/ ./skills/
+COPY addons/ ./addons/
 COPY examples/ ./examples/
 
 # Local-first data directory (see docs/architecture.md's "Local-first data

@@ -71,7 +71,7 @@ Tracking issue: [#468](https://github.com/chrisrobison/u2os/issues/468). Impleme
 - [x] [#464](https://github.com/chrisrobison/u2os/issues/464) Discovery, vault `addons.yaml` and the owner decisions API
 - [x] [#465](https://github.com/chrisrobison/u2os/issues/465) Run enabled add-ons' MCP servers through the gate, with tool variants
 - [x] [#466](https://github.com/chrisrobison/u2os/issues/466) Add-ons page: browse, enable, review tools, settings
-- [ ] [#467](https://github.com/chrisrobison/u2os/issues/467) Bundled Apple add-on (supersedes [#460](https://github.com/chrisrobison/u2os/issues/460))
+- [x] [#467](https://github.com/chrisrobison/u2os/issues/467) Bundled Apple add-on (supersedes [#460](https://github.com/chrisrobison/u2os/issues/460))
 
 ### Other Milestone B items
 
