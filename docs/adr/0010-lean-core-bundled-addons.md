@@ -35,9 +35,17 @@ Today:
 - Package metadata and the owner's vault files can disagree (a tool removed upstream, a new tool added). The vault wins and unknown tools stay hidden until the owner lists them, as today.
 - This is not a language decision. A rewrite of any part of the core is a separate question that should wait for a stable contract and evidence of need.
 
+## Contract details (decided in #463)
+
+- An add-on's manifest is `addon.yaml` (`kind: Addon`), specified in [docs/addons.md](../addons.md). It is deliberately separate from the package manifest `u2os.yaml`, whose workflow-language runtime is frozen ([0009](0009-extension-model-mcp-tools-vault-skills-routines.md)); add-ons replace packages as the unit of extension and packages are retired in #402.
+- An add-on contributes MCP servers (tools), skills, routines, settings and navigation entries. Bundled add-ons live in `addons/`, installed ones in `U2OS_HOME/addons/`.
+- A tool can be exposed as several **variants** that pin different arguments of one server tool, so reading and sending through the same remote tool can carry different policy.
+- Owner decisions (enabled, confirmed tool classification, settings) live in the vault's `addons.yaml`. A manifest's claims are suggestions; an unconfirmed tool is a confirm-required action with private results.
+- A server name must be the add-on id or start with `<id>_`; built-in names stay reserved.
+
 ## Implementation status
 
 - Navigation is grouped into collapsible categories (point 7), shipped in [#435](https://github.com/chrisrobison/u2os/issues/435). Add-ons cannot yet contribute entries through a manifest.
-- Package metadata for MCP servers, the bundled/installed trust tiers and migrating built-ins are not yet implemented. Migration starts with calendar in [#453](https://github.com/chrisrobison/u2os/issues/453).
+- The add-on contract and manifest validation are in [#463](https://github.com/chrisrobison/u2os/issues/463). Discovery and `addons.yaml`, running add-on tools, the Add-ons page and the first add-on follow under [#468](https://github.com/chrisrobison/u2os/issues/468). Migrating built-ins starts with calendar in [#453](https://github.com/chrisrobison/u2os/issues/453).
 
 Decided in [#440](https://github.com/chrisrobison/u2os/issues/440), alongside [#401](https://github.com/chrisrobison/u2os/issues/401) and [#402](https://github.com/chrisrobison/u2os/issues/402).
