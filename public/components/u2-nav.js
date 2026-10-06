@@ -1,42 +1,43 @@
+// Each route is [hash, label, icon]; icon is a name from public/styles/icons.css.
 // Navigation groups (#435). One data structure so add-ons can contribute
 // entries later (ADR 0010). `open` is the default state; the owner's own
 // choice is remembered per browser, and the group holding the current route
 // is always shown.
 export const NAV_GROUPS = [
   { id: 'today', label: 'Today', open: true, routes: [
-    ['#/home', 'Home'],
-    ['#/briefing', 'Briefing'],
-    ['#/dashboards', 'Dashboards'],
+    ['#/home', 'Home', 'house'],
+    ['#/briefing', 'Briefing', 'sun'],
+    ['#/dashboards', 'Dashboards', 'chart-pie'],
   ] },
   { id: 'apps', label: 'Apps', open: true, routes: [
-    ['#/mail', 'Mail'],
-    ['#/calendar', 'Calendar'],
-    ['#/tasks', 'Tasks'],
-    ['#/projects', 'Projects'],
-    ['#/people', 'People'],
+    ['#/mail', 'Mail', 'envelope'],
+    ['#/calendar', 'Calendar', 'calendar-days'],
+    ['#/tasks', 'Tasks', 'list-check'],
+    ['#/projects', 'Projects', 'diagram-project'],
+    ['#/people', 'People', 'user-group'],
   ] },
   { id: 'memory', label: 'Memory & automation', open: true, routes: [
-    ['#/memory', 'Memory'],
-    ['#/routines', 'Routines'],
-    ['#/goals', 'Goals'],
-    ['#/applications', 'Applications'],
-    ['#/automation', 'Automation'],
-    ['#/activity', 'Activity'],
+    ['#/memory', 'Memory', 'brain'],
+    ['#/routines', 'Routines', 'repeat'],
+    ['#/goals', 'Goals', 'bullseye'],
+    ['#/applications', 'Applications', 'briefcase'],
+    ['#/automation', 'Automation', 'bolt'],
+    ['#/activity', 'Activity', 'clock-rotate-left'],
   ] },
   { id: 'addons', label: 'Add-ons', open: false, routes: [
-    ['#/packages', 'Packages'],
+    ['#/packages', 'Packages', 'puzzle-piece'],
   ] },
   { id: 'settings', label: 'Settings', open: false, routes: [
-    ['#/connectors', 'Connectors'],
-    ['#/model', 'Model'],
-    ['#/devices', 'Devices'],
-    ['#/voice', 'Voice'],
-    ['#/vault', 'Vault'],
-    ['#/onboarding', 'Setup wizard'],
+    ['#/connectors', 'Connectors', 'plug'],
+    ['#/model', 'Model', 'microchip'],
+    ['#/devices', 'Devices', 'display'],
+    ['#/voice', 'Voice', 'microphone'],
+    ['#/vault', 'Vault', 'vault'],
+    ['#/onboarding', 'Setup wizard', 'wand-magic-sparkles'],
   ] },
   { id: 'system', label: 'System', open: false, routes: [
-    ['#/operations', 'Operations'],
-    ['#/diagnostics', 'Diagnostics'],
+    ['#/operations', 'Operations', 'gears'],
+    ['#/diagnostics', 'Diagnostics', 'stethoscope'],
   ] },
 ];
 
@@ -98,22 +99,31 @@ export class U2Nav extends HTMLElement {
       toggle.className = 'nav-group__toggle';
       toggle.setAttribute('aria-controls', listId);
       toggle.dataset.group = group.id;
-      const label = document.createElement('span');
-      label.textContent = group.label;
+      const groupLabel = document.createElement('span');
+      groupLabel.textContent = group.label;
       const chevron = document.createElement('span');
       chevron.className = 'nav-group__chevron';
       chevron.setAttribute('aria-hidden', 'true');
-      toggle.append(label, chevron);
+      toggle.append(groupLabel, chevron);
 
       const list = document.createElement('ul');
       list.className = 'nav-list';
       list.id = listId;
-      for (const [hash, text] of group.routes) {
+      for (const [hash, text, icon] of group.routes) {
         const li = document.createElement('li');
         li.className = 'nav-list__item';
         const a = document.createElement('a');
         a.href = hash;
-        a.textContent = text;
+        if (icon) {
+          // Decorative: the text label is the link's name.
+          const glyph = document.createElement('span');
+          glyph.className = `u2-icon u2-icon--${icon}`;
+          glyph.setAttribute('aria-hidden', 'true');
+          a.append(glyph);
+        }
+        const label = document.createElement('span');
+        label.textContent = text;
+        a.append(label);
         a.dataset.route = hash;
         li.appendChild(a);
         list.appendChild(li);

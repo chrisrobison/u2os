@@ -60,6 +60,7 @@ Tracking issue: [#433](https://github.com/chrisrobison/u2os/issues/433). Use on 
 - [x] [#437](https://github.com/chrisrobison/u2os/issues/437) Calendar: month, week and day views
 - [x] [#438](https://github.com/chrisrobison/u2os/issues/438) Tasks and projects: create and edit in modals (projects are vault files)
 - [x] [#439](https://github.com/chrisrobison/u2os/issues/439) People: contacts section and relationship management
+- [x] [#450](https://github.com/chrisrobison/u2os/issues/450) Navigation icons (Font Awesome Free shipped with the app, not a CDN)
 - [ ] [#448](https://github.com/chrisrobison/u2os/issues/448) People: person-to-person relationships in vault files (follow-up)
 
 ### Other Milestone B items
