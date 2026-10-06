@@ -10,6 +10,9 @@ const CLASSIFICATIONS = ['public', 'personal', 'private', 'sensitive'];
 // vault's addons.yaml (docs/addons.md). `onChanged({ id, enabledChanged })`
 // lets the runtime start or stop an add-on's tools after a decision changes.
 export function registerAddonRoutes(router, { onChanged } = {}) {
+  // Applying a change restarts tool servers; overlapping requests must not do that concurrently.
+  let applying = Promise.resolve();
+  const apply = (change) => { const run = applying.then(() => onChanged?.(change)); applying = run.catch(() => {}); return run; };
   router.get('/api/addons', async (_req, res) => { const view = describeAddons(); sendJson(res, 200, { ...view, addons: view.addons.map(withRuntime) }); });
 
   router.put('/api/addons/:id', async (req, res) => {
@@ -47,7 +50,7 @@ export function registerAddonRoutes(router, { onChanged } = {}) {
     }
     const after = describeAddons().addons.find((a) => a.id === id);
     let applyError = null;
-    try { await onChanged?.({ id, enabledChanged: before?.enabled !== after?.enabled, addon: after }); }
+    try { await apply({ id, enabledChanged: before?.enabled !== after?.enabled, addon: after }); }
     catch (error) { applyError = 'The decision was saved, but the add-on could not be applied; see the server log.'; console.error(`[addons] applying ${id} failed: ${error?.message || error}`); }
     return sendJson(res, 200, { addon: withRuntime(after), ...(applyError ? { applyError } : {}) });
   });
