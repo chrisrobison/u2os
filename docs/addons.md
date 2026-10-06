@@ -4,7 +4,7 @@ An **add-on** is a folder that gives U2OS one more capability: tools from an MCP
 
 An add-on only **describes**. Whether it is enabled, which of its tools are read-only, how sensitive their results are, and what its settings are, are **your** decisions, kept in a vault file you own, `addons.yaml` (below). A claim in a manifest is a suggestion shown to you; it takes effect only when you confirm it.
 
-> Status: this page is the contract. The manifest validator, discovery, `addons.yaml` and the owner API exist. Running add-on tools ([#465](https://github.com/chrisrobison/u2os/issues/465)), the Add-ons page ([#466](https://github.com/chrisrobison/u2os/issues/466)) and the first add-on, Apple apps ([#467](https://github.com/chrisrobison/u2os/issues/467)), follow. The older [packages](plugin-architecture.md) (workflow language) are unchanged and are being retired ([#402](https://github.com/chrisrobison/u2os/issues/402)).
+> Status: this page is the contract. The manifest validator, discovery, `addons.yaml`, the owner API and running add-on tools exist. The Add-ons page ([#466](https://github.com/chrisrobison/u2os/issues/466)) and the first add-on, Apple apps ([#467](https://github.com/chrisrobison/u2os/issues/467)), follow. The older [packages](plugin-architecture.md) (workflow language) are unchanged and are being retired ([#402](https://github.com/chrisrobison/u2os/issues/402)).
 
 ## Where add-ons live
 
@@ -70,6 +70,10 @@ Each entry under `tools` becomes one planner-visible tool named `<server>.<name>
 ### Suggestions versus decisions
 
 `read` and `classification` in the manifest are what the author suggests. Until you confirm a tool, U2OS treats it as an **action that requires confirmation** with **private** results, whatever the manifest says. Confirming records your decision in `addons.yaml`. A tool a later version adds stays hidden until you review it.
+
+### Running
+
+U2OS starts the servers of every enabled add-on at startup, and again whenever you enable, disable or change an add-on (this restarts all tool servers, including those in `mcp.yaml`). Tools show up as `<server>.<tool>` exactly like `mcp.yaml` tools, so [`policies.yaml`](policies.md) keys them by the server name, e.g. `apple: { mail_send: autonomous }`. Placeholders in `command`, `args` and `env`: `${ADDON_DIR}` (the add-on folder), `${VAULT}`, `${U2OS_ROOT}` and `${setting.NAME}` (the effective value of a setting). A tool the server does not offer is reported as missing and not registered. If an `mcp.yaml` server already uses a name, the add-on's server fails with a clear status and the `mcp.yaml` server keeps it. `GET /api/addons` includes each add-on's server state under `runtime`. Switching vaults stops add-on servers like any other; press *Restart tool servers* in the Vault view after switching to start the new vault's.
 
 ### Trust and what an add-on cannot do
 

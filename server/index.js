@@ -282,7 +282,8 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
     developmentMode: deviceDebugEnabled });
   registerDiagnosticsRoutes(router, { db, dbPath, dataDir, startTime, sseHub, modelRouter, embeddingProvider });
   registerVaultRoutes(router, { eventBus, toolRegistry });
-  registerAddonRoutes(router);
+  // Enabling, disabling or confirming an add-on's tools re-applies the tool servers.
+  registerAddonRoutes(router, { onChanged: async () => { await startMcpServers({ toolRegistry }); } });
   registerOnboardingRoutes(router);
   registerJobApplicationRoutes(router);
   registerRoutineRoutes(router, { eventBus, agent });

@@ -2,6 +2,7 @@ import { sendJson } from '../router.js';
 import { describeAddons, discoverAddons } from '../../addons/registry.js';
 import { ADDON_ID } from '../../addons/manifest.js';
 import { updateAddonDecisions } from '../../addons/decisions.js';
+import { getMcpStatus } from '../../mcp/mcp-tools.js';
 
 const CLASSIFICATIONS = ['public', 'personal', 'private', 'sensitive'];
 
@@ -9,7 +10,10 @@ const CLASSIFICATIONS = ['public', 'personal', 'private', 'sensitive'];
 // vault's addons.yaml (docs/addons.md). `onChanged({ id, enabledChanged })`
 // lets the runtime start or stop an add-on's tools after a decision changes.
 export function registerAddonRoutes(router, { onChanged } = {}) {
-  router.get('/api/addons', async (_req, res) => sendJson(res, 200, describeAddons()));
+  // Applying a change restarts tool servers; overlapping requests must not do that concurrently.
+  let applying = Promise.resolve();
+  const apply = (change) => { const run = applying.then(() => onChanged?.(change)); applying = run.catch(() => {}); return run; };
+  router.get('/api/addons', async (_req, res) => { const view = describeAddons(); sendJson(res, 200, { ...view, addons: view.addons.map(withRuntime) }); });
 
   router.put('/api/addons/:id', async (req, res) => {
     const id = req.params?.id;
@@ -46,10 +50,17 @@ export function registerAddonRoutes(router, { onChanged } = {}) {
     }
     const after = describeAddons().addons.find((a) => a.id === id);
     let applyError = null;
-    try { await onChanged?.({ id, enabledChanged: before?.enabled !== after?.enabled, addon: after }); }
+    try { await apply({ id, enabledChanged: before?.enabled !== after?.enabled, addon: after }); }
     catch (error) { applyError = 'The decision was saved, but the add-on could not be applied; see the server log.'; console.error(`[addons] applying ${id} failed: ${error?.message || error}`); }
-    return sendJson(res, 200, { addon: after, ...(applyError ? { applyError } : {}) });
+    return sendJson(res, 200, { addon: withRuntime(after), ...(applyError ? { applyError } : {}) });
   });
+}
+
+// What the tool servers are doing now, for add-ons that contribute servers.
+function withRuntime(addon) {
+  if (!addon?.servers) return addon;
+  const status = getMcpStatus().servers.filter((server) => server.addon === addon.id);
+  return { ...addon, runtime: status.map(({ name, state, error, tools, missingTools }) => ({ name, state, error: error ? String(error).slice(0, 300) : null, tools, missingTools })) };
 }
 
 function checkSettings(values, specs) {

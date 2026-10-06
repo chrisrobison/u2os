@@ -4,6 +4,7 @@ import { getVaultDir } from '../vault/vault-dir.js';
 import { setObservationFloor } from '../agent/observation-filter.js';
 import { McpClient } from './client.js';
 import { loadMcpConfig, mcpConfigPath } from './config.js';
+import { loadAddonServerSpecs } from '../addons/runtime.js';
 
 // MCP servers declared in the owner's vault (docs/mcp.md, ADR 0009) become
 // ordinary planner-visible tools named `<server>.<tool>`. Nothing about the
@@ -18,19 +19,27 @@ const RECONNECT_BACKOFF_MS = 30_000;
 let state = { path: null, error: null, servers: [] };
 
 export class McpTool extends Tool {
+  /**
+   * `options.exposedName` is the planner-facing name when it differs from the
+   * server's tool (an add-on variant); `options.fixed` are arguments U2OS sets
+   * on every call, which the model cannot supply or override.
+   */
   constructor({ serverName, remote, options }) {
     super();
     this.serverName = serverName;
     this.remoteName = remote.name;
+    this.exposedName = options.exposedName || remote.name;
+    this.fixed = options.fixed && Object.keys(options.fixed).length ? { ...options.fixed } : null;
     this.options = options;
-    this._description = typeof remote.description === 'string' ? remote.description.slice(0, 1_000) : '';
-    this._schema = isMapping(remote.inputSchema) ? remote.inputSchema : { type: 'object', properties: {} };
+    const own = typeof options.description === 'string' && options.description ? options.description : (typeof remote.description === 'string' ? remote.description : '');
+    this._description = own.slice(0, 1_000);
+    this._schema = withoutFixed(isMapping(remote.inputSchema) ? remote.inputSchema : { type: 'object', properties: {} }, this.fixed);
   }
-  get name() { return `${this.serverName}.${this.remoteName}`; }
+  get name() { return `${this.serverName}.${this.exposedName}`; }
   get removable() { return true; }
   get domain() { return this.serverName; }
-  // Only the owner's mcp.yaml can make a tool read-only; a server's own
-  // readOnlyHint is not trusted.
+  // Only the owner's decision (mcp.yaml, or a confirmed add-on tool in
+  // addons.yaml) can make a tool read-only; a server's own readOnlyHint is not trusted.
   get category() { return this.options.read ? 'read' : 'consequential'; }
   get description() { return `${this._description}${this._description ? ' ' : ''}(MCP server "${this.serverName}")`; }
   get schema() { return this._schema; }
@@ -40,9 +49,18 @@ export class McpTool extends Tool {
     const handle = state.servers.find((server) => server.name === this.serverName && server.spec.enabled);
     if (!handle) throw new Error(`MCP server ${this.serverName} is not configured`);
     const client = await handle.ensureConnected();
-    const result = await client.callTool(this.remoteName, args || {});
+    const callArgs = this.fixed ? { ...(args || {}), ...this.fixed } : (args || {});
+    const result = await client.callTool(this.remoteName, callArgs);
     return toolResult(result);
   }
+}
+
+// The planner must not see (or be able to set) arguments U2OS pins.
+function withoutFixed(schema, fixed) {
+  if (!fixed) return schema;
+  const properties = isMapping(schema.properties) ? Object.fromEntries(Object.entries(schema.properties).filter(([key]) => !(key in fixed))) : schema.properties;
+  const required = Array.isArray(schema.required) ? schema.required.filter((key) => !(key in fixed)) : schema.required;
+  return { ...schema, ...(properties ? { properties } : {}), ...(required ? { required } : {}) };
 }
 
 /** Turns an MCP tools/call result into a plain JSON value, or throws its error. */
@@ -108,14 +126,18 @@ export async function startMcpServers({ toolRegistry, vaultDir = getVaultDir() }
   // A restart re-registers exactly what mcp.yaml lists now.
   for (const tool of toolRegistry.list()) if (tool instanceof McpTool) toolRegistry.unregister(tool.name);
   const config = loadMcpConfig(vaultDir);
+  // Servers from enabled add-ons (docs/addons.md) run alongside those in mcp.yaml; a name already taken by mcp.yaml wins.
+  const addonServers = loadAddonServerSpecs({ vaultDir });
   state = { path: config.path, error: config.error, servers: [] };
   if (config.error) log.warn('mcp', 'mcp.yaml is invalid; no MCP servers were started');
   const taken = new Set([...toolRegistry.list().map((tool) => tool.name), ...toolRegistry.hiddenNames()].map((name) => name.split('.')[0]));
-  await Promise.all(config.servers.map(async (spec) => {
+  await Promise.all([...config.servers, ...addonServers].map(async (spec) => {
     const handle = new ServerHandle(spec, { cwd: vaultDir });
+    if (spec.addonId) handle.status.addon = spec.addonId;
     state.servers.push(handle);
     if (!spec.enabled) return;
-    if (taken.has(spec.name)) {
+    const duplicate = state.servers.slice(0, state.servers.indexOf(handle)).some((earlier) => earlier.name === spec.name);
+    if (taken.has(spec.name) || duplicate) {
       handle.status.state = 'failed';
       handle.status.error = `The name "${spec.name}" is already used by another tool`;
       return;
@@ -124,9 +146,9 @@ export async function startMcpServers({ toolRegistry, vaultDir = getVaultDir() }
       await handle.connect();
       const offered = new Map((await handle.client.listTools()).filter((tool) => typeof tool?.name === 'string').map((tool) => [tool.name, tool]));
       for (const options of spec.tools) {
-        const remote = offered.get(options.name);
+        const remote = offered.get(options.remote || options.name);
         if (!remote) { handle.status.missingTools.push(options.name); continue; }
-        const tool = new McpTool({ serverName: spec.name, remote, options });
+        const tool = new McpTool({ serverName: spec.name, remote, options: { ...options, exposedName: options.name } });
         toolRegistry.register(tool);
         setObservationFloor(tool.name, options.classification);
         handle.status.tools.push(tool.name);
