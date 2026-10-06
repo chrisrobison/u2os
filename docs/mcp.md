@@ -2,6 +2,8 @@
 
 U2OS gets new tools from [Model Context Protocol](https://modelcontextprotocol.io) servers that you declare in your vault ([ADR 0009](adr/0009-extension-model-mcp-tools-vault-skills-routines.md)). A server runs as its own process. Its tools appear to the planner next to the built-in ones, and every call goes through the same gate as any other action: policy, the durable queue, approval and audit.
 
+Servers can also come from [add-ons](addons.md), which describe their tools and let you confirm them in `addons.yaml`; they run through the same gate. Use `mcp.yaml` for a server you declare yourself.
+
 ## Declaring servers: `mcp.yaml`
 
 Put `mcp.yaml` at the top of your vault:
