@@ -233,3 +233,18 @@ test('onReload() listeners run after the swap, can unsubscribe, and a failing li
   router.reload({ providers: { a: { type: 'mock', tag: 'v3' } }, roles: { planner: 'a' } });
   assert.deepEqual(seen, ['v2']);
 });
+
+test('planner failure names the provider and a sanitized reason', async () => {
+  const refused = Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('connect ECONNREFUSED 10.0.0.9:1234'), { code: 'ECONNREFUSED' }) });
+  const router = new ModelRouter({
+    providers: { main: { type: 'openai-compatible', baseUrl: 'http://10.0.0.9:1234', model: 'm' } }, roles: { planner: 'main' },
+  }, { allowMock: false, createProvider: () => ({ id: 'openai-compatible:m', plan: async () => { throw refused; } }) });
+  await assert.rejects(new Planner({ modelRouter: router }).plan({ toolRegistry: registry }, 'test'), (error) => {
+    assert.equal(error.code, 'MODEL_UNAVAILABLE');
+    assert.equal(error.status, 503);
+    assert.equal(error.reason, 'connection_refused');
+    assert.match(error.message, /openai-compatible:m failed \(connection refused/);
+    assert.doesNotMatch(error.message, /10\.0\.0\.9/);
+    return true;
+  });
+});
