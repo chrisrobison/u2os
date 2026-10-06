@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Extends [0008](0008-packages-capabilities-skills-automations.md) and [0009](0009-extension-model-mcp-tools-vault-skills-routines.md); supersedes neither.
+Accepted; implementation in progress (see Implementation status). Extends [0008](0008-packages-capabilities-skills-automations.md) and [0009](0009-extension-model-mcp-tools-vault-skills-routines.md); supersedes neither.
 
 ## Context
 
@@ -35,4 +35,9 @@ Today:
 - Package metadata and the owner's vault files can disagree (a tool removed upstream, a new tool added). The vault wins and unknown tools stay hidden until the owner lists them, as today.
 - This is not a language decision. A rewrite of any part of the core is a separate question that should wait for a stable contract and evidence of need.
 
-Tracked in [#440](https://github.com/chrisrobison/u2os/issues/440), alongside [#401](https://github.com/chrisrobison/u2os/issues/401) and [#402](https://github.com/chrisrobison/u2os/issues/402).
+## Implementation status
+
+- Navigation is grouped into collapsible categories (point 7), shipped in [#435](https://github.com/chrisrobison/u2os/issues/435). Add-ons cannot yet contribute entries through a manifest.
+- Package metadata for MCP servers, the bundled/installed trust tiers and migrating built-ins are not yet implemented. Migration starts with calendar in [#453](https://github.com/chrisrobison/u2os/issues/453).
+
+Decided in [#440](https://github.com/chrisrobison/u2os/issues/440), alongside [#401](https://github.com/chrisrobison/u2os/issues/401) and [#402](https://github.com/chrisrobison/u2os/issues/402).

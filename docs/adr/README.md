@@ -13,4 +13,6 @@ These records capture U2OS's foundational, cross-cutting decisions. They describ
 - [0009 — Extension model: MCP tools, vault skills, routines as automations](0009-extension-model-mcp-tools-vault-skills-routines.md)
 - [0010 — Lean core with bundled add-ons](0010-lean-core-bundled-addons.md)
 
+Current status: 0001–0006 accepted (0001 and 0004 refined or partly superseded by 0007); 0007 accepted; 0008 accepted and partly superseded by 0009; 0009 accepted; 0010 accepted, implementation in progress.
+
 New ADRs should use the next number and contain at least Status, Context, Decision, and Consequences. Supersede an accepted record with a new ADR rather than silently rewriting the original decision.

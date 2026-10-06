@@ -41,6 +41,7 @@ Its programming model has four problems for a single-owner system whose premise 
 - Isolation for third-party code comes from the process boundary, not from future sandboxing work.
 - One mechanism for unattended work. Triggers and goals can later become routines too.
 - Routines lack some guarantees that deterministic workflows give, such as exact de-duplication across runs. These are added deliberately, as small structured features, when real use needs them, and the [Job Hunter comparison](../skills-vs-packages.md) documents them.
+- Implemented so far: vault skills, MCP servers as gated capability providers, the first-party job-hunt MCP server with its ledger in the vault, and Job Hunter as a routine plus a skill. The `coding.agent` capability ([#428](https://github.com/chrisrobison/u2os/issues/428)) is a built-in capability that launches the official Codex or Claude Code CLI as a subprocess; it follows the same gate and never holds those tools' credentials.
 - Migration is tracked in [#397](https://github.com/chrisrobison/u2os/issues/397):
   - vault skills ([#399](https://github.com/chrisrobison/u2os/issues/399))
   - MCP providers ([#400](https://github.com/chrisrobison/u2os/issues/400))
