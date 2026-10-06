@@ -27,7 +27,7 @@ export const NAV_GROUPS = [
     ['#/activity', 'Activity', 'clock-rotate-left'],
   ] },
   { id: 'addons', label: 'Add-ons', open: false, routes: [
-    ['#/addons', 'Add-ons', 'puzzle-piece'],
+    ['#/addons', 'Add-ons', 'cubes'],
     ['#/packages', 'Packages', 'puzzle-piece'],
   ] },
   { id: 'settings', label: 'Settings', open: false, routes: [
