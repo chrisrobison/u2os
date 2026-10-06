@@ -4,7 +4,7 @@ An **add-on** is a folder that gives U2OS one more capability: tools from an MCP
 
 An add-on only **describes**. Whether it is enabled, which of its tools are read-only, how sensitive their results are, and what its settings are, are **your** decisions, kept in a vault file you own, `addons.yaml` (below). A claim in a manifest is a suggestion shown to you; it takes effect only when you confirm it.
 
-> Status: this page is the contract. The manifest validator, discovery, `addons.yaml`, the owner API and running add-on tools exist. The Add-ons page ([#466](https://github.com/chrisrobison/u2os/issues/466)) and the first add-on, Apple apps ([#467](https://github.com/chrisrobison/u2os/issues/467)), follow. The older [packages](plugin-architecture.md) (workflow language) are unchanged and are being retired ([#402](https://github.com/chrisrobison/u2os/issues/402)).
+> Status: this page is the contract. The manifest validator, discovery, `addons.yaml`, the owner API and running add-on tools exist. The Add-ons page exists. The first add-on, Apple apps ([#467](https://github.com/chrisrobison/u2os/issues/467)), follow. The older [packages](plugin-architecture.md) (workflow language) are unchanged and are being retired ([#402](https://github.com/chrisrobison/u2os/issues/402)).
 
 ## Where add-ons live
 
@@ -96,6 +96,12 @@ addons:
 ```
 
 The file is the authority. Edit it by hand or through the API below; U2OS rewrites it atomically (comments are not preserved). Invalid content enables nothing, and U2OS refuses to overwrite an invalid file until you fix it. A confirmed tool must state its classification. Servers you declare yourself in [`mcp.yaml`](mcp.md) keep working unchanged.
+
+## The Add-ons page
+
+**Add-ons** in the navigation lists everything found, bundled and installed, with its state, problems and tool-server status. *Details* shows the add-on's README, its tools (what the author suggests next to what you have decided), and its settings. For each tool you can *Confirm* it (choose read-only or not, and the privacy level of its results), *Update decision* or *Reset* it. *Enable* and *Disable* start and stop its tool server. If your `addons.yaml` is invalid the page says so and saves nothing.
+
+An enabled add-on's `ui.nav` entries appear in the navigation (in the group named by `group`, else Add-ons) and open that add-on's page. Icons come from the self-hosted set shipped with U2OS; an unknown icon shows the puzzle piece.
 
 ## API
 

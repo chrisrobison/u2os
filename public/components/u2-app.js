@@ -27,6 +27,7 @@ import './u2-triggers.js';
 import './u2-packages.js';
 import './u2-diagnostics.js';
 import './u2-model.js';
+import './u2-addons.js';
 import './u2-onboarding.js';
 
 // Dashboard contexts the #/dashboards picker offers, per PROMPT.md section
@@ -337,6 +338,12 @@ export class U2App extends HTMLElement {
       case 'packages':
         this._setWorkspace('', document.createElement('u2-packages'));
         break;
+      case 'addons': {
+        const page = document.createElement('u2-addons');
+        if (sub) page.focusId = sub;
+        this._setWorkspace('', page);
+        break;
+      }
       case 'diagnostics':
         this._renderDiagnostics();
         break;

@@ -69,6 +69,14 @@ export function testModelConnection(id, sendPrompt = false) {
   return request('/api/model/connections/test', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ id, sendPrompt }) });
 }
 
+export function getAddons() {
+  return request('/api/addons');
+}
+
+export function updateAddon(id, body) {
+  return request(`/api/addons/${encodeURIComponent(id)}`, { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify(body) });
+}
+
 export function listGoalDrafts() {
   return request('/api/goals');
 }

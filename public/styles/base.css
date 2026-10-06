@@ -362,6 +362,14 @@ u2-app {
 .operation-review > button { margin: var(--space-2) 0; }
 .model-form { max-width: 640px; display: grid; gap: var(--space-3); }
 
+/* ---------- add-ons ---------- */
+.addon-card { margin-bottom: var(--space-4); max-width: 60rem; }
+.addon-meta { color: var(--text-secondary); }
+.addon-readme { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 16rem; overflow: auto; }
+.addon-tool { border-top: var(--border-width) solid var(--border-color); padding: var(--space-3) 0; overflow-wrap: anywhere; }
+.addon-controls { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; margin-top: var(--space-2); }
+.addon-warning { color: var(--text-secondary); font-weight: 600; }
+
 @media (max-width: 600px) {
   .operation-card { grid-template-columns: 1fr; gap: var(--space-1); }
 }

@@ -41,6 +41,7 @@
 .u2-icon--bolt::before { content: "\f0e7"; }
 .u2-icon--clock-rotate-left::before { content: "\f1da"; }
 .u2-icon--puzzle-piece::before { content: "\f12e"; }
+.u2-icon--cubes::before { content: "\f1b3"; }
 .u2-icon--plug::before { content: "\f1e6"; }
 .u2-icon--microchip::before { content: "\f2db"; }
 .u2-icon--display::before { content: "\e163"; }
