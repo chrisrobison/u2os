@@ -1,3 +1,5 @@
+import { getAddons } from '../services/api.js';
+
 // Each route is [hash, label, icon]; icon is a name from public/styles/icons.css.
 // Navigation groups (#435). One data structure so add-ons can contribute
 // entries later (ADR 0010). `open` is the default state; the owner's own
@@ -25,6 +27,7 @@ export const NAV_GROUPS = [
     ['#/activity', 'Activity', 'clock-rotate-left'],
   ] },
   { id: 'addons', label: 'Add-ons', open: false, routes: [
+    ['#/addons', 'Add-ons', 'puzzle-piece'],
     ['#/packages', 'Packages', 'puzzle-piece'],
   ] },
   { id: 'settings', label: 'Settings', open: false, routes: [
@@ -40,6 +43,10 @@ export const NAV_GROUPS = [
     ['#/diagnostics', 'Diagnostics', 'stethoscope'],
   ] },
 ];
+
+// Icons an enabled add-on's navigation entry may use (the self-hosted subset in icons.css).
+const KNOWN_ICONS = new Set(NAV_GROUPS.flatMap((group) => group.routes.map(([, , icon]) => icon)));
+const EXACT_ROUTES = new Set(['#/addons']);
 
 const STATE_KEY = 'u2-nav-groups';
 
@@ -70,15 +77,19 @@ export class U2Nav extends HTMLElement {
   constructor() {
     super();
     this._onHashChange = this._onHashChange.bind(this);
+    this._onAddonsChanged = () => this._loadAddonRoutes();
   }
 
   connectedCallback() {
     this._render();
     window.addEventListener('hashchange', this._onHashChange);
+    window.addEventListener('u2-addons-changed', this._onAddonsChanged);
+    this._loadAddonRoutes();
   }
 
   disconnectedCallback() {
     window.removeEventListener('hashchange', this._onHashChange);
+    window.removeEventListener('u2-addons-changed', this._onAddonsChanged);
   }
 
   _onHashChange() {
@@ -152,6 +163,39 @@ export class U2Nav extends HTMLElement {
     this._updateActive();
   }
 
+  // Enabled add-ons may contribute navigation entries through their manifest
+  // (ADR 0010, point 7). Each opens that add-on's page; an unknown group falls
+  // back to Add-ons and an unknown icon to the puzzle piece.
+  async _loadAddonRoutes() {
+    let data;
+    try { data = await getAddons(); } catch { return; }
+    if (!this.isConnected) return;
+    this.querySelectorAll('[data-addon-route]').forEach((node) => node.remove());
+    for (const addon of data?.addons || []) {
+      if (!addon.enabled) continue;
+      for (const entry of addon.nav || []) {
+        const wanted = NAV_GROUPS.find((group) => group.label.toLowerCase() === String(entry.group || '').toLowerCase()) || NAV_GROUPS.find((group) => group.id === 'addons');
+        const list = this.querySelector(`.nav-group[data-group="${wanted.id}"] .nav-list`);
+        if (!list) continue;
+        const hash = `#/addons/${encodeURIComponent(addon.id)}`;
+        const li = document.createElement('li');
+        li.className = 'nav-list__item';
+        li.dataset.addonRoute = addon.id;
+        const a = document.createElement('a');
+        a.href = hash; a.dataset.route = hash;
+        const glyph = document.createElement('span');
+        glyph.className = `u2-icon u2-icon--${KNOWN_ICONS.has(entry.icon) ? entry.icon : 'puzzle-piece'}`;
+        glyph.setAttribute('aria-hidden', 'true');
+        const text = document.createElement('span');
+        text.textContent = entry.title;
+        a.append(glyph, text);
+        li.appendChild(a);
+        list.appendChild(li);
+      }
+    }
+    this._updateActive();
+  }
+
   _current() {
     return (window.location.hash || '#/home').split('?')[0];
   }
@@ -164,7 +208,7 @@ export class U2Nav extends HTMLElement {
   _updateActive() {
     const current = this._current();
     this.querySelectorAll('a[data-route]').forEach((a) => {
-      a.classList.toggle('is-active', routeMatches(current, a.dataset.route));
+      a.classList.toggle('is-active', EXACT_ROUTES.has(a.dataset.route) ? current === a.dataset.route : routeMatches(current, a.dataset.route));
     });
     // Following a link or the browser's back button into a collapsed group
     // opens it, without overwriting what the owner chose to remember.
