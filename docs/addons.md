@@ -4,7 +4,13 @@ An **add-on** is a folder that gives U2OS one more capability: tools from an MCP
 
 An add-on only **describes**. Whether it is enabled, which of its tools are read-only, how sensitive their results are, and what its settings are, are **your** decisions, kept in a vault file you own, `addons.yaml` (below). A claim in a manifest is a suggestion shown to you; it takes effect only when you confirm it.
 
-> Status: this page is the contract. The manifest validator, discovery, `addons.yaml`, the owner API and running add-on tools exist. The Add-ons page exists. The first add-on, Apple apps ([#467](https://github.com/chrisrobison/u2os/issues/467)), follow. The older [packages](plugin-architecture.md) (workflow language) are unchanged and are being retired ([#402](https://github.com/chrisrobison/u2os/issues/402)).
+> Status: implemented. The manifest validator, discovery, `addons.yaml`, the owner API, running add-on tools, the Add-ons page and the first bundled add-on (Apple apps) all exist ([#468](https://github.com/chrisrobison/u2os/issues/468)). The older [packages](plugin-architecture.md) (workflow language) are unchanged and are being retired ([#402](https://github.com/chrisrobison/u2os/issues/402)).
+
+## Bundled add-ons
+
+| Add-on | What it does |
+|---|---|
+| [`apple`](../addons/apple/README.md) | Calendar, Contacts, Mail, Messages, Notes, Reminders and Maps on this Mac, through the pinned [apple-mcp](https://www.npmjs.com/package/apple-mcp) server. macOS only; every operation is its own tool, so reading mail and sending it carry different policy. |
 
 ## Where add-ons live
 

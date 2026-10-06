@@ -1,0 +1,58 @@
+# Apple apps on this Mac: Calendar, Contacts, Mail, Messages, Notes, Reminders and Maps,
+# through the apple-mcp tool server (https://www.npmjs.com/package/apple-mcp).
+#
+# One apple-mcp tool covers several operations (mail: unread, search, send, ...).
+# Each operation is its own tool here, so reading and sending carry different
+# policy. The read/classification values are SUGGESTIONS: nothing is read-only
+# or less than private until you confirm it on the Add-ons page.
+apiVersion: u2os/v1
+kind: Addon
+
+metadata:
+  id: apple
+  name: Apple apps
+  version: 0.1.0
+  description: Calendar, Contacts, Mail, Messages, Notes, Reminders and Maps on this Mac, through apple-mcp.
+  license: MIT
+  homepage: https://www.npmjs.com/package/apple-mcp
+
+requires:
+  platform: [darwin]
+  commands: [bunx]
+
+servers:
+  apple:
+    # Pinned: bunx downloads this exact version on first use. Review a new
+    # version before changing the pin.
+    command: bunx
+    args: ["apple-mcp@1.0.0"]
+    timeout_seconds: 120
+    tools:
+      calendar_list: { tool: calendar, fixed: { operation: list }, read: true, classification: personal, description: "List upcoming Apple Calendar events (default next 7 days)." }
+      calendar_search: { tool: calendar, fixed: { operation: search }, read: true, classification: personal, description: "Search Apple Calendar events by text." }
+      calendar_create: { tool: calendar, fixed: { operation: create }, description: "Create an Apple Calendar event." }
+      contacts_search: { tool: contacts, read: true, classification: personal, description: "Search Apple Contacts by name, or list all contacts." }
+      mail_unread: { tool: mail, fixed: { operation: unread }, read: true, classification: private, description: "Read unread messages in Apple Mail." }
+      mail_latest: { tool: mail, fixed: { operation: latest }, read: true, classification: private, description: "Read the latest messages in Apple Mail." }
+      mail_search: { tool: mail, fixed: { operation: search }, read: true, classification: private, description: "Search Apple Mail." }
+      mail_accounts: { tool: mail, fixed: { operation: accounts }, read: true, classification: personal, description: "List Apple Mail accounts." }
+      mail_mailboxes: { tool: mail, fixed: { operation: mailboxes }, read: true, classification: personal, description: "List Apple Mail mailboxes." }
+      mail_send: { tool: mail, fixed: { operation: send }, description: "Send an email from Apple Mail." }
+      messages_unread: { tool: messages, fixed: { operation: unread }, read: true, classification: private, description: "Read unread iMessages/SMS in Apple Messages." }
+      messages_read: { tool: messages, fixed: { operation: read }, read: true, classification: private, description: "Read recent messages with a phone number in Apple Messages." }
+      messages_send: { tool: messages, fixed: { operation: send }, description: "Send a message in Apple Messages." }
+      messages_schedule: { tool: messages, fixed: { operation: schedule }, description: "Schedule a message in Apple Messages." }
+      notes_list: { tool: notes, fixed: { operation: list }, read: true, classification: private, description: "List Apple Notes." }
+      notes_search: { tool: notes, fixed: { operation: search }, read: true, classification: private, description: "Search Apple Notes." }
+      notes_create: { tool: notes, fixed: { operation: create }, description: "Create an Apple Note (in the \"Claude\" folder by default)." }
+      reminders_list: { tool: reminders, fixed: { operation: list }, read: true, classification: personal, description: "List Apple Reminders lists." }
+      reminders_search: { tool: reminders, fixed: { operation: search }, read: true, classification: personal, description: "Search Apple Reminders." }
+      reminders_list_by_id: { tool: reminders, fixed: { operation: listById }, read: true, classification: personal, description: "Read the reminders in one list." }
+      reminders_create: { tool: reminders, fixed: { operation: create }, description: "Create an Apple Reminder." }
+      maps_search: { tool: maps, fixed: { operation: search }, read: true, classification: public, description: "Search for places in Apple Maps." }
+      maps_directions: { tool: maps, fixed: { operation: directions }, read: true, classification: personal, description: "Get directions in Apple Maps." }
+      maps_list_guides: { tool: maps, fixed: { operation: listGuides }, read: true, classification: personal, description: "List Apple Maps guides." }
+      maps_save: { tool: maps, fixed: { operation: save }, description: "Save a place to Apple Maps favorites." }
+      maps_pin: { tool: maps, fixed: { operation: pin }, description: "Drop a pin in Apple Maps." }
+      maps_create_guide: { tool: maps, fixed: { operation: createGuide }, description: "Create an Apple Maps guide." }
+      maps_add_to_guide: { tool: maps, fixed: { operation: addToGuide }, description: "Add a place to an Apple Maps guide." }
