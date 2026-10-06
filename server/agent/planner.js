@@ -3,6 +3,8 @@ import { filterPersonalContextForDestination } from './context-privacy-filter.js
 import { filterObservationsForDestination, classifyObservation } from './observation-filter.js';
 import { filterConversationHistoryForDestination, summarizeEarlierTurnsForDestination } from './conversation-history-filter.js';
 import { filterPriorArtifactsForDestination } from './prior-artifacts-filter.js';
+import { classifyModelFailure } from './model-failure.js';
+import { log } from '../logging/logger.js';
 
 // Runtime-only association. Model JSON cannot create or overwrite it, and
 // overlapping calls cannot replace another returned plan's privacy context.
@@ -79,11 +81,11 @@ export class Planner {
       let fallback;
       try { fallback = this.modelRouter.resolveFallback(this.role); }
       catch (fallbackError) { throw ['MODEL_CALL_LIMIT', 'RUN_BUDGET_EXHAUSTED', 'MODEL_USAGE_INVALID', 'MODEL_USAGE_RECORD_FAILED'].includes(fallbackError.code) ? fallbackError : this.modelRouter.allowMock === false ? unavailableModel(fallbackError) : fallbackError; }
-      if (!fallback) throw this.modelRouter.allowMock === false ? unavailableModel(err) : err;
+      if (!fallback) throw this.modelRouter.allowMock === false ? unavailableModel(err, provider.id) : err;
       console.error(`[planner] role "${this.role}" primary provider failed; retrying configured fallback`);
       let plan;
       try { plan = await this._planWith(fallback, context, objective); }
-      catch (fallbackError) { throw ['MODEL_CALL_LIMIT', 'RUN_BUDGET_EXHAUSTED', 'MODEL_USAGE_INVALID', 'MODEL_USAGE_RECORD_FAILED'].includes(fallbackError.code) ? fallbackError : this.modelRouter.allowMock === false ? unavailableModel(fallbackError) : fallbackError; }
+      catch (fallbackError) { throw ['MODEL_CALL_LIMIT', 'RUN_BUDGET_EXHAUSTED', 'MODEL_USAGE_INVALID', 'MODEL_USAGE_RECORD_FAILED'].includes(fallbackError.code) ? fallbackError : this.modelRouter.allowMock === false ? unavailableModel(fallbackError, fallback.id) : fallbackError; }
       this.lastProviderId = fallback.id;
       return plan;
     }
@@ -168,10 +170,15 @@ export class Planner {
   }
 }
 
-function unavailableModel(cause) {
-  const error = new Error('Planner unavailable: configured model failed; check its endpoint and credentials, then retry');
+function unavailableModel(cause, providerId) {
+  const reason = classifyModelFailure(cause);
+  const who = providerId ? `model ${providerId}` : 'configured model';
+  const error = new Error(`Planner unavailable: ${who} failed (${reason.text}); check its endpoint and credentials, then retry`);
   error.code = 'MODEL_UNAVAILABLE';
   error.status = 503;
+  error.reason = reason.code;
+  error.providerId = providerId;
   error.cause = cause;
+  log.error('planner', 'Model call failed', { providerId: providerId || null, reason: reason.code });
   return error;
 }
