@@ -4,7 +4,7 @@ An **add-on** is a folder that gives U2OS one more capability: tools from an MCP
 
 An add-on only **describes**. Whether it is enabled, which of its tools are read-only, how sensitive their results are, and what its settings are, are **your** decisions, kept in a vault file you own, `addons.yaml` (below). A claim in a manifest is a suggestion shown to you; it takes effect only when you confirm it.
 
-> Status: this page is the contract. The manifest validator exists. Discovery and `addons.yaml` ([#464](https://github.com/chrisrobison/u2os/issues/464)), running add-on tools ([#465](https://github.com/chrisrobison/u2os/issues/465)), the Add-ons page ([#466](https://github.com/chrisrobison/u2os/issues/466)) and the first add-on, Apple apps ([#467](https://github.com/chrisrobison/u2os/issues/467)), follow. The older [packages](plugin-architecture.md) (workflow language) are unchanged and are being retired ([#402](https://github.com/chrisrobison/u2os/issues/402)).
+> Status: this page is the contract. The manifest validator, discovery, `addons.yaml` and the owner API exist. Running add-on tools ([#465](https://github.com/chrisrobison/u2os/issues/465)), the Add-ons page ([#466](https://github.com/chrisrobison/u2os/issues/466)) and the first add-on, Apple apps ([#467](https://github.com/chrisrobison/u2os/issues/467)), follow. The older [packages](plugin-architecture.md) (workflow language) are unchanged and are being retired ([#402](https://github.com/chrisrobison/u2os/issues/402)).
 
 ## Where add-ons live
 
@@ -80,7 +80,7 @@ Each entry under `tools` becomes one planner-visible tool named `<server>.<name>
 
 ## Your decisions: `addons.yaml`
 
-Next to `policies.yaml` and `mcp.yaml` in your vault ([#464](https://github.com/chrisrobison/u2os/issues/464)):
+Next to `policies.yaml` and `mcp.yaml` in your vault:
 
 ```yaml
 addons:
@@ -91,7 +91,16 @@ addons:
       mail_unread: { read: true, classification: personal }   # confirmed by you
 ```
 
-The file is the authority, and invalid content starts nothing. Servers you declare yourself in [`mcp.yaml`](mcp.md) keep working unchanged.
+The file is the authority. Edit it by hand or through the API below; U2OS rewrites it atomically (comments are not preserved). Invalid content enables nothing, and U2OS refuses to overwrite an invalid file until you fix it. A confirmed tool must state its classification. Servers you declare yourself in [`mcp.yaml`](mcp.md) keep working unchanged.
+
+## API
+
+Owner-only, like the rest of the API.
+
+- `GET /api/addons` lists every add-on found (bundled and installed) with its state (`available`, `unsupported`, `invalid`), problems, missing commands, README, tools (suggested versus effective decisions), settings and whether it is enabled.
+- `PUT /api/addons/:id` with any of `enabled`, `settings` (validated against the manifest), `confirmTools` (`{ tool: { read, classification } }`) and `unconfirmTools` (`[tool]`). Only a valid add-on that works on this machine can be enabled. A bundled add-on shadows an installed one with the same id.
+
+Discovery only reads `addon.yaml` and `README.md` and never runs anything. Folder names must equal `metadata.id`, and symlinked manifests are refused.
 
 ## What is not here yet
 
