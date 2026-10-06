@@ -26,6 +26,7 @@ can edit it with any text editor, keep it in git, or sync it however you like.
 - \`skills/\`: how you want things done; routines name the skills they use.
 - \`policies.yaml\` (optional): what U2OS may do without asking you.
 - \`mcp.yaml\` (optional): tool servers U2OS may start for you.
+- \`addons.yaml\` (optional): which add-ons you have enabled and what you have confirmed about their tools.
 - \`coding-agents.yaml\` (optional): which coding CLIs (Codex, Claude Code) U2OS may launch.
 - \`journal/\`: written by U2OS, one line per thing it did or you decided (\`YYYY-MM.jsonl\`).
 
