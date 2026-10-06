@@ -12,7 +12,13 @@ const KINDS = [
   ['cli:grok', 'CLI: Grok (grok)'],
   ['cli:custom', 'CLI: any other command'],
 ];
-const el = (tag, props = {}, ...children) => { const node = Object.assign(document.createElement(tag), props); node.append(...children); return node; };
+const el = (tag, { role, ariaLive, ...props } = {}, ...children) => {
+  const node = Object.assign(document.createElement(tag), props);
+  if (role) node.setAttribute('role', role);
+  if (ariaLive) node.setAttribute('aria-live', ariaLive);
+  node.append(...children);
+  return node;
+};
 const kindOf = (c) => (c.type === 'cli' ? `cli:${c.preset}` : c.type);
 const labelOf = (c) => KINDS.find(([value]) => value === kindOf(c))?.[1] || c.type;
 
