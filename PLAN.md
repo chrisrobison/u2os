@@ -63,6 +63,16 @@ Tracking issue: [#433](https://github.com/chrisrobison/u2os/issues/433). Use on 
 - [x] [#450](https://github.com/chrisrobison/u2os/issues/450) Navigation icons (Font Awesome Free shipped with the app, not a CDN)
 - [ ] [#448](https://github.com/chrisrobison/u2os/issues/448) People: person-to-person relationships in vault files (follow-up)
 
+### Add-on system
+
+Tracking issue: [#468](https://github.com/chrisrobison/u2os/issues/468). Implements [ADR 0010](docs/adr/0010-lean-core-bundled-addons.md): add-ons describe, the owner's vault decides ([docs/addons.md](docs/addons.md)).
+
+- [ ] [#463](https://github.com/chrisrobison/u2os/issues/463) Contract spec and manifest validation (`addon.yaml`)
+- [ ] [#464](https://github.com/chrisrobison/u2os/issues/464) Discovery, vault `addons.yaml` and the owner decisions API
+- [ ] [#465](https://github.com/chrisrobison/u2os/issues/465) Run enabled add-ons' MCP servers through the gate, with tool variants
+- [ ] [#466](https://github.com/chrisrobison/u2os/issues/466) Add-ons page: browse, enable, review tools, settings
+- [ ] [#467](https://github.com/chrisrobison/u2os/issues/467) Bundled Apple add-on (supersedes [#460](https://github.com/chrisrobison/u2os/issues/460))
+
 ### Other Milestone B items
 
 Done:

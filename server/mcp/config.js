@@ -25,7 +25,7 @@ export const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 const CLASSIFICATIONS = ['public', 'personal', 'private', 'sensitive'];
 // Names a server may not take: its tools would share a policy domain with
 // built-in tools or U2OS internals.
-const RESERVED = new Set(['email', 'calendar', 'contacts', 'tasks', 'web', 'notifications', 'presentation', 'mcp', 'vault', 'routine', 'agent', 'memory', 'system', 'package', 'packages', 'owner']);
+export const RESERVED_SERVER_NAMES = new Set(['email', 'calendar', 'contacts', 'tasks', 'web', 'notifications', 'presentation', 'mcp', 'vault', 'routine', 'agent', 'memory', 'system', 'package', 'packages', 'owner']);
 const MAX_BYTES = 64 * 1024;
 
 export function mcpConfigPath(vaultDir = getVaultDir()) {
@@ -52,7 +52,7 @@ export function parseMcpConfig(raw, { vaultDir }) {
   const expand = (value) => value.replaceAll('${U2OS_ROOT}', U2OS_ROOT).replaceAll('${VAULT}', vaultDir);
   return Object.entries(raw.servers).map(([name, spec]) => {
     if (!SERVER_NAME.test(name)) throw new Error(`${name}: server names use lowercase letters, digits and "_"`);
-    if (RESERVED.has(name)) throw new Error(`${name}: this name is reserved for built-in tools`);
+    if (RESERVED_SERVER_NAMES.has(name)) throw new Error(`${name}: this name is reserved for built-in tools`);
     if (!isMapping(spec)) throw new Error(`${name}: must be a mapping`);
     if (typeof spec.command !== 'string' || !spec.command.trim()) throw new Error(`${name}.command must be a program to run`);
     if (spec.args !== undefined && (!Array.isArray(spec.args) || spec.args.some((arg) => typeof arg !== 'string' && typeof arg !== 'number'))) throw new Error(`${name}.args must be a list of strings`);

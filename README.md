@@ -12,7 +12,7 @@ It is not a chatbot. The digital self is a **vault of plain Markdown files** tha
 
 U2OS indexes that vault, watches the accounts you connect, and runs your routines unattended. Every action goes through a policy engine that sits outside the model. The agent is just a tool that uses this information, and the model is replaceable infrastructure. The name means "the second you" plus "operating system".
 
-Start with the [overview](docs/overview.md), then [the vault](docs/vault.md) and [routines](docs/routines.md). [ADR 0007](docs/adr/0007-owned-vault-is-the-digital-self.md) records why the vault is the centre, and [PLAN.md](PLAN.md) is the roadmap. [ADR 0010](docs/adr/0010-lean-core-bundled-addons.md) sets the direction for a lean core with bundled add-ons. [PROMPT.md](PROMPT.md) is the historical product specification, not onboarding documentation.
+Start with the [overview](docs/overview.md), then [the vault](docs/vault.md) and [routines](docs/routines.md). [ADR 0007](docs/adr/0007-owned-vault-is-the-digital-self.md) records why the vault is the centre, and [PLAN.md](PLAN.md) is the roadmap. [ADR 0010](docs/adr/0010-lean-core-bundled-addons.md) sets the direction for a lean core with bundled add-ons, and [add-ons](docs/addons.md) specifies the contract. [PROMPT.md](PROMPT.md) is the historical product specification, not onboarding documentation.
 
 ## How it works
 
