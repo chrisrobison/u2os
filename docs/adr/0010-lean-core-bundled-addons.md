@@ -40,4 +40,4 @@ Today:
 - Navigation is grouped into collapsible categories (point 7), shipped in [#435](https://github.com/chrisrobison/u2os/issues/435). Add-ons cannot yet contribute entries through a manifest.
 - Package metadata for MCP servers, the bundled/installed trust tiers and migrating built-ins are not yet implemented. Migration starts with calendar in [#453](https://github.com/chrisrobison/u2os/issues/453).
 
-Decided in [#440](https://github.com/chrisrobison/u2os/issues/440)(https://github.com/chrisrobison/u2os/issues/440), alongside [#401](https://github.com/chrisrobison/u2os/issues/401) and [#402](https://github.com/chrisrobison/u2os/issues/402).
+Decided in [#440](https://github.com/chrisrobison/u2os/issues/440), alongside [#401](https://github.com/chrisrobison/u2os/issues/401) and [#402](https://github.com/chrisrobison/u2os/issues/402).
