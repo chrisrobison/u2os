@@ -64,7 +64,7 @@ test('a stale form cannot overwrite newer advanced roles/key, and reloaded advan
   expect(readConfig(dedicated)).toBe(before); expect(fs.readFileSync(path.join(dedicated._dataDir, 'credentials', `model-provider-${name}.enc.json`), 'utf8')).toBe(vaultBefore);
   expect(readEncryptedFile('model-openai-compatible', dedicated._dataDir)).toBeNull();
   await page.reload(); await expect(page.locator('u2-model')).toContainText('Advanced model configuration is read-only');
-  await expect(page.locator('u2-model')).toContainText(`planner: ${name}`); await expect(page.locator('u2-model form, u2-model input')).toHaveCount(0);
+  await expect(page.locator('u2-model')).toContainText(`planner: ${name}`); await expect(page.locator('u2-model .model-form')).toHaveCount(0);
   await expect(page.locator('u2-model')).not.toContainText('fixture-advanced-key');
 }));
 

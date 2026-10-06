@@ -1,4 +1,5 @@
 import { getModelStatus, saveModelConfiguration } from '../services/api.js';
+import './u2-model-connections.js';
 
 // Explicit owner configuration only: no endpoint probing, model calls or secret
 // retrieval. A successful save is applied to the running server immediately
@@ -31,12 +32,12 @@ export class U2Model extends HTMLElement {
     if (config.restartRequired) this.querySelector('.model-status').append(' The running planner has not adopted the saved changes (they may have been edited outside this form); restart U2OS to apply them.');
     const content = this.querySelector('.model-content');
     if (config.providers || config.roles || (config.provider && !['mock', 'openai-compatible', 'anthropic'].includes(config.provider))) {
-      const note = document.createElement('p'); note.textContent = 'Advanced model configuration is read-only here. This form will not replace provider roles or fallback settings. Use the existing model API to edit them (applied immediately); after editing the config file directly, restart U2OS.';
+      const note = document.createElement('p'); note.textContent = Array.isArray(config.order) ? 'Your model is configured as the ordered list of connections below; edit it there.' : 'Advanced model configuration is read-only here. This form will not replace provider roles or fallback settings. Use the existing model API to edit them (applied immediately); after editing the config file directly, restart U2OS.';
       const list = document.createElement('ul');
       for (const [role, name] of Object.entries(config.roles || {})) {
         const row = document.createElement('li'); row.textContent = `${role}: ${name}`; list.appendChild(row);
       }
-      content.append(note, list); return;
+      content.append(note, list); this._mountConnections(config); return;
     }
     content.innerHTML = `
       <form class="model-form">
@@ -57,10 +58,20 @@ export class U2Model extends HTMLElement {
     fields.model.value = typeof config.model === 'string' ? config.model : '';
     fields.timeoutMs.value = Number.isInteger(config.timeoutMs) && config.timeoutMs >= 1000 && config.timeoutMs <= 300000 ? config.timeoutMs : 30000;
     this._key = fields.apiKey;
+    this._mountConnections(config);
     form.querySelector('.model-key-status').textContent = config.apiKeyConfigured ? 'A key is stored for the currently saved provider; its value is not available here.' : 'No key is reported for the currently saved provider.';
     const update = () => { fields.baseUrl.required = fields.provider.value === 'openai-compatible'; };
     fields.provider.addEventListener('change', update); update();
     form.addEventListener('submit', (event) => { event.preventDefault(); this._save(form, config.configurationRevision); });
+  }
+
+  // The ordered API/CLI connection list sits below the quick form (or the advanced summary).
+  _mountConnections(config) {
+    if (this.querySelector('u2-model-connections')) return;
+    const panel = document.createElement('u2-model-connections');
+    this.appendChild(panel);
+    const note = this._connectionsNote || ''; this._connectionsNote = '';
+    panel.setConfig(config, (message) => { this._connectionsNote = message || ''; this._load(this._generation); }, note);
   }
 
   async _save(form, revision) {
