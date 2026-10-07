@@ -56,3 +56,20 @@ servers:
       maps_pin: { tool: maps, fixed: { operation: pin }, description: "Drop a pin in Apple Maps." }
       maps_create_guide: { tool: maps, fixed: { operation: createGuide }, description: "Create an Apple Maps guide." }
       maps_add_to_guide: { tool: maps, fixed: { operation: addToGuide }, description: "Add a place to an Apple Maps guide." }
+
+  # Send or draft through Mail.app WITH attachments (apple-mcp's mail tool cannot attach files).
+  # Attachments are staged, hash-pinned references, exactly as for email.send (docs/tools.md).
+  # No suggestions: both tools are actions that need confirmation until you decide otherwise.
+  apple_mail:
+    command: node
+    args: ["${ADDON_DIR}/mail-send/server.js", "--vault", "${VAULT}", "--sender", "${setting.mail_sender}"]
+    timeout_seconds: 90
+    tools:
+      send: { description: "Send an email through the Mail app on this Mac, with optional staged attachments (resume, cover letter)." }
+      draft: { description: "Save an email as a draft in the Mail app, with optional staged attachments, for you to review. Nothing is sent." }
+
+settings:
+  mail_sender:
+    type: string
+    default: ""
+    description: "Optional: the Mail account to send from, as Mail shows it, for example Name <me@example.com>. Empty uses Mail's default account."
