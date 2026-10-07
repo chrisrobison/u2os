@@ -64,6 +64,10 @@ export class U2JobHunt extends HTMLElement {
         <div class="workspace__title">Job hunt</div>
         <div class="workspace__subtitle">Ranked against your resume, projects and preferences. Autonomous threshold ${minimumScore}. ${Object.values(counts).reduce((a, b) => a + b, 0)} jobs discovered.</div>
       </div>
+      <div class="trigger-row__actions">
+        <button type="button" class="btn" data-draft-all ${this._busy || !this._data.sendRoutes.apple_mail_draft ? 'disabled' : ''}>Save Mail drafts for all ready jobs</button>
+        <span class="trigger-row__meta">Nothing is sent. Each draft is proposed to Approvals; review and send it from Mail, then mark it sent here.</span>
+      </div>
       ${this._notice ? `<div class="load-error" role="status">${escapeHtml(this._notice)}</div>` : ''}
       <div class="folder-toggle" role="group" aria-label="Filter">${FILTERS.map(([value, label]) => `<button type="button" data-filter="${value}" class="${value === this._filter ? 'is-active' : ''}" aria-pressed="${value === this._filter}">${escapeHtml(label)}</button>`).join('')}</div>
       ${shown.length ? `<div class="trigger-list">${shown.map((job) => this._card(job)).join('')}</div>` : `<div class="empty-state">${jobs.length ? 'Nothing here.' : 'No scored jobs yet. Run: npm run u2 -- job discover hn, then job score.'}</div>`}`;
@@ -90,6 +94,7 @@ export class U2JobHunt extends HTMLElement {
           <div class="application-card__label">Body</div><p class="application-card__letter">${escapeHtml(draft.text)}</p>
           <div class="application-card__label">Attachments</div><p>${draft.attachments.length ? draft.attachments.map(escapeHtml).join(', ') : 'none staged'}</p></details>` : ''}
         ${job.emails.length ? `<div class="trigger-row__meta">${job.emails.map((email) => `${escapeHtml(email.kind === 'draft' ? 'Draft' : 'Email')} to ${escapeHtml(email.to)}: ${escapeHtml(email.status)}${email.followUpAfter ? ` (follow up after ${escapeHtml(formatDateTime(email.followUpAfter))})` : ''}`).join(' · ')}</div>` : ''}
+        ${draft && !blocked && job.status !== 'contacted' ? `<div class="trigger-row__actions"><button type="button" class="btn" data-mark-sent data-job-id="${escapeHtml(job.id)}" ${this._busy ? 'disabled' : ''}>I sent this myself</button></div>` : ''}
         ${canSend ? `<div class="trigger-row__actions">${ROUTES.map(([via, label]) => `<button type="button" class="btn" data-send="${via}" data-job-id="${escapeHtml(job.id)}" data-force="${below ? 'true' : 'false'}" ${this._data.sendRoutes[via] ? '' : 'disabled title="Not available: enable the Apple add-on (macOS) or connect Gmail"'} ${this._busy ? 'disabled' : ''}>${escapeHtml(label)}${below && via !== 'apple_mail_draft' ? ' anyway' : ''}</button>`).join(' ')}
           ${below ? `<div class="trigger-row__meta">Score ${score.score} is below your threshold ${this._data.minimumScore}; sending is your explicit choice.</div>` : ''}</div>` : ''}
       </div></article>`;
@@ -98,8 +103,26 @@ export class U2JobHunt extends HTMLElement {
   async _onClick(event) {
     const filter = event.target.closest('[data-filter]');
     if (filter) { this._filter = filter.dataset.filter; this._notice = null; this._render(); return; }
+    if (this._busy) return;
+    const all = event.target.closest('[data-draft-all]');
+    const mark = event.target.closest('[data-mark-sent]');
+    if (all || mark) {
+      this._busy = true; this._notice = null; this._render();
+      try {
+        if (all) {
+          const result = await api.draftAllJobEmails({});
+          this._notice = `${result.proposed.length} draft(s) proposed. Approve them in Approvals${result.skipped.length ? `; ${result.skipped.length} skipped (no email route, no materials, or already handled)` : ''}${result.failed.length ? `; ${result.failed.length} failed` : ''}.`;
+        } else {
+          await api.markJobSent(mark.dataset.jobId);
+          this._notice = 'Recorded as emailed. It will not be proposed again.';
+        }
+      } catch (err) { this._notice = err.message; }
+      this._busy = false;
+      await this._load();
+      return;
+    }
     const button = event.target.closest('[data-send]');
-    if (!button || this._busy) return;
+    if (!button) return;
     this._busy = true;
     this._notice = null;
     this._render();

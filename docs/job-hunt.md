@@ -157,3 +157,11 @@ The buttons propose the email through the running server's own approval gate; no
 A route whose tool is not available is disabled, and the API says why; there is never a silent fallback to a different route. The duplicate rules are the same whichever route you use (one application email per job and recipient), and a draft never marks a job contacted. A job scored below `minimum_score` shows *Send ... anyway*, which is your explicit choice.
 
 Outcomes are reconciled as soon as an action completes, fails or is rejected, and again whenever the page loads, so approved sends move jobs to `contacted` (with a follow-up date) without stopping the server. The same is available over the owner API: `GET /api/job-hunt/jobs[/<id>]`, `POST /api/job-hunt/jobs/<id>/send` with `{ "via": "gmail" | "apple_mail" | "apple_mail_draft", "force": false }`, and `POST /api/job-hunt/reconcile`. `job send` and `job reconcile` on the command line remain for the Gmail route when the server is stopped.
+
+## Emails you send yourself, and drafts for all matches
+
+**Contact addresses are scraped conservatively.** A plain address in a listing is kept; an obfuscated one ("name [at] example [dot] com") is believed only when it ends in a real top-level domain and looks deliberate, so prose such as "be at home. We" never becomes an address. `npm run u2 -- job reparse` re-extracts every stored job's contacts from its original text.
+
+**Sent it yourself?** Click *I sent this myself* on the card, or run `npm run u2 -- job mark <job-id> sent [--to <address>]`. U2OS records it under the same idempotency key a gated send uses, marks the job contacted and sets the follow-up date, so the job is never proposed again.
+
+**Drafts for every ready job.** *Save Mail drafts for all ready jobs* (or `POST /api/job-hunt/drafts`) proposes an `apple_mail.draft` for each job that has materials, a contact address and no input needed, whatever its score. Nothing is sent: each draft still passes the gate, you review it in Mail, and send it from there. A job that is already contacted, or already has a draft, is skipped. To skip the approval click for drafts only, you can allow them in `policies.yaml` (`apple_mail: { draft: autonomous }`); sends stay confirm.

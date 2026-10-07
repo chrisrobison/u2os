@@ -112,3 +112,19 @@ test('a rejected approval frees the job; a below-threshold job needs force; a mi
   fs.rmSync(path.join(vault, 'job-hunt', 'resume.json'));
   assert.equal((await post(`/api/job-hunt/jobs/${job.id}/send`, { via: 'gmail', force: true })).status, 409);
 });
+
+test('mark-sent records a send made by hand and blocks any further send; bulk drafts need the Apple add-on', async (t) => {
+  const { get, post, ready } = await fixture(t);
+  const draftAll = await post('/api/job-hunt/drafts', {});
+  assert.equal(draftAll.status, 409);
+  assert.match((await draftAll.json()).error, /Enable the Apple add-on/);
+  const marked = await post(`/api/job-hunt/jobs/${ready.id}/mark-sent`, {});
+  assert.equal(marked.status, 200);
+  assert.equal((await marked.json()).email.status, 'sent');
+  const view = (await (await get('/api/job-hunt/jobs')).json()).jobs[0];
+  assert.equal(view.status, 'contacted');
+  assert.ok(view.emails[0].followUpAfter);
+  assert.equal((await post(`/api/job-hunt/jobs/${ready.id}/mark-sent`, {})).status, 400, 'not recorded twice');
+  assert.equal((await post(`/api/job-hunt/jobs/${ready.id}/send`, { via: 'gmail' })).status, 409, 'and never proposed again');
+  assert.equal((await post('/api/job-hunt/jobs/bad/mark-sent', {})).status, 400);
+});
