@@ -22,6 +22,7 @@ import './u2-operations.js';
 import './u2-routines.js';
 import './u2-vault.js';
 import './u2-applications.js';
+import './u2-job-hunt.js';
 import './u2-goals.js';
 import './u2-triggers.js';
 import './u2-packages.js';
@@ -328,6 +329,9 @@ export class U2App extends HTMLElement {
         break;
       case 'applications':
         this._setWorkspace('', document.createElement('u2-applications'));
+        break;
+      case 'job-hunt':
+        this._setWorkspace('', document.createElement('u2-job-hunt'));
         break;
       case 'vault':
         this._setWorkspace('', document.createElement('u2-vault'));

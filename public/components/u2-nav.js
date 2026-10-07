@@ -22,6 +22,7 @@ export const NAV_GROUPS = [
     ['#/memory', 'Memory', 'brain'],
     ['#/routines', 'Routines', 'repeat'],
     ['#/goals', 'Goals', 'bullseye'],
+    ['#/job-hunt', 'Job hunt', 'user-tie'],
     ['#/applications', 'Applications', 'briefcase'],
     ['#/automation', 'Automation', 'bolt'],
     ['#/activity', 'Activity', 'clock-rotate-left'],

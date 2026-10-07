@@ -288,7 +288,7 @@ test.describe.serial('navigation shell (#15)', () => {
     for (const id of ['addons', 'settings', 'system']) await expect(groupToggle(id)).toHaveAttribute('aria-expanded', 'false');
 
     // Every route stays reachable from exactly one group.
-    await expect(page.locator('u2-nav a[data-route]')).toHaveCount(24);
+    await expect(page.locator('u2-nav a[data-route]')).toHaveCount(25);
     await expect(navLink('#/model')).toBeHidden();
     await expect(navLink('#/mail')).toBeVisible();
   });
@@ -331,8 +331,8 @@ test.describe.serial('navigation shell (#15)', () => {
     await page.evaluate(() => localStorage.setItem('u2-nav-groups', JSON.stringify({ addons: true, settings: true, system: true })));
     await page.reload();
     const links = page.locator('u2-nav a[data-route]');
-    await expect(links).toHaveCount(24);
-    await expect(page.locator('u2-nav a[data-route] .u2-icon[aria-hidden="true"]')).toHaveCount(24);
+    await expect(links).toHaveCount(25);
+    await expect(page.locator('u2-nav a[data-route] .u2-icon[aria-hidden="true"]')).toHaveCount(25);
     // The accessible name is the label alone, not the glyph.
     await expect(page.getByRole('link', { name: 'Mail', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Setup wizard', exact: true })).toBeVisible();
