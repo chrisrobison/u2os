@@ -10,7 +10,7 @@ import { JOB_HUNT_DIR } from '../../profile.js';
 // store (ADR 0007); consequential applications are additionally recorded as
 // vault files by the existing ledger so the owner always has the record.
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 const MIGRATIONS = [
   `CREATE TABLE jobs (
@@ -57,6 +57,16 @@ const MIGRATIONS = [
      sha256 TEXT NOT NULL, bytes INTEGER NOT NULL, meta TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
    );
    CREATE INDEX artifacts_job ON artifacts(job_id, kind, id);`,
+  `CREATE TABLE emails (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     job_id TEXT NOT NULL REFERENCES jobs(id),
+     kind TEXT NOT NULL DEFAULT 'application',
+     to_addr TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, attachments TEXT NOT NULL DEFAULT '[]',
+     action_id TEXT, status TEXT NOT NULL,
+     idempotency_key TEXT NOT NULL UNIQUE,
+     detail TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+   );
+   CREATE INDEX emails_job ON emails(job_id, id);`,
 ];
 
 export const JOB_STATUSES = ['discovered', 'scored', 'researching', 'qualified', 'materials_generated', 'applying', 'applied', 'contacted', 'needs_input', 'followup_due', 'interview', 'rejected', 'withdrawn', 'closed', 'skipped', 'error', 'uncertain'];
@@ -248,6 +258,40 @@ class Store {
   getArtifacts(jobId) {
     const rows = this.db.prepare('SELECT * FROM artifacts WHERE job_id = ? ORDER BY id').all(jobId);
     return Object.fromEntries(rows.map((row) => [row.kind, { path: row.path, sha256: row.sha256, bytes: row.bytes, meta: parse(row.meta, {}), createdAt: row.created_at }]));
+  }
+
+  /**
+   * Records a proposed outbound email. The idempotency key makes a second
+   * identical proposal impossible: it throws DUPLICATE_EMAIL instead of
+   * inserting.
+   */
+  addEmail(jobId, email, now = new Date()) {
+    try {
+      this.db.prepare(`INSERT INTO emails (job_id, kind, to_addr, subject, body, attachments, action_id, status, idempotency_key, detail, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(jobId, email.kind ?? 'application', email.to, email.subject, email.body, json(email.attachments ?? []), email.actionId ?? null,
+        email.status ?? 'proposed', email.idempotencyKey, json(email.detail ?? {}), now.toISOString(), now.toISOString());
+    } catch (error) {
+      if (/UNIQUE/i.test(error.message)) { const duplicate = new Error('This email was already proposed'); duplicate.code = 'DUPLICATE_EMAIL'; throw duplicate; }
+      throw error;
+    }
+    return this.listEmails(jobId).at(-1);
+  }
+
+  updateEmail(id, { status, actionId, detail }, now = new Date()) {
+    const row = this.db.prepare('SELECT * FROM emails WHERE id = ?').get(id);
+    if (!row) throw new Error(`Unknown email ${id}`);
+    this.db.prepare('UPDATE emails SET status = ?, action_id = ?, detail = ?, updated_at = ? WHERE id = ?')
+      .run(status ?? row.status, actionId ?? row.action_id, json({ ...parse(row.detail, {}), ...(detail ?? {}) }), now.toISOString(), id);
+  }
+
+  findEmailByKey(key) { return this.listEmails().find((entry) => entry.idempotencyKey === key) ?? null; }
+
+  listEmails(jobId = null) {
+    const rows = jobId ? this.db.prepare('SELECT * FROM emails WHERE job_id = ? ORDER BY id').all(jobId) : this.db.prepare('SELECT * FROM emails ORDER BY id').all();
+    return rows.map((row) => ({
+      id: row.id, jobId: row.job_id, kind: row.kind, to: row.to_addr, subject: row.subject, body: row.body, attachments: parse(row.attachments, []),
+      actionId: row.action_id, status: row.status, idempotencyKey: row.idempotency_key, detail: parse(row.detail, {}), createdAt: row.created_at, updatedAt: row.updated_at,
+    }));
   }
 
   counts() {

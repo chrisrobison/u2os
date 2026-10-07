@@ -16,6 +16,8 @@ import { loadFacts } from '../../mcp/jobs/hunt/candidate/facts.js';
 import { candidateDigest } from '../../mcp/jobs/hunt/candidate/profile.js';
 import { createJobLlm } from './llm.js';
 import { stageAttachment } from '../tools/email-attachments.js';
+import { proposeApplicationEmail, reconcileEmails } from '../../mcp/jobs/hunt/applications/send.js';
+import { withOfflineHome } from '../runtime/offline-home.js';
 
 export const USAGE = `Usage: npm run u2 -- job <command>
 
@@ -24,6 +26,8 @@ export const USAGE = `Usage: npm run u2 -- job <command>
   github refresh [<username>]
   score [--limit <n>] [--rescore] [--company <text>] [--role <text>] [--no-model]
   materials <job-id> [--force] [--no-pdf] [--cover-letter | --no-cover-letter]
+  send <job-id> [--force]       propose the application email through the approval gate
+  reconcile                     update jobs from the outcome of approved sends
   list [--min-score <n>] [--limit <n>] [--json]
   show <job-id>
   status [--json]`;
@@ -45,7 +49,7 @@ function parseFlags(args, valueFlags = []) {
   return { flags, positional };
 }
 
-export async function main(argv, out = console, { vaultDir = getVaultDir(), fetch: fetchImpl = fetch, now = new Date(), llm: llmOverride } = {}) {
+export async function main(argv, out = console, { vaultDir = getVaultDir(), fetch: fetchImpl = fetch, now = new Date(), llm: llmOverride, send: sendOverride, reconcile: reconcileOverride } = {}) {
   const [verb, ...rest] = argv;
   if (!verb || verb === 'help' || verb === '--help') { out.log(USAGE); return 0; }
   const store = openStore(huntDbPath(vaultDir));
@@ -123,6 +127,27 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
         for (const ask of result.needsInput ?? []) out.log(`NEEDS YOUR INPUT: the listing asks for "${ask}". Add what is true to job-hunt/facts.md, then rerun with --force. Nothing will be sent until then.`);
         return 0;
       }
+      case 'send': {
+        const { positional } = parseFlags(rest);
+        const job = store.getJob(positional[0]);
+        if (!job) { out.log(`Unknown job ${positional[0] ?? ''}`); return 1; }
+        const preferences = loadPreferences(vaultDir);
+        const resume = loadResume(vaultDir);
+        // Proposing is an action on the owner's behalf, so it goes through the agent's gate like any other:
+        // policy decides whether it needs approval, and the approval is made in the U2OS UI.
+        const result = await (sendOverride ?? withGate)(async (propose) => proposeApplicationEmail({
+          store, job, candidateEmail: resume.basics.email, minimumScore: preferences.minimum_score, propose, force: parseFlags(rest).flags.force === true, now,
+        }));
+        out.log(`${job.company} - ${job.role ?? ''}: ${result.outcome.status === 'pending' ? 'waiting for your approval in U2OS (Approvals), action ' + result.outcome.id : result.outcome.status}`);
+        out.log(`To: ${result.email.to}\nSubject: ${result.email.subject}\nAttachments: ${result.email.attachments.map((ref) => ref.split('/').pop()).join(', ')}`);
+        return result.outcome.status === 'failed' || result.outcome.status === 'blocked' ? 1 : 0;
+      }
+      case 'reconcile': {
+        const changes = await (reconcileOverride ?? withLookup)((lookup) => reconcileEmails({ store, lookup, now }));
+        for (const change of changes) out.log(`${change.email.to}: ${change.to}`);
+        if (!changes.length) out.log('Nothing changed.');
+        return 0;
+      }
       case 'list': {
         const { flags } = parseFlags(rest, ['min-score', 'limit']);
         const entries = store.listScored({ minScore: flags['min-score'] ? Number(flags['min-score']) : null, limit: flags.limit ? Number.parseInt(flags.limit, 10) : 50 });
@@ -163,4 +188,30 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
   } finally {
     store.close();
   }
+}
+
+// Runs `operation(propose)` with a real agent gate in an offline U2OS home (the server must be stopped:
+// the home is single-owner). Pending approvals persist in the database for the UI to show on restart.
+async function withGate(operation) {
+  const [{ getDb }, { EventBus }, { PolicyEngine }, { createToolRegistry }, { Agent }, { newId }] = await Promise.all([
+    import('../db/connection.js'), import('../events/event-bus.js'), import('../policy/policy-engine.js'),
+    import('../tools/register-all.js'), import('../agent/agent.js'), import('../db/ids.js'),
+  ]);
+  let result;
+  await withOfflineHome(async () => {
+    const eventBus = new EventBus(getDb());
+    const agent = new Agent({ policyEngine: new PolicyEngine(), toolRegistry: createToolRegistry(), eventBus });
+    result = await operation((proposal) => agent.evaluateAndMaybeExecute({
+      tool: proposal.tool, arguments: proposal.arguments, requestedBy: 'owner-cli', requestText: proposal.requestText,
+      reasoningSummary: proposal.reasoning, correlationId: newId('corr'), actor: { type: 'user', id: 'owner' },
+    }));
+  });
+  return result;
+}
+
+async function withLookup(operation) {
+  const [{ getAgentAction }] = await Promise.all([import('../policy/policy-engine.js')]);
+  let result;
+  await withOfflineHome(async () => { result = operation((id) => getAgentAction(id)); });
+  return result;
 }
