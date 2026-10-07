@@ -3,6 +3,8 @@ import * as api from '../services/api.js';
 import { EventsService } from '../services/events.js';
 import { DeviceClientService } from '../services/device-client.js';
 import './u2-device-panel.js';
+import './u2-pane.js';
+import './u2-shell-header.js';
 import './u2-nav.js';
 import './u2-agent.js';
 import './u2-dashboard.js';
@@ -149,22 +151,15 @@ export class U2App extends HTMLElement {
     this.innerHTML = `
       <div class="shell">
         <a class="skip-link" href="#workspace">Skip to workspace</a>
-        <header class="shell__header">
-          <button type="button" class="icon-btn shell__drawer-toggle" data-toggle="nav" aria-label="Toggle navigation">&#9776;</button>
-          <span class="shell__brand">U2OS</span>
-          <span class="connection-state" data-connection-state role="status" aria-live="polite">Connecting</span>
-          <span class="shell__header-spacer"></span>
-          <button type="button" class="icon-btn" data-toggle="theme" aria-label="Toggle color theme"></button>
-          <button type="button" class="icon-btn shell__drawer-toggle" data-toggle="agent" aria-label="Toggle agent panel">&#128172;</button>
-        </header>
+        <u2-shell-header class="shell__header" role="banner"></u2-shell-header>
         <div class="shell-error" role="alert" hidden>
           <span>Something unexpected went wrong in this view. Your saved data is unchanged.</span>
           <button type="button" data-error-reload>Reload</button>
           <button type="button" data-error-dismiss>Dismiss</button>
         </div>
-        <nav class="shell__nav" aria-label="Primary"><u2-nav></u2-nav></nav>
-        <main class="shell__main"><div class="workspace" id="workspace" tabindex="-1" role="region" aria-label="Workspace"></div></main>
-        <aside class="shell__agent" aria-label="Agent"><u2-agent></u2-agent></aside>
+        <u2-pane class="shell__nav" role="navigation" aria-label="Primary"><u2-nav></u2-nav></u2-pane>
+        <u2-pane class="shell__main" role="main"><div class="workspace" id="workspace" tabindex="-1" role="region" aria-label="Workspace"></div></u2-pane>
+        <u2-pane class="shell__agent" role="complementary" aria-label="Agent" scroll="inner"><u2-agent></u2-agent></u2-pane>
         <div class="shell__scrim"></div>
         <u2-device-panel></u2-device-panel>
       </div>

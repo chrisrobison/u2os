@@ -80,21 +80,40 @@ h1, h2, h3, p, dl, dd, dt { margin: 0; }
 u2-app {
   display: block;
   height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
 }
 
 .shell {
   display: grid;
   grid-template-columns: var(--nav-width) 1fr var(--agent-width);
-  grid-template-rows: 56px 1fr;
+  grid-template-rows: 56px minmax(0, 1fr);
   grid-template-areas:
     "header header header"
     "nav main agent";
-  height: 100vh;
+  height: 100%;
   overflow: hidden;
 }
 
+/* The shell is fixed to the viewport and never scrolls. Each <u2-pane> fills
+   its grid cell and is the only scroll container (#494). */
+u2-pane {
+  display: block;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+u2-pane[scroll="inner"] {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+u2-pane[scroll="inner"] > * { flex: 1 1 auto; min-height: 0; }
+
 .shell__header {
   grid-area: header;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -154,9 +173,6 @@ u2-app {
   grid-area: agent;
   background: var(--bg-panel);
   border-left: var(--border-width) solid var(--border-color);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
 }
 
 .workspace {
@@ -861,9 +877,13 @@ u2-why { display: block; }
 
 /* ---------- agent panel ---------- */
 
+u2-agent { display: flex; flex-direction: column; min-height: 0; }
+
 .agent-panel {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
   height: 100%;
 }
 
@@ -950,8 +970,10 @@ u2-why { display: block; }
 .agent-panel__mic:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .agent-panel__transcript {
-  flex: 1;
+  flex: 1 1 0;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: var(--space-4);
   display: flex;
   flex-direction: column;
@@ -968,8 +990,8 @@ u2-why { display: block; }
 
 .chat-bubble.is-user {
   align-self: flex-end;
-  background: var(--accent-active);
-  color: #FFFFFF;
+  background: var(--accent-strong);
+  color: var(--on-accent);
   border-radius: var(--radius-md) var(--radius-md) 2px var(--radius-md);
 }
 
@@ -1398,7 +1420,7 @@ u2-device-panel .u2-card {
   border-color: var(--accent-danger);
   color: var(--accent-danger);
 }
-.btn-danger:hover { background: var(--accent-danger); color: #FFFFFF; }
+.btn-danger:hover { background: var(--accent-danger); color: var(--on-accent); }
 
 /* ---------- automation management ---------- */
 
