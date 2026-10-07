@@ -222,3 +222,18 @@ test('materials: email attachments are staged references, not file paths', async
   assert.deepEqual(sent.attachments, [`outbox/${'c'.repeat(64)}/Pat_Example_Resume.pdf`, `outbox/${'c'.repeat(64)}/Pat_Example_Cover_Letter.pdf`]);
   assert.ok(staged.every((entry) => path.isAbsolute(entry.file)));
 });
+
+test('short company names must appear whole in the letter; the email footer carries GitHub, LinkedIn and website', async () => {
+  const gc = { ...JOB, company: 'GC AI' };
+  const withName = { paragraphs: paragraphs(300).map((p, i) => (i === 0 ? p.replace('Tahoma', 'GC AI') : p)) };
+  const ok = llmFor(withName);
+  assert.equal((await generateCoverLetter({ job: gc, source: SOURCE, score: SCORE, candidate: candidate(), llm: ok.llm })).paragraphs.length, 3);
+  const without = llmFor({ paragraphs: paragraphs(300).map((p) => p.replace('Tahoma', 'Acme')) });
+  await assert.rejects(generateCoverLetter({ job: gc, source: SOURCE, score: SCORE, candidate: candidate(), llm: without.llm }), /No model produced/);
+  const resume = { ...RESUME, basics: { ...RESUME.basics, website: 'https://example.dev', profiles: [...RESUME.basics.profiles, { network: 'LinkedIn', username: 'pat', url: 'https://www.linkedin.com/in/pat' }] } };
+  const email = assembleEmail({ draft: { subject: 's', body: 'Body text', greetingName: '', requirements: [] }, resume });
+  assert.match(email.text, /GitHub: https:\/\/github\.com\/patexample\nLinkedIn: https:\/\/www\.linkedin\.com\/in\/pat\nWebsite: https:\/\/example\.dev/);
+  const f = llmFor({ subject: 's', requiredSubject: '', greetingName: '', body: EMAIL_BODY, requirements: [] });
+  await generateOutreachEmail({ job: JOB, source: SOURCE, score: SCORE, candidate: candidate(), llm: f.llm, recipient: 'x@y.example' });
+  assert.match(f.calls[0].system, /GitHub, LinkedIn and website links/);
+});
