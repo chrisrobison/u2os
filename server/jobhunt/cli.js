@@ -8,10 +8,19 @@
 import { getVaultDir } from '../vault/vault-dir.js';
 import { openStore, huntDbPath } from '../../mcp/jobs/hunt/storage/store.js';
 import { discover } from '../../mcp/jobs/hunt/discover.js';
+import { importResume, loadPreferences, loadResume } from '../../mcp/jobs/hunt/candidate/profile.js';
+import { fetchRepos, loadRepos, saveRepos } from '../../mcp/jobs/hunt/candidate/github.js';
+import { scoreJobs } from '../../mcp/jobs/hunt/score-run.js';
+import { createJobLlm } from './llm.js';
 
 export const USAGE = `Usage: npm run u2 -- job <command>
 
   discover hn [--month "October 2026"] [--limit <n>] [--dry-run]
+  profile import <resume.json> | show
+  github refresh [<username>]
+  score [--limit <n>] [--rescore] [--company <text>] [--role <text>] [--no-model]
+  list [--min-score <n>] [--limit <n>] [--json]
+  show <job-id>
   status [--json]`;
 
 function parseFlags(args, valueFlags = []) {
@@ -31,7 +40,7 @@ function parseFlags(args, valueFlags = []) {
   return { flags, positional };
 }
 
-export async function main(argv, out = console, { vaultDir = getVaultDir(), fetch: fetchImpl = fetch, now = new Date() } = {}) {
+export async function main(argv, out = console, { vaultDir = getVaultDir(), fetch: fetchImpl = fetch, now = new Date(), llm: llmOverride } = {}) {
   const [verb, ...rest] = argv;
   if (!verb || verb === 'help' || verb === '--help') { out.log(USAGE); return 0; }
   const store = openStore(huntDbPath(vaultDir));
@@ -46,6 +55,72 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
         out.log(`Thread: ${summary.thread.title} (item ${summary.thread.id})`);
         out.log(`${summary.comments} comments, ${summary.listings} job records parsed, ${summary.skipped.length} comments skipped`);
         out.log(summary.dryRun ? 'Dry run: nothing stored.' : `New: ${summary.created}  Merged into known jobs: ${summary.merged}  Already seen: ${summary.alreadyKnown}`);
+        return 0;
+      }
+      case 'profile': {
+        if (rest[0] === 'import' && rest[1]) {
+          const result = importResume(vaultDir, rest[1]);
+          out.log(`Imported ${result.name}'s resume (${result.jobs} positions) to ${result.target}`);
+          return 0;
+        }
+        if (rest[0] === 'show') {
+          const resume = loadResume(vaultDir);
+          const preferences = loadPreferences(vaultDir);
+          out.log(`${resume.basics.name}: ${resume.work.length} positions, ${(resume.skills ?? []).length} skill groups`);
+          out.log(`Autonomous threshold: ${preferences.minimum_score}; locations: ${preferences.locations.join('; ')}`);
+          out.log(`GitHub cache: ${loadRepos(vaultDir)?.repos.length ?? 0} repositories`);
+          return 0;
+        }
+        out.log(USAGE);
+        return 1;
+      }
+      case 'github': {
+        const resume = loadResume(vaultDir);
+        const fromResume = resume.basics.profiles?.find((profile) => /github/i.test(profile.network))?.username;
+        const user = rest[1] || fromResume;
+        if (rest[0] !== 'refresh' || !user) { out.log('Usage: job github refresh [<username>] (the username defaults to the GitHub profile in resume.json)'); return 1; }
+        const data = await fetchRepos(user, { fetch: fetchImpl, now });
+        saveRepos(vaultDir, data);
+        out.log(`${data.repos.length} public repositories cached for ${user}`);
+        return 0;
+      }
+      case 'score': {
+        const { flags } = parseFlags(rest, ['limit', 'company', 'role']);
+        const resume = loadResume(vaultDir);
+        const preferences = loadPreferences(vaultDir);
+        const llm = flags['no-model'] ? null : (llmOverride ?? createJobLlm());
+        if (!llm?.available) out.log(flags['no-model'] ? 'Scoring by rules only (--no-model).' : 'No model available: scoring by rules only. Scores are marked degraded and cannot reach the autonomous threshold.');
+        else out.log(`Scoring with ${llm.providers.join(' then ')}`);
+        const summary = await scoreJobs({
+          store, resume, preferences, repos: loadRepos(vaultDir)?.repos ?? [], llm, now, rescore: flags.rescore === true,
+          limit: flags.limit ? Number.parseInt(flags.limit, 10) : null, company: flags.company ?? null, role: flags.role ?? null,
+          onProgress: ({ job, result, done, total }) => out.log(`[${done}/${total}] ${String(result.score).padStart(3)} ${result.label.padEnd(11)} ${job.company} - ${job.role ?? '(no role)'}${result.degraded ? ' (rules)' : ''}`),
+        });
+        out.log(`Scored ${summary.scored} of ${summary.examined} (${summary.degraded} by rules). ${Object.entries(summary.byLabel).map(([label, n]) => `${label}: ${n}`).join(', ')}`);
+        for (const failure of summary.errors) out.log(`Error: ${failure.company}: ${failure.error}`);
+        return summary.errors.length ? 1 : 0;
+      }
+      case 'list': {
+        const { flags } = parseFlags(rest, ['min-score', 'limit']);
+        const entries = store.listScored({ minScore: flags['min-score'] ? Number(flags['min-score']) : null, limit: flags.limit ? Number.parseInt(flags.limit, 10) : 50 });
+        if (flags.json) { out.log(JSON.stringify(entries)); return 0; }
+        for (const { job, score } of entries) out.log(`${job.id}  ${String(score.score).padStart(3)} ${score.label.padEnd(11)} ${job.company} - ${job.role ?? '(no role)'}  [${score.recommendedNarrative}]`);
+        if (!entries.length) out.log('No scored jobs. Run: npm run u2 -- job score');
+        return 0;
+      }
+      case 'show': {
+        const job = store.getJob(rest[0]);
+        if (!job) { out.log(`Unknown job ${rest[0] ?? ''}`); return 1; }
+        const score = store.getScore(job.id);
+        out.log(`${job.company} - ${job.role ?? '(no role)'}  [${job.status}]`);
+        out.log(`Locations: ${job.locations.join('; ') || '-'}  Remote: ${job.remote ?? 'unknown'}  Salary: ${job.salary?.raw ?? '-'}`);
+        out.log(`Contacts: ${job.contactEmails.join(', ') || '-'}  Apply: ${job.applicationUrls.join(' ') || '-'}`);
+        if (score) {
+          out.log(`Score ${score.score} (${score.label}, confidence ${score.confidence})${score.degraded ? ' DEGRADED: scored by rules' : ''}  Narrative: ${score.recommendedNarrative}`);
+          for (const [key, dim] of Object.entries(score.dimensions)) out.log(`  ${key.padEnd(13)} ${dim.points}/${dim.max}  ${dim.reason}`);
+          for (const concern of score.concerns) out.log(`  concern: ${concern}`);
+          for (const project of score.projects) out.log(`  project: ${project.name} - ${project.why}`);
+        }
         return 0;
       }
       case 'status': {

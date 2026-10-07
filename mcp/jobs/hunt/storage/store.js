@@ -10,7 +10,7 @@ import { JOB_HUNT_DIR } from '../../profile.js';
 // store (ADR 0007); consequential applications are additionally recorded as
 // vault files by the existing ledger so the owner always has the record.
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 const MIGRATIONS = [
   `CREATE TABLE jobs (
@@ -43,6 +43,14 @@ const MIGRATIONS = [
      from_status TEXT, to_status TEXT, detail TEXT NOT NULL DEFAULT '{}'
    );
    CREATE INDEX application_events_job ON application_events(job_id, id);`,
+  `CREATE TABLE job_scores (
+     job_id TEXT PRIMARY KEY REFERENCES jobs(id),
+     score INTEGER NOT NULL, confidence REAL NOT NULL, label TEXT NOT NULL,
+     dimensions TEXT NOT NULL, reasons TEXT NOT NULL, concerns TEXT NOT NULL,
+     narrative TEXT NOT NULL, projects TEXT NOT NULL, flags TEXT NOT NULL,
+     degraded INTEGER NOT NULL DEFAULT 0, model TEXT, scored_at TEXT NOT NULL
+   );
+   CREATE INDEX job_scores_score ON job_scores(score);`,
 ];
 
 export const JOB_STATUSES = ['discovered', 'scored', 'researching', 'qualified', 'materials_generated', 'applying', 'applied', 'contacted', 'needs_input', 'followup_due', 'interview', 'rejected', 'withdrawn', 'closed', 'skipped', 'error', 'uncertain'];
@@ -90,9 +98,19 @@ class Store {
   constructor(db) { this.db = db; }
   close() { this.db.close(); }
 
+  // Transactions nest: an inner call joins the outer one through a savepoint.
   transaction(fn) {
-    this.db.exec('BEGIN IMMEDIATE');
-    try { const result = fn(); this.db.exec('COMMIT'); return result; } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+    const nested = this.db.isTransaction;
+    const name = `sp_${(this._depth = (this._depth ?? 0) + 1)}`;
+    this.db.exec(nested ? `SAVEPOINT ${name}` : 'BEGIN IMMEDIATE');
+    try {
+      const result = fn();
+      this.db.exec(nested ? `RELEASE ${name}` : 'COMMIT');
+      return result;
+    } catch (error) {
+      this.db.exec(nested ? `ROLLBACK TO ${name}; RELEASE ${name}` : 'ROLLBACK');
+      throw error;
+    } finally { this._depth -= 1; }
   }
 
   /**
@@ -180,6 +198,37 @@ class Store {
     return this.db.prepare('SELECT * FROM application_events WHERE job_id = ? ORDER BY id').all(jobId).map((row) => ({
       id: row.id, at: row.at, type: row.type, fromStatus: row.from_status, toStatus: row.to_status, detail: parse(row.detail, {}),
     }));
+  }
+
+  /** Stores the latest score for a job and moves it to `scored` (unless it has moved further on). */
+  saveScore(jobId, result, now = new Date()) {
+    return this.transaction(() => {
+      const job = this.getJob(jobId);
+      if (!job) throw new Error(`Unknown job ${jobId}`);
+      this.db.prepare(`INSERT OR REPLACE INTO job_scores (job_id, score, confidence, label, dimensions, reasons, concerns, narrative, projects, flags, degraded, model, scored_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(jobId, result.score, result.confidence, result.label, json(result.dimensions), json(result.reasons), json(result.concerns),
+        result.recommendedNarrative, json(result.projects), json(result.flags ?? []), result.degraded ? 1 : 0, result.model ?? null, now.toISOString());
+      this.recordEvent(jobId, 'scored', { detail: { score: result.score, label: result.label, degraded: Boolean(result.degraded), model: result.model ?? null, narrative: result.recommendedNarrative } }, now);
+      if (job.status === 'discovered') this.transition(jobId, 'scored', { score: result.score }, now);
+      return this.getScore(jobId);
+    });
+  }
+
+  getScore(jobId) {
+    const row = this.db.prepare('SELECT * FROM job_scores WHERE job_id = ?').get(jobId);
+    if (!row) return null;
+    return {
+      jobId: row.job_id, score: row.score, confidence: row.confidence, label: row.label, dimensions: parse(row.dimensions, {}),
+      reasons: parse(row.reasons, []), concerns: parse(row.concerns, []), recommendedNarrative: row.narrative,
+      projects: parse(row.projects, []), flags: parse(row.flags, []), degraded: Boolean(row.degraded), model: row.model, scoredAt: row.scored_at,
+    };
+  }
+
+  /** Jobs with their scores, best first. Unscored jobs sort last. */
+  listScored({ minScore = null, limit = 500 } = {}) {
+    return this.db.prepare('SELECT job_id FROM job_scores ORDER BY score DESC, scored_at DESC LIMIT ?').all(Math.min(limit, 5000))
+      .map((row) => ({ job: this.getJob(row.job_id), score: this.getScore(row.job_id) }))
+      .filter((entry) => minScore == null || entry.score.score >= minScore);
   }
 
   counts() {
