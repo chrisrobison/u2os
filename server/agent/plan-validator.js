@@ -100,6 +100,7 @@ function validateAction(action, index, toolRegistry) {
     throw new Error(`Model action ${action.tool} arguments exceed the maximum nesting depth (${MAX_ARG_DEPTH})`);
   }
   validateArguments(action.arguments, tool.schema, action.tool);
+  try { tool.validateArguments?.(action.arguments); } catch (error) { throw new Error(`Model action ${action.tool}: ${error.message}`); }
   if (action.resultRefs !== undefined) validateResultRefs(action.resultRefs, action.arguments, action.tool);
   if (action.priorResultRefs !== undefined) validatePriorResultRefs(action.priorResultRefs, action.arguments, action.tool);
   if (action.resultRefs && action.priorResultRefs && Object.keys(action.resultRefs).some((key) => Object.hasOwn(action.priorResultRefs, key))) {

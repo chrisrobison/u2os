@@ -19,7 +19,7 @@ const write = (file, text) => fs.writeFileSync(file, text, { mode: 0o600 });
  * when useful, and an outreach email draft when the strategy includes email.
  * Idempotent: existing materials are reused unless `force`.
  */
-export async function generateMaterials({ store, vaultDir, job, candidate, llm, minimumScore = 82, force = false, pdf = true, coverLetter = null, now = new Date() }) {
+export async function generateMaterials({ store, vaultDir, job, candidate, llm, minimumScore = 82, force = false, pdf = true, coverLetter = null, stage = null, now = new Date() }) {
   const score = store.getScore(job.id);
   if (!score) throw new Error(`Job ${job.id} has not been scored: run "job score" first`);
   if (score.degraded) throw new Error('Refusing to write materials from a degraded (rule-based) score; run "job score --rescore" with a model first');
@@ -68,7 +68,11 @@ export async function generateMaterials({ store, vaultDir, job, candidate, llm, 
     if (letter) files.cover_letter_pdf = path.join(dir, 'cover-letter.pdf');
   }
   if (email) {
-    email.attachments = [files.resume_pdf, files.cover_letter_pdf].filter(Boolean);
+    // Attachments are staged, content-addressed references (email.send never takes a path).
+    // Without a stager (or without PDFs) the draft has none.
+    const person = candidate.resume.basics.name.replace(/\s+/g, '_');
+    const toStage = [[files.resume_pdf, `${person}_Resume.pdf`], [files.cover_letter_pdf, `${person}_Cover_Letter.pdf`]].filter(([file]) => file);
+    email.attachments = stage ? toStage.map(([file, name]) => stage(vaultDir, file, { name }).ref) : [];
     files.email_json = path.join(dir, 'email.json'); write(files.email_json, `${JSON.stringify(email, null, 2)}\n`);
   }
 

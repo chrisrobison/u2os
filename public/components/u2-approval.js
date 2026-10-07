@@ -45,7 +45,24 @@ function normalize(raw) {
   };
 }
 
+// email.send attachments are staged references (outbox/<sha256>/<filename>):
+// show the file name and the start of the content hash the send is pinned to.
+function renderAttachments(refs) {
+  const items = refs.map((ref) => {
+    const parts = String(ref).split('/');
+    const named = parts.length === 3 && /^[0-9a-f]{64}$/.test(parts[1]);
+    return named
+      ? `<li>${escapeHtml(parts[2])} <span class="u2-approval__hash">sha256 ${escapeHtml(parts[1].slice(0, 12))}…</span></li>`
+      : `<li>${escapeHtml(String(ref))}</li>`;
+  });
+  return `<div class="u2-approval__args"><dt>Attachments</dt></div><ul class="u2-approval__attachments">${items.join('')}</ul>`;
+}
+
 function renderArgs(tool, args) {
+  if (tool === 'email.send' && Array.isArray(args?.attachments)) {
+    const { attachments, ...rest } = args;
+    return renderArgs(tool, rest) + renderAttachments(attachments);
+  }
   if (tool === 'calendar.reschedule') {
     const rows = [];
     if (args.eventId) rows.push(['Event', args.eventId]);

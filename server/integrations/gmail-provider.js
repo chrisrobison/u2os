@@ -1,6 +1,7 @@
 // Real Gmail provider (REST v1, native fetch). Same function shape as
 // mock-email-provider.js so email-tools.js never needs to know which one is
 // active. Per docs/connectors.md's "Gmail provider" section.
+import { buildMultipart } from './mime.js';
 import { getDb } from '../db/connection.js';
 import { hasTokens, getValidAccessToken } from './oauth/google-oauth.js';
 import { scopedLocalId, unscopedUpstreamId } from './connector-instance-ids.js';
@@ -165,7 +166,7 @@ function assertNoHeaderInjection(value, fieldName) {
   }
 }
 
-function buildRawMessage({ to, subject, body }) {
+function buildRawMessage({ to, subject, body, attachments }) {
   const toList = Array.isArray(to) ? Array.from(to) : [to];
   if (!toList.length || toList.some((addr) => typeof addr !== 'string' || !addr.trim())) {
     throw new Error('gmail: "to" must be a nonempty string or nonempty flat array of nonempty strings; no message was attempted');
@@ -176,12 +177,19 @@ function buildRawMessage({ to, subject, body }) {
   for (const addr of toList) assertNoHeaderInjection(addr, 'to');
   assertNoHeaderInjection(subject, 'subject');
   const toHeader = toList.join(', ');
+  if (attachments !== undefined) {
+    // Already resolved and hash-verified by email.send; only their shape is checked here.
+    if (!Array.isArray(attachments) || !attachments.length || attachments.some((item) => !item || !Buffer.isBuffer(item.content) || typeof item.filename !== 'string' || typeof item.contentType !== 'string')) {
+      throw new Error('gmail: invalid attachments; no message was attempted');
+    }
+    return Buffer.from(buildMultipart({ to: toHeader, subject, body, attachments }), 'utf8').toString('base64url');
+  }
   const message = [`To: ${toHeader}`, `Subject: ${subject}`, '', body].join('\r\n');
   return Buffer.from(message, 'utf8').toString('base64url');
 }
 
-export async function sendEmail({ to, subject, body }, { fetchImpl = globalThis.fetch, dataDir, instance, timeoutMs = 30_000, timers = globalThis } = {}) {
-  const raw = buildRawMessage({ to, subject, body });
+export async function sendEmail({ to, subject, body, attachments }, { fetchImpl = globalThis.fetch, dataDir, instance, timeoutMs = 30_000, timers = globalThis } = {}) {
+  const raw = buildRawMessage({ to, subject, body, attachments });
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 30_000) {
     throw new Error('gmail: invalid send deadline; no message was attempted');
   }

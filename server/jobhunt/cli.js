@@ -15,6 +15,7 @@ import { generateMaterials } from '../../mcp/jobs/hunt/applications/materials.js
 import { loadFacts } from '../../mcp/jobs/hunt/candidate/facts.js';
 import { candidateDigest } from '../../mcp/jobs/hunt/candidate/profile.js';
 import { createJobLlm } from './llm.js';
+import { stageAttachment } from '../tools/email-attachments.js';
 
 export const USAGE = `Usage: npm run u2 -- job <command>
 
@@ -113,7 +114,7 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
         const llm = llmOverride ?? createJobLlm();
         const candidate = { resume, preferences, facts: loadFacts(vaultDir), repos: loadRepos(vaultDir)?.repos ?? [], digest: candidateDigest(resume, preferences) };
         const result = await generateMaterials({
-          store, vaultDir, job, candidate, llm, force: flags.force === true, pdf: flags['no-pdf'] !== true, now,
+          store, vaultDir, job, candidate, llm, stage: stageAttachment, force: flags.force === true, pdf: flags['no-pdf'] !== true, now,
           minimumScore: preferences.minimum_score, coverLetter: flags['cover-letter'] ? true : flags['no-cover-letter'] ? false : null,
         });
         out.log(`${result.reused ? 'Materials already exist (use --force to regenerate)' : 'Materials written'}: ${result.dir}`);
