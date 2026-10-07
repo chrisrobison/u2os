@@ -85,3 +85,20 @@ To re-open a job, edit its status or delete its file.
 - Only companies on Greenhouse or Lever, listed by you. Discovering new companies is up to you (or a future tool).
 - Hosted forms vary. Unusual custom widgets may be reported as `needs_answers` or `failed`; the screenshots show why.
 - Lever's application questions are discovered when the form is first opened. The first attempt at a Lever job therefore often returns `needs_answers`, and the next run answers them.
+
+## Hacker News "Who is hiring?" discovery
+
+The pipeline in [`job-hunt2.md`](job-hunt2.md) is built in phases on top of the same server and vault. Phase 1 discovers listings.
+
+```bash
+npm run u2 -- job discover hn                       # newest "Ask HN: Who is hiring?" thread
+npm run u2 -- job discover hn --month "October 2026"
+npm run u2 -- job discover hn --dry-run             # parse and report, store nothing
+npm run u2 -- job status
+```
+
+The thread is found by searching for the title (never a fixed item id). Each top-level comment becomes one record per role, with the original text and author kept. The parser is deterministic and treats the text strictly as data: it extracts the company, roles, locations, remote, salary, equity, visa stance, technologies, contact emails and URLs, and nothing in a listing can trigger an action.
+
+Records are stored in `job-hunt/state/hunt.sqlite` in your vault: `jobs`, `job_sources` (every sighting, with its raw text) and `application_events`. One opportunity seen through several sources (an HN comment, a Greenhouse posting, a careers page, next month's repost) is merged into one job, recognised by application URL, ATS job id, or normalised company and role. Re-running discovery never creates duplicates.
+
+Code lives in `mcp/jobs/hunt/` (`sources/`, `jobs/`, `storage/`); the command is `server/jobhunt/cli.js`.
