@@ -28,6 +28,8 @@ const USAGE = `Usage: npm run u2 -- <command>
 
   coding-agent providers | run | runs | show   (see: coding-agent help)
 
+  job discover hn | status   (see: job help)
+
   automation list
   automation enable|disable|pause|resume|stop|inspect <id>
   automation run <id> [key=value...]
@@ -40,6 +42,8 @@ const VALUE_FLAGS = ['--policy', '--package', '--automation'];
 export async function main(argv, out = console) {
   const [noun, verb, ...rest] = argv;
   if (!noun || noun === 'help' || noun === '--help') { out.log(USAGE); return 0; }
+  // The job hunter keeps its own store in the vault and needs no package platform.
+  if (noun === 'job') return (await import('../jobhunt/cli.js')).main([verb, ...rest].filter((arg) => arg !== undefined), out);
   // Coding agents (docs/coding-agents.md) need no package platform.
   if (noun === 'coding-agent') return (await import('../coding-agent/cli.js')).main([verb, ...rest].filter((arg) => arg !== undefined), out);
   // Boolean flags only; --policy, --package and --automation take a value.

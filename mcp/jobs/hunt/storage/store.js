@@ -1,0 +1,188 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
+import { identityKeys, normalizeCompany, normalizeRole } from '../jobs/normalize.js';
+import { JOB_HUNT_DIR } from '../../profile.js';
+
+// The job hunter's runtime store: opportunities (jobs), every sighting of
+// them (job_sources) and the event history. SQLite is an index and runtime
+// store (ADR 0007); consequential applications are additionally recorded as
+// vault files by the existing ledger so the owner always has the record.
+
+const SCHEMA_VERSION = 1;
+
+const MIGRATIONS = [
+  `CREATE TABLE jobs (
+     id TEXT PRIMARY KEY,
+     company TEXT NOT NULL, company_key TEXT NOT NULL,
+     role TEXT, role_key TEXT,
+     locations TEXT NOT NULL DEFAULT '[]', remote INTEGER,
+     salary TEXT, equity TEXT, visa TEXT,
+     technologies TEXT NOT NULL DEFAULT '[]',
+     description TEXT NOT NULL DEFAULT '',
+     contact_emails TEXT NOT NULL DEFAULT '[]',
+     application_urls TEXT NOT NULL DEFAULT '[]',
+     company_url TEXT,
+     status TEXT NOT NULL DEFAULT 'discovered',
+     first_seen_at TEXT NOT NULL, updated_at TEXT NOT NULL
+   );
+   CREATE INDEX jobs_status ON jobs(status);
+   CREATE TABLE job_keys (key TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs(id));
+   CREATE TABLE job_sources (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     job_id TEXT NOT NULL REFERENCES jobs(id),
+     source TEXT NOT NULL, source_thread TEXT, source_comment TEXT, source_key TEXT NOT NULL UNIQUE,
+     source_url TEXT, author TEXT, raw_text TEXT NOT NULL, parse_quality TEXT,
+     data TEXT NOT NULL, posted_at TEXT, discovered_at TEXT NOT NULL
+   );
+   CREATE INDEX job_sources_job ON job_sources(job_id);
+   CREATE TABLE application_events (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     job_id TEXT NOT NULL, at TEXT NOT NULL, type TEXT NOT NULL,
+     from_status TEXT, to_status TEXT, detail TEXT NOT NULL DEFAULT '{}'
+   );
+   CREATE INDEX application_events_job ON application_events(job_id, id);`,
+];
+
+export const JOB_STATUSES = ['discovered', 'scored', 'researching', 'qualified', 'materials_generated', 'applying', 'applied', 'contacted', 'needs_input', 'followup_due', 'interview', 'rejected', 'withdrawn', 'closed', 'skipped', 'error', 'uncertain'];
+
+export function huntDbPath(vaultDir) {
+  return path.join(vaultDir, JOB_HUNT_DIR, 'state', 'hunt.sqlite');
+}
+
+const json = (value) => JSON.stringify(value ?? null);
+const parse = (value, fallback = null) => { try { return value == null ? fallback : JSON.parse(value); } catch { return fallback; } };
+
+export function openStore(file) {
+  if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const db = new DatabaseSync(file);
+  db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
+  let version = db.prepare('PRAGMA user_version').get().user_version;
+  while (version < MIGRATIONS.length) {
+    db.exec('BEGIN');
+    try {
+      db.exec(MIGRATIONS[version]);
+      db.exec(`PRAGMA user_version = ${version + 1}`);
+      db.exec('COMMIT');
+    } catch (error) { db.exec('ROLLBACK'); throw error; }
+    version += 1;
+  }
+  if (version > SCHEMA_VERSION) throw new Error(`hunt store is newer (v${version}) than this software (v${SCHEMA_VERSION})`);
+  return new Store(db);
+}
+
+function rowToJob(row) {
+  if (!row) return null;
+  return {
+    id: row.id, company: row.company, role: row.role,
+    locations: parse(row.locations, []), remote: row.remote == null ? null : Boolean(row.remote),
+    salary: parse(row.salary), equity: row.equity, visa: row.visa,
+    technologies: parse(row.technologies, []), description: row.description,
+    contactEmails: parse(row.contact_emails, []), applicationUrls: parse(row.application_urls, []),
+    companyUrl: row.company_url, status: row.status, firstSeenAt: row.first_seen_at, updatedAt: row.updated_at,
+  };
+}
+
+const mergeList = (a, b) => [...new Set([...(a ?? []), ...(b ?? [])])];
+
+class Store {
+  constructor(db) { this.db = db; }
+  close() { this.db.close(); }
+
+  transaction(fn) {
+    this.db.exec('BEGIN IMMEDIATE');
+    try { const result = fn(); this.db.exec('COMMIT'); return result; } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+
+  /**
+   * Records a sighting of a job. Several sightings of the same opportunity
+   * (HN comment, Greenhouse posting, careers page, next month's repost) merge
+   * into one job through any shared identity key. Idempotent: the same
+   * sighting twice changes nothing.
+   * Returns { job, created, duplicate }.
+   */
+  upsertSighting(sighting, now = new Date()) {
+    const at = now.toISOString();
+    const keys = identityKeys({ company: sighting.company, role: sighting.role, applicationUrls: sighting.applicationUrls, sourceKey: sighting.sourceKey });
+    return this.transaction(() => {
+      const seen = this.db.prepare('SELECT job_id FROM job_sources WHERE source_key = ?').get(sighting.sourceKey);
+      if (seen) return { job: this.getJob(seen.job_id), created: false, duplicate: true };
+
+      let jobId = null;
+      for (const key of keys) {
+        const hit = this.db.prepare('SELECT job_id FROM job_keys WHERE key = ?').get(key);
+        if (hit) { jobId = hit.job_id; break; }
+      }
+      const created = !jobId;
+      if (created) {
+        jobId = `job_${crypto.randomBytes(8).toString('hex')}`;
+        this.db.prepare(`INSERT INTO jobs (id, company, company_key, role, role_key, locations, remote, salary, equity, visa, technologies, description, contact_emails, application_urls, company_url, status, first_seen_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'discovered', ?, ?)`).run(
+          jobId, sighting.company, normalizeCompany(sighting.company), sighting.role ?? null, normalizeRole(sighting.role) || null,
+          json(sighting.locations ?? []), sighting.remote == null ? null : Number(sighting.remote), sighting.salary ? json(sighting.salary) : null,
+          sighting.equity ?? null, sighting.visa ?? null, json(sighting.technologies ?? []), sighting.description ?? '',
+          json(sighting.contactEmails ?? []), json(sighting.applicationUrls ?? []), sighting.companyUrl ?? null, at, at);
+        this.recordEvent(jobId, 'discovered', { toStatus: 'discovered', detail: { source: sighting.source, sourceKey: sighting.sourceKey, author: sighting.author } }, now);
+      } else {
+        // Another source for a known job: only fill what is missing, and
+        // never change a job that has moved on in the pipeline.
+        const current = this.getJob(jobId);
+        this.db.prepare(`UPDATE jobs SET locations = ?, remote = COALESCE(remote, ?), salary = COALESCE(salary, ?), equity = COALESCE(equity, ?), visa = COALESCE(visa, ?),
+          technologies = ?, contact_emails = ?, application_urls = ?, company_url = COALESCE(company_url, ?), updated_at = ? WHERE id = ?`).run(
+          json(mergeList(current.locations, sighting.locations)), sighting.remote == null ? null : Number(sighting.remote), sighting.salary ? json(sighting.salary) : null,
+          sighting.equity ?? null, sighting.visa ?? null, json(mergeList(current.technologies, sighting.technologies)),
+          json(mergeList(current.contactEmails, sighting.contactEmails)), json(mergeList(current.applicationUrls, sighting.applicationUrls)),
+          sighting.companyUrl ?? null, at, jobId);
+        this.recordEvent(jobId, 'source_added', { detail: { source: sighting.source, sourceKey: sighting.sourceKey } }, now);
+      }
+      this.db.prepare(`INSERT INTO job_sources (job_id, source, source_thread, source_comment, source_key, source_url, author, raw_text, parse_quality, data, posted_at, discovered_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(jobId, sighting.source, sighting.sourceThread ?? null, sighting.sourceComment ?? null, sighting.sourceKey,
+        sighting.sourceUrl ?? null, sighting.author ?? null, sighting.rawText ?? '', sighting.parseQuality ?? null, json(sighting), sighting.postedAt ?? null, at);
+      // The new identities (the ATS id this source revealed, say) now point at the job too.
+      for (const key of keys) this.db.prepare('INSERT OR IGNORE INTO job_keys (key, job_id) VALUES (?, ?)').run(key, jobId);
+      return { job: this.getJob(jobId), created, duplicate: false };
+    });
+  }
+
+  getJob(id) { return rowToJob(this.db.prepare('SELECT * FROM jobs WHERE id = ?').get(id)); }
+
+  listJobs({ status = null, company = null, limit = 500 } = {}) {
+    const rows = this.db.prepare('SELECT * FROM jobs ORDER BY first_seen_at DESC, id LIMIT ?').all(Math.min(limit, 5000));
+    return rows.map(rowToJob).filter((job) => (!status || job.status === status) && (!company || normalizeCompany(job.company).includes(normalizeCompany(company))));
+  }
+
+  listSources(jobId) {
+    return this.db.prepare('SELECT * FROM job_sources WHERE job_id = ? ORDER BY id').all(jobId).map((row) => ({
+      source: row.source, sourceThread: row.source_thread, sourceComment: row.source_comment, sourceUrl: row.source_url,
+      author: row.author, rawText: row.raw_text, parseQuality: row.parse_quality, postedAt: row.posted_at, discoveredAt: row.discovered_at,
+    }));
+  }
+
+  /** Every status change is an event (spec: "every transition should be recorded"). */
+  transition(jobId, toStatus, detail = {}, now = new Date()) {
+    if (!JOB_STATUSES.includes(toStatus)) throw new Error(`Unknown job status "${toStatus}"`);
+    return this.transaction(() => {
+      const job = this.getJob(jobId);
+      if (!job) throw new Error(`Unknown job ${jobId}`);
+      if (job.status === toStatus) return job;
+      this.db.prepare('UPDATE jobs SET status = ?, updated_at = ? WHERE id = ?').run(toStatus, now.toISOString(), jobId);
+      this.recordEvent(jobId, 'status', { fromStatus: job.status, toStatus, detail }, now);
+      return this.getJob(jobId);
+    });
+  }
+
+  recordEvent(jobId, type, { fromStatus = null, toStatus = null, detail = {} } = {}, now = new Date()) {
+    this.db.prepare('INSERT INTO application_events (job_id, at, type, from_status, to_status, detail) VALUES (?, ?, ?, ?, ?, ?)').run(jobId, now.toISOString(), type, fromStatus, toStatus, json(detail));
+  }
+
+  listEvents(jobId) {
+    return this.db.prepare('SELECT * FROM application_events WHERE job_id = ? ORDER BY id').all(jobId).map((row) => ({
+      id: row.id, at: row.at, type: row.type, fromStatus: row.from_status, toStatus: row.to_status, detail: parse(row.detail, {}),
+    }));
+  }
+
+  counts() {
+    return Object.fromEntries(this.db.prepare('SELECT status, COUNT(*) AS n FROM jobs GROUP BY status').all().map((row) => [row.status, row.n]));
+  }
+}
