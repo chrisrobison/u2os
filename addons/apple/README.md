@@ -34,3 +34,9 @@ apple:
   reminders_create: autonomous
   messages_send: never
 ```
+
+## Sending mail with attachments (`apple_mail`)
+
+apple-mcp's own `mail` tool cannot attach files. The add-on's second server, `apple_mail`, can: `apple_mail.send` sends through the Mail app on this Mac and `apple_mail.draft` saves a draft there for you to review (nothing is sent). Both take `to`, `subject`, `body` and optional `attachments`: **staged references** (`outbox/<sha256>/<filename>`, see [tools](../../docs/tools.md#email-attachments)), never file paths. The server re-verifies each file's hash, hands Mail a private copy of the verified bytes and deletes it afterwards. Everything else is passed to a fixed AppleScript as arguments, so nothing in a subject, body or file name can alter the script.
+
+Both tools are actions that need your confirmation until you decide otherwise on the Add-ons page (or `policies.yaml`: `apple_mail: { send: confirm }`). A timeout, or any failure after sending starts, is reported as an uncertain outcome: check Mail's Sent and Outbox before sending again. Set the `mail_sender` setting (for example `Name <me@example.com>`) to send from a specific Mail account; empty uses Mail's default. The first use makes macOS ask whether to allow controlling Mail.
