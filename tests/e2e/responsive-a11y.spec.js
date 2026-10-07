@@ -412,8 +412,8 @@ test.describe.serial('responsive layout & accessibility baseline (#19)', () => {
     }
 
     // Hand-computed against themes.css's real values (light:
-    // --text-primary #171B1E on --bg-page #EEF1F2 ~= 15.3:1; dark:
-    // --text-primary #E7ECEF on --bg-page #0D1116 ~= 15.9:1) -- both
+    // --text-primary #171B26 on --bg-page #EDF0F6 ~= 15.3:1; dark:
+    // --text-primary #E8EBF4 on --bg-page #141828 ~= 14.9:1) -- both
     // comfortably clear the 4.5:1 WCAG AA threshold for normal text. This
     // is the asserted contrast baseline for this issue; axe above is the
     // supplementary automated input.
