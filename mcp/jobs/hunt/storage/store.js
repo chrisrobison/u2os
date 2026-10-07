@@ -10,7 +10,7 @@ import { JOB_HUNT_DIR } from '../../profile.js';
 // store (ADR 0007); consequential applications are additionally recorded as
 // vault files by the existing ledger so the owner always has the record.
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 const MIGRATIONS = [
   `CREATE TABLE jobs (
@@ -51,6 +51,12 @@ const MIGRATIONS = [
      degraded INTEGER NOT NULL DEFAULT 0, model TEXT, scored_at TEXT NOT NULL
    );
    CREATE INDEX job_scores_score ON job_scores(score);`,
+  `CREATE TABLE artifacts (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     job_id TEXT NOT NULL REFERENCES jobs(id), kind TEXT NOT NULL, path TEXT NOT NULL,
+     sha256 TEXT NOT NULL, bytes INTEGER NOT NULL, meta TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
+   );
+   CREATE INDEX artifacts_job ON artifacts(job_id, kind, id);`,
 ];
 
 export const JOB_STATUSES = ['discovered', 'scored', 'researching', 'qualified', 'materials_generated', 'applying', 'applied', 'contacted', 'needs_input', 'followup_due', 'interview', 'rejected', 'withdrawn', 'closed', 'skipped', 'error', 'uncertain'];
@@ -229,6 +235,19 @@ class Store {
     return this.db.prepare('SELECT job_id FROM job_scores ORDER BY score DESC, scored_at DESC LIMIT ?').all(Math.min(limit, 5000))
       .map((row) => ({ job: this.getJob(row.job_id), score: this.getScore(row.job_id) }))
       .filter((entry) => minScore == null || entry.score.score >= minScore);
+  }
+
+  /** Records a generated file. The latest artifact of a kind for a job is the current one. */
+  addArtifact(jobId, kind, file, meta = {}, now = new Date()) {
+    const data = fs.readFileSync(file);
+    this.db.prepare('INSERT INTO artifacts (job_id, kind, path, sha256, bytes, meta, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(jobId, kind, file, crypto.createHash('sha256').update(data).digest('hex'), data.length, json(meta), now.toISOString());
+  }
+
+  /** Current artifact per kind: { resume_pdf: { path, sha256, ... } }. */
+  getArtifacts(jobId) {
+    const rows = this.db.prepare('SELECT * FROM artifacts WHERE job_id = ? ORDER BY id').all(jobId);
+    return Object.fromEntries(rows.map((row) => [row.kind, { path: row.path, sha256: row.sha256, bytes: row.bytes, meta: parse(row.meta, {}), createdAt: row.created_at }]));
   }
 
   counts() {
