@@ -141,3 +141,19 @@ npm run u2 -- job reconcile                 # after approving: mark jobs contact
 `job send` proposes the job's `email.json` as an `email.send` action (with the staged resume and cover letter attached, see [tools](tools.md#email-attachments)). It goes through the same gate as everything else, so your policy decides whether it needs approval; by default it waits in **Approvals** in the U2OS UI, where you see the recipient, subject, body and attachment names, and approve or reject. Like the other offline commands it needs the U2OS server stopped while it runs; the pending approval is in the database when the server restarts.
 
 Refused, whatever else: the draft still needs your input (`needs_input`), the job is unscored or scored without a model, a send is already proposed, sent or uncertain, or the job is already contacted/applied. A score below `minimum_score` is refused unless you pass `--force` (your explicit decision to go below the threshold). Intent is recorded in the `emails` table under an idempotency key (candidate, company, role, job, action and recipient) before anything is proposed, so a crash cannot cause a second send; a proposal that failed before queueing, or one you rejected, can be proposed again. `job reconcile` reads the outcome of each approved action: executed sends mark the job `contacted` with a follow-up date (`follow_up_days`, default 5 days); a failure whose outcome is uncertain marks the job `uncertain` and blocks any further send until you check Sent mail.
+
+## The Job hunt page and sending from the running server
+
+**Job hunt** in the app (Memory & automation) lists scored jobs, best first: the score and why, concerns, the recommended narrative, the approach, the materials and the draft email (recipient, subject, body, attachment names). Filters: *Ready to send*, *Needs you* (the listing asked for something your facts do not cover), *Contacted*, *Strong (80+)* and *All scored*.
+
+The buttons propose the email through the running server's own approval gate; nothing is sent until you approve it in **Approvals**:
+
+| Button | Tool | Needs |
+|---|---|---|
+| Send with Mail | `apple_mail.send` | the Apple add-on enabled (macOS), see [the add-on](../addons/apple/README.md#sending-mail-with-attachments-apple_mail) |
+| Send with Gmail | `email.send` | a connected Gmail (or SMTP) account |
+| Save draft in Mail | `apple_mail.draft` | the Apple add-on; saves a draft for you to review, sends nothing |
+
+A route whose tool is not available is disabled, and the API says why; there is never a silent fallback to a different route. The duplicate rules are the same whichever route you use (one application email per job and recipient), and a draft never marks a job contacted. A job scored below `minimum_score` shows *Send ... anyway*, which is your explicit choice.
+
+Outcomes are reconciled as soon as an action completes, fails or is rejected, and again whenever the page loads, so approved sends move jobs to `contacted` (with a follow-up date) without stopping the server. The same is available over the owner API: `GET /api/job-hunt/jobs[/<id>]`, `POST /api/job-hunt/jobs/<id>/send` with `{ "via": "gmail" | "apple_mail" | "apple_mail_draft", "force": false }`, and `POST /api/job-hunt/reconcile`. `job send` and `job reconcile` on the command line remain for the Gmail route when the server is stopped.

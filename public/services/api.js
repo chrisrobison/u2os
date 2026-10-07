@@ -572,6 +572,10 @@ export function reindexVault() { return request('/api/vault/reindex', { method: 
 export function restartMcpServers() { return request('/api/vault/mcp/restart', { method: 'POST' }); }
 export function getVaultJournal(params = {}) { return request(`/api/vault/journal${qs(params)}`); }
 export function getJobApplications(params = {}) { return request(`/api/job-applications${qs(params)}`); }
+// Job hunt pipeline (docs/job-hunt.md): ranked jobs, drafts and the owner's send.
+export function getJobHuntJobs(params = {}) { return request(`/api/job-hunt/jobs${qs(params)}`); }
+export function getJobHuntJob(id) { return request(`/api/job-hunt/jobs/${encodeURIComponent(id)}`); }
+export function sendJobEmail(id, body) { return request(`/api/job-hunt/jobs/${encodeURIComponent(id)}/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }
 
 // First-run onboarding wizard (docs/onboarding.md, u2-onboarding.js).
 export function getOnboardingStatus() { return request('/api/onboarding'); }

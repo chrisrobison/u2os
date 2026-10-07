@@ -59,6 +59,7 @@ import { registerVaultRoutes } from './api/routes/vault.js';
 import { registerAddonRoutes } from './api/routes/addons.js';
 import { registerOnboardingRoutes } from './api/routes/onboarding.js';
 import { registerJobApplicationRoutes } from './api/routes/job-applications.js';
+import { registerJobHuntRoutes, reconcileOutcomes } from './api/routes/job-hunt.js';
 import { startVaultWatcher } from './vault/watcher.js';
 import { startJournal } from './vault/journal.js';
 import { registerRoutineRoutes } from './api/routes/routines.js';
@@ -286,6 +287,9 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
   registerAddonRoutes(router, { onChanged: async () => { await startMcpServers({ toolRegistry }); } });
   registerOnboardingRoutes(router);
   registerJobApplicationRoutes(router);
+  registerJobHuntRoutes(router, { agent, toolRegistry });
+  // Approved sends update the job hunt ledger as soon as their outcome is recorded (docs/job-hunt.md).
+  eventBus.subscribe('agent.action.*', () => { try { reconcileOutcomes(); } catch { /* the ledger is not set up, or busy: the page reconciles too */ } });
   registerRoutineRoutes(router, { eventBus, agent });
   registerPackageRoutes(router, { packages });
 
