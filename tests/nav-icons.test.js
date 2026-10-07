@@ -15,7 +15,7 @@ const iconCss = fs.readFileSync(path.join(root, 'styles', 'icons.css'), 'utf8');
 const routes = [...navSource.matchAll(/\['(#\/[\w-]+)', '([^']+)'(?:, '([\w-]+)')?\]/g)].map(([, hash, label, icon]) => ({ hash, label, icon }));
 
 test('every route has an icon, and every icon has a codepoint rule', () => {
-  assert.equal(routes.length, 24);
+  assert.equal(routes.length, 25);
   for (const { hash, icon } of routes) {
     assert.ok(icon, `${hash} has no icon`);
     assert.match(iconCss, new RegExp(`\\.u2-icon--${icon}::before \\{ content: "\\\\[0-9a-f]{4}"; \\}`), `${icon} is missing from icons.css`);
