@@ -104,6 +104,16 @@ export class CliModelProvider extends ModelProvider {
     return validatePlanWithRepair(parsed, context.toolRegistry);
   }
 
+  /**
+   * Plain text completion: system and user text in, answer text out. For
+   * callers that need a model's judgement but not a tool plan (the job
+   * hunter's scoring). Same scratch directory, scrubbed environment, timeout
+   * and output cap as plan().
+   */
+  async complete(systemPrompt, userContent) {
+    return this._run(`${systemPrompt} Respond with raw JSON only -- no prose, no markdown code fences.`, userContent);
+  }
+
   /** Sends a tiny prompt (one short round trip) to prove the tool is signed in and answering. */
   async ping() {
     const text = await this._run('Reply with exactly the single word: ok', 'ping');

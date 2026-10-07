@@ -102,3 +102,19 @@ The thread is found by searching for the title (never a fixed item id). Each top
 Records are stored in `job-hunt/state/hunt.sqlite` in your vault: `jobs`, `job_sources` (every sighting, with its raw text) and `application_events`. One opportunity seen through several sources (an HN comment, a Greenhouse posting, a careers page, next month's repost) is merged into one job, recognised by application URL, ATS job id, or normalised company and role. Re-running discovery never creates duplicates.
 
 Code lives in `mcp/jobs/hunt/` (`sources/`, `jobs/`, `storage/`); the command is `server/jobhunt/cli.js`.
+
+## Scoring jobs against you
+
+```bash
+npm run u2 -- job profile import "resume.json"    # JSON Resume; copied to job-hunt/resume.json
+npm run u2 -- job github refresh                  # public repos, cached in job-hunt/state/github.json
+npm run u2 -- job score [--limit 20] [--rescore] [--company foo] [--role staff] [--no-model]
+npm run u2 -- job list [--min-score 80]
+npm run u2 -- job show <job-id>
+```
+
+`job-hunt/preferences.yaml` (optional) sets `minimum_score` (the autonomous-application threshold, default 82), `locations`, `home.areas`, `minimum_salary`, `preferred_roles`, `avoid` and `interests`.
+
+**Who decides what.** The model judges experience and domain match (transferable experience, not keyword counts), seniority fit, technical overlap, project overlap, company and stage, and personal interest. Code owns everything else: the weights (experience 25, seniority 20, technical 15, projects 15, location 10, company 5, compensation 5, interest 5), clamping every model number to its maximum, location and compensation from the structured facts, the total, the thresholds (90 exceptional, 80 strong, 70 plausible, 60 weak, below that skip) and the allowed narratives. A junior title caps seniority however the model scores it. Roles outside engineering are triaged without a model call. Each score stores its dimensions, confidence, reasons, concerns, recommended narrative (one of six: engineering leadership, staff/principal, developer platform, AI/agent systems, operational software, adtech/analytics), up to four relevant GitHub projects, and flags such as `relocation_required` and `salary_below_threshold` for the policy engine.
+
+**The model** is your configured U2OS connections in your order (for example Claude first, Codex as the backup). Only CLI connections can complete plain text today. If none answers, a rule-based estimate is used, labelled degraded and capped at 79, so it can never reach the autonomous threshold. The model receives a digest of your resume (no phone, email or references) and the listing, delimited and declared untrusted data; its answer must pass schema validation or it is rejected.
