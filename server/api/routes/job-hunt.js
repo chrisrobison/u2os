@@ -5,7 +5,8 @@ import { getAgentAction } from '../../policy/policy-engine.js';
 import { openStore, huntDbPath } from '../../../mcp/jobs/hunt/storage/store.js';
 import { jobView, listJobViews } from '../../../mcp/jobs/hunt/view.js';
 import { loadPreferences, loadResume } from '../../../mcp/jobs/hunt/candidate/profile.js';
-import { SEND_TOOLS, proposeApplicationEmail, reconcileEmails } from '../../../mcp/jobs/hunt/applications/send.js';
+import { proposeBulkDrafts } from '../../../mcp/jobs/hunt/applications/bulk.js';
+import { SEND_TOOLS, proposeApplicationEmail, reconcileEmails, recordManualSend } from '../../../mcp/jobs/hunt/applications/send.js';
 
 // Owner-only (router default). The Job hunt page and the owner's send
 // button. Sending is an action on the owner's behalf, so it is proposed
@@ -49,6 +50,34 @@ export function registerJobHuntRoutes(router, { agent, toolRegistry }) {
 
   router.post('/api/job-hunt/reconcile', async (req, res) => {
     sendJson(res, 200, { changes: reconcileOutcomes().map((change) => ({ to: change.email.to, status: change.to })) });
+  });
+
+  // The owner sent the email themselves (for example a draft sent by hand in Mail).
+  router.post('/api/job-hunt/jobs/:id/mark-sent', async (req, res) => {
+    if (!JOB_ID.test(req.params.id)) return sendJson(res, 400, { error: 'Invalid job id' });
+    let resume;
+    try { resume = loadResume(getVaultDir()); } catch (error) { return sendJson(res, 409, { error: error.message }); }
+    try {
+      const email = withStore((store) => { const job = store.getJob(req.params.id); return job ? recordManualSend({ store, job, candidateEmail: resume.basics.email, to: typeof req.body?.to === 'string' ? req.body.to : undefined }) : null; });
+      if (!email) return sendJson(res, 404, { error: 'No such job' });
+      sendJson(res, 200, { email: { id: email.id, to: email.to, status: email.status } });
+    } catch (error) { sendJson(res, 400, { error: error.message }); }
+  });
+
+  // Drafts in Mail for every ready job with an email route. Nothing is sent: each draft still passes the gate,
+  // and the owner reviews and sends it from Mail.
+  router.post('/api/job-hunt/drafts', async (req, res) => {
+    const tool = SEND_TOOLS.apple_mail_draft;
+    if (!hasTool(toolRegistry, tool)) return sendJson(res, 409, { error: `${tool} is not available. Enable the Apple add-on on the Add-ons page (macOS only), then try again.` });
+    let resume;
+    try { resume = loadResume(getVaultDir()); } catch (error) { return sendJson(res, 409, { error: error.message }); }
+    const prefs = preferences();
+    const minScore = Number.isFinite(Number(req.body?.min_score)) ? Number(req.body.min_score) : 70;
+    const result = await withStoreAsync((store) => proposeBulkDrafts({
+      store, candidateEmail: resume.basics.email, minimumScore: prefs.minimum_score, minScore,
+      propose: (proposal) => agent.evaluateAndMaybeExecute({ tool: proposal.tool, arguments: proposal.arguments, requestedBy: 'owner', requestText: proposal.requestText, reasoningSummary: proposal.reasoning, correlationId: newId('corr'), actor: { type: 'user', id: 'user' } }),
+    }));
+    sendJson(res, 200, result);
   });
 
   router.post('/api/job-hunt/jobs/:id/send', async (req, res) => {

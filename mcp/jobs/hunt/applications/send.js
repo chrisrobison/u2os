@@ -22,12 +22,13 @@ export function idempotencyKey({ candidate, job, to, kind = 'application' }) {
 /** Reasons a send must not go ahead, from the ledger and the job (no side effects). */
 export function sendBlockers({ store, job, score, minimumScore, kind = 'application' }) {
   const reasons = [];
-  const sending = kind === 'application';
   if (!score) reasons.push('the job has not been scored');
   else if (score.degraded) reasons.push('the score is degraded (no model)');
   else if (score.score < minimumScore) reasons.push(`score ${score.score} is below the threshold ${minimumScore}`);
-  if (sending && ['applied', 'contacted', 'rejected', 'withdrawn', 'closed', 'skipped', 'interview'].includes(job.status)) reasons.push(`the job is already ${job.status}`);
-  for (const email of store.listEmails(job.id).filter((entry) => entry.kind === kind && BLOCKING.has(entry.status))) {
+  if (['applied', 'contacted', 'rejected', 'withdrawn', 'closed', 'skipped', 'interview'].includes(job.status)) reasons.push(`the job is already ${job.status}`);
+  // A draft that is already sitting in Mail also blocks another draft for the same job.
+  const blocking = kind === 'draft' ? new Set([...BLOCKING, 'drafted']) : BLOCKING;
+  for (const email of store.listEmails(job.id).filter((entry) => entry.kind === kind && blocking.has(entry.status))) {
     reasons.push(email.status === 'uncertain' ? `an earlier send to ${email.to} has an uncertain outcome: check Sent mail, then resolve it` : email.status === 'proposing' ? `an earlier attempt to email ${email.to} did not finish: check the approvals and Sent mail first` : `an email to ${email.to} is already ${email.status}`);
   }
   return reasons;
@@ -96,4 +97,26 @@ export function reconcileEmails({ store, lookup, followUpDays = 5, now = new Dat
     }
   }
   return changes;
+}
+
+/**
+ * Records a send the owner made outside U2OS (for example a draft sent by hand in Mail), so the job is not
+ * emailed twice: it takes the same idempotency key a gated send would, marks the job contacted and sets the
+ * follow-up date.
+ */
+export function recordManualSend({ store, job, candidateEmail, to, followUpDays = 5, now = new Date() }) {
+  const recipient = to ?? job.contactEmails[0];
+  if (!recipient) throw new Error('No recipient: pass the address the email was sent to');
+  const existing = store.listEmails(job.id).filter((entry) => entry.kind === 'application' && ['proposing', 'proposed', 'sent', 'uncertain'].includes(entry.status));
+  if (existing.some((entry) => entry.status === 'sent')) throw new Error('This job is already recorded as emailed');
+  const artifacts = store.getArtifacts(job.id);
+  let draft = null;
+  try { draft = artifacts.email_json ? JSON.parse(fs.readFileSync(artifacts.email_json.path, 'utf8')) : null; } catch { /* the record is still useful without the text */ }
+  const key = idempotencyKey({ candidate: candidateEmail, job, to: recipient });
+  const previous = store.findEmailByKey(key);
+  const record = { kind: 'application', to: recipient, subject: draft?.subject ?? '(sent outside U2OS)', body: draft?.text ?? '', attachments: draft?.attachments ?? [], status: 'sent', idempotencyKey: key, detail: { manual: true } };
+  const email = previous ? (store.updateEmail(previous.id, { status: 'sent', detail: { manual: true } }, now), previous) : store.addEmail(job.id, record, now);
+  markContacted({ store, job, emailId: email.id, followUpDays, now });
+  store.recordEvent(job.id, 'email_recorded_manual', { detail: { emailId: email.id, to: recipient } }, now);
+  return store.listEmails(job.id).find((entry) => entry.id === email.id);
 }

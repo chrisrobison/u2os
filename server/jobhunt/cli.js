@@ -16,7 +16,8 @@ import { loadFacts } from '../../mcp/jobs/hunt/candidate/facts.js';
 import { candidateDigest } from '../../mcp/jobs/hunt/candidate/profile.js';
 import { createJobLlm } from './llm.js';
 import { stageAttachment } from '../tools/email-attachments.js';
-import { proposeApplicationEmail, reconcileEmails } from '../../mcp/jobs/hunt/applications/send.js';
+import { extractEmails } from '../../mcp/jobs/hunt/jobs/parser.js';
+import { proposeApplicationEmail, reconcileEmails, recordManualSend } from '../../mcp/jobs/hunt/applications/send.js';
 import { withOfflineHome } from '../runtime/offline-home.js';
 
 export const USAGE = `Usage: npm run u2 -- job <command>
@@ -28,6 +29,8 @@ export const USAGE = `Usage: npm run u2 -- job <command>
   materials <job-id> [--force] [--no-pdf] [--cover-letter | --no-cover-letter]
   send <job-id> [--force]       propose the application email through the approval gate
   reconcile                     update jobs from the outcome of approved sends
+  mark <job-id> sent [--to <address>]   record an email you sent yourself (for example from Mail)
+  reparse                       re-extract contact emails from each job's original text
   list [--min-score <n>] [--limit <n>] [--json]
   show <job-id>
   status [--json]`;
@@ -141,6 +144,25 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
         out.log(`${job.company} - ${job.role ?? ''}: ${result.outcome.status === 'pending' ? 'waiting for your approval in U2OS (Approvals), action ' + result.outcome.id : result.outcome.status}`);
         out.log(`To: ${result.email.to}\nSubject: ${result.email.subject}\nAttachments: ${result.email.attachments.map((ref) => ref.split('/').pop()).join(', ')}`);
         return result.outcome.status === 'failed' || result.outcome.status === 'blocked' ? 1 : 0;
+      }
+      case 'mark': {
+        const { flags, positional } = parseFlags(rest, ['to']);
+        const job = store.getJob(positional[0]);
+        if (!job) { out.log(`Unknown job ${positional[0] ?? ''}`); return 1; }
+        if (positional[1] !== 'sent') { out.log('Usage: job mark <job-id> sent [--to <address>]'); return 1; }
+        const email = recordManualSend({ store, job, candidateEmail: loadResume(vaultDir).basics.email, to: flags.to, now });
+        out.log(`${job.company}: recorded as emailed to ${email.to}; follow-up after ${email.detail.followUpAfter}`);
+        return 0;
+      }
+      case 'reparse': {
+        let changed = 0;
+        for (const job of store.listJobs({ limit: 5000 })) {
+          const text = store.listSources(job.id).map((source) => source.rawText).join('\n');
+          const emails = extractEmails(text);
+          if (JSON.stringify(emails) !== JSON.stringify(job.contactEmails)) { store.setContactEmails(job.id, emails, now); changed += 1; out.log(`${job.company}: ${job.contactEmails.join(', ') || '-'} -> ${emails.join(', ') || '-'}`); }
+        }
+        out.log(`${changed} job(s) updated.`);
+        return 0;
       }
       case 'reconcile': {
         const changes = await (reconcileOverride ?? withLookup)((lookup) => reconcileEmails({ store, lookup, now }));

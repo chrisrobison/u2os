@@ -22,16 +22,28 @@ const OBFUSCATED_EMAIL = /\b([A-Z0-9._%+-]+)\s*(?:\[\s*at\s*\]|\(\s*at\s*\)|\{\s
 const clean = (value) => String(value).replace(/\s+/g, ' ').trim();
 const unique = (items) => [...new Set(items)];
 
+// Real top-level domains seen in job listings. An obfuscated address ("name at example dot com") is only
+// believed when it ends in one of these: ordinary prose such as "be at home. We" must not become an address.
+const OBFUSCATED_TLDS = new Set(['com', 'io', 'ai', 'co', 'org', 'net', 'dev', 'app', 'tech', 'xyz', 'so', 'cloud', 'edu', 'gov', 'me', 'us', 'uk', 'de', 'fr', 'nl', 'ca', 'eu', 'se', 'ch', 'jobs', 'careers', 'works', 'team', 'health', 'bio', 'sh', 'gg', 'inc', 'ly', 'fm', 'tv', 'example', 'test']);
+const FREE_PREFIX = /^(?:be|we|you|me|us|it|is|at|in|on|to|of|and|or|the|a|an|looking|based|located|remote|onsite|hybrid|email|mail|send|contact|reach|apply|join)$/i;
+
 export function extractEmails(text) {
   const found = [];
   for (const match of text.matchAll(EMAIL)) found.push(match[0]);
   for (const match of text.matchAll(OBFUSCATED_EMAIL)) {
     const domain = match[2].replace(/\s*(?:\[\s*dot\s*\]|\(\s*dot\s*\)|\s+dot\s+)\s*/gi, '.').replace(/\s+/g, '');
-    // "foo at example dot com" needs a plausible TLD; bare "at" prose does not.
-    if (/\.[a-z]{2,}$/i.test(domain) && match[1].length > 1 && match[1] !== 'looking' && match[1] !== 'based') found.push(`${match[1]}@${domain}`);
+    const tld = domain.split('.').pop().toLowerCase();
+    const explicit = /\[\s*at\s*\]|\(\s*at\s*\)|\{\s*at\s*\}/i.test(match[0]);
+    // Bracketed forms ([at], (at)) are deliberate obfuscation. A bare " at " is far more likely to be prose,
+    // so it must also use a spelled-out "dot" or a plausible mailbox name.
+    const deliberate = explicit || /\bdot\b/i.test(match[2]) || /[._+-]/.test(match[1]);
+    if (OBFUSCATED_TLDS.has(tld) && domain.includes('.') && deliberate && match[1].length > 1 && !FREE_PREFIX.test(match[1])) found.push(`${match[1]}@${domain}`);
   }
-  return unique(found.map((email) => email.replace(/[.,;:)]+$/, '').toLowerCase()).filter((email) => !/\.(png|jpe?g|gif|svg)$/.test(email)));
+  return unique(found.map((email) => email.replace(/[.,;:)]+$/, '').toLowerCase()).filter((email) => !/\.(png|jpe?g|gif|svg)$/.test(email) && OBFUSCATED_OK(email)));
 }
+
+// A plain (non-obfuscated) address must also have a plausible final label (letters only, 2-24 characters).
+const OBFUSCATED_OK = (email) => /\.[a-z]{2,24}$/.test(email);
 
 export function extractUrls(text, links = []) {
   const found = [...links.filter((link) => /^https?:/i.test(link))];

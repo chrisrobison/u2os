@@ -179,6 +179,11 @@ class Store {
     });
   }
 
+  /** Replaces a job's contact emails (a corrected parse of its original text). */
+  setContactEmails(jobId, emails, now = new Date()) {
+    this.db.prepare('UPDATE jobs SET contact_emails = ?, updated_at = ? WHERE id = ?').run(json(emails), now.toISOString(), jobId);
+  }
+
   getJob(id) { return rowToJob(this.db.prepare('SELECT * FROM jobs WHERE id = ?').get(id)); }
 
   listJobs({ status = null, company = null, limit = 500 } = {}) {
