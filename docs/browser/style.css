@@ -23,67 +23,67 @@
   --toc-width: 220px;
   --topbar-height: 52px;
 
-  --bg-page: #EEF1F2;
-  --bg-panel: #E4E9EA;
-  --bg-card: #FCFDFD;
-  --bg-code: #E4E9EA;
-  --border-color: #CBD3D5;
-  --border-strong: #AEB8BB;
+  --bg-page: #EDF0F6;
+  --bg-panel: #E2E7F0;
+  --bg-card: #FCFDFE;
+  --bg-code: #E2E7F0;
+  --border-color: #CBD3E1;
+  --border-strong: #AAB4C8;
 
-  --text-primary: #171B1E;
-  --text-secondary: #4B565C;
-  --text-tertiary: #7B8489;
+  --text-primary: #171B26;
+  --text-secondary: #4B5368;
+  --text-tertiary: #656D82;
 
-  --accent: #1E8F82;
-  --accent-soft: #DAF0EC;
+  --accent: #2F64D6;
+  --accent-soft: #E1EAFB;
   --danger: #A8402F;
   --danger-soft: #F5DED9;
 
-  --focus-ring: #1E8F82;
+  --focus-ring: #2F64D6;
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg-page: #0D1116;
-    --bg-panel: #12171D;
-    --bg-card: #171D24;
-    --bg-code: #1B222A;
-    --border-color: #2A333D;
-    --border-strong: #3A4550;
+    --bg-page: #141828;
+    --bg-panel: #1A1E30;
+    --bg-card: #1C2134;
+    --bg-code: #1F2438;
+    --border-color: #2C3248;
+    --border-strong: #3E4562;
 
-    --text-primary: #E7ECEF;
-    --text-secondary: #9FADB8;
-    --text-tertiary: #67747F;
+    --text-primary: #E8EBF4;
+    --text-secondary: #A3AAC2;
+    --text-tertiary: #7A819B;
 
-    --accent: #4BC2B3;
-    --accent-soft: #1D3A37;
+    --accent: #7BA4F7;
+    --accent-soft: #25325A;
     --danger: #D97C6B;
     --danger-soft: #3F241F;
 
-    --focus-ring: #4BC2B3;
+    --focus-ring: #7BA4F7;
     color-scheme: dark;
   }
 }
 
 :root[data-theme="dark"] {
-  --bg-page: #0D1116;
-  --bg-panel: #12171D;
-  --bg-card: #171D24;
-  --bg-code: #1B222A;
-  --border-color: #2A333D;
-  --border-strong: #3A4550;
+  --bg-page: #141828;
+  --bg-panel: #1A1E30;
+  --bg-card: #1C2134;
+  --bg-code: #1F2438;
+  --border-color: #2C3248;
+  --border-strong: #3E4562;
 
-  --text-primary: #E7ECEF;
-  --text-secondary: #9FADB8;
-  --text-tertiary: #67747F;
+  --text-primary: #E8EBF4;
+  --text-secondary: #A3AAC2;
+  --text-tertiary: #7A819B;
 
-  --accent: #4BC2B3;
-  --accent-soft: #1D3A37;
+  --accent: #7BA4F7;
+  --accent-soft: #25325A;
   --danger: #D97C6B;
   --danger-soft: #3F241F;
 
-  --focus-ring: #4BC2B3;
+  --focus-ring: #7BA4F7;
   color-scheme: dark;
 }
 
