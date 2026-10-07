@@ -26,6 +26,7 @@ const EMAIL_SYSTEM = `You write a short first email from a candidate to the pers
 Structure: one or two sentences saying you saw their post for the role and why this is an unusually strong fit; one short paragraph on the single most relevant experience or project; a closing line that the tailored resume is attached. Mention one detail that shows you read the listing.
 ${COMMON}
 Also choose "greetingName": the poster's first name ONLY if it appears in the listing text, otherwise "".
+The system appends the candidate's GitHub, LinkedIn and website links and their name below your body, and the resume is attached; asks for a link to those, or for the resume, are therefore already satisfied (met: true) and you must not paste the links yourself.
 APPLICATION INSTRUCTIONS: listings often say exactly how to apply (a required subject line, items to include, a question to answer). List every such ask in "requirements". For each, "met" is true only if you satisfied it in the body using the candidate's supplied facts (for example attaching the resume, answering the question from the sources, linking a real project from the sources). If the sources cannot honestly satisfy it (for example a personal story or a link that is not supplied), set "met" to false and do NOT invent, improvise or promise it in the body. If the listing prescribes the subject line, give it in "requiredSubject" using {name} for the candidate's name and {city} for their city, copying the listing's literal words; otherwise "".
 Reply with ONLY one JSON object: {"subject":"","requiredSubject":"","greetingName":"","body":"","requirements":[{"ask":"","met":true,"note":""}]}`;
 
@@ -61,8 +62,9 @@ export async function generateCoverLetter({ job, source, score, candidate, llm }
       if (paragraphs.length < 3 || paragraphs.length > 6) throw invalid('use three to five paragraphs');
       assertNoStockPhrases('the letter', body);
       assertSupported('the letter', body, corpus, jobCorpus);
-      const names = company.split(/\s*[\/&,|]\s*|\s+/).filter((part) => part.length >= 3);
-      if (!names.some((name) => body.toLowerCase().includes(name.toLowerCase()))) throw invalid(`the letter never mentions ${company}`);
+      // Any distinctive part of the company's name counts; a short name ("GC AI") must appear whole.
+      const parts = company.split(/\s*[\/&,|]\s*/).flatMap((part) => (part.length <= 8 ? [part] : part.split(/\s+/))).map((part) => part.trim()).filter((part) => part.length >= 2);
+      if (!parts.some((name) => new RegExp(`(?<![A-Za-z0-9])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9])`, 'i').test(body))) throw invalid(`the letter never mentions ${company}`);
       return { paragraphs };
     },
   });
@@ -130,6 +132,7 @@ export function assembleEmail({ draft, resume }) {
   const subject = draft.requiredSubject ? draft.requiredSubject.replaceAll('{name}', b.name).replaceAll('{city}', b.location?.city ?? '') : draft.subject;
   const unmet = (draft.requirements ?? []).filter((item) => !item.met);
   const github = b.profiles?.find((p) => p.network?.toLowerCase() === 'github')?.url;
-  const lines = [draft.greetingName ? `Hi ${draft.greetingName},` : 'Hi,', '', draft.body, '', [github && `GitHub: ${github}`, b.website && `Website: ${b.website}`].filter(Boolean).join('\n'), '', 'Best,', b.name];
+  const linkedin = b.profiles?.find((p) => p.network?.toLowerCase() === 'linkedin')?.url;
+  const lines = [draft.greetingName ? `Hi ${draft.greetingName},` : 'Hi,', '', draft.body, '', [github && `GitHub: ${github}`, linkedin && `LinkedIn: ${linkedin}`, b.website && `Website: ${b.website}`].filter(Boolean).join('\n'), '', 'Best,', b.name];
   return { subject, needsInput: unmet.map((item) => item.ask), requirements: draft.requirements ?? [], text: `${lines.join('\n').replace(/\n{3,}/g, '\n\n').trim()}\n` };
 }
