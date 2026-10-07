@@ -11,6 +11,9 @@ import { discover } from '../../mcp/jobs/hunt/discover.js';
 import { importResume, loadPreferences, loadResume } from '../../mcp/jobs/hunt/candidate/profile.js';
 import { fetchRepos, loadRepos, saveRepos } from '../../mcp/jobs/hunt/candidate/github.js';
 import { scoreJobs } from '../../mcp/jobs/hunt/score-run.js';
+import { generateMaterials } from '../../mcp/jobs/hunt/applications/materials.js';
+import { loadFacts } from '../../mcp/jobs/hunt/candidate/facts.js';
+import { candidateDigest } from '../../mcp/jobs/hunt/candidate/profile.js';
 import { createJobLlm } from './llm.js';
 
 export const USAGE = `Usage: npm run u2 -- job <command>
@@ -19,6 +22,7 @@ export const USAGE = `Usage: npm run u2 -- job <command>
   profile import <resume.json> | show
   github refresh [<username>]
   score [--limit <n>] [--rescore] [--company <text>] [--role <text>] [--no-model]
+  materials <job-id> [--force] [--no-pdf] [--cover-letter | --no-cover-letter]
   list [--min-score <n>] [--limit <n>] [--json]
   show <job-id>
   status [--json]`;
@@ -99,6 +103,24 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
         out.log(`Scored ${summary.scored} of ${summary.examined} (${summary.degraded} by rules). ${Object.entries(summary.byLabel).map(([label, n]) => `${label}: ${n}`).join(', ')}`);
         for (const failure of summary.errors) out.log(`Error: ${failure.company}: ${failure.error}`);
         return summary.errors.length ? 1 : 0;
+      }
+      case 'materials': {
+        const { flags, positional } = parseFlags(rest);
+        const job = store.getJob(positional[0]);
+        if (!job) { out.log(`Unknown job ${positional[0] ?? ''}`); return 1; }
+        const resume = loadResume(vaultDir);
+        const preferences = loadPreferences(vaultDir);
+        const llm = llmOverride ?? createJobLlm();
+        const candidate = { resume, preferences, facts: loadFacts(vaultDir), repos: loadRepos(vaultDir)?.repos ?? [], digest: candidateDigest(resume, preferences) };
+        const result = await generateMaterials({
+          store, vaultDir, job, candidate, llm, force: flags.force === true, pdf: flags['no-pdf'] !== true, now,
+          minimumScore: preferences.minimum_score, coverLetter: flags['cover-letter'] ? true : flags['no-cover-letter'] ? false : null,
+        });
+        out.log(`${result.reused ? 'Materials already exist (use --force to regenerate)' : 'Materials written'}: ${result.dir}`);
+        for (const [kind, artifact] of Object.entries(result.artifacts)) out.log(`  ${kind.padEnd(18)} ${artifact.path.split('/').pop()}`);
+        if (result.strategy) out.log(`Strategy: ${result.strategy.strategy} - ${result.strategy.reason}`);
+        for (const ask of result.needsInput ?? []) out.log(`NEEDS YOUR INPUT: the listing asks for "${ask}". Add what is true to job-hunt/facts.md, then rerun with --force. Nothing will be sent until then.`);
+        return 0;
       }
       case 'list': {
         const { flags } = parseFlags(rest, ['min-score', 'limit']);
