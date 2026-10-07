@@ -62,3 +62,13 @@ The policy engine looks up `policies.yaml[domain][operationKey]` where `operatio
 Every proposed tool execution writes an `agent_actions` row (even autonomous ones, for audit). Authorized work is then persisted in `action_queue` before the registered tool runs; numbered attempts live in `action_attempts`. Every state-changing tool publishes an event whose `metadata.provenance` is `tool:<name>`, and committed delivery transitions publish metadata-only `agent.action.queue_updated` events.
 
 An executing worker renews its lease while a provider call is in flight. The lease-renewal test waits for a persisted heartbeat and checks a second worker against a controlled clock just past the original expiry; it does not depend on a short wall-clock sleep under CI load. If a process or event loop cannot renew before expiry, the existing uncertain-outcome/idempotency rules still govern recovery rather than assuming the external action did not happen.
+
+## Email attachments
+
+`email.send` accepts an optional `attachments` list of **staged references**. It never accepts a file path, so a model or routine cannot attach (or exfiltrate) an arbitrary file.
+
+A file is staged by copying it into the vault outbox under its own SHA-256, `<vault>/outbox/<sha256>/<filename>`, which the owner or software acting for them does deliberately (`stageAttachment()` in `server/tools/email-attachments.js`; `u2 job materials` stages the tailored resume and cover letter). The reference is `outbox/<sha256>/<filename>`. It is part of the approved arguments, so the approval screen shows the file name and the start of the hash.
+
+At send time the tool re-reads the file and refuses, sending nothing, when it is not staged, is not a regular file (links are refused), lies outside the outbox, is larger than 10 MB, is not a document or image type (`pdf txt md rtf doc docx png jpg`), or no longer hashes to the reference. Limits are three files and 15 MB in total. The `email.sent` event and the action result record only each attachment's name, size, type and hash.
+
+Gmail sends a `multipart/mixed` message (UTF-8 text, RFC 2047 subject); SMTP (including IMAP accounts) uses the same verified files. Drafts do not take attachments.

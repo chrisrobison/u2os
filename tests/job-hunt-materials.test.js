@@ -207,3 +207,18 @@ test('materials: unmet application asks move the job to needs_input and are reme
   assert.equal(store.getJob(job.id).status, 'needs_input');
   assert.deepEqual((await generateMaterials({ store, vaultDir: vault, job: store.getJob(job.id), candidate: candidate(), llm: f.llm, pdf: false })).needsInput, ['a link to something real people use']);
 });
+
+test('materials: email attachments are staged references, not file paths', async (t) => {
+  const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'hunt-mat-'));
+  const { store, job } = seededStore();
+  const staged = [];
+  const stage = (vaultDir, file, { name }) => { staged.push({ file, name }); return { ref: `outbox/${'c'.repeat(64)}/${name}` }; };
+  const email = { subject: 's', requiredSubject: '', greetingName: '', body: EMAIL_BODY, requirements: [] };
+  const f = llmFor(goodResume(), { paragraphs: paragraphs(300) }, email);
+  try {
+    await generateMaterials({ store, vaultDir: vault, job, candidate: candidate(), llm: f.llm, stage });
+  } catch (error) { if (/Playwright|browser|Executable/i.test(error.message)) { t.skip('no browser'); return; } throw error; }
+  const sent = JSON.parse(fs.readFileSync(store.getArtifacts(job.id).email_json.path, 'utf8'));
+  assert.deepEqual(sent.attachments, [`outbox/${'c'.repeat(64)}/Pat_Example_Resume.pdf`, `outbox/${'c'.repeat(64)}/Pat_Example_Cover_Letter.pdf`]);
+  assert.ok(staged.every((entry) => path.isAbsolute(entry.file)));
+});

@@ -27,7 +27,7 @@ function uncertainOutcome(message) {
   return error;
 }
 
-function validateMessage({ to, subject, body, inReplyTo } = {}) {
+function validateMessage({ to, subject, body, inReplyTo, attachments } = {}) {
   const recipients = Array.isArray(to) ? to : [to];
   if (!recipients.length || recipients.length > 20 || !recipients.every(validAddress)) throw new Error('smtp: invalid recipients');
   if (typeof subject !== 'string' || subject.length > 1000 || /[\r\n]/.test(subject)) throw new Error('smtp: invalid subject');
@@ -35,13 +35,16 @@ function validateMessage({ to, subject, body, inReplyTo } = {}) {
   if (inReplyTo != null && (typeof inReplyTo !== 'string' || !/^<[A-Za-z0-9._@-]{1,300}>$/.test(inReplyTo))) {
     throw new Error('smtp: invalid In-Reply-To message id');
   }
-  return { recipients, subject, body, inReplyTo: inReplyTo || undefined };
+  if (attachments !== undefined && (!Array.isArray(attachments) || attachments.length > 3 || attachments.some((item) => !item || !Buffer.isBuffer(item.content) || !/^[A-Za-z0-9._ -]{1,100}$/.test(item.filename ?? '') || typeof item.contentType !== 'string' || /[\r\n]/.test(item.contentType)))) {
+    throw new Error('smtp: invalid attachments');
+  }
+  return { recipients, subject, body, inReplyTo: inReplyTo || undefined, attachments: attachments?.map(({ filename, contentType, content }) => ({ filename, contentType, content })) };
 }
 
 export async function sendEmail(message, { dataDir, instance, transportFactory = (config) => nodemailer.createTransport(config), db = getDb() } = {}) {
   let settings;
   try { settings = validateSettings(readEncryptedFile(instance?.vault_key, dataDir)); } catch { throw new Error('smtp: selected account is not configured'); }
-  const { recipients, subject, body, inReplyTo } = validateMessage(message);
+  const { recipients, subject, body, inReplyTo, attachments } = validateMessage(message);
   let transport;
   try {
     transport = transportFactory({
@@ -56,7 +59,7 @@ export async function sendEmail(message, { dataDir, instance, transportFactory =
   }
   let info;
   try {
-    info = await transport.sendMail({ from: settings.from, to: recipients, subject, text: body, inReplyTo });
+    info = await transport.sendMail({ from: settings.from, to: recipients, subject, text: body, inReplyTo, ...(attachments ? { attachments } : {}) });
     if (info.rejected?.length || !info.accepted?.length) throw new Error('rejected');
   } catch {
     // An SMTP timeout can occur after acceptance. Do not reveal provider

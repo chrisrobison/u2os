@@ -3,6 +3,8 @@ import { getProvider, getProviderForBinding } from '../integrations/provider-reg
 import * as mockEmailProvider from '../integrations/mock-email-provider.js';
 import { assertSmtpIdentity } from '../agent/account-binding.js';
 import { withObservedSender } from './email-sender.js';
+import { assertAttachmentRefs, describeAttachments, resolveAttachments } from './email-attachments.js';
+import { getVaultDir } from '../vault/vault-dir.js';
 
 const SENDER_DESCRIPTION = ' sender_address is a conservative single mailbox derived from the untrusted From header, not authenticated identity or Reply-To. Use it for recipient references only when non-null; otherwise ask the owner. Original from_addr is preserved. Threaded replies are not supported.';
 
@@ -95,11 +97,20 @@ export class EmailSendTool extends Tool {
         // content against that EXACT draft, unambiguously, rather than
         // guessing which past draft this "probably" came from.
         draftId: { type: 'string' },
+        // Staged attachment references (outbox/<sha256>/<filename>), never file
+        // paths. The content is re-hashed at send time: what was approved is
+        // what is sent (server/tools/email-attachments.js).
+        attachments: { type: 'array' },
       },
       required: ['to', 'subject', 'body'],
     };
   }
+  // Plan-time check of the attachment references' shape (no file is touched).
+  validateArguments(args) { if (args.attachments !== undefined) assertAttachmentRefs(args.attachments); }
+  get description() { return 'Send an email from the selected account. Optional attachments: 1-3 staged attachment references of the form outbox/<sha256>/<filename>, as given to you; never invent one or use a file path.'; }
   async execute(args, context) {
+    // Verify attachments first: a missing, changed or unstaged file means nothing is sent.
+    const resolved = args.attachments === undefined ? null : resolveAttachments(getVaultDir(), args.attachments);
     assertSmtpIdentity(context?.accountBinding);
     const provider = getProviderForBinding('email', context?.accountBinding);
     // A configured real mailbox must never silently turn an approved send
@@ -107,13 +118,16 @@ export class EmailSendTool extends Tool {
     if (context.accountBinding.providerId !== 'mock' && provider.id === mockEmailProvider.id) {
       throw new Error('email: configured real provider is not connected; no message was sent');
     }
-    const email = await provider.sendEmail(args, { smtpIdentity: context.accountBinding.smtpIdentity });
+    const message = resolved ? { ...args, attachments: resolved } : args;
+    const sent = await provider.sendEmail(message, { smtpIdentity: context.accountBinding.smtpIdentity });
+    const attachments = resolved ? describeAttachments(resolved) : undefined;
+    const email = attachments ? { ...sent, attachments } : sent;
     context.eventBus.publish({
       type: 'email.sent',
       source: provider.id,
       actor: context.actor,
       subject: { type: 'email', id: email.id },
-      data: { to: email.to_addr, subject: email.subject },
+      data: { to: email.to_addr, subject: email.subject, ...(attachments ? { attachments } : {}) },
       metadata: { correlationId: context.correlationId, provenance: 'tool:email.send' },
     });
     return email;
