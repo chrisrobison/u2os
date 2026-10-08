@@ -249,3 +249,35 @@ limits: { applications_per_day: 8, emails_per_day: 10, per_company_days: 30 }
 allow: { relocation: false, below_salary_minimum: false }
 blocklist: { companies: [], domains: [], keywords: [] }
 ```
+
+## Autopilot: finding and applying continuously
+
+```bash
+npm run u2 -- job autopilot setup [--autonomous]   # one-time wiring
+npm run u2 -- job autopilot on | off | live | dry-run | status
+```
+
+The autopilot is a loop inside the U2OS server. Every cycle (default five minutes) it runs, in this order and one cycle at a time: **discover** (the HN thread every cycle; HN's jobs feed and the remote boards every 30 minutes; company boards hourly), **score** the most promising new jobs (best-first, after the prefilter), **prepare** materials and form plans for jobs at or above your threshold, **review** each prepared job with the review agent, then **act** on the approved ones. Each step is isolated (a failing source or job never stops the others) and bounded per cycle (`per_cycle` in `autopilot.yaml`); nothing is reviewed twice for unchanged content and nothing is proposed twice for one approval. Jobs that need you (the listing asked for something your facts do not cover, an unanswered standard question, a CAPTCHA, a review that said no) are collected under **Needs you** on the Job hunt page instead of being retried.
+
+**Two switches, both yours, and the default is the safe one.** `job-hunt/autopilot.yaml` says whether the loop is `enabled` and whether it is `live`. The default is off, and `dry_run` does everything except send or submit: it records what it *would* do, once per approval, so you can watch it for a day before trusting it. The Job hunt page has the same switches (going live takes a deliberate second click), and shows what the last cycle did, what needs you, and, from your policy, whether each tool "runs without asking" or "waits for your approval".
+
+**Autonomy without opening everything up.** The loop does not call `email.send` or any form tool. It calls two narrow tools of the jobs tool server, `jobs.send_application` and `jobs.submit_application`, and their only argument is a job id: the recipient, subject, body, attachments, form link and answers all come from the job hunt's own records, never from the caller. Each tool refuses unless the review agent approved the job's *current* content (the approval is bound to a hash), re-runs the deterministic checks at that moment (limits and duplicates may have changed since the review), records its intent in the ledger before acting, never retries an uncertain outcome, and in dry-run mode only records. Because of that, making these two tools autonomous grants far less than making `email.send` autonomous would, and nothing a posting says can send a different email or apply somewhere else.
+
+`job autopilot setup` registers the tool server in `mcp.yaml` with only those two tools. Adding `--autonomous` also sets, in `policies.yaml`, `jobs: { send_application: autonomous, submit_application: autonomous }`, which is the one place where your consent to "act without asking" is written; every other action keeps its own policy, and `job autopilot revoke` puts the two back to needing approval. Restart U2OS after setup so the tools load. Emails go out through the Mail app on this Mac (the Apple add-on's sender), from `mail_sender` in `autopilot.yaml` or Mail's default account. Forms are filled in headless Chromium and never get past a visible CAPTCHA or login wall.
+
+`autopilot.yaml` (every key optional):
+
+```yaml
+enabled: true
+mode: dry_run              # live to act
+interval_seconds: 300
+sources: [hn, hn-jobs, remote, boards]
+boards_every_minutes: 60
+limits: { applications_per_day: 8, emails_per_day: 10, per_company_days: 30 }
+per_cycle: { score: 6, prepare: 3, act: 3 }
+allow: { relocation: false, below_salary_minimum: false }
+blocklist: { companies: [], domains: [], keywords: [] }
+mail_sender: ""
+```
+
+The owner API: `GET /api/job-hunt/autopilot` (status), `PUT /api/job-hunt/autopilot` with `{ "enabled": true, "mode": "live" }` (only those two keys can be changed this way), `POST /api/job-hunt/autopilot/run` (start a cycle now).
