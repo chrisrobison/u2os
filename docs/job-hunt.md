@@ -224,3 +224,28 @@ The applicant works in two steps so that what is reviewed is what is sent.
 A plan with any unresolved required field (or an unanswered standard question, even one the board does not flag as required) is `needs_input` and cannot be submitted. A CAPTCHA, a login wall or a page with no form is `manual_required`; U2OS never solves or evades a CAPTCHA. An invisible reCAPTCHA badge, which is a passive score the board computes on its own and not a challenge, is not treated as one. `job-hunt/answers.yaml` (a commented template is created for you) is where you answer the standard questions once.
 
 **Submit** (`job submit`). The form is re-read and must still ask the same questions as when it was planned; the uploaded files must still be the exact files the plan was made with; every required field must end up filled. Then intent is recorded **before** the click, the form is submitted, and the board's own confirmation is looked for. Outcomes: `submitted` (job becomes `applied`), `unconfirmed` (no confirmation appeared: job becomes `uncertain`), `failed` (the board showed validation errors: nothing was sent, the plan can be fixed), `manual_required`, `needs_input` (the form changed, a file changed, or a field would not fill). A crash or kill after the click leaves the application `submitting`, which is turned into `uncertain` after ten minutes and is **never retried**: check the company's confirmation email. One application exists per job and form link, so a second plan or submit for the same job is refused whatever the first one's outcome.
+
+## The review agent
+
+```bash
+npm run u2 -- job review <job-id> [--form]
+```
+
+Nothing is sent or submitted on its own authority. Every application, whether an email or a form, first goes to the **review agent**, and only an approval for the exact content in question lets it proceed.
+
+**Deterministic checks decide first, and no model can override them.** Any failure rejects the job without asking a model: a job scored by a model (not rules) at or above your `minimum_score`; not already contacted, applied, uncertain or skipped; no relocation or below-minimum-salary flag (unless `allow` in `autopilot.yaml` says so); not already emailed or applied (including a proposed or uncertain attempt); under the daily limits; no application to the same company inside `per_company_days`; not a staffing/agency, commission-only or unpaid posting, and not on your blocklist; for email, a plausible recipient that appears in the poster's own text (not just in stored data), a resume attached that still verifies by hash, and no unanswered input; for forms, a plan that is ready, with no blockers, whose model-written answers are all supported by your facts; and every sentence of the cover letter and email still supported by your facts (this catches a file someone edited afterwards).
+
+**Then a model gives a second opinion.** It reads the posting (as untrusted data inside delimiters it is told never to obey), your facts, the resume, the letter or email and, for forms, the planned answers, and returns approve or reject with concerns marked blocking or minor. It can only tighten: a rejection, a blocking concern, confidence below 0.6, a malformed answer or no model at all means *not approved*. A posting that tries to instruct the AI ("ignore previous instructions...") is recorded as a note, treated as data, and judged on its merits.
+
+**An approval is bound to its content.** It covers a hash of the posting text, the resume and letter files, the email and the plan; changing any of them invalidates it. Decisions, checks and the reviewer's notes are stored (`reviews` table) and appear in the job's history.
+
+`job-hunt/autopilot.yaml` holds the limits and allowances the checks use, with safe defaults (nothing is enabled, and the mode is `dry_run`):
+
+```yaml
+enabled: false
+mode: dry_run            # dry_run does everything except send or submit; live acts
+interval_seconds: 300
+limits: { applications_per_day: 8, emails_per_day: 10, per_company_days: 30 }
+allow: { relocation: false, below_salary_minimum: false }
+blocklist: { companies: [], domains: [], keywords: [] }
+```
