@@ -10,7 +10,7 @@ import { JOB_HUNT_DIR } from '../../profile.js';
 // store (ADR 0007); consequential applications are additionally recorded as
 // vault files by the existing ledger so the owner always has the record.
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 const MIGRATIONS = [
   `CREATE TABLE jobs (
@@ -67,6 +67,16 @@ const MIGRATIONS = [
      detail TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
    );
    CREATE INDEX emails_job ON emails(job_id, id);`,
+  `CREATE TABLE applications (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     job_id TEXT NOT NULL REFERENCES jobs(id),
+     kind TEXT NOT NULL DEFAULT 'form',
+     url TEXT NOT NULL, status TEXT NOT NULL,
+     plan TEXT NOT NULL, plan_hash TEXT NOT NULL,
+     idempotency_key TEXT NOT NULL UNIQUE,
+     result TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+   );
+   CREATE INDEX applications_job ON applications(job_id, id);`,
 ];
 
 export const JOB_STATUSES = ['discovered', 'scored', 'researching', 'qualified', 'materials_generated', 'applying', 'applied', 'contacted', 'needs_input', 'followup_due', 'interview', 'rejected', 'withdrawn', 'closed', 'skipped', 'error', 'uncertain'];
@@ -297,6 +307,33 @@ class Store {
       id: row.id, jobId: row.job_id, kind: row.kind, to: row.to_addr, subject: row.subject, body: row.body, attachments: parse(row.attachments, []),
       actionId: row.action_id, status: row.status, idempotencyKey: row.idempotency_key, detail: parse(row.detail, {}), createdAt: row.created_at, updatedAt: row.updated_at,
     }));
+  }
+
+  /** Records a form application plan. The idempotency key is one per job and application URL. */
+  addApplication(jobId, { kind = 'form', url, status, plan, idempotencyKey }, now = new Date()) {
+    try {
+      this.db.prepare('INSERT INTO applications (job_id, kind, url, status, plan, plan_hash, idempotency_key, result, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(jobId, kind, url, status, json(plan), plan.planHash, idempotencyKey, '{}', now.toISOString(), now.toISOString());
+    } catch (error) {
+      if (/UNIQUE/i.test(error.message)) { const duplicate = new Error('This application already exists'); duplicate.code = 'DUPLICATE_APPLICATION'; throw duplicate; }
+      throw error;
+    }
+    return this.listApplications(jobId).at(-1);
+  }
+
+  updateApplication(id, { status, plan, result }, now = new Date()) {
+    const row = this.db.prepare('SELECT * FROM applications WHERE id = ?').get(id);
+    if (!row) throw new Error(`Unknown application ${id}`);
+    const nextPlan = plan ?? parse(row.plan, {});
+    this.db.prepare('UPDATE applications SET status = ?, plan = ?, plan_hash = ?, result = ?, updated_at = ? WHERE id = ?')
+      .run(status ?? row.status, json(nextPlan), nextPlan.planHash ?? row.plan_hash, json({ ...parse(row.result, {}), ...(result ?? {}) }), now.toISOString(), id);
+  }
+
+  findApplicationByKey(key) { return this.listApplications().find((entry) => entry.idempotencyKey === key) ?? null; }
+
+  listApplications(jobId = null) {
+    const rows = jobId ? this.db.prepare('SELECT * FROM applications WHERE job_id = ? ORDER BY id').all(jobId) : this.db.prepare('SELECT * FROM applications ORDER BY id').all();
+    return rows.map((row) => ({ id: row.id, jobId: row.job_id, kind: row.kind, url: row.url, status: row.status, plan: parse(row.plan, {}), planHash: row.plan_hash, idempotencyKey: row.idempotency_key, result: parse(row.result, {}), createdAt: row.created_at, updatedAt: row.updated_at }));
   }
 
   counts() {
