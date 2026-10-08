@@ -575,6 +575,9 @@ export function getJobApplications(params = {}) { return request(`/api/job-appli
 // Job hunt pipeline (docs/job-hunt.md): ranked jobs, drafts and the owner's send.
 export function getJobHuntJobs(params = {}) { return request(`/api/job-hunt/jobs${qs(params)}`); }
 export function getJobHuntJob(id) { return request(`/api/job-hunt/jobs/${encodeURIComponent(id)}`); }
+export function getAutopilot() { return request('/api/job-hunt/autopilot'); }
+export function setAutopilot(body) { return request('/api/job-hunt/autopilot', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }
+export function runAutopilot() { return request('/api/job-hunt/autopilot/run', { method: 'POST' }); }
 export function markJobSent(id, body = {}) { return request(`/api/job-hunt/jobs/${encodeURIComponent(id)}/mark-sent`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }
 export function draftAllJobEmails(body = {}) { return request('/api/job-hunt/drafts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }
 export function sendJobEmail(id, body) { return request(`/api/job-hunt/jobs/${encodeURIComponent(id)}/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }

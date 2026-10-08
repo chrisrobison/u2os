@@ -60,6 +60,7 @@ import { registerAddonRoutes } from './api/routes/addons.js';
 import { registerOnboardingRoutes } from './api/routes/onboarding.js';
 import { registerJobApplicationRoutes } from './api/routes/job-applications.js';
 import { registerJobHuntRoutes, reconcileOutcomes } from './api/routes/job-hunt.js';
+import { Autopilot } from './jobhunt/autopilot.js';
 import { startVaultWatcher } from './vault/watcher.js';
 import { startJournal } from './vault/journal.js';
 import { registerRoutineRoutes } from './api/routes/routines.js';
@@ -287,7 +288,9 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
   registerAddonRoutes(router, { onChanged: async () => { await startMcpServers({ toolRegistry }); } });
   registerOnboardingRoutes(router);
   registerJobApplicationRoutes(router);
-  registerJobHuntRoutes(router, { agent, toolRegistry });
+  // The autonomous job hunter (docs/job-hunt.md): idle unless job-hunt/autopilot.yaml enables it, and a dry run unless it says live.
+  const autopilot = new Autopilot({ agent, toolRegistry, log: (message) => log.error('job-autopilot', message) });
+  registerJobHuntRoutes(router, { agent, toolRegistry, autopilot });
   // Approved sends update the job hunt ledger as soon as their outcome is recorded (docs/job-hunt.md).
   eventBus.subscribe('agent.action.*', () => { try { reconcileOutcomes(); } catch { /* the ledger is not set up, or busy: the page reconciles too */ } });
   registerRoutineRoutes(router, { eventBus, agent });
@@ -371,7 +374,7 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
   let backgroundStop = null;
   const stopBackgroundWorkers = () => {
     if (!backgroundStop) backgroundStop = Promise.allSettled([
-      stopActionQueue(), stopSyncScheduler(), triggerEngine.stopAll(), stopRoutineRunner(), packages.runtime.stop(), deviceRegistry.stopAll(),
+      Promise.resolve().then(() => autopilot.stop()), stopActionQueue(), stopSyncScheduler(), triggerEngine.stopAll(), stopRoutineRunner(), packages.runtime.stop(), deviceRegistry.stopAll(),
       Promise.resolve().then(() => mdnsHandle?.stop()),
       Promise.resolve().then(() => vaultWatcher?.stop()),
       Promise.resolve().then(() => stopJournal?.()),
@@ -394,6 +397,7 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
     startSyncScheduler({ db, eventBus, dataDir });
     actionQueueTimer = setInterval(runQueueTick, Number(process.env.U2OS_ACTION_QUEUE_TICK_MS) || 1_000);
     actionQueueTimer.unref?.();
+    autopilot.start();
     // Phase 6 / PROMPT.md §9: both trigger halves retain the normal policy gate.
     const triggerTickMs = Number(process.env.U2OS_TRIGGER_TICK_MS) || undefined;
     triggerEngine.startAll({ eventBus, agent, ...(triggerTickMs ? { tickMs: triggerTickMs } : {}) });

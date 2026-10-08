@@ -9,3 +9,7 @@ servers:
       list_applications: { read: true, classification: personal }
       apply: { classification: personal }
       skip_job: { classification: personal }
+      # Used by the autopilot (docs/job-hunt.md#autopilot-finding-and-applying-continuously): they take only a job id and act
+      # only on a job the review agent approved.
+      send_application: { classification: personal }
+      submit_application: { classification: personal }

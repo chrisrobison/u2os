@@ -66,7 +66,7 @@ async function jobs(t, profile = PROFILE()) {
 
 test('search matches titles and locations across Greenhouse and Lever, with questions', async (t) => {
   const { call, client } = await jobs(t);
-  assert.deepEqual((await client.listTools()).map((tool) => tool.name).sort(), ['apply', 'list_applications', 'search_jobs', 'skip_job']);
+  assert.deepEqual((await client.listTools()).map((tool) => tool.name).sort(), ['apply', 'list_applications', 'search_jobs', 'send_application', 'skip_job', 'submit_application']);
   const found = await call('search_jobs', { keywords: ['engineer'], locations: ['Portland'], remote: true });
   assert.deepEqual(found.results.map((job) => job.job_id).sort(), ['greenhouse:acme:101', 'greenhouse:acme:103', 'lever:globex:abc-1']);
   const senior = found.results.find((job) => job.job_id === 'greenhouse:acme:101');

@@ -10,7 +10,7 @@ import { JOB_HUNT_DIR } from '../../profile.js';
 // store (ADR 0007); consequential applications are additionally recorded as
 // vault files by the existing ledger so the owner always has the record.
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 const MIGRATIONS = [
   `CREATE TABLE jobs (
@@ -77,6 +77,15 @@ const MIGRATIONS = [
      result TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
    );
    CREATE INDEX applications_job ON applications(job_id, id);`,
+  `CREATE TABLE reviews (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     job_id TEXT NOT NULL REFERENCES jobs(id),
+     kind TEXT NOT NULL,
+     decision TEXT NOT NULL, content_hash TEXT NOT NULL,
+     checks TEXT NOT NULL, concerns TEXT NOT NULL DEFAULT '[]', notes TEXT NOT NULL DEFAULT '',
+     model TEXT, created_at TEXT NOT NULL
+   );
+   CREATE INDEX reviews_job ON reviews(job_id, kind, id);`,
 ];
 
 export const JOB_STATUSES = ['discovered', 'scored', 'researching', 'qualified', 'materials_generated', 'applying', 'applied', 'contacted', 'needs_input', 'followup_due', 'interview', 'rejected', 'withdrawn', 'closed', 'skipped', 'error', 'uncertain'];
@@ -334,6 +343,24 @@ class Store {
   listApplications(jobId = null) {
     const rows = jobId ? this.db.prepare('SELECT * FROM applications WHERE job_id = ? ORDER BY id').all(jobId) : this.db.prepare('SELECT * FROM applications ORDER BY id').all();
     return rows.map((row) => ({ id: row.id, jobId: row.job_id, kind: row.kind, url: row.url, status: row.status, plan: parse(row.plan, {}), planHash: row.plan_hash, idempotencyKey: row.idempotency_key, result: parse(row.result, {}), createdAt: row.created_at, updatedAt: row.updated_at }));
+  }
+
+  addReview(jobId, { kind, decision, contentHash, checks, concerns = [], notes = '', model = null }, now = new Date()) {
+    if (!['approve', 'reject'].includes(decision)) throw new Error('decision must be approve or reject');
+    this.db.prepare('INSERT INTO reviews (job_id, kind, decision, content_hash, checks, concerns, notes, model, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(jobId, kind, decision, contentHash, json(checks), json(concerns), notes, model, now.toISOString());
+    return this.latestReview(jobId, kind);
+  }
+
+  latestReview(jobId, kind) {
+    const row = this.db.prepare('SELECT * FROM reviews WHERE job_id = ? AND kind = ? ORDER BY id DESC LIMIT 1').get(jobId, kind);
+    return row ? { id: row.id, jobId: row.job_id, kind: row.kind, decision: row.decision, contentHash: row.content_hash, checks: parse(row.checks, []), concerns: parse(row.concerns, []), notes: row.notes, model: row.model, createdAt: row.created_at } : null;
+  }
+
+  /** The latest approval for this exact content, or null: any change to what is reviewed invalidates it. */
+  validApproval(jobId, kind, contentHash) {
+    const review = this.latestReview(jobId, kind);
+    return review && review.decision === 'approve' && review.contentHash === contentHash ? review : null;
   }
 
   counts() {

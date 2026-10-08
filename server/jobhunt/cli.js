@@ -17,6 +17,11 @@ import { loadFacts } from '../../mcp/jobs/hunt/candidate/facts.js';
 import { candidateDigest } from '../../mcp/jobs/hunt/candidate/profile.js';
 import { createJobLlm } from './llm.js';
 import { stageAttachment } from '../tools/email-attachments.js';
+import { setAutopilotSwitches } from '../../mcp/jobs/hunt/autopilot/config.js';
+import { revokeAutonomy, setupAutopilot } from '../../mcp/jobs/hunt/autopilot/setup.js';
+import { reviewJob } from '../../mcp/jobs/hunt/review/agent.js';
+import { loadAutopilotConfig } from '../../mcp/jobs/hunt/autopilot/config.js';
+import { resolveAttachments } from '../tools/email-attachments.js';
 import { planApplication, submitApplication } from '../../mcp/jobs/hunt/applications/form/submit.js';
 import { loadAnswers } from '../../mcp/jobs/hunt/candidate/answers.js';
 import { refilterStored } from '../../mcp/jobs/hunt/jobs/relevance.js';
@@ -40,6 +45,8 @@ export const USAGE = `Usage: npm run u2 -- job <command>
   reconcile                     update jobs from the outcome of approved sends
   plan <job-id> [--url <form-url>]      read the job's application form and plan every answer (submits nothing)
   submit <job-id> [--dry-run]           fill the planned form (and submit unless --dry-run)
+  review <job-id> [--form]              the review agent: approve or reject the email (or the form plan) for sending
+  autopilot setup [--autonomous] | on | off | live | dry-run | status   the autonomous loop (docs/job-hunt.md)
   mark <job-id> sent [--to <address>]   record an email you sent yourself (for example from Mail)
   reparse                       re-extract contact emails from each job's original text
   refilter [--dry-run]          skip stored, unscored board/aggregator jobs that fail the relevance filter
@@ -203,6 +210,43 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
         out.log(`${job.company}: ${result.status}${result.reason ? ` (${result.reason})` : ''}${result.errors ? `: ${result.errors.join('; ')}` : ''}${result.missing?.length ? ` missing: ${result.missing.join(', ')}` : ''}`);
         for (const file of result.screenshots ?? []) out.log(`  screenshot: ${file}`);
         return ['submitted', 'dry_run'].includes(result.status) ? 0 : 1;
+      }
+      case 'autopilot': {
+        const { flags, positional } = parseFlags(rest);
+        const action = positional[0] ?? 'status';
+        if (action === 'setup') {
+          const changes = setupAutopilot(vaultDir, { autonomous: flags.autonomous === true });
+          for (const line of changes) out.log(line);
+          if (!changes.length) out.log('Already set up.');
+          if (flags.autonomous !== true) out.log('The two tools still need your approval. Add --autonomous to let them run without asking.');
+          out.log('Restart U2OS (or press Restart tool servers on the Vault page) for the tools to load.');
+          return 0;
+        }
+        if (['on', 'off', 'live', 'dry-run'].includes(action)) {
+          const config = setAutopilotSwitches(vaultDir, action === 'on' ? { enabled: true } : action === 'off' ? { enabled: false } : action === 'live' ? { enabled: true, mode: 'live' } : { mode: 'dry_run' });
+          out.log(`Autopilot: ${config.enabled ? 'on' : 'off'}, ${config.mode === 'live' ? 'LIVE (it sends and submits)' : 'dry run (it sends nothing)'}`);
+          return 0;
+        }
+        if (action === 'revoke') { out.log(revokeAutonomy(vaultDir) ? 'The two tools now need your approval again.' : 'Nothing to revoke.'); return 0; }
+        const config = loadAutopilotConfig(vaultDir);
+        out.log(`Autopilot: ${config.enabled ? 'on' : 'off'}, ${config.mode === 'live' ? 'LIVE' : 'dry run'}; every ${config.interval_seconds}s; limits ${config.limits.applications_per_day} applications / ${config.limits.emails_per_day} emails a day`);
+        for (const [name, count] of Object.entries(store.counts())) out.log(`  ${name.padEnd(20)} ${count}`);
+        return 0;
+      }
+      case 'review': {
+        const { flags, positional } = parseFlags(rest);
+        const job = store.getJob(positional[0]);
+        if (!job) { out.log(`Unknown job ${positional[0] ?? ''}`); return 1; }
+        const resume = loadResume(vaultDir);
+        const preferences = loadPreferences(vaultDir);
+        const candidate = { resume, preferences, answers: loadAnswers(vaultDir), facts: loadFacts(vaultDir), repos: loadRepos(vaultDir)?.repos ?? [], digest: candidateDigest(resume, preferences) };
+        const kind = flags.form === true ? 'form' : 'email';
+        const result = await reviewJob({ store, job, kind, candidate, preferences, config: loadAutopilotConfig(vaultDir), llm: llmOverride ?? createJobLlm(), now, verifyAttachments: (refs) => resolveAttachments(vaultDir, refs) });
+        out.log(`${job.company} - ${job.role ?? ''} [${kind}]: ${result.decision.toUpperCase()}${result.model ? ` (${result.model})` : ''}`);
+        for (const entry of result.checks) if (!entry.pass || entry.informational) out.log(`  ${entry.pass ? 'note ' : 'FAIL '} ${entry.name}${entry.detail ? `: ${entry.detail}` : ''}`);
+        for (const concern of result.concerns) out.log(`  ${concern.severity === 'blocking' ? 'BLOCKING' : 'minor   '} ${concern.text}`);
+        if (result.notes) out.log(`  ${result.notes}`);
+        return result.decision === 'approve' ? 0 : 1;
       }
       case 'mark': {
         const { flags, positional } = parseFlags(rest, ['to']);

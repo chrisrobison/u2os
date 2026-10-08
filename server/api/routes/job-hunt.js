@@ -5,6 +5,7 @@ import { getAgentAction } from '../../policy/policy-engine.js';
 import { openStore, huntDbPath } from '../../../mcp/jobs/hunt/storage/store.js';
 import { jobView, listJobViews } from '../../../mcp/jobs/hunt/view.js';
 import { loadPreferences, loadResume } from '../../../mcp/jobs/hunt/candidate/profile.js';
+import { setAutopilotSwitches } from '../../../mcp/jobs/hunt/autopilot/config.js';
 import { proposeBulkDrafts } from '../../../mcp/jobs/hunt/applications/bulk.js';
 import { SEND_TOOLS, proposeApplicationEmail, reconcileEmails, recordManualSend } from '../../../mcp/jobs/hunt/applications/send.js';
 
@@ -29,7 +30,20 @@ export function reconcileOutcomes({ followUpDays = 5, now = new Date() } = {}) {
   return withStore((store) => reconcileEmails({ store, lookup: (id) => getAgentAction(id), followUpDays, now }));
 }
 
-export function registerJobHuntRoutes(router, { agent, toolRegistry }) {
+export function registerJobHuntRoutes(router, { agent, toolRegistry, autopilot = null }) {
+  if (autopilot) {
+    router.get('/api/job-hunt/autopilot', async (req, res) => sendJson(res, 200, autopilot.status()));
+    // Owner-only. Switching to live is the owner's decision, the same as editing autopilot.yaml.
+    router.put('/api/job-hunt/autopilot', async (req, res) => {
+      try { setAutopilotSwitches(getVaultDir(), { enabled: req.body?.enabled, mode: req.body?.mode }); } catch (error) { return sendJson(res, 400, { error: error.message }); }
+      sendJson(res, 200, autopilot.status());
+    });
+    router.post('/api/job-hunt/autopilot/run', async (req, res) => {
+      if (autopilot.running) return sendJson(res, 409, { error: 'A cycle is already running' });
+      autopilot.runCycle().catch(() => {});
+      sendJson(res, 202, { started: true });
+    });
+  }
   router.get('/api/job-hunt/jobs', async (req, res) => {
     reconcileOutcomes();
     const minScore = req.query?.min_score ? Number(req.query.min_score) : null;

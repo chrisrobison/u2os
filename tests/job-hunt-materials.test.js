@@ -15,6 +15,7 @@ import { openStore } from '../mcp/jobs/hunt/storage/store.js';
 import { scoreLabel } from '../mcp/jobs/hunt/jobs/scorer.js';
 import { RESUME, REPOS, PREFS, fakeLlm } from './fixtures/job-hunt-candidate.js';
 
+const NOW = new Date('2026-10-08T12:00:00Z');
 const FACTS = { text: '## D. Harris Tours\n- Grew the fleet from 2 to 14 vehicles; daily revenue up approximately 30%.\n## Conversant\n- Owned the iOS and Android MRAID SDK.\n## Project: U2OS\nPersonal agent platform with deterministic orchestration, MCP, and approval.', projects: ['U2OS'], voice: 'Plain and direct.' };
 const candidate = () => ({ resume: RESUME, preferences: PREFS, repos: REPOS, facts: FACTS, digest: candidateDigest(RESUME, PREFS) });
 const JOB = { id: 'job_abcdef123456', company: 'Tahoma AI', role: 'Founding Engineer', locations: ['Remote (US)'], remote: true, salary: null, technologies: ['TypeScript'], description: 'We build deterministic orchestration around LLM agents for operators.', contactEmails: ['careers@tahoma.io'], applicationUrls: [], companyUrl: 'https://tahoma.ai', status: 'scored' };
@@ -236,4 +237,13 @@ test('short company names must appear whole in the letter; the email footer carr
   const f = llmFor({ subject: 's', requiredSubject: '', greetingName: '', body: EMAIL_BODY, requirements: [] });
   await generateOutreachEmail({ job: JOB, source: SOURCE, score: SCORE, candidate: candidate(), llm: f.llm, recipient: 'x@y.example' });
   assert.match(f.calls[0].system, /GitHub, LinkedIn and website links/);
+});
+
+test('a person posting under their own name is greeted by first name; a company is a team', async () => {
+  const { assembleLetter } = await import('../mcp/jobs/hunt/applications/letters.js');
+  const greet = (company) => assembleLetter({ paragraphs: ['x'], resume: RESUME, job: { company }, date: NOW }).greeting;
+  assert.equal(greet('Dave Evans'), 'Dear Dave,');
+  assert.equal(greet('Tahoma AI'), 'Dear Tahoma AI team,');
+  assert.equal(greet('Shared Context Lab'), 'Dear Shared Context Lab team,');
+  assert.equal(greet('Pond AI (YC W24)'), 'Dear Pond AI team,');
 });

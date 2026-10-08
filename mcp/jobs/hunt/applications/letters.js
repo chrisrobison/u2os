@@ -118,7 +118,8 @@ export function assembleLetter({ paragraphs, resume, job, date = new Date() }) {
   return {
     name: b.name, contact: contact.join(' | '),
     date: date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
-    greeting: `Dear ${company} team,`, paragraphs, closing: 'Best regards,', signature: b.name,
+    // A poster hiring under their own name ("Dave Evans") is a person, not a team.
+    greeting: /^[A-Z][a-z]+(?: [A-Z][a-z]+){1,2}$/.test(company) && !/\b(labs?|systems?|software|technologies|group|studio|works|ai|inc|co)\b/i.test(company) ? `Dear ${company.split(' ')[0]},` : `Dear ${company} team,`, paragraphs, closing: 'Best regards,', signature: b.name,
   };
 }
 

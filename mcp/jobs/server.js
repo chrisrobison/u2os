@@ -10,6 +10,10 @@ import { endpoints, fetchBoard, fetchQuestions, matches, parseJobId } from './bo
 import { loadProfile } from './profile.js';
 import { FINAL, listRecords, readRecord, writeRecord } from './ledger.js';
 import { applyToJob } from './apply.js';
+import { sendApplication, submitApplicationForm, Refused } from './hunt/act.js';
+import { loadAutopilotConfig } from './hunt/autopilot/config.js';
+import { createMailSender } from '../../addons/apple/mail-send/server.js';
+import { resolveAttachments } from '../../server/tools/email-attachments.js';
 
 const vaultFlag = process.argv.indexOf('--vault');
 const vaultDir = path.resolve(vaultFlag >= 0 ? process.argv[vaultFlag + 1] : process.cwd());
@@ -56,9 +60,26 @@ function skipJob(args) {
   return { job_id: args.job_id, status: 'skipped' };
 }
 
+const JOB_ID = /^job_[0-9a-f]{16}$/;
+function jobIdArg(args) {
+  if (typeof args.job_id !== 'string' || !JOB_ID.test(args.job_id)) throw new Error('job_id must be a job id from the job hunt (job_ followed by 16 hex characters)');
+  return args.job_id;
+}
+const refusal = (error) => { if (error instanceof Refused) return { status: 'refused', code: error.code, message: error.message }; throw error; };
+
 serveStdio({
   name: 'u2os-jobs',
   tools: {
+    send_application: {
+      description: 'Send the reviewed and approved outreach email for one job (its recipient, subject, body and attached resume are fixed by the job hunt records, not by you). Refuses unless the review agent approved the current content and the safety checks still pass. In dry-run mode it only records what it would do.',
+      inputSchema: { type: 'object', properties: { job_id: { type: 'string', description: 'job_ followed by 16 hex characters' } }, required: ['job_id'] },
+      handler: (args) => sendApplication({ vaultDir, jobId: jobIdArg(args), mailer: createMailSender({ vaultDir, sender: loadAutopilotConfig(vaultDir).mail_sender }), resolveAttachments }).catch(refusal),
+    },
+    submit_application: {
+      description: 'Submit the reviewed and approved application form for one job, exactly as planned (its link and answers are fixed by the job hunt records, not by you). Refuses unless the review agent approved the current plan and the safety checks still pass. In dry-run mode it fills the form and does not submit.',
+      inputSchema: { type: 'object', properties: { job_id: { type: 'string', description: 'job_ followed by 16 hex characters' } }, required: ['job_id'] },
+      handler: (args) => submitApplicationForm({ vaultDir, jobId: jobIdArg(args) }).catch(refusal),
+    },
     search_jobs: {
       description: 'Search open jobs on the Greenhouse and Lever boards listed in the owner\'s job-hunt profile (or the boards given). Matches job titles against keywords and locations. Jobs already applied to, skipped or awaiting the owner are left out. Greenhouse results include the application questions.',
       inputSchema: {
