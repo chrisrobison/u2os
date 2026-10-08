@@ -2,3 +2,5 @@
 jobs:
   apply: confirm        # set to autonomous to apply without asking
   skip_job: autonomous
+  send_application: confirm    # `job autopilot setup --autonomous` sets these two to autonomous
+  submit_application: confirm
