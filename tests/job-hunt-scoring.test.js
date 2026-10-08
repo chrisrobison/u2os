@@ -219,3 +219,27 @@ test('profile import validates; preferences load with defaults; CLI scores end t
   assert.equal(await jobCli(['show', entries[0].job.id], out, { vaultDir: vault }), 0);
   assert.match(lines.join('\n'), /DEGRADED/);
 });
+
+test('prefilter: only plausible jobs reach the model; screened ones are rule-scored and can be rescored later', async () => {
+  const store = openStore(':memory:');
+  const add = (n, company, role, extra = {}) => store.upsertSighting({ source: 'hackernews', sourceKey: `hackernews:${n}#0`, company, role, locations: ['San Francisco'], remote: false, technologies: [], description: 'x', rawText: `${company} | ${role}`, applicationUrls: [], contactEmails: [], author: 'a', ...extra }).job;
+  const strong = add(1, 'Agentic', 'Founding Engineer', { description: 'LLM agents, MCP, orchestration, platform', technologies: ['Python'] });
+  const weak = add(2, 'Tinyco', 'Junior Support Engineer', { locations: ['Berlin'], description: 'answer tickets' });
+  const fake = fakeLlm(modelAnswer({ experience: 20, seniority: 15, technical: 10, projects: 5, company: 3, interest: 3 }));
+  const summary = await scoreJobs({ store, resume: RESUME, preferences: PREFS, repos: REPOS, llm: llmFor(fake), prefilter: 55 });
+  assert.equal(summary.screened, 1);
+  assert.equal(fake.calls.length, 1, 'only the plausible job used the model');
+  assert.equal(store.getScore(strong.id).degraded, false);
+  const screened = store.getScore(weak.id);
+  assert.equal(screened.degraded, true);
+  assert.ok(screened.concerns.some((concern) => /Screened out by rules \(\d+ < 55\)/.test(concern)));
+  assert.ok(screened.score < 80, 'a screened job can never qualify');
+  // The model scored job is left alone; only the rule-scored one goes back through the model, and prefilter 0 sends everything.
+  const again = await scoreJobs({ store, resume: RESUME, preferences: PREFS, repos: REPOS, llm: llmFor(fake), prefilter: 0, rescore: true, onlyDegraded: true });
+  assert.equal(again.examined, 1);
+  assert.equal(store.getScore(weak.id).degraded, false);
+  assert.equal(fake.calls.length, 2);
+  // Without a model there is nothing to save by screening: the rule score is used as before.
+  const none = await scoreJobs({ store: openStore(':memory:'), resume: RESUME, preferences: PREFS, repos: REPOS, llm: null, prefilter: 55 });
+  assert.equal(none.screened, 0);
+});
