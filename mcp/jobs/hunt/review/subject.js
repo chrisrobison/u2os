@@ -9,7 +9,12 @@ import { CONTACT_SOURCES } from '../sources/common.js';
 const hashOf = (value) => crypto.createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
 const read = (artifact) => { try { return artifact ? fs.readFileSync(artifact.path, 'utf8') : null; } catch { return null; } };
 
-export function loadSubject({ store, job, kind }) {
+/** The settings a decision depends on besides the content: changing any of them means the decision must be made again. */
+export function reviewPolicy({ preferences, config }) {
+  return { minimum: preferences?.minimum_score ?? null, allow: config?.allow ?? null, blocklist: config?.blocklist ?? null, limits: config?.limits ?? null };
+}
+
+export function loadSubject({ store, job, kind, policy = null }) {
   if (!['email', 'form'].includes(kind)) throw new Error('kind must be email or form');
   const artifacts = store.getArtifacts(job.id);
   const sources = store.listSources(job.id);
@@ -28,6 +33,8 @@ export function loadSubject({ store, job, kind }) {
   subject.contentHash = hashOf({
     kind, posting: hashOf(posting), resumePdf: artifacts.resume_pdf?.sha256 ?? null, coverPdf: artifacts.cover_letter_pdf?.sha256 ?? null,
     resumeText: hashOf(resumeText ?? ''), letterText: hashOf(letterText ?? ''), email: subject.email, planHash: application?.planHash ?? null,
+    // The score and the owner's settings are part of what was decided: a new score, threshold, allowance or blocklist re-opens the decision.
+    score: (() => { const score = store.getScore(job.id); return score ? { value: score.score, degraded: score.degraded } : null; })(), policy,
   });
   return subject;
 }
