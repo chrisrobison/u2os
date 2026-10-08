@@ -16,6 +16,7 @@ import { loadFacts } from '../../mcp/jobs/hunt/candidate/facts.js';
 import { candidateDigest } from '../../mcp/jobs/hunt/candidate/profile.js';
 import { createJobLlm } from './llm.js';
 import { stageAttachment } from '../tools/email-attachments.js';
+import { refilterStored } from '../../mcp/jobs/hunt/jobs/relevance.js';
 import { discoverSources, SOURCES } from '../../mcp/jobs/hunt/discover-sources.js';
 import { resolveBoards } from '../../mcp/jobs/hunt/sources/boards.js';
 import { extractEmails } from '../../mcp/jobs/hunt/jobs/parser.js';
@@ -35,6 +36,7 @@ export const USAGE = `Usage: npm run u2 -- job <command>
   reconcile                     update jobs from the outcome of approved sends
   mark <job-id> sent [--to <address>]   record an email you sent yourself (for example from Mail)
   reparse                       re-extract contact emails from each job's original text
+  refilter [--dry-run]          skip stored, unscored board/aggregator jobs that fail the relevance filter
   list [--min-score <n>] [--limit <n>] [--json]
   show <job-id>
   status [--json]`;
@@ -177,6 +179,12 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
         if (positional[1] !== 'sent') { out.log('Usage: job mark <job-id> sent [--to <address>]'); return 1; }
         const email = recordManualSend({ store, job, candidateEmail: loadResume(vaultDir).basics.email, to: flags.to, now });
         out.log(`${job.company}: recorded as emailed to ${email.to}; follow-up after ${email.detail.followUpAfter}`);
+        return 0;
+      }
+      case 'refilter': {
+        const { flags } = parseFlags(rest);
+        const result = refilterStored({ store, preferences: loadPreferences(vaultDir), dryRun: flags['dry-run'] === true, now });
+        out.log(`${result.examined} unscored board/aggregator jobs examined; ${result.changed} ${flags['dry-run'] ? 'would be' : ''} skipped${Object.keys(result.skipped).length ? ` [${Object.entries(result.skipped).map(([reason, n]) => `${n} ${reason}`).join('; ')}]` : ''}.`);
         return 0;
       }
       case 'reparse': {
