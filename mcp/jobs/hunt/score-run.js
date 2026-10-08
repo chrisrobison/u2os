@@ -7,6 +7,9 @@ export async function scoreJobs({ store, resume, preferences, repos = [], llm = 
   let jobs = store.listJobs({ company, limit: 5000 }).filter((job) => ['discovered', 'scored'].includes(job.status));
   if (!rescore) jobs = jobs.filter((job) => !store.getScore(job.id));
   if (role) jobs = jobs.filter((job) => String(job.role ?? '').toLowerCase().includes(role.toLowerCase()));
+  // Best first by the cheap rule estimate, so a limit (or an interrupted run) spends model calls on the most promising jobs.
+  const estimates = new Map(jobs.map((job) => [job.id, ruleBasedScore(job, { resume, preferences, repos })]));
+  jobs.sort((a, b) => estimates.get(b.id).score - estimates.get(a.id).score);
   if (limit) jobs = jobs.slice(0, limit);
   const summary = { examined: jobs.length, scored: 0, degraded: 0, errors: [], byLabel: {} };
   let next = 0;

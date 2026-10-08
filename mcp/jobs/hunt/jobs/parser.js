@@ -127,12 +127,18 @@ function looksLikeRole(segment) {
 }
 
 function splitRoles(segment) {
-  const stripped = segment.replace(/^(hiring|seeking|looking for|roles?|positions?|open roles?)\s*[:\-]\s*/i, '').replace(/^(?:for|hiring)\s+(?:\d+\s+)?/i, '');
-  const pieces = stripped.split(/\s*(?:\/|;|\s&\s|\s+and\s+|,\s+(?=[A-Z]))\s*/).map(clean).filter(Boolean);
+  const stripped = segment.replace(/^(hiring|seeking|looking for|roles?|positions?|open roles?)\s*[:\-]\s*/i, '');
+  const pieces = stripped.split(/\s*(?:\/|;|\s&\s|\s+and\s+)\s*/).map(clean).filter(Boolean);
   const roles = [];
   let previous = '';
   for (const piece of pieces) {
-    if (looksLikeRole(piece)) { roles.push(piece); previous = piece; continue; }
+    if (looksLikeRole(piece)) {
+      // "Staff Engineer, Platform" is one role with a team; "Backend Engineer, Frontend Engineer" is two.
+      const commas = piece.split(/,\s+(?=[A-Z])/).map(clean).filter(Boolean);
+      if (commas.length > 1 && commas.every(looksLikeRole)) roles.push(...commas); else roles.push(piece);
+      previous = piece;
+      continue;
+    }
     // "Backend / Frontend Engineer": a bare qualifier borrows the noun.
     const noun = previous.match(/\b(engineer|developer|designer|manager|scientist|architect)s?\b/i);
     if (noun && piece.split(' ').length <= 3 && /^[A-Za-z+#.\- ]+$/.test(piece)) roles.push(`${piece} ${noun[0]}`);
