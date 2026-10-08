@@ -189,3 +189,10 @@ test('u2 job discover hn and status work from the CLI', async () => {
   assert.ok(JSON.parse(lines[0]).counts.discovered >= 7);
   assert.equal(await jobCli(['bogus'], out, { vaultDir: vault }), 1);
 });
+
+test('a team after a comma is part of one role, while two real roles still split', () => {
+  const one = parseComment({ id: 2001, author: 'a', text: 'Acme | Staff Software Engineer, Agent Platform | San Francisco<p>Build things.' }, { threadId: 1, now: NOW }).jobs;
+  assert.deepEqual(one.map((job) => job.role), ['Staff Software Engineer, Agent Platform']);
+  const two = parseComment({ id: 2002, author: 'a', text: 'Acme | Backend Engineer, Frontend Engineer | Remote<p>Build things.' }, { threadId: 1, now: NOW }).jobs;
+  assert.deepEqual(two.map((job) => job.role), ['Backend Engineer', 'Frontend Engineer']);
+});

@@ -220,6 +220,20 @@ test('profile import validates; preferences load with defaults; CLI scores end t
   assert.match(lines.join('\n'), /DEGRADED/);
 });
 
+test('scoring goes best-first by the rule estimate, so a limit spends model calls on the most promising jobs', async () => {
+  const store = openStore(':memory:');
+  const add = (n, role, description, technologies = []) => store.upsertSighting({ source: 'hackernews', sourceKey: `hackernews:${n}#0`, company: `Co${n}`, role, locations: ['San Francisco'], remote: false, technologies, description, rawText: `Co${n} | ${role}`, applicationUrls: [], contactEmails: [], author: 'a' }).job;
+  const weak = add(1, 'Software Engineer', 'maintain forms');
+  const best = add(2, 'Founding Engineer', 'LLM agents, MCP, orchestration, platform, SDK', ['Python']);
+  const mid = add(3, 'Senior Engineer', 'platform APIs and infrastructure', ['Python']);
+  const seen = [];
+  const fake = { available: true, providers: ['m'], json: async ({ user }) => { seen.push(user.match(/Company: (Co\d)/)[1]); return { value: { dimensions: Object.fromEntries(['experience', 'seniority', 'technical', 'projects', 'company', 'interest'].map((key) => [key, { points: 1, max: 1, reason: 'r' }])), confidence: 0.5, concerns: [], narrative: 'staff-principal', projects: [] }, model: 'm' }; } };
+  await scoreJobs({ store, resume: RESUME, preferences: PREFS, repos: REPOS, llm: fake, prefilter: 0, limit: 2, concurrency: 1 });
+  assert.deepEqual(seen, ['Co2', 'Co3'], 'the most promising two, best first');
+  assert.equal(store.getScore(weak.id), null, 'the weakest was beyond the limit');
+  assert.ok(store.getScore(best.id) && store.getScore(mid.id));
+});
+
 test('prefilter: only plausible jobs reach the model; screened ones are rule-scored and can be rescored later', async () => {
   const store = openStore(':memory:');
   const add = (n, company, role, extra = {}) => store.upsertSighting({ source: 'hackernews', sourceKey: `hackernews:${n}#0`, company, role, locations: ['San Francisco'], remote: false, technologies: [], description: 'x', rawText: `${company} | ${role}`, applicationUrls: [], contactEmails: [], author: 'a', ...extra }).job;

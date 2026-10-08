@@ -11,6 +11,9 @@ export async function scoreJobs({ store, resume, preferences, repos = [], llm = 
   // Sends only jobs that currently have a rule-scored (degraded) score back through the model.
   if (onlyDegraded) jobs = jobs.filter((job) => store.getScore(job.id)?.degraded);
   if (role) jobs = jobs.filter((job) => String(job.role ?? '').toLowerCase().includes(role.toLowerCase()));
+  // Best first by the cheap rule estimate, so a limit (or an interrupted run) spends model calls on the most promising jobs.
+  const estimates = new Map(jobs.map((job) => [job.id, ruleBasedScore(job, { resume, preferences, repos })]));
+  jobs.sort((a, b) => estimates.get(b.id).score - estimates.get(a.id).score);
   if (limit) jobs = jobs.slice(0, limit);
   const summary = { examined: jobs.length, scored: 0, degraded: 0, screened: 0, errors: [], byLabel: {} };
   let next = 0;

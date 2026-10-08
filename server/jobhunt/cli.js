@@ -16,6 +16,8 @@ import { loadFacts } from '../../mcp/jobs/hunt/candidate/facts.js';
 import { candidateDigest } from '../../mcp/jobs/hunt/candidate/profile.js';
 import { createJobLlm } from './llm.js';
 import { stageAttachment } from '../tools/email-attachments.js';
+import { discoverSources, SOURCES } from '../../mcp/jobs/hunt/discover-sources.js';
+import { resolveBoards } from '../../mcp/jobs/hunt/sources/boards.js';
 import { extractEmails } from '../../mcp/jobs/hunt/jobs/parser.js';
 import { proposeApplicationEmail, reconcileEmails, recordManualSend } from '../../mcp/jobs/hunt/applications/send.js';
 import { withOfflineHome } from '../runtime/offline-home.js';
@@ -23,6 +25,8 @@ import { withOfflineHome } from '../runtime/offline-home.js';
 export const USAGE = `Usage: npm run u2 -- job <command>
 
   discover hn [--month "October 2026"] [--limit <n>] [--dry-run]
+  discover boards [--board greenhouse:acme ...] [--all] [--dry-run]   company boards (job-hunt/boards.yaml and boards seen in links)
+  discover hn-jobs | remote | all [--all] [--dry-run]            HN's jobs feed, RemoteOK + We Work Remotely, everything
   profile import <resume.json> | show
   github refresh [<username>]
   score [--limit <n>] [--rescore] [--company <text>] [--role <text>] [--prefilter <n>] [--screened] [--no-model]
@@ -59,7 +63,27 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
   try {
     switch (verb) {
       case 'discover': {
-        const { flags, positional } = parseFlags(rest, ['month', 'limit']);
+        const { flags, positional } = parseFlags(rest, ['month', 'limit', 'board']);
+        if (positional[0] && positional[0] !== 'hn') {
+          const preferences = loadPreferences(vaultDir);
+          const source = positional[0];
+          if (![...SOURCES, 'all'].includes(source)) { out.log(`Unknown source "${source}" (supported: ${SOURCES.join(', ')}, all)`); return 1; }
+          const only = flags.board ? String(flags.board).split(',') : [];
+          const summaries = await discoverSources({
+            store, source, preferences, all: flags.all === true, dryRun: flags['dry-run'] === true, fetch: fetchImpl, now,
+            month: flags.month ?? null, limit: flags.limit ? Number.parseInt(flags.limit, 10) : null,
+            boards: ['all', 'boards'].includes(source) ? resolveBoards({ vaultDir, store, only }) : [],
+          });
+          let failed = false;
+          for (const summary of summaries) {
+            if (summary.source === 'hn') { out.log(`hn: ${summary.thread?.title}: ${summary.listings} records; new ${summary.created}, merged ${summary.merged}, already seen ${summary.alreadyKnown}`); continue; }
+            const skipped = Object.entries(summary.skipped ?? {}).map(([reason, n]) => `${n} ${reason}`).join('; ');
+            out.log(`${summary.source}${summary.boards !== undefined ? ` (${summary.boards} boards)` : ''}: fetched ${summary.fetched}, kept ${summary.kept}${skipped ? ` [skipped: ${skipped}]` : ''}${summary.dryRun ? ' (dry run: nothing stored)' : `; new ${summary.created}, merged ${summary.merged}, already seen ${summary.alreadyKnown}`}`);
+            for (const entry of (summary.perBoard ?? []).slice(0, 8)) out.log(`    ${entry.board}: ${entry.kept} of ${entry.fetched}`);
+            for (const failure of summary.errors ?? []) { failed = true; out.log(`    error: ${failure.source}: ${failure.error}`); }
+          }
+          return failed && summaries.every((summary) => (summary.errors ?? []).length && !summary.fetched) ? 1 : 0;
+        }
         const summary = await discover({
           store, source: positional[0] || 'hn', fetch: fetchImpl, now, dryRun: flags['dry-run'] === true,
           month: flags.month ?? null, limit: flags.limit ? Number.parseInt(flags.limit, 10) : null,

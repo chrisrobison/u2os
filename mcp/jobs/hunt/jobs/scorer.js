@@ -32,8 +32,8 @@ const text = (value, max = 300) => String(value ?? '').replace(/\s+/g, ' ').trim
 
 // ---- deterministic dimensions -------------------------------------------------
 
-const NON_US = /\b(europe|eu|emea|uk|u\.k\.|united kingdom|germany|france|spain|portugal|netherlands|poland|india|brazil|latam|apac|australia|canada|israel|ireland|berlin|london|paris|amsterdam|lisbon|madrid|toronto|vancouver|singapore|tel aviv)\b/i;
-const US = /\b(us|usa|u\.s\.|united states|north america|americas?|us timezones?|ust?|pst|est|worldwide|global|anywhere)\b/i;
+export const NON_US = /\b(europe|eu|emea|uk|u\.k\.|united kingdom|germany|france|spain|portugal|netherlands|poland|india|brazil|latam|apac|australia|canada|israel|ireland|berlin|london|paris|amsterdam|lisbon|madrid|toronto|vancouver|singapore|tel aviv)\b/i;
+export const US = /\b(us|usa|u\.s\.|united states|north america|americas?|us timezones?|ust?|pst|est|worldwide|global|anywhere)\b/i;
 
 export function scoreLocation(job, preferences) {
   const places = (job.locations ?? []).join(' ; ').toLowerCase();
