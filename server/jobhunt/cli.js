@@ -10,7 +10,7 @@ import { openStore, huntDbPath } from '../../mcp/jobs/hunt/storage/store.js';
 import { discover } from '../../mcp/jobs/hunt/discover.js';
 import { importResume, loadPreferences, loadResume } from '../../mcp/jobs/hunt/candidate/profile.js';
 import { fetchRepos, loadRepos, saveRepos } from '../../mcp/jobs/hunt/candidate/github.js';
-import { scoreJobs } from '../../mcp/jobs/hunt/score-run.js';
+import { DEFAULT_PREFILTER, scoreJobs } from '../../mcp/jobs/hunt/score-run.js';
 import { generateMaterials } from '../../mcp/jobs/hunt/applications/materials.js';
 import { loadFacts } from '../../mcp/jobs/hunt/candidate/facts.js';
 import { candidateDigest } from '../../mcp/jobs/hunt/candidate/profile.js';
@@ -29,7 +29,7 @@ export const USAGE = `Usage: npm run u2 -- job <command>
   discover hn-jobs | remote | all [--all] [--dry-run]            HN's jobs feed, RemoteOK + We Work Remotely, everything
   profile import <resume.json> | show
   github refresh [<username>]
-  score [--limit <n>] [--rescore] [--company <text>] [--role <text>] [--no-model]
+  score [--limit <n>] [--rescore] [--company <text>] [--role <text>] [--prefilter <n>] [--screened] [--no-model]
   materials <job-id> [--force] [--no-pdf] [--cover-letter | --no-cover-letter]
   send <job-id> [--force]       propose the application email through the approval gate
   reconcile                     update jobs from the outcome of approved sends
@@ -121,7 +121,7 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
         return 0;
       }
       case 'score': {
-        const { flags } = parseFlags(rest, ['limit', 'company', 'role']);
+        const { flags } = parseFlags(rest, ['limit', 'company', 'role', 'prefilter']);
         const resume = loadResume(vaultDir);
         const preferences = loadPreferences(vaultDir);
         const llm = flags['no-model'] ? null : (llmOverride ?? createJobLlm());
@@ -130,9 +130,10 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
         const summary = await scoreJobs({
           store, resume, preferences, repos: loadRepos(vaultDir)?.repos ?? [], llm, now, rescore: flags.rescore === true,
           limit: flags.limit ? Number.parseInt(flags.limit, 10) : null, company: flags.company ?? null, role: flags.role ?? null,
+          prefilter: flags.prefilter !== undefined ? Number(flags.prefilter) : DEFAULT_PREFILTER, onlyDegraded: flags.screened === true,
           onProgress: ({ job, result, done, total }) => out.log(`[${done}/${total}] ${String(result.score).padStart(3)} ${result.label.padEnd(11)} ${job.company} - ${job.role ?? '(no role)'}${result.degraded ? ' (rules)' : ''}`),
         });
-        out.log(`Scored ${summary.scored} of ${summary.examined} (${summary.degraded} by rules). ${Object.entries(summary.byLabel).map(([label, n]) => `${label}: ${n}`).join(', ')}`);
+        out.log(`Scored ${summary.scored} of ${summary.examined} (${summary.screened} screened out by rules, ${summary.degraded} rule-scored in all). ${Object.entries(summary.byLabel).map(([label, n]) => `${label}: ${n}`).join(', ')}`);
         for (const failure of summary.errors) out.log(`Error: ${failure.company}: ${failure.error}`);
         return summary.errors.length ? 1 : 0;
       }
