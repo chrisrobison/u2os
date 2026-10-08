@@ -232,6 +232,7 @@ test('scoring goes best-first by the rule estimate, so a limit spends model call
   assert.deepEqual(seen, ['Co2', 'Co3'], 'the most promising two, best first');
   assert.equal(store.getScore(weak.id), null, 'the weakest was beyond the limit');
   assert.ok(store.getScore(best.id) && store.getScore(mid.id));
+});
 
 test('prefilter: only plausible jobs reach the model; screened ones are rule-scored and can be rescored later', async () => {
   const store = openStore(':memory:');
