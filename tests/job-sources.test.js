@@ -7,7 +7,7 @@ import { fetchBoard, parseBoard } from '../mcp/jobs/hunt/sources/ats.js';
 import { discoverHnJobs, pageSummary, parseTitle } from '../mcp/jobs/hunt/sources/hnjobs.js';
 import { discoverRemoteOk, discoverWeWorkRemotely, parseRss, REMOTEOK_CREDIT } from '../mcp/jobs/hunt/sources/remote.js';
 import { deriveBoards, loadBoardConfig, resolveBoards } from '../mcp/jobs/hunt/sources/boards.js';
-import { skipReason } from '../mcp/jobs/hunt/jobs/relevance.js';
+import { refilterStored, skipReason } from '../mcp/jobs/hunt/jobs/relevance.js';
 import { discoverBoards, discoverSources } from '../mcp/jobs/hunt/discover-sources.js';
 import { openStore } from '../mcp/jobs/hunt/storage/store.js';
 import { discover } from '../mcp/jobs/hunt/discover.js';
@@ -178,4 +178,29 @@ test('CLI: "all" labels the HN thread line correctly', async () => {
   assert.equal(await jobCli(['discover', 'all', '--board', 'greenhouse:acme'], { log: (line) => lines.push(line) }, { vaultDir: vault, fetch: both, now: NOW }), 0);
   assert.match(lines.join('\n'), /^hn: Ask HN: Who is hiring\? \(October 2026\): \d+ records; new \d+/m);
   assert.doesNotMatch(lines.join('\n'), /undefined|\[object Object\]/);
+});
+
+test('relevance: hardware and GTM roles are out unless the title says software; refilter cleans stored jobs', () => {
+  const base = { locations: ['San Francisco'], remote: false };
+  for (const role of ['Staff Mechanical Engineer', 'Principal Mechanisms Engineer, Optical', 'Senior Staff Structural Analyst - Spacecraft Engineering', 'Lead Hardware Design Engineer', 'Staff Electronics Engineer - Avionics']) {
+    assert.equal(skipReason({ ...base, role }, PREFS), 'hardware or non-software engineering', role);
+  }
+  for (const role of ['Founding GTM Operator', 'Founding Technical GTM Lead', 'Head of GTM, AI Inference']) assert.equal(skipReason({ ...base, role }, PREFS), 'not an engineering role', role);
+  for (const role of ['Embedded Software Engineer', 'Staff Firmware Engineer', 'Senior Hardware-in-the-loop Software Engineer', 'Autonomy Software Integration Engineer', 'Founding Engineer', 'Growth Engineer', 'Staff Software Engineer - Integrated Network Strategy']) assert.equal(skipReason({ ...base, role }, PREFS), null, role);
+
+  const store = openStore(':memory:');
+  const add = (n, source, role) => store.upsertSighting({ source, sourceKey: `${source}:${n}`, company: `Co${n}`, role, locations: ['San Francisco'], remote: false, rawText: role, applicationUrls: [], contactEmails: [], author: null }).job;
+  const hardware = add(1, 'greenhouse', 'Staff Mechanical Engineer');
+  const keep = add(2, 'greenhouse', 'Staff Software Engineer');
+  const thread = add(3, 'hackernews', 'Staff Mechanical Engineer');
+  const scored = add(4, 'lever', 'Principal Optical Engineer');
+  store.saveScore(scored.id, { score: 20, confidence: 0.5, label: 'skip', dimensions: {}, reasons: [], concerns: [], recommendedNarrative: 'staff-principal', projects: [], flags: [], degraded: false });
+  const dry = refilterStored({ store, preferences: PREFS, dryRun: true });
+  assert.deepEqual([dry.examined, dry.changed], [2, 1]);
+  assert.equal(store.getJob(hardware.id).status, 'discovered', 'a dry run changes nothing');
+  const real = refilterStored({ store, preferences: PREFS, now: NOW });
+  assert.equal(real.skipped['hardware or non-software engineering'], 1);
+  assert.equal(store.getJob(hardware.id).status, 'skipped');
+  assert.ok(store.listEvents(hardware.id).some((event) => event.type === 'status' && event.detail.by === 'refilter'));
+  for (const job of [keep, thread, scored]) assert.notEqual(store.getJob(job.id).status, 'skipped');
 });
