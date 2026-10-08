@@ -4,6 +4,9 @@ import { decodeEntities, htmlToText } from '../jobs/text.js';
 // Shared by every discovery source: polite, bounded HTTP, and one builder for
 // the normalized "sighting" the store takes. All fetched text is untrusted data.
 
+// Sources whose text is written to invite contact. Board descriptions are not: their addresses are boilerplate.
+export const CONTACT_SOURCES = new Set(['hackernews', 'hnjobs', 'remoteok', 'weworkremotely']);
+
 export const USER_AGENT = 'u2os-job-hunter (+https://github.com/chrisrobison/u2os)';
 const MAX_BYTES = 40 * 1024 * 1024; // a large Lever board with full descriptions is tens of MB
 
@@ -41,7 +44,7 @@ const unique = (items) => [...new Set(items.filter(Boolean))];
  * supply are extracted from the text with the same deterministic extractors
  * the HN parser uses.
  */
-export function buildSighting({ source, sourceKey, company, role, text, locations = [], remote, salary, applicationUrl, companyUrl = null, sourceUrl = null, postedAt = null, author = null, sourceThread = null, contactEmails = null, extra = {} }) {
+export function buildSighting({ source, sourceKey, company, role, text, locations = [], remote, salary, applicationUrl, companyUrl = null, sourceUrl = null, postedAt = null, author = null, sourceThread = null, contactEmails: givenContacts = null, extra = {} }) {
   const body = String(text ?? '').trim();
   const urls = extractUrls(body);
   const classified = classifyUrls(urls, company);
@@ -54,7 +57,7 @@ export function buildSighting({ source, sourceKey, company, role, text, location
     remote: remote ?? extractRemote(body, headline),
     salary: salary ?? extractSalary(body), equity: extractEquity(body), visa: extractVisa(body),
     technologies: extractTechnologies(`${role ?? ''}\n${body}`),
-    description: body.slice(0, 20_000), contactEmails: contactEmails ?? extractEmails(body),
+    description: body.slice(0, 20_000), contactEmails: givenContacts ?? extractEmails(body),
     applicationUrls, companyUrl: companyUrl ?? classified.companyUrl,
     rawText: body.slice(0, 40_000), sourceUrl, postedAt, discoveredAt: new Date().toISOString(), parseQuality: 'high',
     ...extra,

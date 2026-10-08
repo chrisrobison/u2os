@@ -19,6 +19,7 @@ import { stageAttachment } from '../tools/email-attachments.js';
 import { refilterStored } from '../../mcp/jobs/hunt/jobs/relevance.js';
 import { discoverSources, SOURCES } from '../../mcp/jobs/hunt/discover-sources.js';
 import { resolveBoards } from '../../mcp/jobs/hunt/sources/boards.js';
+import { CONTACT_SOURCES } from '../../mcp/jobs/hunt/sources/common.js';
 import { extractEmails } from '../../mcp/jobs/hunt/jobs/parser.js';
 import { proposeApplicationEmail, reconcileEmails, recordManualSend } from '../../mcp/jobs/hunt/applications/send.js';
 import { withOfflineHome } from '../runtime/offline-home.js';
@@ -190,7 +191,7 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
       case 'reparse': {
         let changed = 0;
         for (const job of store.listJobs({ limit: 5000 })) {
-          const text = store.listSources(job.id).map((source) => source.rawText).join('\n');
+          const text = store.listSources(job.id).filter((source) => CONTACT_SOURCES.has(source.source)).map((source) => source.rawText).join('\n');
           const emails = extractEmails(text);
           if (JSON.stringify(emails) !== JSON.stringify(job.contactEmails)) { store.setContactEmails(job.id, emails, now); changed += 1; out.log(`${job.company}: ${job.contactEmails.join(', ') || '-'} -> ${emails.join(', ') || '-'}`); }
         }

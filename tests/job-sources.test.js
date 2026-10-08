@@ -204,3 +204,28 @@ test('relevance: hardware and GTM roles are out unless the title says software; 
   assert.ok(store.listEvents(hardware.id).some((event) => event.type === 'status' && event.detail.by === 'refilter'));
   for (const job of [keep, thread, scored]) assert.notEqual(store.getJob(job.id).status, 'skipped');
 });
+
+test('board descriptions yield no contact emails, so boilerplate addresses never make a board job look emailable', async () => {
+  const noisy = { ...JSON.parse(JSON.stringify((await import('./fixtures/job-sources.js')).GREENHOUSE)) };
+  noisy.jobs[0].content = noisy.jobs[0].content.replace('Remote-friendly', 'Contact hr@acme.example for accommodations. Remote-friendly');
+  const fetchImpl = async (url) => ({ ok: true, status: 200, text: async () => JSON.stringify(noisy) });
+  const [job] = await fetchBoard('greenhouse:acme', { fetch: fetchImpl });
+  assert.match(job.description, /hr@acme\.example/, 'the text still says it');
+  assert.deepEqual(job.contactEmails, []);
+  // Aggregators that invite contact still do.
+  const { sightings } = await discoverHnJobs({ fetch: sourcesFetch() });
+  assert.deepEqual(sightings.find((entry) => entry.company.startsWith('Quill')).contactEmails, ['founders@quill.example']);
+});
+
+test('CLI reparse ignores board text but keeps what the poster invited', async () => {
+  const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'hunt-reparse-'));
+  fs.mkdirSync(path.join(vault, 'job-hunt'), { recursive: true });
+  const store = openStore((await import('../mcp/jobs/hunt/storage/store.js')).huntDbPath(vault));
+  const board = store.upsertSighting({ source: 'greenhouse', sourceKey: 'greenhouse:acme:1', company: 'Acme', role: 'Engineer', rawText: 'Contact hr@acme.example for accommodations', applicationUrls: ['https://job-boards.greenhouse.io/acme/jobs/1'], contactEmails: ['hr@acme.example'], author: null }).job;
+  store.upsertSighting({ source: 'hackernews', sourceKey: 'hackernews:5#0', company: 'Acme', role: 'Engineer', rawText: 'Acme | Engineer. Email jobs@acme.example', applicationUrls: ['https://job-boards.greenhouse.io/acme/jobs/1'], contactEmails: ['hr@acme.example', 'jobs@acme.example'], author: 'a' });
+  store.close();
+  const lines = [];
+  assert.equal(await jobCli(['reparse'], { log: (line) => lines.push(line) }, { vaultDir: vault, now: NOW }), 0);
+  const after = openStore((await import('../mcp/jobs/hunt/storage/store.js')).huntDbPath(vault));
+  assert.deepEqual(after.getJob(board.id).contactEmails, ['jobs@acme.example']);
+});
