@@ -1,5 +1,9 @@
 import { buildSighting, getJson, plain, salaryRange } from './common.js';
 
+// Board descriptions carry boilerplate addresses (accommodations, privacy, HR) that are not invitations to
+// apply, so no contact emails are taken from them: a board job is applied to through its form.
+const NO_CONTACTS = { contactEmails: [] };
+
 // Company job boards on the three common applicant-tracking systems. Each
 // publishes its open jobs as a public JSON API intended for exactly this.
 // A board is named `kind:slug`, e.g. greenhouse:anthropic, lever:palantir,
@@ -27,7 +31,7 @@ function greenhouse(slug, job) {
     text, locations: [job.location?.name, ...(job.offices ?? []).map((office) => office.name)].filter(Boolean),
     salary: range ? salaryRange(Number(range.min_cents) / 100, Number(range.max_cents) / 100, range.currency_type) : undefined,
     applicationUrl: job.absolute_url, sourceUrl: job.absolute_url, postedAt: job.first_published || job.updated_at || null,
-    extra: { sourceThread: slug },
+    extra: { sourceThread: slug }, ...NO_CONTACTS,
   });
 }
 
@@ -41,7 +45,7 @@ function lever(slug, job) {
     remote: job.workplaceType === 'remote' ? true : job.workplaceType === 'onsite' ? false : undefined,
     salary: range ? salaryRange(range.min, range.max, range.currency) : undefined,
     applicationUrl: job.applyUrl || job.hostedUrl, sourceUrl: job.hostedUrl, postedAt: job.createdAt ? new Date(Number(job.createdAt)).toISOString() : null,
-    extra: { sourceThread: slug },
+    extra: { sourceThread: slug }, ...NO_CONTACTS,
   });
 }
 
@@ -53,7 +57,7 @@ function ashby(slug, job) {
     text: body, locations: [job.location, ...(job.secondaryLocations ?? []).map((entry) => entry.location)].filter(Boolean),
     remote: job.isRemote === true || job.workplaceType === 'Remote' ? true : job.workplaceType === 'OnSite' ? false : undefined,
     applicationUrl: job.applyUrl || job.jobUrl, sourceUrl: job.jobUrl, postedAt: job.publishedAt || null,
-    extra: { sourceThread: slug },
+    extra: { sourceThread: slug }, ...NO_CONTACTS,
   });
 }
 
