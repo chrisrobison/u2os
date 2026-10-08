@@ -5,6 +5,7 @@
 //
 // The hunt store lives in the owner's vault (job-hunt/state/hunt.sqlite), not
 // in U2OS_HOME, so these commands do not need the server stopped.
+import path from 'node:path';
 import { getVaultDir } from '../vault/vault-dir.js';
 import { openStore, huntDbPath } from '../../mcp/jobs/hunt/storage/store.js';
 import { discover } from '../../mcp/jobs/hunt/discover.js';
@@ -16,6 +17,8 @@ import { loadFacts } from '../../mcp/jobs/hunt/candidate/facts.js';
 import { candidateDigest } from '../../mcp/jobs/hunt/candidate/profile.js';
 import { createJobLlm } from './llm.js';
 import { stageAttachment } from '../tools/email-attachments.js';
+import { planApplication, submitApplication } from '../../mcp/jobs/hunt/applications/form/submit.js';
+import { loadAnswers } from '../../mcp/jobs/hunt/candidate/answers.js';
 import { refilterStored } from '../../mcp/jobs/hunt/jobs/relevance.js';
 import { discoverSources, SOURCES } from '../../mcp/jobs/hunt/discover-sources.js';
 import { resolveBoards } from '../../mcp/jobs/hunt/sources/boards.js';
@@ -35,6 +38,8 @@ export const USAGE = `Usage: npm run u2 -- job <command>
   materials <job-id> [--force] [--no-pdf] [--cover-letter | --no-cover-letter]
   send <job-id> [--force]       propose the application email through the approval gate
   reconcile                     update jobs from the outcome of approved sends
+  plan <job-id> [--url <form-url>]      read the job's application form and plan every answer (submits nothing)
+  submit <job-id> [--dry-run]           fill the planned form (and submit unless --dry-run)
   mark <job-id> sent [--to <address>]   record an email you sent yourself (for example from Mail)
   reparse                       re-extract contact emails from each job's original text
   refilter [--dry-run]          skip stored, unscored board/aggregator jobs that fail the relevance filter
@@ -172,6 +177,32 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
         out.log(`${job.company} - ${job.role ?? ''}: ${result.outcome.status === 'pending' ? 'waiting for your approval in U2OS (Approvals), action ' + result.outcome.id : result.outcome.status}`);
         out.log(`To: ${result.email.to}\nSubject: ${result.email.subject}\nAttachments: ${result.email.attachments.map((ref) => ref.split('/').pop()).join(', ')}`);
         return result.outcome.status === 'failed' || result.outcome.status === 'blocked' ? 1 : 0;
+      }
+      case 'plan': {
+        const { flags, positional } = parseFlags(rest, ['url']);
+        const job = store.getJob(positional[0]);
+        if (!job) { out.log(`Unknown job ${positional[0] ?? ''}`); return 1; }
+        const resume = loadResume(vaultDir);
+        const preferences = loadPreferences(vaultDir);
+        const candidate = { resume, preferences, answers: loadAnswers(vaultDir), facts: loadFacts(vaultDir), repos: loadRepos(vaultDir)?.repos ?? [], digest: candidateDigest(resume, preferences) };
+        const application = await planApplication({ store, job, candidate, llm: llmOverride ?? createJobLlm(), url: flags.url ?? null, now });
+        const { plan } = application;
+        out.log(`${job.company} - ${job.role ?? ''}: plan ${application.status}  (${plan.fields.length} fields, ${plan.unresolved.length} unresolved)  ${application.url}`);
+        for (const field of plan.fields) out.log(`  ${field.origin.padEnd(12)} ${String(field.label).slice(0, 48).padEnd(48)} ${field.file ? `[${field.file} file]` : String(field.value).replace(/\s+/g, ' ').slice(0, 60)}`);
+        for (const entry of plan.unresolved) out.log(`  ${entry.required ? 'NEEDS' : 'optional'}      ${String(entry.label).slice(0, 48).padEnd(48)} ${entry.reason}`);
+        for (const blocker of plan.blockers) out.log(`  BLOCKED: ${blocker}`);
+        return application.status === 'planned' ? 0 : 1;
+      }
+      case 'submit': {
+        const { flags, positional } = parseFlags(rest);
+        const job = store.getJob(positional[0]);
+        if (!job) { out.log(`Unknown job ${positional[0] ?? ''}`); return 1; }
+        const artifacts = store.getArtifacts(job.id);
+        const files = { ...(artifacts.resume_pdf ? { resume: { path: artifacts.resume_pdf.path } } : {}), ...(artifacts.cover_letter_pdf ? { cover_letter: { path: artifacts.cover_letter_pdf.path } } : {}) };
+        const { result, application } = await submitApplication({ store, job, files, submit: flags['dry-run'] !== true, screenshotDir: path.join(vaultDir, 'job-hunt', 'state', 'screens', job.id), now });
+        out.log(`${job.company}: ${result.status}${result.reason ? ` (${result.reason})` : ''}${result.errors ? `: ${result.errors.join('; ')}` : ''}${result.missing?.length ? ` missing: ${result.missing.join(', ')}` : ''}`);
+        for (const file of result.screenshots ?? []) out.log(`  screenshot: ${file}`);
+        return ['submitted', 'dry_run'].includes(result.status) ? 0 : 1;
       }
       case 'mark': {
         const { flags, positional } = parseFlags(rest, ['to']);

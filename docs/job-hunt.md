@@ -196,3 +196,31 @@ With `derive: true` (the default) every board linked from a listing you have alr
 **Attribution.** RemoteOK's terms require crediting and linking back to the listing; every RemoteOK record keeps its credit and its link. LinkedIn and Indeed are not sources: their terms forbid automated applications.
 
 **Scoring a big batch.** `job score --limit N` ranks every pending job by the rule estimate and sends the most promising N to the model first, after the prefilter drops hopeless ones, so a run can be stopped any time with the best candidates already done. A failing source or board is reported and never stops the others. Listings from boards have no contact email, so their approach is the application form (not yet automated); the Job hunt page shows them with their apply link.
+
+## Applying through forms
+
+```bash
+npm run u2 -- job plan <job-id> [--url <form-url>]   # read the form (read-only) and plan every answer
+npm run u2 -- job submit <job-id> [--dry-run]        # fill the planned form; submit unless --dry-run
+```
+
+The applicant works in two steps so that what is reviewed is what is sent.
+
+**Plan** (`job plan`, nothing is submitted). A headless browser opens the application link and reads the form, including boards that render no `<form>` tag (Ashby) and Yes/No questions built from buttons. Every field then gets a value or an explicit reason it has none:
+
+| Field | Value comes from |
+|---|---|
+| name, email, phone, location, LinkedIn, GitHub, website, current company | your `resume.json` |
+| resume and cover letter uploads | the tailored PDFs from `job materials` (pinned by SHA-256) |
+| "desired work location" | your location |
+| work authorization, sponsorship, relocation, in-office, 18+, salary expectation, start date | **only** `job-hunt/answers.yaml` |
+| "how did you hear about us" | where the job was found (Hacker News, RemoteOK, the company's site, ...) |
+| gender, race, veteran, disability, orientation, pronouns | *decline to self-identify* when the form offers it |
+| privacy / data-processing consent boxes | accepted by default (`accept_privacy_notices`) |
+| "I certify the above is true" attestations | **refused** unless you set `accept_truthfulness_attestations: true` |
+| open questions ("Why do you want to work here?") | drafted by the model from your approved facts only, through the same claim guard as letters; an answer the facts cannot support is left unresolved, never improvised |
+| salary history, SSN, date of birth, citizenship, criminal history, clearance, references | **never** filled: unresolved |
+
+A plan with any unresolved required field (or an unanswered standard question, even one the board does not flag as required) is `needs_input` and cannot be submitted. A CAPTCHA, a login wall or a page with no form is `manual_required`; U2OS never solves or evades a CAPTCHA. An invisible reCAPTCHA badge, which is a passive score the board computes on its own and not a challenge, is not treated as one. `job-hunt/answers.yaml` (a commented template is created for you) is where you answer the standard questions once.
+
+**Submit** (`job submit`). The form is re-read and must still ask the same questions as when it was planned; the uploaded files must still be the exact files the plan was made with; every required field must end up filled. Then intent is recorded **before** the click, the form is submitted, and the board's own confirmation is looked for. Outcomes: `submitted` (job becomes `applied`), `unconfirmed` (no confirmation appeared: job becomes `uncertain`), `failed` (the board showed validation errors: nothing was sent, the plan can be fixed), `manual_required`, `needs_input` (the form changed, a file changed, or a field would not fill). A crash or kill after the click leaves the application `submitting`, which is turned into `uncertain` after ten minutes and is **never retried**: check the company's confirmation email. One application exists per job and form link, so a second plan or submit for the same job is refused whatever the first one's outcome.
