@@ -1,4 +1,5 @@
 import { buildCorpus, unsupportedClaims } from '../applications/guard.js';
+import { extractEmails } from '../jobs/parser.js';
 import { candidateCorpus } from '../applications/resume-generator.js';
 
 // The review's deterministic checks. Each is a hard rule: a failure rejects
@@ -7,7 +8,8 @@ import { candidateCorpus } from '../applications/resume-generator.js';
 // keys: code, outside the LLM.
 
 const ACTED = new Set(['contacted', 'applied', 'interview', 'rejected', 'withdrawn', 'closed', 'skipped', 'uncertain', 'error']);
-const STAFFING = /\b(our client|on behalf of (our|a) client|staffing|recruit(ing|ment) (agency|firm)|c2c|corp[- ]to[- ]corp|w-?2 only|1099 only|commission[- ]only|unpaid|equity[- ]only|training fee|pay (a|the) fee|work from home and earn|multi[- ]level)\b/i;
+const STAFFING = /\b(our client|on behalf of (our|a) client|staffing|recruit(ing|ment) (agency|firm)|c2c|corp[- ]to[- ]corp|w-?2 only|1099 only|commission[- ]only|unpaid|training fee|pay (a|the) fee|work from home and earn|multi[- ]level)\b/i;
+const EQUITY_ONLY = /\bequity[- ]only\b/i;
 const INJECTION = /ignore (all |any )?(previous|prior|above) instructions|disregard (the )?(above|previous)|you are (now )?an? (ai|assistant|language model)|system prompt|as an ai\b|if you are an ai|include the (word|phrase)/i;
 const BAD_DOMAINS = /(^|\.)(example|test|invalid|localhost)$|^(example\.(com|org|net))$/i;
 
@@ -43,6 +45,8 @@ export function runChecks({ store, job, subject, score, preferences, config, can
   const text = `${subject.posting}\n${job.company}`.toLowerCase();
   const staffing = subject.posting.match(STAFFING);
   out.push(check('not_staffing_spam_or_unpaid', !staffing, staffing ? `the posting says "${staffing[0]}"` : ''));
+  const equityOnly = subject.posting.match(EQUITY_ONLY);
+  out.push(check('not_equity_only_unless_allowed', !equityOnly || config.allow.equity_only, equityOnly ? 'the posting says it is equity-only (unpaid until funded); allow.equity_only in autopilot.yaml lets it through' : ''));
   const blocked = config.blocklist.companies.some((name) => company.includes(name)) || config.blocklist.keywords.some((word) => text.includes(word));
   out.push(check('not_on_blocklist', !blocked, blocked ? 'matches your blocklist' : ''));
   const injected = subject.posting.match(INJECTION);
@@ -56,7 +60,7 @@ export function runChecks({ store, job, subject, score, preferences, config, can
       out.push(check('email_needs_no_input', !email.needsInput.length, email.needsInput.join('; ')));
       const domain = String(email.to).split('@')[1] ?? '';
       out.push(check('recipient_plausible', /^[^\s@]+@[^\s@]+\.[a-z]{2,24}$/i.test(email.to) && !BAD_DOMAINS.test(domain) && !config.blocklist.domains.some((d) => domain.toLowerCase().endsWith(d)), email.to));
-      out.push(check('recipient_was_invited', subject.invitingText.toLowerCase().includes(String(email.to).toLowerCase()), 'the address must appear in the poster\'s own text (not only in stored data)'));
+      out.push(check('recipient_was_invited', extractEmails(subject.invitingText).includes(String(email.to).toLowerCase()), 'the address must appear in the poster\'s own text, written out or obfuscated (not only in stored data)'));
       out.push(check('has_attachments', email.attachments.length > 0, email.attachments.length ? '' : 'no resume attached'));
       if (verifyAttachments && email.attachments.length) {
         let verified = true; let detail = '';

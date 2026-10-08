@@ -65,6 +65,7 @@ const FAILS = [
   ['no_relocation_unless_allowed', { score: { flags: ['relocation_required'] } }],
   ['salary_not_below_minimum_unless_allowed', { score: { flags: ['salary_below_threshold'] } }],
   ['not_staffing_spam_or_unpaid', { posting: `${POSTING}\nWe are hiring on behalf of our client. C2C only.` }],
+  ['not_equity_only_unless_allowed', { posting: `${POSTING}\nEquity-only pre-seed; salary after the seed round.` }],
   ['email_needs_no_input', { email: { needsInput: ['a link to something you built'] } }],
   ['recipient_plausible', { contact: 'someone@example.com', posting: `Tahoma AI | Founding Engineer. Email someone@example.com` }],
   ['recipient_plausible', { contact: 'founder@acme.example', posting: `Tahoma AI | Founding Engineer. Email founder@acme.example` }],
@@ -186,4 +187,15 @@ test('autopilot.yaml loads with safe defaults and validates strictly', () => {
     write(bad);
     assert.throws(() => loadAutopilotConfig(dir), /autopilot\.yaml/, bad);
   }
+});
+
+test('an obfuscated address in the poster\'s text counts as invited, and equity-only can be allowed explicitly', async () => {
+  const obfuscated = world({ posting: 'Tahoma AI | Founding Engineer | Remote (US)\nInterested? Email founder [at] tahoma.io - these go straight to me.' });
+  const ok = await review(obfuscated, llmReturning(approve()));
+  assert.equal(ok.decision, 'approve', JSON.stringify(ok.failed));
+  const equity = world({ posting: `${POSTING}\nEquity-only pre-seed.` });
+  const allowed = await review(equity, llmReturning(approve()), { config: { ...CONFIG, allow: { ...CONFIG.allow, equity_only: true } } });
+  assert.equal(allowed.decision, 'approve');
+  const stranger = world({ posting: 'Tahoma AI | Founding Engineer | Remote (US)\nApply on our site.', contact: 'stranger@tahoma.io' });
+  assert.ok((await review(stranger, llmReturning(approve()))).failed.some((entry) => entry.name === 'recipient_was_invited'));
 });

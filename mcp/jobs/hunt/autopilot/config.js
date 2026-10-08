@@ -19,6 +19,7 @@ import { JOB_HUNT_DIR } from '../../profile.js';
 //   allow:
 //     relocation: false            # jobs flagged relocation_required
 //     below_salary_minimum: false
+//     equity_only: false           # postings that are unpaid until funded
 //   blocklist:
 //     companies: []
 //     domains: []
@@ -30,7 +31,7 @@ export const DEFAULTS = Object.freeze({
   enabled: false, mode: 'dry_run', interval_seconds: 300,
   limits: { applications_per_day: 8, emails_per_day: 10, per_company_days: 30 },
   sources: ['hn', 'hn-jobs', 'remote', 'boards'], boards_every_minutes: 60,
-  allow: { relocation: false, below_salary_minimum: false },
+  allow: { relocation: false, below_salary_minimum: false, equity_only: false },
   blocklist: { companies: [], domains: [], keywords: [] },
   per_cycle: { score: 6, prepare: 3, act: 3 }, mail_sender: '',
 });
