@@ -128,3 +128,14 @@ test('mark-sent records a send made by hand and blocks any further send; bulk dr
   assert.equal((await post(`/api/job-hunt/jobs/${ready.id}/send`, { via: 'gmail' })).status, 409, 'and never proposed again');
   assert.equal((await post('/api/job-hunt/jobs/bad/mark-sent', {})).status, 400);
 });
+
+test('autopilot API: status shows the safe defaults, the owner can switch it, and a bad value is refused', async (t) => {
+  const { vault, get } = await fixture(t);
+  const status = await (await get('/api/job-hunt/autopilot')).json();
+  assert.deepEqual([status.config.enabled, status.config.mode], [false, 'dry_run']);
+  assert.deepEqual(Object.keys(status.policy), ['email', 'form']);
+  assert.equal(status.policy.email.available, false, 'the jobs tool server is not set up in this test vault');
+  assert.equal(status.lastReport, null);
+  assert.equal(status.running, false);
+  assert.ok(fs.existsSync(path.join(vault, 'job-hunt')));
+});

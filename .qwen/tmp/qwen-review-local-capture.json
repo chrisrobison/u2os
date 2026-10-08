@@ -1,0 +1,118 @@
+{
+  "target": "local",
+  "diffPath": ".qwen/tmp/qwen-review-local-diff.txt",
+  "diffPathAbsolute": "/Users/cdr/Projects/u2/.qwen/tmp/qwen-review-local-diff.txt",
+  "diffLines": 970,
+  "diffChars": 18131,
+  "srcDiffLines": 0,
+  "testDiffLines": 0,
+  "docsDiffLines": 958,
+  "generatedDiffLines": 12,
+  "wrapperSignal": true,
+  "chunks": [
+    {
+      "id": 1,
+      "startLine": 1,
+      "endLine": 12,
+      "lines": 12,
+      "chars": 342,
+      "maxLineChars": 50,
+      "oversized": false,
+      "files": [
+        { "path": "package-lock.json", "newStart": 13, "newEnd": 18 }
+      ]
+    },
+    {
+      "id": 2,
+      "startLine": 13,
+      "endLine": 410,
+      "lines": 398,
+      "chars": 8107,
+      "maxLineChars": 288,
+      "oversized": false,
+      "files": [
+        { "path": "docs/subscription-agents.md", "newStart": 1, "newEnd": 392 }
+      ]
+    },
+    {
+      "id": 3,
+      "startLine": 411,
+      "endLine": 806,
+      "lines": 396,
+      "chars": 6637,
+      "maxLineChars": 125,
+      "oversized": false,
+      "files": [
+        { "path": "docs/subscription-agents.md", "newStart": 393, "newEnd": 788 }
+      ]
+    },
+    {
+      "id": 4,
+      "startLine": 807,
+      "endLine": 970,
+      "lines": 164,
+      "chars": 3045,
+      "maxLineChars": 149,
+      "oversized": false,
+      "files": [
+        { "path": "docs/subscription-agents.md", "newStart": 789, "newEnd": 952 }
+      ]
+    }
+  ],
+  "files": [
+    {
+      "path": "package-lock.json",
+      "kind": "generated",
+      "hunks": [
+        { "newStart": 13, "newEnd": 18 }
+      ],
+      "addedLines": 0,
+      "removedLines": 1,
+      "changedLines": 1,
+      "preLines": 0,
+      "fileLines": 0,
+      "rewriteRatio": 0,
+      "heavy": false,
+      "binary": false
+    },
+    {
+      "path": "docs/subscription-agents.md",
+      "kind": "docs",
+      "hunks": [
+        { "newStart": 1, "newEnd": 952 }
+      ],
+      "addedLines": 952,
+      "removedLines": 0,
+      "changedLines": 952,
+      "preLines": 0,
+      "fileLines": 0,
+      "rewriteRatio": 0,
+      "heavy": false,
+      "binary": false
+    }
+  ],
+  "selection": {
+    "schemaVersion": "qwen.review-selection/v1",
+    "sourceArtifactSha256": "b01469a4391338ea74d3e9bdb272270d4efec89165c20e7ceb1b33f66696181f",
+    "selectionSha256": "b6ec99ada503153b836afece3ba71017b9b757a67433353a13a2e6ce632afabd"
+  },
+  "budget": {
+    "inlineAngles": 5,
+    "candidateFloor": 2,
+    "sweep": true,
+    "specialistCap": 0,
+    "verifyShard": 8,
+    "agentToolBudget": 36,
+    "reverseAuditRounds": 10
+  },
+  "deadlineSeconds": 28800,
+  "deadlineSource": "default",
+  "untrackedFiles": [
+    "docs/subscription-agents.md"
+  ],
+  "skippedFiles": [],
+  "cachePath": ".qwen/review-cache/local.json",
+  "cacheCandidatePath": ".qwen/tmp/qwen-review-local-cache-candidate.json",
+  "cacheCandidateStateId": "a6f0cfa44e93fceb679c68bc3de0e34476353c5c9a4de2cbbc45a03f6bab5c92",
+  "effort": "medium"
+}

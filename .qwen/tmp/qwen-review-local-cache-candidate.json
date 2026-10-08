@@ -1,0 +1,12 @@
+{
+  "v": 1,
+  "target": "local",
+  "headSha": "6a7c2d261e8f7e0f6584a087aa5729d4a3059300",
+  "files": {
+    "package-lock.json": "100644:4541b19332ff9a411d2661498206ef3b6d0c1f7e:diff=unspecified,binary=unspecified,text=unspecified",
+    "docs/subscription-agents.md": "100644:de75c068c25a0569236c49d8bf9da61704ccee8c:diff=unspecified,binary=unspecified,text=unspecified"
+  },
+  "stateId": "a6f0cfa44e93fceb679c68bc3de0e34476353c5c9a4de2cbbc45a03f6bab5c92",
+  "lastModelId": "kimi-k2.7-code@33569a06",
+  "untracked": true
+}

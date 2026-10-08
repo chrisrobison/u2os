@@ -20,6 +20,8 @@ export class U2JobHunt extends HTMLElement {
     this._filter = 'ready';
     this._notice = null;
     this._busy = false;
+    this._autopilot = null;
+    this._confirmLive = false;
     this._onClick = this._onClick.bind(this);
     this._onEvent = (event) => { if (/^agent\.action\./.test(event.detail?.type || '')) this._load(); };
   }
@@ -27,18 +29,23 @@ export class U2JobHunt extends HTMLElement {
   connectedCallback() {
     this.addEventListener('click', this._onClick);
     window.addEventListener('u2-event', this._onEvent);
+    // The autopilot works in the background, so keep the page current.
+    this._poll = setInterval(() => { if (!this._busy) this._load(); }, 20_000);
     this._load();
   }
 
   disconnectedCallback() {
     this.removeEventListener('click', this._onClick);
     window.removeEventListener('u2-event', this._onEvent);
+    clearInterval(this._poll);
   }
 
   async _load() {
     if (!this._data) this.innerHTML = '<div class="empty-state">Loading jobs...</div>';
     try {
-      this._data = await api.getJobHuntJobs({ min_score: 60, limit: 150 });
+      const [data, autopilot] = await Promise.all([api.getJobHuntJobs({ min_score: 60, limit: 150 }), api.getAutopilot().catch(() => null)]);
+      this._data = data;
+      this._autopilot = autopilot;
       this._render();
     } catch (err) {
       this.innerHTML = `<div class="load-error">Couldn't load the job hunt: ${escapeHtml(err.message)}</div>`;
@@ -68,9 +75,38 @@ export class U2JobHunt extends HTMLElement {
         <button type="button" class="btn" data-draft-all ${this._busy || !this._data.sendRoutes.apple_mail_draft ? 'disabled' : ''}>Save Mail drafts for all ready jobs</button>
         <span class="trigger-row__meta">Nothing is sent. Each draft is proposed to Approvals; review and send it from Mail, then mark it sent here.</span>
       </div>
+      ${this._autopilotPanel()}
       ${this._notice ? `<div class="load-error" role="status">${escapeHtml(this._notice)}</div>` : ''}
       <div class="folder-toggle" role="group" aria-label="Filter">${FILTERS.map(([value, label]) => `<button type="button" data-filter="${value}" class="${value === this._filter ? 'is-active' : ''}" aria-pressed="${value === this._filter}">${escapeHtml(label)}</button>`).join('')}</div>
       ${shown.length ? `<div class="trigger-list">${shown.map((job) => this._card(job)).join('')}</div>` : `<div class="empty-state">${jobs.length ? 'Nothing here.' : 'No scored jobs yet. Run: npm run u2 -- job discover hn, then job score.'}</div>`}`;
+  }
+
+  _autopilotPanel() {
+    const a = this._autopilot;
+    if (!a) return '';
+    if (a.error) return `<div class="load-error">Autopilot settings are invalid: ${escapeHtml(a.error)}</div>`;
+    const c = a.config;
+    const report = a.lastReport;
+    const live = c.mode === 'live';
+    const policy = a.policy || {};
+    const tool = (entry, name) => (!entry?.available ? `${name}: tool not set up` : entry.autonomous ? `${name}: runs without asking` : `${name}: waits for your approval`);
+    return `<section class="application-card" aria-label="Autopilot"><div class="trigger-row__body">
+      <div class="trigger-row__heading"><strong>Autopilot</strong>
+        <span class="trigger-state trigger-state--${c.enabled ? 'enabled' : 'paused'}">${c.enabled ? 'running' : 'off'}</span>
+        <span class="trigger-state trigger-state--${live ? 'invalid' : 'pending'}">${live ? 'LIVE: sends and submits' : 'dry run: sends nothing'}</span></div>
+      <div class="trigger-row__meta">Every ${Math.round(c.interval_seconds / 60)} min: find jobs, score, prepare, review, then ${live ? 'act' : 'record what it would do'}. Limits: ${c.limits.applications_per_day} applications and ${c.limits.emails_per_day} emails a day. ${escapeHtml(tool(policy.email, 'Email'))}; ${escapeHtml(tool(policy.form, 'Forms'))}.</div>
+      <div class="trigger-row__actions">
+        <button type="button" class="btn" data-ap="toggle" ${this._busy ? 'disabled' : ''}>${c.enabled ? 'Turn off' : 'Turn on'}</button>
+        ${live ? '<button type="button" class="btn" data-ap="dry" ' + (this._busy ? 'disabled' : '') + '>Back to dry run</button>'
+    : this._confirmLive ? '<button type="button" class="btn" data-ap="live-confirm">Yes: let it email and apply without asking</button> <button type="button" class="btn" data-ap="live-cancel">Cancel</button>'
+      : '<button type="button" class="btn" data-ap="live" ' + (this._busy ? 'disabled' : '') + '>Go live...</button>'}
+        <button type="button" class="btn" data-ap="run" ${this._busy || a.running ? 'disabled' : ''}>${a.running ? 'Running...' : 'Run a cycle now'}</button>
+      </div>
+      ${report ? `<div class="trigger-row__meta">Last cycle ${escapeHtml(formatDateTime(report.finishedAt || report.startedAt))} (${escapeHtml(report.mode)}): ${Object.entries(report.steps || {}).map(([name, step]) => `${name} ${step.error ? 'failed' : escapeHtml(Object.values(step).filter((v) => typeof v === 'number').join('/') || 'ok')}`).join(' · ')}</div>
+        ${report.actions?.length ? `<ul>${report.actions.slice(0, 8).map((item) => `<li>${escapeHtml(item.job)}: ${escapeHtml(item.result)}</li>`).join('')}</ul>` : ''}
+        ${report.needsYou?.length ? `<div class="application-card__label">Needs you</div><ul>${report.needsYou.slice(0, 8).map((item) => `<li>${escapeHtml(item.job)}: ${escapeHtml(item.why)}</li>`).join('')}</ul>` : ''}
+        ${report.errors?.length ? `<ul class="routine-row__error">${report.errors.slice(0, 5).map((error) => `<li>${escapeHtml(error)}</li>`).join('')}</ul>` : ''}` : '<div class="trigger-row__meta">No cycle has run yet.</div>'}
+    </div></section>`;
   }
 
   _card(job) {
@@ -104,6 +140,23 @@ export class U2JobHunt extends HTMLElement {
     const filter = event.target.closest('[data-filter]');
     if (filter) { this._filter = filter.dataset.filter; this._notice = null; this._render(); return; }
     if (this._busy) return;
+    const ap = event.target.closest('[data-ap]');
+    if (ap) {
+      const kind = ap.dataset.ap;
+      if (kind === 'live') { this._confirmLive = true; this._render(); return; }
+      if (kind === 'live-cancel') { this._confirmLive = false; this._render(); return; }
+      this._busy = true; this._notice = null; this._render();
+      try {
+        const c = this._autopilot.config;
+        if (kind === 'toggle') await api.setAutopilot({ enabled: !c.enabled });
+        else if (kind === 'dry') await api.setAutopilot({ mode: 'dry_run' });
+        else if (kind === 'live-confirm') { await api.setAutopilot({ mode: 'live', enabled: true }); this._confirmLive = false; }
+        else if (kind === 'run') { await api.runAutopilot(); this._notice = 'A cycle started. The page updates when it finishes.'; }
+      } catch (err) { this._notice = err.message; }
+      this._busy = false;
+      await this._load();
+      return;
+    }
     const all = event.target.closest('[data-draft-all]');
     const mark = event.target.closest('[data-mark-sent]');
     if (all || mark) {

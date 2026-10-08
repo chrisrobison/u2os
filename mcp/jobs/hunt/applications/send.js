@@ -70,7 +70,7 @@ export async function proposeApplicationEmail({ store, job, candidateEmail, mini
   return { email: store.listEmails(job.id).find((entry) => entry.id === email.id), outcome };
 }
 
-function markContacted({ store, job, emailId, followUpDays, now }) {
+export function markContacted({ store, job, emailId, followUpDays, now }) {
   const due = new Date(now.getTime() + followUpDays * 86_400_000).toISOString();
   store.updateEmail(emailId, { status: 'sent', detail: { sentAt: now.toISOString(), followUpAfter: due } }, now);
   store.transition(job.id, 'contacted', { emailId, followUpAfter: due }, now);

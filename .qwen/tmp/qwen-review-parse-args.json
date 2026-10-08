@@ -1,0 +1,26 @@
+{
+  "target": {
+    "type": "local"
+  },
+  "effort": "medium",
+  "effortSource": "default",
+  "comment": {
+    "requested": false,
+    "effective": false
+  },
+  "fix": {
+    "requested": false,
+    "effective": false
+  },
+  "severityFloor": "auto",
+  "severityFloorSource": "default",
+  "topology": "auto",
+  "topologySource": "default",
+  "resume": {
+    "requested": false,
+    "effective": false
+  },
+  "extraTokens": [],
+  "unknownFlags": [],
+  "warnings": []
+}
