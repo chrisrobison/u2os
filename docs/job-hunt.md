@@ -167,3 +167,32 @@ Outcomes are reconciled as soon as an action completes, fails or is rejected, an
 **Sent it yourself?** Click *I sent this myself* on the card, or run `npm run u2 -- job mark <job-id> sent [--to <address>]`. U2OS records it under the same idempotency key a gated send uses, marks the job contacted and sets the follow-up date, so the job is never proposed again.
 
 **Drafts for every ready job.** *Save Mail drafts for all ready jobs* (or `POST /api/job-hunt/drafts`) proposes an `apple_mail.draft` for each job that has materials, a contact address and no input needed, whatever its score. Nothing is sent: each draft still passes the gate, you review it in Mail, and send it from there. A job that is already contacted, or already has a draft, is skipped. To skip the approval click for drafts only, you can allow them in `policies.yaml` (`apple_mail: { draft: autonomous }`); sends stay confirm.
+
+## More sources: company boards, HN's jobs feed and remote boards
+
+```bash
+npm run u2 -- job discover boards [--board greenhouse:acme,lever:globex] [--all] [--dry-run]
+npm run u2 -- job discover hn-jobs      # HN's own jobs feed (YC companies)
+npm run u2 -- job discover remote       # RemoteOK and We Work Remotely
+npm run u2 -- job discover all          # the HN thread plus all of the above
+```
+
+Everything lands in the same store as the monthly HN thread and goes through the same scoring, materials and sending. The same job seen through several sources (an HN comment, the company's Greenhouse board, a remote aggregator) is one opportunity, recognised by its application link or ATS job id, or by company and role. Re-running never duplicates.
+
+**Company boards** are read from the public job-board APIs of Greenhouse, Lever and Ashby, which exist for exactly this. List the ones you want in `job-hunt/boards.yaml`:
+
+```yaml
+boards:
+  - greenhouse:anthropic
+  - lever:palantir
+  - ashby:ramp
+derive: true      # also read boards named by application links already in your store (the default)
+```
+
+With `derive: true` (the default) every board linked from a listing you have already seen is added, so the HN threads seed the list. Pass `--board` to read only specific boards.
+
+**Relevance filter.** A large board lists hundreds of jobs, most of them irrelevant, so discovery stores only listings that look like engineering roles at your level (no sales, support, design, recruiting, junior or intern titles), and whose location is workable (not on-site in another country, not remote-only outside the US). The CLI reports how many were skipped and why; `--all` keeps everything. The filter only decides what is worth scoring; it never decides what to apply to.
+
+**Attribution.** RemoteOK's terms require crediting and linking back to the listing; every RemoteOK record keeps its credit and its link. LinkedIn and Indeed are not sources: their terms forbid automated applications.
+
+**Scoring a big batch.** `job score --limit N` ranks every pending job by the rule estimate and sends the most promising N to the model first, after the prefilter drops hopeless ones, so a run can be stopped any time with the best candidates already done. A failing source or board is reported and never stops the others. Listings from boards have no contact email, so their approach is the application form (not yet automated); the Job hunt page shows them with their apply link.
