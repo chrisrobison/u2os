@@ -169,3 +169,13 @@ test('CLI: discover boards, hn-jobs and remote report what was kept and skipped'
   assert.match(lines.join('\n'), /remoteok: fetched 2, kept 1.*dry run/);
   assert.equal(await jobCli(['discover', 'bogus'], out, { vaultDir: vault, fetch: fetchImpl }), 1);
 });
+
+test('CLI: "all" labels the HN thread line correctly', async () => {
+  const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'hunt-cli-all-'));
+  fs.mkdirSync(path.join(vault, 'job-hunt'), { recursive: true });
+  const lines = [];
+  const both = async (url, init) => (String(url).includes('algolia') ? hnFetch()(url, init) : sourcesFetch()(url, init));
+  assert.equal(await jobCli(['discover', 'all', '--board', 'greenhouse:acme'], { log: (line) => lines.push(line) }, { vaultDir: vault, fetch: both, now: NOW }), 0);
+  assert.match(lines.join('\n'), /^hn: Ask HN: Who is hiring\? \(October 2026\): \d+ records; new \d+/m);
+  assert.doesNotMatch(lines.join('\n'), /undefined|\[object Object\]/);
+});

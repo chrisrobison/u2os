@@ -58,7 +58,7 @@ export async function discoverSources({ store, source = 'all', preferences, boar
   const summaries = [];
   for (const name of wanted) {
     try {
-      if (name === 'hn') summaries.push({ source: 'hn', ...(await discoverHackerNewsThread({ store, source: 'hn', fetch: fetchImpl, now, dryRun, month, limit })) });
+      if (name === 'hn') summaries.push({ ...(await discoverHackerNewsThread({ store, source: 'hn', fetch: fetchImpl, now, dryRun, month, limit })), source: 'hn' });
       else if (name === 'boards') summaries.push(await discoverBoards({ ...common, boards, fetch: fetchImpl }));
       else if (name === 'hn-jobs') summaries.push(await simple('hn-jobs', () => discoverHnJobs({ fetch: fetchImpl, ...(limit ? { limit } : {}) }), common));
       else if (name === 'remote') {
