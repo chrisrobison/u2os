@@ -23,7 +23,7 @@ import { submitApplication } from './applications/form/submit.js';
 
 export class Refused extends Error { constructor(message, code = 'REFUSED') { super(message); this.code = code; } }
 
-async function withLock(vaultDir, jobId, fn) {
+export async function withLock(vaultDir, jobId, fn) {
   const dir = path.join(vaultDir, JOB_HUNT_DIR, 'state', 'locks');
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `${jobId}.lock`);
@@ -32,7 +32,7 @@ async function withLock(vaultDir, jobId, fn) {
   try { return await fn(); } finally { fs.rmSync(file, { force: true }); }
 }
 
-function prepare({ vaultDir, jobId, kind, now, resolveAttachments }) {
+export function prepare({ vaultDir, jobId, kind, now, resolveAttachments }) {
   const store = openStore(huntDbPath(vaultDir));
   const job = store.getJob(jobId);
   if (!job) { store.close(); throw new Refused(`Unknown job ${jobId}`, 'UNKNOWN_JOB'); }
