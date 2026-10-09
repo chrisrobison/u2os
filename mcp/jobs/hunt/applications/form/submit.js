@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { normalizeCompany, normalizeRole, canonicalUrl } from '../../jobs/normalize.js';
 import { buildApplicationPlan } from './plan.js';
-import { executePlan, inspectApplication } from './apply.js';
+import { resolveDriver } from './driver.js';
 
 // The form application lifecycle against the store: plan, submit, recover.
 // Exactly-once is the point: intent is recorded before the click, an
@@ -36,14 +36,14 @@ function materialsFor(store, job) {
 }
 
 /** Plans an application for a job: reads its form (read-only) and stores the plan. */
-export async function planApplication({ store, job, candidate, llm = null, inspect = (url) => inspectApplication({ url }), ensureCombined = null, nameStyle = 'plain', url = null, now = new Date() }) {
+export async function planApplication({ store, job, candidate, llm = null, driver = null, inspect = null, ensureCombined = null, nameStyle = 'plain', url = null, now = new Date() }) {
   const target = url ?? chooseApplyUrl(job);
   if (!target) throw new Error('This job has no application link');
   const key = formKey({ candidate: candidate.resume.basics.email, job, url: target });
   const existing = store.findApplicationByKey(key);
   if (existing && BLOCKING.has(existing.status)) throw Object.assign(new Error(`An application for this job is already ${existing.status}`), { code: 'BLOCKED' });
   const source = store.listSources(job.id)[0] ?? null;
-  const schema = await inspect(target);
+  const schema = await (inspect ?? ((url) => resolveDriver(driver).inspect({ url })))(target);
   // A form with no cover-letter upload gets the letter and resume as one file: build it now if the materials predate it.
   const hasCoverUpload = (schema.fields ?? []).some((field) => field.type === 'file' && /cover/i.test(`${field.label} ${field.key}`));
   if (!hasCoverUpload && ensureCombined && !store.getArtifacts(job.id).combined_pdf) await ensureCombined({ store, job, now });
@@ -69,10 +69,10 @@ export function recoverInterrupted({ store, now = new Date(), staleMs = STALE_SU
 }
 
 /**
- * Submits a planned application. `files` resolve plan.files; `execute` is
- * injectable. Refuses anything not in a submittable state.
+ * Submits a planned application. `files` resolve plan.files; `driver` (a FormDriver or
+ * registered name) does the browser work; `execute` still overrides it. Refuses anything not in a submittable state.
  */
-export async function submitApplication({ store, job, files, submit = true, headed = false, execute = executePlan, screenshotDir = null, now = new Date(), applicationId = null }) {
+export async function submitApplication({ store, job, files, submit = true, headed = false, driver = null, execute = null, screenshotDir = null, now = new Date(), applicationId = null }) {
   recoverInterrupted({ store, now });
   const application = store.listApplications(job.id).filter((entry) => !applicationId || entry.id === applicationId).at(-1);
   if (!application) throw new Error('No application plan for this job: run "job plan" first');
@@ -80,7 +80,7 @@ export async function submitApplication({ store, job, files, submit = true, head
   if (application.status !== 'planned') throw Object.assign(new Error(`Not submitting: the plan is ${application.status}${application.plan.needs?.length ? ` (${application.plan.needs.join(', ')})` : ''}`), { code: 'BLOCKED' });
   if (['applied', 'contacted', 'rejected', 'withdrawn', 'closed', 'skipped', 'interview'].includes(job.status)) throw Object.assign(new Error(`Not submitting: the job is already ${job.status}`), { code: 'BLOCKED' });
 
-  const result = await execute({
+  const result = await (execute ?? resolveDriver(driver).execute)({
     plan: application.plan, files, submit, headed, screenshotDir,
     beforeSubmit: async () => {
       // Intent first: from here a crash means "uncertain", never "try again".

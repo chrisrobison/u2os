@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'js-yaml';
 import { JOB_HUNT_DIR } from '../../profile.js';
+import { driverNames } from '../applications/form/driver.js';
 
 // job-hunt/autopilot.yaml: how the autonomous job hunter behaves. Everything
 // has a safe default, and the default mode never sends or submits anything.
@@ -24,6 +25,7 @@ import { JOB_HUNT_DIR } from '../../profile.js';
 //     part_time: false             # part-time or token-pay postings ("10-15 hrs/wk", "equity + discretionary cash")
 //   browser:
 //     headed: false                # open a visible browser window for form submits
+//     driver: playwright           # form driver (docs/job-hunt.md)
 //   routes:
 //     email: true
 //     form: false                  # off until a form submit has been shown to land (docs/job-hunt.md)
@@ -40,7 +42,7 @@ export const DEFAULTS = Object.freeze({
   sources: ['hn', 'hn-jobs', 'remote', 'boards'], boards_every_minutes: 60,
   allow: { relocation: false, below_salary_minimum: false, equity_only: false, part_time: false },
   blocklist: { companies: [], domains: [], keywords: [] },
-  per_cycle: { score: 6, score_fast: 6, confirm: 2, prepare: 3, revise: 2, act: 3 }, mail_sender: '', routes: { email: true, form: false }, browser: { headed: false }, file_names: 'playful',
+  per_cycle: { score: 6, score_fast: 6, confirm: 2, prepare: 3, revise: 2, act: 3 }, mail_sender: '', routes: { email: true, form: false }, browser: { headed: false, driver: 'playwright' }, file_names: 'playful',
 });
 
 const int = (value, name, min, max) => {
@@ -77,7 +79,7 @@ export function loadAutopilotConfig(vaultDir) {
     limits, sources, boards_every_minutes: data.boards_every_minutes === undefined ? DEFAULTS.boards_every_minutes : int(data.boards_every_minutes, 'boards_every_minutes', 5, 10_080),
     mail_sender: typeof data.mail_sender === 'string' && !/[\r\n\0]/.test(data.mail_sender) && data.mail_sender.length <= 200 ? data.mail_sender : '',
     routes: (() => { const routes = { ...DEFAULTS.routes }; for (const key of Object.keys(routes)) if (data.routes?.[key] !== undefined) { if (typeof data.routes[key] !== 'boolean') throw new Error(`autopilot.yaml: routes.${key} must be true or false`); routes[key] = data.routes[key]; } return routes; })(),
-    browser: { headed: data.browser?.headed === undefined ? DEFAULTS.browser.headed : (typeof data.browser.headed === 'boolean' ? data.browser.headed : (() => { throw new Error('autopilot.yaml: browser.headed must be true or false'); })()) },
+    browser: { driver: (() => { const name = data.browser?.driver ?? DEFAULTS.browser.driver; if (typeof name !== 'string' || !driverNames().includes(name)) throw new Error(`autopilot.yaml: browser.driver must be one of ${driverNames().join(', ')}`); return name; })(), headed: data.browser?.headed === undefined ? DEFAULTS.browser.headed : (typeof data.browser.headed === 'boolean' ? data.browser.headed : (() => { throw new Error('autopilot.yaml: browser.headed must be true or false'); })()) },
     file_names: (() => { if (data.file_names !== undefined && !['playful', 'plain'].includes(data.file_names)) throw new Error('autopilot.yaml: file_names must be playful or plain'); return data.file_names ?? DEFAULTS.file_names; })(),
     allow, per_cycle, blocklist: { companies: list(data.blocklist?.companies, 'blocklist.companies'), domains: list(data.blocklist?.domains, 'blocklist.domains'), keywords: list(data.blocklist?.keywords, 'blocklist.keywords') },
   };

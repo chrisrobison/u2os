@@ -207,11 +207,11 @@ export class Autopilot {
       try {
         await (this.deps.generateMaterials ?? generateMaterials)({ store, vaultDir: this.vaultDir, job, candidate, llm, minimumScore: candidate.preferences.minimum_score, stage: stageAttachment, nameStyle: config.file_names, now });
         if (!emailRoute && formUrl) {
-          let application = await (this.deps.planApplication ?? planApplication)({ store, job, candidate, llm, ensureCombined: ensureCombinedPdf, nameStyle: config.file_names, url: formUrl, now });
+          let application = await (this.deps.planApplication ?? planApplication)({ store, job, candidate, llm, ensureCombined: ensureCombinedPdf, nameStyle: config.file_names, driver: config.browser.driver, url: formUrl, now });
           // A form with no cover-letter upload wants a letter (it goes in front of the resume); a required one needs it.
           if (application.plan.needs?.includes('cover_letter_required') || application.plan.wants?.includes('cover_letter')) {
             await (this.deps.generateMaterials ?? generateMaterials)({ store, vaultDir: this.vaultDir, job, candidate, llm, minimumScore: candidate.preferences.minimum_score, stage: stageAttachment, force: true, coverLetter: true, nameStyle: config.file_names, now });
-            application = await (this.deps.planApplication ?? planApplication)({ store, job, candidate, llm, ensureCombined: ensureCombinedPdf, nameStyle: config.file_names, url: formUrl, now });
+            application = await (this.deps.planApplication ?? planApplication)({ store, job, candidate, llm, ensureCombined: ensureCombinedPdf, nameStyle: config.file_names, driver: config.browser.driver, url: formUrl, now });
           }
           if (application.status !== 'planned') report.needsYou.push({ job: `${job.company} - ${job.role ?? ''}`, jobId: job.id, why: application.plan.blockers?.length ? `blocked: ${application.plan.blockers.join(', ')}` : `needs: ${(application.plan.needs ?? []).join(', ') || 'input'}` });
         } else {
@@ -286,7 +286,7 @@ export class Autopilot {
       if (attempts >= MAX_REVISIONS) continue;
       try {
         await (this.deps.generateMaterials ?? generateMaterials)({ store, vaultDir: this.vaultDir, job, candidate, llm, minimumScore: candidate.preferences.minimum_score, stage: stageAttachment, force: true, coverLetter: kind === 'form' ? true : null, nameStyle: config.file_names, feedback: blocking.map((text) => `- ${text}`).join('\n'), now });
-        if (kind === 'form') await (this.deps.planApplication ?? planApplication)({ store, job, candidate, llm, ensureCombined: ensureCombinedPdf, nameStyle: config.file_names, url: chooseApplyUrl(job), now });
+        if (kind === 'form') await (this.deps.planApplication ?? planApplication)({ store, job, candidate, llm, ensureCombined: ensureCombinedPdf, nameStyle: config.file_names, driver: config.browser.driver, url: chooseApplyUrl(job), now });
         store.recordEvent(job.id, 'autopilot_revision', { detail: { kind, reviewId: review.id, attempt: attempts + 1, concerns: blocking } }, now);
         revised += 1;
         report.actions.push({ job: `${job.company} - ${job.role ?? ''}`, jobId: job.id, kind, result: `rewritten after the review (attempt ${attempts + 1}): ${blocking[0].slice(0, 100)}` });
