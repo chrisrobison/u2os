@@ -151,7 +151,7 @@ test('a failing step never stops the others, and the per-cycle limits hold', asy
 });
 
 test('prepare: scored jobs without materials are prepared, form jobs are planned, and a failing job is parked, not retried forever', async () => {
-  const w = world({ mode: 'live', jobs: 0, extraConfig: 'per_cycle:\n  prepare: 10\n' });
+  const w = world({ mode: 'live', jobs: 0, extraConfig: 'per_cycle:\n  prepare: 10\nroutes:\n  form: true\n' });
   const make = (n, extra) => { const { job } = w.store.upsertSighting({ source: 'hackernews', sourceKey: `hackernews:p${n}#0`, company: `Prep${n}`, role: 'Founding Engineer', rawText: 'Prep', applicationUrls: [], contactEmails: [], author: null, ...extra }); w.store.saveScore(job.id, { score: 90, confidence: 0.9, label: 'exceptional', dimensions: {}, reasons: [], concerns: [], recommendedNarrative: 'ai-agent-systems', projects: [], flags: [], degraded: false }); return w.store.getJob(job.id); };
   const email = make(1, { contactEmails: ['a@prep1.io'] });
   const form = make(2, { applicationUrls: ['https://jobs.ashbyhq.com/prep2/1/application'] });
@@ -258,4 +258,34 @@ test('CLI: autopilot on, live, dry-run, off and status', async () => {
   assert.ok(lines.some((line) => /policies\.yaml/.test(line)));
   await jobCli(['autopilot', 'status'], out, { vaultDir: vault });
   assert.match(lines.at(-1) + lines.join('\n'), /Autopilot: off/);
+});
+
+test('the forms route is off by default: form-only jobs are reported, never planned, reviewed or acted on', async () => {
+  const w = world({ mode: 'live', jobs: 0 });
+  const { job } = w.store.upsertSighting({ source: 'ashby', sourceKey: 'ashby:x:1', company: 'FormCo', role: 'Founding Engineer', rawText: 'FormCo', applicationUrls: ['https://jobs.ashbyhq.com/formco/1/application'], contactEmails: [], author: null });
+  w.store.saveScore(job.id, { score: 90, confidence: 0.9, label: 'exceptional', dimensions: {}, reasons: [], concerns: [], recommendedNarrative: 'ai-agent-systems', projects: [], flags: [], degraded: false });
+  const calls = [];
+  const { autopilot, proposals } = pilot(w, { deps: { generateMaterials: async () => { calls.push('materials'); }, planApplication: async () => { calls.push('plan'); return { status: 'planned', plan: {} }; } } });
+  const report = await autopilot.runCycle({ now: NOW });
+  assert.deepEqual(calls, [], 'nothing is prepared for a form-only job while the route is off');
+  assert.equal(report.steps.prepare.formOnlyWaiting, 1, 'it is counted, not worked, and does not use up the preparation budget');
+  assert.equal(proposals.length, 0);
+  assert.equal(loadAutopilotConfig(w.vault).routes.form, false);
+  fs.writeFileSync(path.join(w.vault, 'job-hunt', 'autopilot.yaml'), 'enabled: true\nmode: live\nroutes:\n  form: maybe\n');
+  await assert.rejects(autopilot.runCycle({ now: NOW }), /routes\.form must be true or false/);
+});
+
+test('changing the threshold re-opens a rejected review instead of leaving it stale', async () => {
+  const w = world({ mode: 'dry_run' });
+  fs.writeFileSync(path.join(w.vault, 'job-hunt', 'preferences.yaml'), 'minimum_score: 95\n');
+  const { autopilot, llm } = pilot(w);
+  const first = await autopilot.runCycle({ now: NOW });
+  assert.match(first.needsYou[0].why, /score_meets_threshold/);
+  assert.equal(first.actions.length, 0);
+  await autopilot.runCycle({ now: NOW });
+  assert.equal(llm.calls.length, 0, 'still rejected by the checks; not asked again while nothing changed');
+  fs.writeFileSync(path.join(w.vault, 'job-hunt', 'preferences.yaml'), 'minimum_score: 70\n');
+  const third = await autopilot.runCycle({ now: NOW });
+  assert.equal(third.steps.review.reviewed, 1, 'a lowered threshold re-reviews');
+  assert.equal(third.actions.length, 1, 'and the now-approved job is acted on (dry run)');
 });

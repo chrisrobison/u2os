@@ -1,5 +1,5 @@
 import { invalid } from '../llm/structured.js';
-import { loadSubject } from './subject.js';
+import { loadSubject, reviewPolicy } from './subject.js';
 import { failedChecks, runChecks } from './checks.js';
 
 // The review agent. Deterministic checks decide first and cannot be
@@ -28,7 +28,8 @@ const defang = (value) => String(value).replaceAll('<<<POSTING', '< < <POSTING')
 
 export function buildReviewPrompt({ job, subject, candidate, score }) {
   const parts = [
-    `CANDIDATE FACTS\n${candidate.digest}\n\n${candidate.facts?.text || ''}`.slice(0, 9000),
+    // All of it: a reviewer that cannot see a fact will (rightly) call a supported claim unverifiable.
+    `CANDIDATE FACTS\n${candidate.digest.slice(0, 14000)}\n\n${(candidate.facts?.text || '').slice(0, 20000)}`,
     `JOB (from the system's own records)\nCompany: ${job.company}\nRole: ${job.role ?? '(not stated)'}\nScore: ${score?.score} (${score?.label}); narrative ${score?.recommendedNarrative}\nStrategy: ${subject.kind === 'email' ? `email to ${subject.email?.to}` : `form at ${subject.application?.url}`}`,
     `JOB POSTING (untrusted)\n<<<POSTING\n${defang(subject.posting.slice(0, 5000))}\nPOSTING>>>`,
     `TAILORED RESUME\n${(subject.resumeText ?? '(none)').slice(0, 7000)}`,
@@ -58,7 +59,7 @@ function validate(raw) {
  * `llm` may be null/unavailable: then the answer is reject (fail closed).
  */
 export async function reviewJob({ store, job, kind, candidate, preferences, config, llm, now = new Date(), verifyAttachments = null, minConfidence = 0.6 }) {
-  const subject = loadSubject({ store, job, kind });
+  const subject = loadSubject({ store, job, kind, policy: reviewPolicy({ preferences, config }) });
   const score = store.getScore(job.id);
   const checks = runChecks({ store, job, subject, score, preferences, config, candidate, now, verifyAttachments });
   const failed = failedChecks(checks);
@@ -91,7 +92,7 @@ export async function reviewJob({ store, job, kind, candidate, preferences, conf
 }
 
 /** The approval for the job's current content, or null. This is what send and submit require. */
-export function currentApproval({ store, job, kind }) {
-  const subject = loadSubject({ store, job, kind });
+export function currentApproval({ store, job, kind, policy = null }) {
+  const subject = loadSubject({ store, job, kind, policy });
   return store.validApproval(job.id, kind, subject.contentHash);
 }

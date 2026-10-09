@@ -153,8 +153,16 @@ export async function executePlan({ plan, files = {}, submit = true, beforeSubmi
     const button = await findSubmit(page);
     if (!button) return { status: 'manual_required', reason: 'no_submit_button', screenshots: [formShot].filter(Boolean) };
     await beforeSubmit(); // the caller records intent here: from now on the outcome is uncertain until proven otherwise
+    // What the page's own network calls said after the click: the evidence when a submit is not confirmed.
+    const evidence = [];
+    page.on('response', async (response) => {
+      if (response.request().method() !== 'POST' || evidence.length >= 8) return;
+      let body = '';
+      try { body = (await response.text()).replace(/\s+/g, ' ').slice(0, 240); } catch { /* not readable */ }
+      try { evidence.push({ path: new URL(response.url()).pathname.slice(0, 90), status: response.status(), body }); } catch { /* odd url */ }
+    });
     await button.click();
     const result = await outcome(page, outcomeTimeoutMs, plan.url);
-    return { ...result, screenshots: [formShot, await shot(page, 'result')].filter(Boolean) };
+    return { ...result, evidence, screenshots: [formShot, await shot(page, 'result')].filter(Boolean) };
   } finally { await browser.close().catch(() => {}); }
 }

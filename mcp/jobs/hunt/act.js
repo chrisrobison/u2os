@@ -4,7 +4,7 @@ import { JOB_HUNT_DIR } from '../profile.js';
 import { huntDbPath, openStore } from './storage/store.js';
 import { loadCandidate } from './candidate/load.js';
 import { loadAutopilotConfig } from './autopilot/config.js';
-import { loadSubject } from './review/subject.js';
+import { loadSubject, reviewPolicy } from './review/subject.js';
 import { failedChecks, runChecks } from './review/checks.js';
 import { idempotencyKey, markContacted } from './applications/send.js';
 import { submitApplication } from './applications/form/submit.js';
@@ -39,7 +39,7 @@ function prepare({ vaultDir, jobId, kind, now, resolveAttachments }) {
   if (!job) { store.close(); throw new Refused(`Unknown job ${jobId}`, 'UNKNOWN_JOB'); }
   const candidate = loadCandidate(vaultDir);
   const config = loadAutopilotConfig(vaultDir);
-  const subject = loadSubject({ store, job, kind });
+  const subject = loadSubject({ store, job, kind, policy: reviewPolicy({ preferences: candidate.preferences, config }) });
   const approval = store.validApproval(job.id, kind, subject.contentHash);
   if (!approval) { store.close(); throw new Refused(`Not approved: there is no review approval for the current ${kind} content of this job (it was never reviewed, was rejected, or something changed since)`, 'NOT_APPROVED'); }
   const checks = runChecks({ store, job, subject, score: store.getScore(job.id), preferences: candidate.preferences, config, candidate, now, verifyAttachments: kind === 'email' && resolveAttachments ? (refs) => resolveAttachments(vaultDir, refs) : null });

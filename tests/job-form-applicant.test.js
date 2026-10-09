@@ -138,6 +138,8 @@ test('a dry run fills and verifies; a real run submits exactly what was planned 
   assert.match(sent.why, /deterministic orchestration/);
   assert.match(sent._systemfield_resume, /^file:resume\.pdf:\d+$/);
   assert.ok(done.result.screenshots.every((file) => fs.existsSync(file)));
+  assert.ok(Array.isArray(done.result.evidence), 'the page\'s own network responses are kept as evidence');
+  assert.ok(done.result.evidence.some((entry) => /submit/.test(entry.path)), JSON.stringify(done.result.evidence));
   assert.ok(w.store.listEvents(w.job.id).some((event) => event.type === 'application_submitting'));
   // Exactly once.
   await assert.rejects(submitApplication({ store: w.store, job: w.store.getJob(w.job.id), files: w.files, now: NOW }), /already submitted/);

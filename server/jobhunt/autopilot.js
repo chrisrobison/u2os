@@ -13,7 +13,7 @@ import { generateMaterials } from '../../mcp/jobs/hunt/applications/materials.js
 import { contactEmailsFor } from '../../mcp/jobs/hunt/applications/strategy.js';
 import { chooseApplyUrl, planApplication, recoverInterrupted } from '../../mcp/jobs/hunt/applications/form/submit.js';
 import { reviewJob } from '../../mcp/jobs/hunt/review/agent.js';
-import { loadSubject } from '../../mcp/jobs/hunt/review/subject.js';
+import { loadSubject, reviewPolicy } from '../../mcp/jobs/hunt/review/subject.js';
 import { reconcileEmails } from '../../mcp/jobs/hunt/applications/send.js';
 import { JOB_HUNT_DIR } from '../../mcp/jobs/profile.js';
 import { stageAttachment, resolveAttachments } from '../tools/email-attachments.js';
@@ -144,20 +144,26 @@ export class Autopilot {
   }
 
   /** Jobs worth preparing: model-scored at or above the threshold, not acted on, nothing prepared yet. */
-  candidatesToPrepare({ store, candidate, limit }) {
+  candidatesToPrepare({ store, candidate, config, limit }) {
     const minimum = candidate.preferences.minimum_score ?? 82;
     return store.listScored({ minScore: minimum, limit: 500 })
-      .filter(({ job, score }) => !score.degraded && !ACTIVE.has(job.status) && job.status !== 'needs_input' && !store.getArtifacts(job.id).resume_pdf)
+      // A form-only job cannot be worked while the forms route is off, and must not use up the cycle's preparation budget.
+      .filter(({ job, score }) => !score.degraded && !ACTIVE.has(job.status) && job.status !== 'needs_input' && !store.getArtifacts(job.id).resume_pdf && (config.routes.form || contactEmailsFor(job).length > 0))
       .slice(0, limit).map(({ job }) => job);
   }
 
   async prepare({ store, config, candidate, llm, now, report }) {
     if (!llm?.available) return { skipped: 'no model' };
     const prepared = [];
-    for (const job of this.candidatesToPrepare({ store, candidate, limit: config.per_cycle.prepare })) {
+    for (const job of this.candidatesToPrepare({ store, candidate, config, limit: config.per_cycle.prepare })) {
       const emailRoute = contactEmailsFor(job).length > 0;
       const formUrl = chooseApplyUrl(job);
       if (!emailRoute && !formUrl) continue;
+      if (!emailRoute && !config.routes.form) {
+        // The form route is switched off: no materials, no plan, no review, no act. Parked for the owner.
+        report.needsYou.push({ job: `${job.company} - ${job.role ?? ''}`, jobId: job.id, why: 'form-only job; the forms route is off in autopilot.yaml (routes.form)' });
+        continue;
+      }
       try {
         await (this.deps.generateMaterials ?? generateMaterials)({ store, vaultDir: this.vaultDir, job, candidate, llm, minimumScore: candidate.preferences.minimum_score, stage: stageAttachment, now });
         if (!emailRoute && formUrl) {
@@ -181,17 +187,18 @@ export class Autopilot {
         try { if (store.getJob(job.id).status === 'scored') store.transition(job.id, 'error', { step: 'prepare' }, now); } catch { /* ignore */ }
       }
     }
-    return { prepared: prepared.length };
+    const formOnly = config.routes.form ? 0 : store.listScored({ minScore: candidate.preferences.minimum_score ?? 82, limit: 500 }).filter(({ job, score }) => !score.degraded && !ACTIVE.has(job.status) && !contactEmailsFor(job).length && chooseApplyUrl(job) && !store.getArtifacts(job.id).resume_pdf).length;
+    return { prepared: prepared.length, ...(formOnly ? { formOnlyWaiting: formOnly } : {}) };
   }
 
   /** The route a prepared job would use, with its current content hash. */
-  routeFor(store, job) {
+  routeFor(store, job, config) {
     const artifacts = store.getArtifacts(job.id);
     if (!artifacts.resume_pdf) return null;
     const email = artifacts.email_json ? (() => { try { return JSON.parse(fs.readFileSync(artifacts.email_json.path, 'utf8')); } catch { return null; } })() : null;
     if (email && !email.needsInput?.length && contactEmailsFor(job).length) return 'email';
     const application = store.listApplications(job.id).filter((entry) => entry.kind === 'form').at(-1);
-    if (application && application.status === 'planned') return 'form';
+    if (config.routes.form && application && application.status === 'planned') return 'form';
     return null;
   }
 
@@ -201,9 +208,9 @@ export class Autopilot {
     for (const job of store.listJobs({ limit: 5000 })) {
       if (reviewed >= config.per_cycle.prepare) break;
       if (ACTIVE.has(job.status) || job.status === 'needs_input') continue;
-      const kind = this.routeFor(store, job);
+      const kind = this.routeFor(store, job, config);
       if (!kind) continue;
-      const subject = loadSubject({ store, job, kind });
+      const subject = loadSubject({ store, job, kind, policy: reviewPolicy({ preferences: candidate.preferences, config }) });
       const latest = store.latestReview(job.id, kind);
       // Never review the same content twice: an unchanged rejection stays a rejection until something changes.
       if (latest && latest.contentHash === subject.contentHash) continue;
@@ -219,9 +226,9 @@ export class Autopilot {
     for (const job of store.listJobs({ limit: 5000 })) {
       if (done.length >= config.per_cycle.act) break;
       if (ACTIVE.has(job.status) || job.status === 'needs_input') continue;
-      const kind = this.routeFor(store, job);
+      const kind = this.routeFor(store, job, config);
       if (!kind) continue;
-      const subject = loadSubject({ store, job, kind });
+      const subject = loadSubject({ store, job, kind, policy: reviewPolicy({ preferences: candidate.preferences, config }) });
       const approval = store.validApproval(job.id, kind, subject.contentHash);
       if (!approval) continue;
       const tool = TOOLS[kind];
