@@ -189,7 +189,7 @@ Rates are cohort based, so they are always between 0 and 1 and recent applicatio
 
 **Resume versions** are the distinct `resume_pdf` and `cover_letter_pdf` artifacts (by content hash), newest first, each with the latest job that used it (`job`) and every job that did (`usedBy`).
 
-**Moving a job.** `POST /api/job-hunt/jobs/<id>/status` with `{ "status": "screening" | "offer" | "rejected" }` records the company's answer as a status event (`detail.by = "owner"`). Allowed: `screening` from `applied`, `contacted`, `followup_due`, `uncertain`; `offer` from those plus `screening` and `interview`; `rejected` from any pipeline status. Anything else is `409`, an unknown target `400`, an unknown job `404`. Repeating a move changes nothing and answers `changed: false`.
+**Moving a job.** `POST /api/job-hunt/jobs/<id>/status` with `{ "status": "screening" | "offer" | "rejected" }` records the company's answer as a status event (`detail.by = "owner"`). Allowed: `screening` from `applied`, `contacted`, `followup_due`, `uncertain`; `offer` from those plus `screening` and `interview`; `rejected` from any board status, `uncertain` or `needs_input`. Anything else is `409`, an unknown target `400`, an unknown job `404`. Repeating a move changes nothing and answers `changed: false`.
 
 ## Emails you send yourself, and drafts for all matches
 
