@@ -9,6 +9,8 @@ import { candidateCorpus } from '../applications/resume-generator.js';
 
 const ACTED = new Set(['contacted', 'applied', 'interview', 'rejected', 'withdrawn', 'closed', 'skipped', 'uncertain', 'error']);
 const STAFFING = /\b(our client|on behalf of (our|a) client|staffing|recruit(ing|ment) (agency|firm)|c2c|corp[- ]to[- ]corp|w-?2 only|1099 only|commission[- ]only|unpaid|training fee|pay (a|the) fee|work from home and earn|multi[- ]level)\b/i;
+// Part-time and token-pay postings: "~10-15 hrs/wk", "part-time", "equity + discretionary cash", "stipend". Not a job the autopilot should apply to unprompted.
+const PART_TIME = /\b(part[- ]time|\d+\s*[-\u2013]\s*\d+\s*(hrs?|hours)\s*(\/|per|a)\s*(wk|week)|\d+\s*(hrs?|hours)\s*(\/|per|a)\s*(wk|week)|discretionary (cash|bonus|pay|compensation)|stipend|side project|moonlight|fractional)\b/i;
 const EQUITY_ONLY = /\bequity[- ]only\b/i;
 const INJECTION = /ignore (all |any )?(previous|prior|above) instructions|disregard (the )?(above|previous)|you are (now )?an? (ai|assistant|language model)|system prompt|as an ai\b|if you are an ai|include the (word|phrase)/i;
 const BAD_DOMAINS = /(^|\.)(example|test|invalid|localhost)$|^(example\.(com|org|net))$/i;
@@ -45,6 +47,8 @@ export function runChecks({ store, job, subject, score, preferences, config, can
   const text = `${subject.posting}\n${job.company}`.toLowerCase();
   const staffing = subject.posting.match(STAFFING);
   out.push(check('not_staffing_spam_or_unpaid', !staffing, staffing ? `the posting says "${staffing[0]}"` : ''));
+  const partTime = subject.posting.match(PART_TIME);
+  out.push(check('not_part_time_or_token_pay_unless_allowed', !partTime || config.allow.part_time, partTime ? `the posting reads as part-time or token pay ("${partTime[0]}"); allow.part_time in autopilot.yaml lets it through` : ''));
   const equityOnly = subject.posting.match(EQUITY_ONLY);
   out.push(check('not_equity_only_unless_allowed', !equityOnly || config.allow.equity_only, equityOnly ? 'the posting says it is equity-only (unpaid until funded); allow.equity_only in autopilot.yaml lets it through' : ''));
   const blocked = config.blocklist.companies.some((name) => company.includes(name)) || config.blocklist.keywords.some((word) => text.includes(word));

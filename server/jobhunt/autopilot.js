@@ -40,6 +40,7 @@ const MIN = 60_000;
 const SOURCE_EVERY = { hn: 0, 'hn-jobs': 30 * MIN, remote: 30 * MIN };
 const ACTIVE = new Set(['contacted', 'applied', 'interview', 'rejected', 'withdrawn', 'closed', 'skipped', 'uncertain', 'error']);
 
+export const MAX_REVISIONS = 2;
 export const TOOLS = { email: 'jobs.send_application', form: 'jobs.submit_application' };
 
 export class Autopilot {
@@ -105,7 +106,7 @@ export class Autopilot {
       try { tiers = this.deps.createTiers ? this.deps.createTiers() : createTiers({ vaultDir: this.vaultDir, dataDir: getDataDir() }); } catch (error) { report.errors.push(`models: ${String(error.message).slice(0, 160)}`); tiers = { fast: null, quality: null, margin: 10, bias: 12 }; }
       llm = tiers.quality;
       const ctx = { store, config, candidate, llm, tiers, now, report, state };
-      for (const [name, step] of [['housekeeping', this.housekeeping], ['discover', this.discover], ['score', this.score], ['confirm', this.confirm], ['prepare', this.prepare], ['review', this.review], ['act', this.act]]) {
+      for (const [name, step] of [['housekeeping', this.housekeeping], ['discover', this.discover], ['score', this.score], ['confirm', this.confirm], ['prepare', this.prepare], ['review', this.review], ['revise', this.revise], ['act', this.act]]) {
         try { report.steps[name] = await step.call(this, ctx); } catch (error) { report.errors.push(`${name}: ${String(error.message).slice(0, 200)}`); report.steps[name] = { error: true }; }
       }
     } finally {
@@ -259,6 +260,42 @@ export class Autopilot {
       if (result.decision === 'reject') report.needsYou.push({ job: `${job.company} - ${job.role ?? ''}`, jobId: job.id, why: `review rejected (${kind}): ${result.notes}`.slice(0, 220) });
     }
     return { reviewed };
+  }
+
+  /**
+   * One bounded repair pass. When the review agent rejected a prepared job's current content for something a
+   * rewrite can fix (a blocking concern from the model, not a failed deterministic check), the materials are written
+   * again with the reviewer's objections as feedback (still through the claim guard), and the new content is reviewed
+   * next cycle. At most MAX_REVISIONS per job; deterministic rejections are never "revised".
+   */
+  async revise({ store, config, candidate, llm, now, report }) {
+    if (!llm?.available || !config.per_cycle.revise) return { skipped: 'no model or no budget' };
+    let revised = 0;
+    for (const job of store.listJobs({ limit: 5000 })) {
+      if (revised >= config.per_cycle.revise) break;
+      if (ACTIVE.has(job.status) || job.status === 'needs_input') continue;
+      const kind = this.routeFor(store, job, config);
+      if (!kind) continue;
+      const subject = loadSubject({ store, job, kind, policy: reviewPolicy({ preferences: candidate.preferences, config }) });
+      const review = store.latestReview(job.id, kind);
+      if (!review || review.decision !== 'reject' || review.contentHash !== subject.contentHash) continue;
+      if (review.checks.some((entry) => !entry.pass && !entry.informational)) continue; // a hard rule failed: no rewrite fixes that
+      const blocking = review.concerns.filter((entry) => entry.severity === 'blocking').map((entry) => entry.text);
+      if (!blocking.length) continue;
+      const attempts = store.listEvents(job.id).filter((event) => event.type === 'autopilot_revision').length;
+      if (attempts >= MAX_REVISIONS) continue;
+      try {
+        await (this.deps.generateMaterials ?? generateMaterials)({ store, vaultDir: this.vaultDir, job, candidate, llm, minimumScore: candidate.preferences.minimum_score, stage: stageAttachment, force: true, coverLetter: kind === 'form' ? true : null, nameStyle: config.file_names, feedback: blocking.map((text) => `- ${text}`).join('\n'), now });
+        if (kind === 'form') await (this.deps.planApplication ?? planApplication)({ store, job, candidate, llm, ensureCombined: ensureCombinedPdf, nameStyle: config.file_names, url: chooseApplyUrl(job), now });
+        store.recordEvent(job.id, 'autopilot_revision', { detail: { kind, reviewId: review.id, attempt: attempts + 1, concerns: blocking } }, now);
+        revised += 1;
+        report.actions.push({ job: `${job.company} - ${job.role ?? ''}`, jobId: job.id, kind, result: `rewritten after the review (attempt ${attempts + 1}): ${blocking[0].slice(0, 100)}` });
+      } catch (error) {
+        report.errors.push(`revise ${job.company}: ${String(error.message).slice(0, 160)}`);
+        store.recordEvent(job.id, 'autopilot_revision', { detail: { kind, reviewId: review.id, attempt: attempts + 1, failed: String(error.message).slice(0, 200) } }, now);
+      }
+    }
+    return { revised };
   }
 
   async act({ store, config, candidate, now, report }) {

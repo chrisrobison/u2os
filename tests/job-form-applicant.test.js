@@ -334,3 +334,21 @@ test('the owner\'s file-name style reaches the planned uploads: playful by their
   assert.equal(plain.fields[0].fileName, 'Pat_Example_Resume_and_Cover_Letter.pdf');
   assert.notEqual(playful.planHash, plain.planHash, 'the name is part of what was reviewed');
 });
+
+test('an open answer longer than the field allows is asked again, shorter; it is never cut off mid-sentence', async () => {
+  const schema = { hasForm: true, blockers: {}, submitLabel: 'Submit', fields: [{ key: 'why', type: 'textarea', label: 'Why do you want to work at Tahoma?', required: true, options: [], filled: false, maxLength: 120 }] };
+  const job = { id: 'job_9', company: 'Tahoma AI', role: 'Engineer', description: 'We build deterministic orchestration around LLM agents.' };
+  const long = 'Tahoma builds deterministic orchestration around LLM agents, which is the problem I work on with U2OS, a personal agent platform with MCP and approval, and I ran engineering as CTO of D. Harris Tours.';
+  const short = 'Deterministic orchestration around agents is what I build with U2OS.';
+  let n = 0;
+  const f = fakeLlm(() => ({ answers: { why: ++n === 1 ? long : short }, unanswerable: [] }));
+  const plan = await buildApplicationPlan({ url: 'https://x.test/apply', schema, job, candidate: candidate(), materials: { resume: { path: '/x', sha256: 'a'.repeat(64) } }, llm: createLlm([f.provider]), now: NOW });
+  assert.equal(f.calls.length, 2, 'asked again');
+  assert.match(f.calls[1].user, /allows 120\. Write a complete answer that is shorter, do not cut it off/);
+  assert.equal(plan.fields.find((field) => field.key === 'why').value, short);
+  assert.ok(plan.fields[0].value.length <= 120);
+  const stubborn = fakeLlm({ answers: { why: long }, unanswerable: [] });
+  const unresolved = await buildApplicationPlan({ url: 'https://x.test/apply', schema, job, candidate: candidate(), materials: {}, llm: createLlm([stubborn.provider]), now: NOW });
+  assert.equal(unresolved.unresolved.find((entry) => entry.key === 'why').reason, 'not_supported_by_facts', 'a model that will not fit the limit leaves the question unresolved, not truncated');
+  assert.ok(!JSON.stringify(unresolved.fields).includes('mid'), 'nothing was cut and submitted');
+});

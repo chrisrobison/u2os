@@ -21,7 +21,7 @@ const write = (file, text) => fs.writeFileSync(file, text, { mode: 0o600 });
  * when useful, and an outreach email draft when the strategy includes email.
  * Idempotent: existing materials are reused unless `force`.
  */
-export async function generateMaterials({ store, vaultDir, job, candidate, llm, minimumScore = 82, force = false, pdf = true, coverLetter = null, stage = null, nameStyle = 'plain', now = new Date() }) {
+export async function generateMaterials({ store, vaultDir, job, candidate, llm, minimumScore = 82, force = false, pdf = true, coverLetter = null, stage = null, nameStyle = 'plain', feedback = null, now = new Date() }) {
   const score = store.getScore(job.id);
   if (!score) throw new Error(`Job ${job.id} has not been scored: run "job score" first`);
   if (score.degraded) throw new Error('Refusing to write materials from a degraded (rule-based) score; run "job score --rescore" with a model first');
@@ -40,14 +40,14 @@ export async function generateMaterials({ store, vaultDir, job, candidate, llm, 
   const files = {};
   const models = new Set();
 
-  const { document, model } = await generateResume({ job, source, score, candidate, llm });
+  const { document, model } = await generateResume({ job, source, score, candidate, llm, feedback });
   models.add(model);
   files.resume_json = path.join(dir, 'resume.json'); write(files.resume_json, `${JSON.stringify(document, null, 2)}\n`);
   files.resume_txt = path.join(dir, 'resume.txt'); write(files.resume_txt, resumeToText(document));
 
   let letter = null;
   if (coverLetter ?? needsCoverLetter({ strategy: decision.strategy, score })) {
-    const result = await generateCoverLetter({ job, source, score, candidate, llm });
+    const result = await generateCoverLetter({ job, source, score, candidate, llm, feedback });
     models.add(result.model);
     letter = assembleLetter({ paragraphs: result.paragraphs, resume: candidate.resume, job, date: now });
     files.cover_letter_txt = path.join(dir, 'cover-letter.txt'); write(files.cover_letter_txt, letterToText(letter));
@@ -55,7 +55,7 @@ export async function generateMaterials({ store, vaultDir, job, candidate, llm, 
 
   let email = null;
   if (decision.email) {
-    const draft = await generateOutreachEmail({ job, source, score, candidate, llm, recipient: decision.email });
+    const draft = await generateOutreachEmail({ job, source, score, candidate, llm, recipient: decision.email, feedback });
     models.add(draft.model);
     const assembled = assembleEmail({ draft, resume: candidate.resume });
     email = { to: decision.email, subject: assembled.subject, text: assembled.text, attachments: [], requirements: assembled.requirements, needsInput: assembled.needsInput };

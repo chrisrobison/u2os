@@ -97,7 +97,7 @@ test('live: proposes only the narrow tool with only the job id, through the gate
 });
 
 test('a rejection is reported for the owner and not re-reviewed until the content changes; a pending approval is not proposed twice', async () => {
-  const w = world({ mode: 'live' });
+  const w = world({ mode: 'live', extraConfig: 'per_cycle:\n  revise: 0\n' });
   const { autopilot, proposals, llm } = pilot(w, { reply: { decision: 'reject', confidence: 0.9, concerns: [{ severity: 'blocking', text: 'The email is vague.' }], notes: 'Too generic.' } });
   const first = await autopilot.runCycle({ now: NOW });
   assert.equal(proposals.length, 0);
@@ -322,4 +322,47 @@ test('file_names defaults to playful, accepts plain, and refuses anything else',
   assert.equal(loadAutopilotConfig(w.vault).file_names, 'plain');
   fs.writeFileSync(path.join(w.vault, 'job-hunt', 'autopilot.yaml'), 'file_names: silly\n');
   assert.throws(() => loadAutopilotConfig(w.vault), /file_names must be playful or plain/);
+});
+
+
+function reviseWorld(extra = '') { return world({ mode: 'live', extraConfig: `per_cycle:\n  revise: 3\n${extra}` }); }
+const blockingReject = { decision: 'reject', confidence: 0.9, concerns: [{ severity: 'blocking', text: 'The email claims a jarvis voice agent that the facts do not mention.' }], notes: 'Unsupported claim.' };
+
+test('a fixable rejection is rewritten once with the reviewer\'s objections, then reviewed again; never more than twice', async () => {
+  const w = reviseWorld();
+  const regenerated = [];
+  const { autopilot, proposals } = pilot(w, { reply: blockingReject, deps: { generateMaterials: async (options) => { regenerated.push({ force: options.force, feedback: options.feedback }); const file = w.store.getArtifacts(w.jobs[0].id).email_json.path; const email = JSON.parse(fs.readFileSync(file, 'utf8')); email.text = `${email.text} ${'again '.repeat(regenerated.length).trim()}`; fs.writeFileSync(file, JSON.stringify(email)); } } });
+  const first = await autopilot.runCycle({ now: NOW });
+  assert.equal(first.steps.revise.revised, 1);
+  assert.equal(regenerated[0].force, true);
+  assert.match(regenerated[0].feedback, /^- The email claims a jarvis voice agent/, 'the reviewer\'s blocking objection is the feedback');
+  assert.ok(first.actions.some((entry) => /rewritten after the review \(attempt 1\)/.test(entry.result)));
+  await autopilot.runCycle({ now: NOW });
+  const third = await autopilot.runCycle({ now: NOW });
+  assert.equal(regenerated.length, 2, 'two revisions at most');
+  assert.equal(third.steps.revise.revised, 0);
+  assert.equal(proposals.length, 0, 'a draft the reviewer keeps rejecting is never sent');
+  assert.ok(third.needsYou.some((entry) => /review rejected/.test(entry.why)), 'and is left for the owner');
+});
+
+test('a rewrite that passes review is acted on; deterministic rejections and minor concerns are never "revised"', async () => {
+  const w = reviseWorld();
+  let calls = 0;
+  const { autopilot, proposals } = pilot(w, { reply: () => (++calls === 1 ? blockingReject : approve), deps: { generateMaterials: async () => { const file = w.store.getArtifacts(w.jobs[0].id).email_json.path; fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('Founding Engineer at', 'Founding Engineer, rewritten, at')); } } });
+  await autopilot.runCycle({ now: NOW });
+  await autopilot.runCycle({ now: NOW });
+  assert.equal(proposals.length, 1, 'the rewritten email was approved and sent');
+
+  const hard = reviseWorld();
+  hard.store.saveScore(hard.jobs[0].id, { score: 40, confidence: 0.9, label: 'skip', dimensions: {}, reasons: [], concerns: [], recommendedNarrative: 'staff-principal', projects: [], flags: [], degraded: false, model: 'm' });
+  const regenerated = [];
+  const a = pilot(hard, { reply: blockingReject, deps: { generateMaterials: async () => { regenerated.push(1); } } });
+  await a.autopilot.runCycle({ now: NOW });
+  assert.deepEqual(regenerated, [], 'a failed hard check (the score) is not something a rewrite can fix');
+
+  const minor = reviseWorld();
+  const regenerated2 = [];
+  const b = pilot(minor, { reply: { decision: 'reject', confidence: 0.9, concerns: [{ severity: 'minor', text: 'Slightly long.' }], notes: 'meh' }, deps: { generateMaterials: async () => { regenerated2.push(1); } } });
+  await b.autopilot.runCycle({ now: NOW });
+  assert.deepEqual(regenerated2, [], 'no blocking concern, nothing to repair');
 });
