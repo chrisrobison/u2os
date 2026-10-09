@@ -370,9 +370,9 @@ Another driver registers itself with `registerDriver(name, driver)`; `tests/job-
 
 ## Browser extension channel
 
-A browser extension (the filling itself is a later piece; this is the channel it will use) can fetch reviewed application plans from U2OS and report what happened. It is a new trust boundary, so it is deliberately narrow.
+A browser extension ([Filling in your own Chrome](#filling-in-your-own-chrome) below) can fetch reviewed application plans from U2OS and report what happened. It is a new trust boundary, so it is deliberately narrow.
 
-**Pairing.** The owner, signed in, calls (a UI button is a later piece) `POST /api/extension/pairing-codes` (localhost only) and gets a one-time code, valid five minutes. The extension sends it to `POST /api/extension/v1/pair` and receives a long-lived bearer token, bound to the extension's `chrome-extension://<id>` origin. Only SHA-256 hashes of codes and tokens are stored (`<U2OS_HOME>/credentials/extension-pairings.json`, mode 0600); the token is shown once. `GET /api/extension/pairings` lists pairings and `DELETE /api/extension/pairings/:id` revokes one immediately. Ten wrong codes in a minute lock pairing for the minute.
+**Pairing.** The owner, signed in, calls `POST /api/extension/pairing-codes` (or, from a terminal, `npm run u2 -- job extension pair`) (localhost only) and gets a one-time code, valid five minutes. The extension sends it to `POST /api/extension/v1/pair` and receives a long-lived bearer token, bound to the extension's `chrome-extension://<id>` origin. Only SHA-256 hashes of codes and tokens are stored (`<U2OS_HOME>/credentials/extension-pairings.json`, mode 0600); the token is shown once. `GET /api/extension/pairings` lists pairings and `DELETE /api/extension/pairings/:id` revokes one immediately. Ten wrong codes in a minute lock pairing for the minute.
 
 **Endpoints** (all under `/api/extension/v1/`, `Authorization: Bearer <token>`):
 
@@ -402,4 +402,36 @@ A plan or file is served only through `act.js` `prepare()`: a review approval bo
 
 Plans contain the owner's contact details and answers; they are served only over the loopback interface to the paired extension.
 
-**Follow-up (not in this change).** An `extension` entry in the form driver registry (#526) needs `execute()` to queue the plan and then await a result reported over this channel, with timeouts and the uncertain-outcome rules; that is a separate piece of work. Until then the extension is driven by the owner, not by the autopilot.
+**Follow-up.** An `extension` entry in the form driver registry (#526) (#531) would let the autopilot hand a plan to the extension and await the reported result; until then the extension is driven by the owner, not by the autopilot.
+
+## Filling in your own Chrome
+
+The `extension/` directory is a Manifest V3 Chrome extension (plain JavaScript, no build step) that fills an application in **your own, signed-in Chrome**, where you can watch it. It fills what U2OS planned and you (or the review agent) approved, shows you what it did, and **leaves pressing submit to you**.
+
+**Install (unpacked).** Open `chrome://extensions`, turn on *Developer mode*, choose *Load unpacked* and pick the `extension/` folder of this repository. Pin the *U2OS form filler* button; clicking it opens the side panel. Chrome 114 or later.
+
+**Pair.** U2OS must be running on this computer. In a terminal:
+
+```
+npm run u2 -- job extension pair      # prints a one-time code, valid five minutes
+npm run u2 -- job extension list      # paired browsers: id, label, last used
+npm run u2 -- job extension revoke <id>
+```
+
+In the side panel enter your U2OS address (default `http://127.0.0.1:4000`) and the code. The extension keeps its token in `chrome.storage.local` and sends it only to that address. The address must be `http://localhost`, `http://127.0.0.1` or `http://[::1]`: the extension itself rejects anything else (including `https`, other hosts, and addresses with credentials), so a typo or a malicious link cannot send the token elsewhere. Redirects are never followed. The pairing code is printed by a terminal command rather than a button in the web UI so that nothing a web page can reach hands out a credential.
+
+**Use.** Plan and review an application in U2OS (`job plan <id>`, then the review). The side panel lists applications that are planned and approved. *Fill this application* then:
+
+1. asks Chrome for access to **that job's site only** (a one-time prompt per site; the extension does not ask for access to all sites),
+2. fetches the reviewed plan and the exact files, and checks each file's SHA-256 against the plan before using it,
+3. opens the application in a tab, reads the form (same `data-u2` keys and schema hash as the Playwright driver), and fills it with events a React form notices, attaching your resume as a real file upload,
+4. outlines every field: **green** filled, **amber** filled but worth a look (a custom widget, or the page changed the value), **red** left for you (required but not filled, or no safe match),
+5. reports `filled` to U2OS. You review the form and press submit yourself.
+
+It stops, fills nothing, and says why when it meets a **CAPTCHA**, a **login wall**, no form, or a form whose schema hash differs from the plan (the board changed its questions: re-plan).
+
+**Submit when complete** (side panel setting, **off** by default). When on, and only when U2OS is in `live` mode, the plan is approved, and every field was filled with confidence (nothing amber or red, and the form passes the browser's own validation), the extension first records its intent with U2OS (`POST jobs/:id/submitting`), then clicks the form's submit button and looks for the board's confirmation (the same text and URL rules as the Playwright driver). It reports `submitted` only on a confirmation. Anything else is reported as a failure after submitting began, which U2OS records as `uncertain` and **never retries**: check your email. In dry-run mode, or with the setting off, it never clicks.
+
+**Localhost only.** The channel is served only to this machine (see above and [SECURITY.md](../SECURITY.md)), and the extension refuses any other server address. It cannot reach U2OS on another computer, and it does not need to. Revoke a browser with `job extension revoke <id>`; "Forget this pairing" in the side panel only forgets the token on the browser side.
+
+**Tests.** `tests/extension.test.js` covers the pure logic and asserts that the extension reads every fixture form exactly as the Playwright driver does (same schema, same hash). `tests/e2e/chrome-extension.spec.js` loads the unpacked extension into Chromium against the `tests/fixtures/apply-forms.js` forms and a real server (it skips where the browser cannot load extensions).

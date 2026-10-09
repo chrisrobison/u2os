@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "U2OS form filler",
+  "version": "0.1.0",
+  "description": "Fills job applications that U2OS has planned and you have reviewed, in your own Chrome. You press submit.",
+  "minimum_chrome_version": "114",
+  "permissions": ["storage", "sidePanel", "scripting"],
+  "host_permissions": ["http://localhost/*", "http://127.0.0.1/*"],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "background": { "service_worker": "background.js" },
+  "side_panel": { "default_path": "sidepanel.html" },
+  "action": { "default_title": "U2OS form filler" }
+}
