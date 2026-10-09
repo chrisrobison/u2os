@@ -139,6 +139,8 @@ test('missing, malformed, wrong, other-extension and revoked tokens are refused'
   for (const bad of ['Bearer', 'Bearer wrong', `Bearer ${token}x`, `bearer ${token}`, `Basic ${token}`, `Bearer ${token.slice(0, -1)}`]) assert.equal((await w.call({ url, headers: { origin: EXT, authorization: bad } })).status, 401, bad);
   assert.equal((await w.call({ url, headers: { authorization: `Bearer ${token}` } })).status, 200, 'no Origin header at all (non-browser client) is fine with a token');
   assert.equal((await w.call({ url: `${url}?token=${token}` })).status, 401, 'tokens are not accepted in the URL');
+  for (let i = 0; i < 150; i += 1) await w.call({ url, headers: { authorization: 'Bearer nope' } });
+  assert.equal((await w.call({ url, headers: w.authed(token) })).status, 200, 'unauthenticated floods cannot lock the real extension out');
   assert.equal(w.pairings.revoke(id), true);
   assert.equal((await w.call({ url, headers: w.authed(token) })).status, 401, 'revoked');
   assert.equal(w.pairings.revoke(id), false);

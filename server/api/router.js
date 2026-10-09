@@ -33,7 +33,6 @@ export class Router {
       const granted = this.extension.gate(req, res, match.options.extension);
       if (!granted) return;
       req.extensionAuth = granted;
-      if (!this.limiter.take(`extension:${req.socket?.remoteAddress || 'unknown'}`, 120, 60000)) return sendJson(res, 429, { error: 'Rate limit exceeded', code: 'RATE_LIMITED' });
       return this._dispatch(req, res, match, pathname, url);
     }
     if (this.publicOrigin && !validHost(req, this.publicOrigin)) return sendJson(res, 400, { error: 'Invalid Host' });

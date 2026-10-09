@@ -11,11 +11,9 @@ import { EXTENSION_ORIGIN } from './pairings.js';
 //      the Origin, if sent, is the one recorded at pairing
 //   4. CORS: that one origin is echoed back; never a wildcard, never credentials
 
-const FAILED_AUTH = { max: 30, windowMs: 60_000 };
-
-export function createExtensionChannel({ pairings, now = () => Date.now() }) {
-  let failures = [];
-
+// No lockout on bad tokens: they are 256-bit random values, so guessing is infeasible, and a lockout would let any web page
+// (a no-cors GET to 127.0.0.1 needs no credentials) lock the real extension out. Pairing-code guesses are limited in pairings.js.
+export function createExtensionChannel({ pairings }) {
   const refuse = (res, status, error) => {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify({ error }));
@@ -46,12 +44,9 @@ export function createExtensionChannel({ pairings, now = () => Date.now() }) {
         cors(res, origin);
         return { origin };
       }
-      const at = now();
-      failures = failures.filter((time) => at - time < FAILED_AUTH.windowMs);
-      if (failures.length >= FAILED_AUTH.max) return refuse(res, 429, 'Too many failed attempts');
       const header = String(req.headers.authorization ?? '');
       const pairing = /^Bearer ([A-Za-z0-9_-]+)$/.exec(header) ? pairings.authenticate(header.slice(7)) : null;
-      if (!pairing) { failures.push(at); return refuse(res, 401, 'Extension token required'); }
+      if (!pairing) return refuse(res, 401, 'Extension token required');
       if (origin !== undefined && origin !== pairing.origin) return refuse(res, 403, 'Origin not allowed');
       if (origin) cors(res, origin);
       return { pairing };
