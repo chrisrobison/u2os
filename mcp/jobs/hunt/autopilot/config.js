@@ -21,6 +21,7 @@ import { JOB_HUNT_DIR } from '../../profile.js';
 //     relocation: false            # jobs flagged relocation_required
 //     below_salary_minimum: false
 //     equity_only: false           # postings that are unpaid until funded
+//     part_time: false             # part-time or token-pay postings ("10-15 hrs/wk", "equity + discretionary cash")
 //   browser:
 //     headed: false                # open a visible browser window for form submits
 //   routes:
@@ -37,9 +38,9 @@ export const DEFAULTS = Object.freeze({
   enabled: false, mode: 'dry_run', interval_seconds: 300,
   limits: { applications_per_day: 8, emails_per_day: 10, per_company_days: 30 },
   sources: ['hn', 'hn-jobs', 'remote', 'boards'], boards_every_minutes: 60,
-  allow: { relocation: false, below_salary_minimum: false, equity_only: false },
+  allow: { relocation: false, below_salary_minimum: false, equity_only: false, part_time: false },
   blocklist: { companies: [], domains: [], keywords: [] },
-  per_cycle: { score: 6, score_fast: 6, confirm: 2, prepare: 3, act: 3 }, mail_sender: '', routes: { email: true, form: false }, browser: { headed: false }, file_names: 'playful',
+  per_cycle: { score: 6, score_fast: 6, confirm: 2, prepare: 3, revise: 2, act: 3 }, mail_sender: '', routes: { email: true, form: false }, browser: { headed: false }, file_names: 'playful',
 });
 
 const int = (value, name, min, max) => {

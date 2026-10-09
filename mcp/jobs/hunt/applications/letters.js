@@ -43,17 +43,19 @@ function userPrompt({ job, source, digest, facts, score, narrativeId, extra = ''
   ].filter(Boolean).join('\n\n');
 }
 
+const feedbackSection = (feedback) => (feedback ? `A REVIEWER REJECTED THE PREVIOUS DRAFT FOR THESE REASONS. Fix them. Do not add anything the sources do not support, and do not repeat a claim the reviewer could not verify.\n${feedback}` : '');
+
 function jobCorpusFor(job, source) {
   return buildCorpus(`${job.company} ${job.role ?? ''} ${(job.technologies ?? []).join(' ')} ${source?.rawText ?? job.description} ${source?.author ?? ''}`);
 }
 
-export async function generateCoverLetter({ job, source, score, candidate, llm }) {
+export async function generateCoverLetter({ job, source, score, candidate, llm, feedback = null }) {
   const corpus = candidateCorpus(candidate);
   const jobCorpus = jobCorpusFor(job, source);
   const company = job.company.replace(/\s*\(.*?\)\s*/g, ' ').trim();
   const { value, model } = await llm.json({
     system: LETTER_SYSTEM,
-    user: userPrompt({ job, source, digest: candidate.digest, facts: candidate.facts, score, narrativeId: score?.recommendedNarrative ?? 'staff-principal' }),
+    user: userPrompt({ job, source, digest: candidate.digest, facts: candidate.facts, score, narrativeId: score?.recommendedNarrative ?? 'staff-principal', extra: feedbackSection(feedback) }),
     validate: (raw) => {
       const paragraphs = (Array.isArray(raw?.paragraphs) ? raw.paragraphs : []).map((p) => clean(p, 1800)).filter(Boolean);
       const body = paragraphs.join('\n\n');
@@ -71,12 +73,12 @@ export async function generateCoverLetter({ job, source, score, candidate, llm }
   return { paragraphs: value.paragraphs, model };
 }
 
-export async function generateOutreachEmail({ job, source, score, candidate, llm, recipient }) {
+export async function generateOutreachEmail({ job, source, score, candidate, llm, recipient, feedback = null }) {
   const corpus = candidateCorpus(candidate);
   const jobCorpus = jobCorpusFor(job, source);
   const { value, model } = await llm.json({
     system: EMAIL_SYSTEM,
-    user: userPrompt({ job, source, digest: candidate.digest, facts: candidate.facts, score, narrativeId: score?.recommendedNarrative ?? 'staff-principal', extra: `RECIPIENT: ${recipient}` }),
+    user: userPrompt({ job, source, digest: candidate.digest, facts: candidate.facts, score, narrativeId: score?.recommendedNarrative ?? 'staff-principal', extra: `RECIPIENT: ${recipient}${feedbackSection(feedback) ? `\n\n${feedbackSection(feedback)}` : ''}` }),
     validate: (raw) => {
       const body = stripFraming(clean(raw?.body, 1600));
       const subject = clean(raw?.subject, 120).replace(/[\r\n]/g, ' ');

@@ -144,7 +144,10 @@ async function draftOpenAnswers({ questions, job, source, candidate, llm }) {
       for (const question of questions) {
         const text = given[question.key];
         if (text === undefined || text === null || text === '') continue;
-        const answer = String(text).replace(/\s+/g, ' ').trim().slice(0, Math.min(question.maxLength ?? 1500, 1500));
+        const answer = String(text).replace(/\s+/g, ' ').trim();
+        // An answer is never cut to fit (a sentence stopped halfway is worse than none): too long means ask again, shorter.
+        const limit = Math.min(question.maxLength ?? 1500, 1500);
+        if (answer.length > limit) throw invalid(`the answer to "${question.label.slice(0, 40)}" is ${answer.length} characters; the form allows ${limit}. Write a complete answer that is shorter, do not cut it off`);
         assertNoStockPhrases(`answer to "${question.label.slice(0, 40)}"`, answer);
         assertNoUnverifiablePhrases(`answer to "${question.label.slice(0, 40)}"`, answer);
         assertSupported(`answer to "${question.label.slice(0, 40)}"`, answer, corpus, jobCorpus);

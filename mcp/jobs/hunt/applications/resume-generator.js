@@ -45,7 +45,7 @@ Reply with ONLY one JSON object:
 
 const defang = (value) => String(value).replaceAll('<<<LISTING', '< < <LISTING').replaceAll('LISTING>>>', 'LISTING > > >');
 
-export function buildResumePrompt({ job, source, digest, facts, projects, narrativeId, score }) {
+export function buildResumePrompt({ job, source, digest, facts, projects, narrativeId, score, feedback = null }) {
   const narrative = NARRATIVES[narrativeId];
   const listing = `Company: ${job.company}\nRole: ${job.role ?? '(not stated)'}\n\n${source?.rawText ?? job.description}`.slice(0, 5000);
   return [
@@ -54,6 +54,7 @@ export function buildResumePrompt({ job, source, digest, facts, projects, narrat
     `AVAILABLE PROJECTS\n${projects.map((project) => `- ${project.name}: ${project.description}`).join('\n') || '(none)'}`,
     `RECOMMENDED NARRATIVE: ${narrativeId} (${narrative?.label}); emphasize ${narrative?.emphasize.join('; ')}`,
     score?.reasons?.length ? `WHY THIS ROLE FITS (from scoring)\n- ${score.reasons.join('\n- ')}` : '',
+    feedback ? `A REVIEWER REJECTED THE PREVIOUS DRAFT FOR THESE REASONS. Fix them. Do not add anything the sources do not support, and do not repeat a claim the reviewer could not verify.\n${feedback}` : '',
     `JOB\n<<<LISTING\n${defang(listing)}\nLISTING>>>`,
   ].filter(Boolean).join('\n\n');
 }
@@ -121,7 +122,7 @@ export function assembleResume({ resume, draft, job, narrativeId, generatedAt })
   };
 }
 
-export async function generateResume({ job, source, score, candidate, llm }) {
+export async function generateResume({ job, source, score, candidate, llm, feedback = null }) {
   const { resume, facts, repos, digest } = candidate;
   const narrativeId = score?.recommendedNarrative ?? 'staff-principal';
   const projects = [
@@ -132,7 +133,7 @@ export async function generateResume({ job, source, score, candidate, llm }) {
   const jobCorpus = buildCorpus(`${job.company} ${job.role ?? ''} ${(job.technologies ?? []).join(' ')}`);
   const { value, model } = await llm.json({
     system: SYSTEM,
-    user: buildResumePrompt({ job, source, digest, facts, projects, narrativeId, score }),
+    user: buildResumePrompt({ job, source, digest, facts, projects, narrativeId, score, feedback }),
     validate: (raw) => validateResumeDraft(raw, { resume, projectNames: projects.map((project) => project.name), corpus, jobCorpus }),
   });
   return { document: assembleResume({ resume, draft: value, job, narrativeId, generatedAt: new Date().toISOString() }), model };

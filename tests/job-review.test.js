@@ -67,6 +67,8 @@ const FAILS = [
   ['salary_not_below_minimum_unless_allowed', { score: { flags: ['salary_below_threshold'] } }],
   ['not_staffing_spam_or_unpaid', { posting: `${POSTING}\nWe are hiring on behalf of our client. C2C only.` }],
   ['not_equity_only_unless_allowed', { posting: `${POSTING}\nEquity-only pre-seed; salary after the seed round.` }],
+  ['not_part_time_or_token_pay_unless_allowed', { posting: `${POSTING}\nEquity + discretionary cash, ~10-15 hrs/wk.` }],
+  ['not_part_time_or_token_pay_unless_allowed', { posting: `${POSTING}\nThis is a part-time role.` }],
   ['email_needs_no_input', { email: { needsInput: ['a link to something you built'] } }],
   ['recipient_plausible', { contact: 'someone@example.com', posting: `Tahoma AI | Founding Engineer. Email someone@example.com` }],
   ['recipient_plausible', { contact: 'founder@acme.example', posting: `Tahoma AI | Founding Engineer. Email founder@acme.example` }],
@@ -231,4 +233,12 @@ test('the reviewer sees the candidate\'s own public repositories and the resume\
   assert.match(prompt, /- mindgraph: Graph workbench for AI workflows with agent nodes \[JavaScript\]/);
   assert.doesNotMatch(buildReviewPrompt({ job: w.job, subject, candidate, score: w.store.getScore(w.job.id) }), /OWN PUBLIC GITHUB PROJECTS/, 'no section when there are none');
   assert.match(candidateDigest({ ...RESUME, work: [{ ...RESUME.work[0], location: 'San Francisco, CA' }] }, PREFS), /CTO, D\. Harris Tours, Inc\., San Francisco, CA \(/);
+});
+
+test('part-time or token-pay postings can be allowed explicitly', async () => {
+  const w = world({ posting: `${POSTING}\nPart-time, ~10-15 hrs/wk.` });
+  const allowed = await review(w, llmReturning(approve()), { config: { ...CONFIG, allow: { ...CONFIG.allow, part_time: true } } });
+  assert.equal(allowed.decision, 'approve');
+  const normal = world({ posting: `${POSTING}\nFull-time, $190k + equity.` });
+  assert.equal((await review(normal, llmReturning(approve()))).decision, 'approve', 'an ordinary posting is not caught by the new check');
 });
