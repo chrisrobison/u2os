@@ -86,7 +86,7 @@ export function submitApplicationForm({ vaultDir, jobId, execute = executePlan, 
     const { store, job, config, approval } = prepare({ vaultDir, jobId, kind: 'form', now });
     try {
       const artifacts = store.getArtifacts(job.id);
-      const files = { ...(artifacts.resume_pdf ? { resume: { path: artifacts.resume_pdf.path } } : {}), ...(artifacts.cover_letter_pdf ? { cover_letter: { path: artifacts.cover_letter_pdf.path } } : {}) };
+      const files = { ...(artifacts.resume_pdf ? { resume: { path: artifacts.resume_pdf.path } } : {}), ...(artifacts.cover_letter_pdf ? { cover_letter: { path: artifacts.cover_letter_pdf.path } } : {}), ...(artifacts.combined_pdf ? { resume_with_letter: { path: artifacts.combined_pdf.path } } : {}) };
       const live = config.mode === 'live';
       const { result, application } = await submitApplication({ store, job, files, submit: live, headed: config.browser.headed, execute, screenshotDir: path.join(vaultDir, JOB_HUNT_DIR, 'state', 'screens', job.id), now });
       store.recordEvent(job.id, live ? 'application_form_submitted' : 'autopilot_dry_run', { detail: { action: 'submit_application', outcome: result.status, applicationId: application.id, by: 'autopilot', reviewId: approval.id } }, new Date());

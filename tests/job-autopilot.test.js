@@ -298,3 +298,28 @@ test('the headed browser option is opt-in, validated, and reaches the form execu
   fs.writeFileSync(path.join(w.vault, 'job-hunt', 'autopilot.yaml'), 'browser:\n  headed: "yes"\n');
   assert.throws(() => loadAutopilotConfig(w.vault), /browser\.headed must be true or false/);
 });
+
+test('a form with no cover-letter upload makes the autopilot write a letter and replan once', async () => {
+  const w = world({ mode: 'live', jobs: 0, extraConfig: 'per_cycle:\n  prepare: 5\nroutes:\n  form: true\n' });
+  const { job } = w.store.upsertSighting({ source: 'ashby', sourceKey: 'ashby:x:7', company: 'LetterCo', role: 'Founding Engineer', rawText: 'LetterCo', applicationUrls: ['https://jobs.ashbyhq.com/letterco/7/application'], contactEmails: [], author: null });
+  w.store.saveScore(job.id, { score: 90, confidence: 0.9, label: 'exceptional', dimensions: {}, reasons: [], concerns: [], recommendedNarrative: 'ai-agent-systems', projects: [], flags: [], degraded: false });
+  const calls = [];
+  let plans = 0;
+  const deps = {
+    generateMaterials: async (options) => { calls.push(options.coverLetter === true ? 'materials+letter' : 'materials'); const file = path.join(w.dir, `${calls.length}.pdf`); fs.writeFileSync(file, '%PDF'); if (!w.store.getArtifacts(job.id).resume_pdf) w.store.addArtifact(job.id, 'resume_pdf', file); },
+    planApplication: async () => { plans += 1; return { status: 'planned', plan: { needs: [], blockers: [], wants: plans === 1 ? ['cover_letter'] : [] } }; },
+  };
+  const { autopilot } = pilot(w, { deps });
+  await autopilot.runCycle({ now: NOW });
+  assert.deepEqual(calls, ['materials', 'materials+letter'], 'the letter was written because the form has no place for a separate one');
+  assert.equal(plans, 2, 'and the form was planned again with it');
+});
+
+test('file_names defaults to playful, accepts plain, and refuses anything else', () => {
+  const w = world();
+  assert.equal(loadAutopilotConfig(w.vault).file_names, 'playful');
+  fs.writeFileSync(path.join(w.vault, 'job-hunt', 'autopilot.yaml'), 'file_names: plain\n');
+  assert.equal(loadAutopilotConfig(w.vault).file_names, 'plain');
+  fs.writeFileSync(path.join(w.vault, 'job-hunt', 'autopilot.yaml'), 'file_names: silly\n');
+  assert.throws(() => loadAutopilotConfig(w.vault), /file_names must be playful or plain/);
+});

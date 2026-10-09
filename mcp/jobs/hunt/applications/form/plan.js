@@ -3,6 +3,7 @@ import { invalid } from '../../llm/structured.js';
 import { assertNoStockPhrases, assertNoUnverifiablePhrases, assertSupported, buildCorpus } from '../guard.js';
 import { candidateCorpus } from '../resume-generator.js';
 import { schemaHash } from './schema.js';
+import { attachmentName } from '../names.js';
 
 // Planning an application: every field of the form gets a value from the
 // owner's own data, a declined/neutral answer, or an explicit "unresolved"
@@ -41,8 +42,12 @@ function resolveField(field, ctx) {
   if (field.type === 'file') {
     // A nameless, unlabelled upload is the board's "autofill from resume" helper, which would overwrite fields we fill ourselves.
     if (!field.label && /^field_\d+$/.test(field.key)) return { skip: true };
-    if (/cover/i.test(text)) return ctx.files.cover_letter ? { file: 'cover_letter' } : (field.required ? unresolved('cover_letter_required') : { skip: true });
-    if (/resume|cv|curriculum/i.test(text) || (field.accept || '').includes('pdf')) return ctx.files.resume ? { file: 'resume' } : unresolved('no_resume');
+    if (/cover/i.test(text)) return ctx.files.cover_letter ? { file: 'cover_letter', fileName: ctx.name('cover_letter') } : (field.required ? unresolved('cover_letter_required') : { skip: true });
+    // No separate cover-letter upload on this form: the letter rides in the resume slot, in front of the resume.
+    if (/resume|cv|curriculum/i.test(text) || (field.accept || '').includes('pdf')) {
+      if (ctx.useCombined) return { file: 'resume_with_letter', fileName: ctx.name('resume_with_letter') };
+      return ctx.files.resume ? { file: 'resume', fileName: ctx.name('resume') } : unresolved('no_resume');
+    }
     return field.required ? unresolved('unknown_upload') : { skip: true };
   }
   if (SENSITIVE.test(text)) return field.required ? unresolved('sensitive_never_inferred') : { skip: true };
@@ -162,7 +167,7 @@ async function draftOpenAnswers({ questions, job, source, candidate, llm }) {
  * @param candidate { resume, answers, facts, repos, digest }
  * @param materials { resume: {path, sha256}, cover_letter: {path, sha256} | undefined, coverLetterText }
  */
-export async function buildApplicationPlan({ url, schema, job, source, candidate, materials = {}, llm = null, now = new Date() }) {
+export async function buildApplicationPlan({ url, schema, job, source, candidate, materials = {}, llm = null, nameStyle = 'plain', now = new Date() }) {
   const { basics } = candidate.resume;
   const profile = (network) => basics.profiles?.find((p) => p.network?.toLowerCase() === network)?.url;
   const ctx = {
@@ -171,8 +176,15 @@ export async function buildApplicationPlan({ url, schema, job, source, candidate
     links: { linkedin: profile('linkedin'), github: profile('github'), website: basics.website },
     currentCompany: candidate.resume.work?.[0]?.period?.match(/present/i) ? candidate.resume.work[0].company : null,
     currentTitle: candidate.resume.work?.[0]?.period?.match(/present/i) ? candidate.resume.work[0].position : null,
-    files: { resume: materials.resume, cover_letter: materials.cover_letter }, coverLetterText: materials.coverLetterText ?? null,
+    files: { resume: materials.resume, cover_letter: materials.cover_letter, resume_with_letter: materials.combined }, coverLetterText: materials.coverLetterText ?? null,
+    // What the recruiter sees as the file's name (the owner's preference: memorable, and a little fun).
+    name: (kind) => attachmentName({ kind, person: basics.name, company: job.company, seed: job.id, style: nameStyle }),
+    // The owner's rule: with no cover-letter upload field, one PDF (cover letter, then resume) goes in the resume slot.
+    useCombined: false,
   };
+  const hasCoverUpload = schema.fields.some((field) => field.type === 'file' && /cover/i.test(`${field.label} ${field.key}`));
+  ctx.useCombined = !hasCoverUpload && Boolean(materials.combined);
+  const wants = !hasCoverUpload && !materials.combined && !materials.cover_letter ? ['cover_letter'] : [];
   const fields = [];
   const unresolved = [];
   const open = [];
@@ -183,7 +195,7 @@ export async function buildApplicationPlan({ url, schema, job, source, candidate
     if (result.skip) continue;
     if (result.unresolved) { unresolved.push({ ...base, reason: result.unresolved }); continue; }
     if (result.open) { open.push({ ...base, maxLength: field.maxLength }); continue; }
-    fields.push({ ...base, ...(result.file ? { file: result.file } : { value: String(result.value).slice(0, 5000) }), origin: result.file ? 'upload' : result.origin, options: field.options?.length ? field.options : undefined });
+    fields.push({ ...base, ...(result.file ? { file: result.file, fileName: result.fileName } : { value: String(result.value).slice(0, 5000) }), origin: result.file ? 'upload' : result.origin, options: field.options?.length ? field.options : undefined });
   }
   const drafted = await draftOpenAnswers({ questions: open, job, source, candidate, llm });
   for (const question of open) {
@@ -199,8 +211,9 @@ export async function buildApplicationPlan({ url, schema, job, source, candidate
   const plan = {
     jobId: job.id, url, schemaHash: schemaHash(schema.fields), submitLabel: schema.submitLabel ?? null,
     fields, unresolved,
-    files: Object.fromEntries(Object.entries({ resume: materials.resume, cover_letter: materials.cover_letter }).filter(([, file]) => file).map(([kind, file]) => [kind, { sha256: file.sha256 }])),
-    blockers, needs, ready: !blockers.length && !unresolved.some((entry) => entry.required || entry.reason.startsWith('needs_answer:')), createdAt: now.toISOString(),
+    // Only the files the plan actually uploads are pinned.
+    files: Object.fromEntries([...new Set(fields.filter((entry) => entry.file).map((entry) => entry.file))].map((kind) => [kind, { sha256: ctx.files[kind].sha256 }])),
+    blockers, needs, wants, ready: !blockers.length && !unresolved.some((entry) => entry.required || entry.reason.startsWith('needs_answer:')), createdAt: now.toISOString(),
   };
   plan.planHash = planHash(plan);
   return plan;

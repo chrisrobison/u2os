@@ -25,6 +25,7 @@ import { createFastLlm } from './llm.js';
 import { reviewJob } from '../../mcp/jobs/hunt/review/agent.js';
 import { loadAutopilotConfig } from '../../mcp/jobs/hunt/autopilot/config.js';
 import { resolveAttachments } from '../tools/email-attachments.js';
+import { ensureCombinedPdf } from '../../mcp/jobs/hunt/applications/materials.js';
 import { planApplication, submitApplication } from '../../mcp/jobs/hunt/applications/form/submit.js';
 import { loadAnswers } from '../../mcp/jobs/hunt/candidate/answers.js';
 import { refilterStored } from '../../mcp/jobs/hunt/jobs/relevance.js';
@@ -165,7 +166,7 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
         const llm = llmOverride ?? createJobLlm();
         const candidate = { resume, preferences, facts: loadFacts(vaultDir), repos: loadRepos(vaultDir)?.repos ?? [], digest: candidateDigest(resume, preferences) };
         const result = await generateMaterials({
-          store, vaultDir, job, candidate, llm, stage: stageAttachment, force: flags.force === true, pdf: flags['no-pdf'] !== true, now,
+          store, vaultDir, job, candidate, llm, stage: stageAttachment, nameStyle: loadAutopilotConfig(vaultDir).file_names, force: flags.force === true, pdf: flags['no-pdf'] !== true, now,
           minimumScore: preferences.minimum_score, coverLetter: flags['cover-letter'] ? true : flags['no-cover-letter'] ? false : null,
         });
         out.log(`${result.reused ? 'Materials already exist (use --force to regenerate)' : 'Materials written'}: ${result.dir}`);
@@ -196,12 +197,13 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
         const resume = loadResume(vaultDir);
         const preferences = loadPreferences(vaultDir);
         const candidate = { resume, preferences, answers: loadAnswers(vaultDir), facts: loadFacts(vaultDir), repos: loadRepos(vaultDir)?.repos ?? [], digest: candidateDigest(resume, preferences) };
-        const application = await planApplication({ store, job, candidate, llm: llmOverride ?? createJobLlm(), url: flags.url ?? null, now });
+        const application = await planApplication({ store, job, candidate, llm: llmOverride ?? createJobLlm(), ensureCombined: ensureCombinedPdf, nameStyle: loadAutopilotConfig(vaultDir).file_names, url: flags.url ?? null, now });
         const { plan } = application;
         out.log(`${job.company} - ${job.role ?? ''}: plan ${application.status}  (${plan.fields.length} fields, ${plan.unresolved.length} unresolved)  ${application.url}`);
         for (const field of plan.fields) out.log(`  ${field.origin.padEnd(12)} ${String(field.label).slice(0, 48).padEnd(48)} ${field.file ? `[${field.file} file]` : String(field.value).replace(/\s+/g, ' ').slice(0, 60)}`);
         for (const entry of plan.unresolved) out.log(`  ${entry.required ? 'NEEDS' : 'optional'}      ${String(entry.label).slice(0, 48).padEnd(48)} ${entry.reason}`);
         for (const blocker of plan.blockers) out.log(`  BLOCKED: ${blocker}`);
+        if (plan.wants?.includes('cover_letter')) out.log('  The form has no cover-letter upload: generate a letter (job materials <id> --cover-letter --force) and it will go in front of the resume.');
         return application.status === 'planned' ? 0 : 1;
       }
       case 'submit': {
@@ -209,7 +211,7 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
         const job = store.getJob(positional[0]);
         if (!job) { out.log(`Unknown job ${positional[0] ?? ''}`); return 1; }
         const artifacts = store.getArtifacts(job.id);
-        const files = { ...(artifacts.resume_pdf ? { resume: { path: artifacts.resume_pdf.path } } : {}), ...(artifacts.cover_letter_pdf ? { cover_letter: { path: artifacts.cover_letter_pdf.path } } : {}) };
+        const files = { ...(artifacts.resume_pdf ? { resume: { path: artifacts.resume_pdf.path } } : {}), ...(artifacts.cover_letter_pdf ? { cover_letter: { path: artifacts.cover_letter_pdf.path } } : {}), ...(artifacts.combined_pdf ? { resume_with_letter: { path: artifacts.combined_pdf.path } } : {}) };
         const { result, application } = await submitApplication({ store, job, files, submit: flags['dry-run'] !== true, headed: flags.headed === true, screenshotDir: path.join(vaultDir, 'job-hunt', 'state', 'screens', job.id), now });
         out.log(`${job.company}: ${result.status}${result.reason ? ` (${result.reason})` : ''}${result.errors ? `: ${result.errors.join('; ')}` : ''}${result.missing?.length ? ` missing: ${result.missing.join(', ')}` : ''}`);
         for (const file of result.screenshots ?? []) out.log(`  screenshot: ${file}`);

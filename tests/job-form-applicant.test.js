@@ -41,14 +41,22 @@ const ANSWERS = { work_authorization_us: true, requires_sponsorship: false, cust
 const RESUME_WITH_LINKEDIN = { ...RESUME, basics: { ...RESUME.basics, profiles: [...RESUME.basics.profiles, { network: 'LinkedIn', username: 'pat', url: 'https://www.linkedin.com/in/pat' }] } };
 const candidate = (answers = ANSWERS) => ({ resume: RESUME_WITH_LINKEDIN, preferences: PREFS, answers, facts: FACTS, repos: [], digest: candidateDigest(RESUME_WITH_LINKEDIN, PREFS) });
 
-function world(url, { source = 'hackernews', applicationUrls = [url] } = {}) {
+function world(url, { source = 'hackernews', applicationUrls = [url], letter = false } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hunt-form-'));
   const store = openStore(':memory:');
   const { job } = store.upsertSighting({ source, sourceKey: `${source}:1#0`, company: 'Tahoma AI', role: 'Founding Engineer', locations: ['Remote (US)'], remote: true, technologies: [], description: 'We build deterministic orchestration around LLM agents for operators.', rawText: 'Tahoma AI | Founding Engineer | Remote (US). We build deterministic orchestration around LLM agents for operators.', applicationUrls, contactEmails: [], author: 'founder' });
   const resume = path.join(dir, 'resume.pdf');
   fs.writeFileSync(resume, '%PDF-1.4\nresume body\n%%EOF\n');
   store.addArtifact(job.id, 'resume_pdf', resume);
-  return { dir, store, job: store.getJob(job.id), resume, files: { resume: { path: resume } } };
+  const files = { resume: { path: resume } };
+  if (letter) {
+    const cover = path.join(dir, 'cover.pdf'); fs.writeFileSync(cover, '%PDF-1.4\ncover letter\n%%EOF\n');
+    const combined = path.join(dir, 'combined.pdf'); fs.writeFileSync(combined, '%PDF-1.4\ncover letter then resume body\n%%EOF\n');
+    store.addArtifact(job.id, 'cover_letter_pdf', cover);
+    store.addArtifact(job.id, 'combined_pdf', combined);
+    files.cover_letter = { path: cover }; files.resume_with_letter = { path: combined };
+  }
+  return { dir, store, job: store.getJob(job.id), resume, files };
 }
 const whyAnswer = 'Tahoma builds deterministic orchestration around LLM agents, which is the problem I work on with U2OS, a personal agent platform with MCP and approval. I also ran engineering as CTO of D. Harris Tours.';
 const llmWith = (answers, unanswerable = []) => createLlm([fakeLlm({ answers, unanswerable }).provider]);
@@ -136,7 +144,7 @@ test('a dry run fills and verifies; a real run submits exactly what was planned 
   assert.equal(sent.gender, 'Decline to self-identify');
   assert.equal(sent.privacy, 'on');
   assert.match(sent.why, /deterministic orchestration/);
-  assert.match(sent._systemfield_resume, /^file:resume\.pdf:\d+$/);
+  assert.match(sent._systemfield_resume, /^file:Pat_Example_Resume\.pdf:\d+$/, 'uploaded under a proper name, not resume.pdf');
   assert.ok(done.result.screenshots.every((file) => fs.existsSync(file)));
   assert.ok(Array.isArray(done.result.evidence), 'the page\'s own network responses are kept as evidence');
   assert.ok(done.result.evidence.some((entry) => /submit/.test(entry.path)), JSON.stringify(done.result.evidence));
@@ -235,4 +243,94 @@ test('real-world shapes: desired location, unflagged standard questions still bl
   const answered = await buildApplicationPlan({ url: 'https://x.test/application', schema, job, candidate: candidate(), materials: files, now: NOW });
   assert.equal(answered.fields.find((field) => field.key === 'auth').value, 'Yes');
   assert.equal(answered.ready, true);
+});
+
+test('no cover-letter upload on the form: one PDF, cover letter then resume, goes in the resume slot under a proper name', async (t) => {
+  if (!browserOk) return t.skip('no browser');
+  const w = world(`${forms.base}/simple/apply`, { letter: true });
+  const application = await planApplication({ store: w.store, job: w.job, candidate: candidate(), llm: llmWith({}), now: NOW });
+  assert.equal(application.status, 'planned');
+  const resumeField = application.plan.fields.find((field) => field.key === 'resume');
+  assert.deepEqual([resumeField.file, resumeField.fileName], ['resume_with_letter', 'Pat_Example_Resume_and_Cover_Letter.pdf']);
+  assert.deepEqual(Object.keys(application.plan.files), ['resume_with_letter'], 'only the file that is uploaded is pinned');
+  const done = await submitApplication({ store: w.store, job: w.job, files: w.files, now: NOW });
+  assert.equal(done.result.status, 'submitted');
+  const sent = forms.submissions.at(-1).fields.resume;
+  const combinedSize = fs.readFileSync(w.files.resume_with_letter.path).length;
+  assert.equal(sent, `file:Pat_Example_Resume_and_Cover_Letter.pdf:${combinedSize}`, 'the combined file, under its proper name');
+});
+
+test('a form with a cover-letter upload keeps two separate files, each properly named', async (t) => {
+  if (!browserOk) return t.skip('no browser');
+  const w = world(`${forms.base}/cover/apply`, { letter: true });
+  const application = await planApplication({ store: w.store, job: w.job, candidate: candidate(), llm: llmWith({}), now: NOW });
+  const by = Object.fromEntries(application.plan.fields.filter((field) => field.file).map((field) => [field.key, field]));
+  assert.deepEqual([by.resume.file, by.resume.fileName, by.cover_letter.file, by.cover_letter.fileName], ['resume', 'Pat_Example_Resume.pdf', 'cover_letter', 'Pat_Example_Cover_Letter.pdf']);
+  assert.deepEqual(Object.keys(application.plan.files).sort(), ['cover_letter', 'resume']);
+  await submitApplication({ store: w.store, job: w.job, files: w.files, now: NOW });
+  const fields = forms.submissions.at(-1).fields;
+  assert.match(fields.resume, /^file:Pat_Example_Resume\.pdf:/);
+  assert.match(fields.cover_letter, /^file:Pat_Example_Cover_Letter\.pdf:/);
+});
+
+test('no letter and no cover-letter upload: the plan says it wants a letter; with no combined file it uploads the plain resume', async (t) => {
+  if (!browserOk) return t.skip('no browser');
+  const w = world(`${forms.base}/simple/apply`);
+  const application = await planApplication({ store: w.store, job: w.job, candidate: candidate(), llm: llmWith({}), now: NOW });
+  assert.deepEqual(application.plan.wants, ['cover_letter']);
+  assert.equal(application.plan.fields.find((field) => field.key === 'resume').file, 'resume');
+  const withUpload = world(`${forms.base}/cover/apply`);
+  const second = await planApplication({ store: withUpload.store, job: withUpload.job, candidate: candidate(), llm: llmWith({}), now: NOW });
+  assert.deepEqual(second.plan.wants, [], 'a form with its own cover-letter field does not "want" one from us');
+});
+
+test('the combined PDF is built for older materials from the stored resume and letter, only when needed, and only once', async (t) => {
+  if (!browserOk) return t.skip('no browser');
+  const { ensureCombinedPdf } = await import('../mcp/jobs/hunt/applications/materials.js');
+  const { letterToText, assembleLetter } = await import('../mcp/jobs/hunt/applications/letters.js');
+  const w = world(`${forms.base}/simple/apply`);
+  const dir = path.join(w.dir, 'materials'); fs.mkdirSync(dir);
+  const doc = { basics: { name: 'Pat Example', headline: 'CTO', summary: 'Hands-on engineering leader with deep experience.', location: 'SF', email: 'pat@example.com', phone: '1' }, highlights: [], expertise: [], experience: [{ position: 'CTO', company: 'D. Harris Tours, Inc.', period: '2020 - Present', bullets: ['Grew the fleet.'] }], projects: [], earlier: [], education: [] };
+  fs.writeFileSync(path.join(dir, 'resume.json'), JSON.stringify(doc));
+  const letter = assembleLetter({ paragraphs: ['First paragraph about the company.', 'Second paragraph about the work.', 'Third paragraph.'], resume: RESUME, job: { company: 'Tahoma AI' }, date: NOW });
+  fs.writeFileSync(path.join(dir, 'cover-letter.txt'), letterToText(letter));
+  w.store.addArtifact(w.job.id, 'resume_json', path.join(dir, 'resume.json'));
+  assert.equal(await ensureCombinedPdf({ store: w.store, job: w.job }), null, 'no letter, nothing to combine');
+  w.store.addArtifact(w.job.id, 'cover_letter_txt', path.join(dir, 'cover-letter.txt'));
+  const built = await ensureCombinedPdf({ store: w.store, job: w.job });
+  assert.ok(built && fs.existsSync(built.path));
+  const pdf = fs.readFileSync(built.path);
+  assert.equal(pdf.subarray(0, 4).toString(), '%PDF');
+  assert.ok((pdf.toString('latin1').match(/\/Type\s*\/Page\b/g) ?? []).length >= 2, 'the letter page and the resume page');
+  const again = await ensureCombinedPdf({ store: w.store, job: w.job });
+  assert.equal(again.sha256, built.sha256, 'not rebuilt while it is current');
+  const application = await planApplication({ store: w.store, job: w.job, candidate: candidate(), llm: llmWith({}), ensureCombined: ensureCombinedPdf, now: NOW });
+  assert.equal(application.plan.fields.find((field) => field.key === 'resume').file, 'resume_with_letter', 'planning picked the combined file up');
+});
+
+test('letters round-trip through their text form, and the combined document puts the letter before the resume', async () => {
+  const { assembleLetter, letterToText, parseLetterText } = await import('../mcp/jobs/hunt/applications/letters.js');
+  const { combinedHtml } = await import('../mcp/jobs/hunt/applications/render.js');
+  const letter = assembleLetter({ paragraphs: ['Alpha.', 'Beta.', 'Gamma.'], resume: RESUME, job: { company: 'Tahoma AI' }, date: NOW });
+  assert.deepEqual(parseLetterText(letterToText(letter)), letter);
+  assert.equal(parseLetterText('too short'), null);
+  const doc = { basics: { name: 'Pat Example', headline: 'CTO', summary: 'SUMMARY-TEXT', location: '', email: '', phone: '' }, highlights: [], expertise: [], experience: [], projects: [], earlier: [], education: [] };
+  const html = combinedHtml(letter, doc);
+  assert.ok(html.indexOf('Alpha.') < html.indexOf('SUMMARY-TEXT'), 'the cover letter comes first');
+  assert.match(html, /part-resume/);
+  assert.doesNotMatch(html, /<script/i);
+});
+
+test('the owner\'s file-name style reaches the planned uploads: playful by their choice, plain otherwise', async () => {
+  const { attachmentName } = await import('../mcp/jobs/hunt/applications/names.js');
+  const schema = { hasForm: true, blockers: {}, submitLabel: 'Submit', fields: [{ key: 'resume', type: 'file', label: 'Resume', required: true, options: [], filled: false, accept: '.pdf' }] };
+  const job = { id: 'job_77', company: 'Tahoma AI', role: 'Engineer', description: 'x' };
+  const materials = { resume: { path: '/x', sha256: 'a'.repeat(64) }, combined: { path: '/y', sha256: 'b'.repeat(64) } };
+  const playful = await buildApplicationPlan({ url: 'https://x.test/apply', schema, job, candidate: candidate(), materials, nameStyle: 'playful', now: NOW });
+  const field = playful.fields[0];
+  assert.equal(field.fileName, attachmentName({ kind: 'resume_with_letter', person: 'Pat Example', company: 'Tahoma AI', seed: 'job_77', style: 'playful' }));
+  assert.notEqual(field.fileName, 'Pat_Example_Resume_and_Cover_Letter.pdf');
+  const plain = await buildApplicationPlan({ url: 'https://x.test/apply', schema, job, candidate: candidate(), materials, nameStyle: 'plain', now: NOW });
+  assert.equal(plain.fields[0].fileName, 'Pat_Example_Resume_and_Cover_Letter.pdf');
+  assert.notEqual(playful.planHash, plain.planHash, 'the name is part of what was reviewed');
 });
