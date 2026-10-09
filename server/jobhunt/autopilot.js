@@ -17,7 +17,8 @@ import { loadSubject, reviewPolicy } from '../../mcp/jobs/hunt/review/subject.js
 import { reconcileEmails } from '../../mcp/jobs/hunt/applications/send.js';
 import { JOB_HUNT_DIR } from '../../mcp/jobs/profile.js';
 import { stageAttachment, resolveAttachments } from '../tools/email-attachments.js';
-import { createJobLlm } from './llm.js';
+import { createTiers } from './llm.js';
+import { getDataDir } from '../db/connection.js';
 
 // The autonomous job hunter: a loop that finds, scores, prepares, reviews and
 // (when live) acts on jobs, with no human in the middle.
@@ -96,15 +97,19 @@ export class Autopilot {
     const report = { startedAt: now.toISOString(), mode: config.mode, steps: {}, actions: [], needsYou: [], errors: [] };
     const store = openStore(huntDbPath(this.vaultDir));
     const state = this.loadState();
+    let tiers = null;
     try {
       let candidate; let llm;
       try { candidate = loadCandidate(this.vaultDir); } catch (error) { report.errors.push(`candidate: ${error.message}`); return report; }
-      try { llm = (this.deps.createLlm ?? createJobLlm)(); } catch { llm = null; }
-      const ctx = { store, config, candidate, llm, now, report, state };
-      for (const [name, step] of [['housekeeping', this.housekeeping], ['discover', this.discover], ['score', this.score], ['prepare', this.prepare], ['review', this.review], ['act', this.act]]) {
+      try { tiers = this.deps.createTiers ? this.deps.createTiers() : createTiers({ vaultDir: this.vaultDir, dataDir: getDataDir() }); } catch (error) { report.errors.push(`models: ${String(error.message).slice(0, 160)}`); tiers = { fast: null, quality: null, margin: 10, bias: 12 }; }
+      llm = tiers.quality;
+      const ctx = { store, config, candidate, llm, tiers, now, report, state };
+      for (const [name, step] of [['housekeeping', this.housekeeping], ['discover', this.discover], ['score', this.score], ['confirm', this.confirm], ['prepare', this.prepare], ['review', this.review], ['act', this.act]]) {
         try { report.steps[name] = await step.call(this, ctx); } catch (error) { report.errors.push(`${name}: ${String(error.message).slice(0, 200)}`); report.steps[name] = { error: true }; }
       }
     } finally {
+      // What this cycle cost in model calls, by tier: the owner watches this.
+      report.llm = { fast: tiers?.fast?.stats?.calls ?? 0, quality: tiers?.quality?.stats?.calls ?? 0, fastConfigured: Boolean(tiers?.fast) };
       report.finishedAt = new Date().toISOString();
       state.lastReport = report;
       this.saveState(state);
@@ -137,25 +142,58 @@ export class Autopilot {
     return result;
   }
 
-  async score({ store, config, candidate, llm, now }) {
-    if (!llm?.available || !config.per_cycle.score) return { skipped: 'no model or no budget' };
-    const summary = await (this.deps.scoreJobs ?? scoreJobs)({ store, resume: candidate.resume, preferences: candidate.preferences, repos: candidate.repos, llm, limit: config.per_cycle.score, now });
-    return { scored: summary.scored, screened: summary.screened, errors: summary.errors.length };
+  /** Is the local first-pass model reachable? Checked once per cycle; when it is down the fast work is skipped, never moved to the cloud. */
+  async fastReady(tiers, report) {
+    if (!tiers?.fast) return null;
+    const probe = tiers.fast.probe ? await tiers.fast.probe() : { available: true };
+    if (!probe.available) report.errors.push(`local model unavailable: ${probe.reason ?? 'unknown'} (fast scoring skipped this cycle)`);
+    return probe.available ? tiers.fast : false;
   }
 
+  async score({ store, config, candidate, llm, tiers, now, report }) {
+    const fast = await this.fastReady(tiers, report);
+    // With a local tier, scoring is the local model's job; without one it is the quality model's, as before.
+    const scorer = tiers?.fast ? fast : llm;
+    const limit = tiers?.fast ? config.per_cycle.score_fast : config.per_cycle.score;
+    if (!scorer?.available || !limit) return { skipped: tiers?.fast && fast === false ? 'local model unavailable' : 'no model or no budget' };
+    const summary = await (this.deps.scoreJobs ?? scoreJobs)({ store, resume: candidate.resume, preferences: candidate.preferences, repos: candidate.repos, llm: scorer, limit, now });
+    return { scored: summary.scored, screened: summary.screened, errors: summary.errors.length, tier: tiers?.fast ? 'fast' : 'quality' };
+  }
+
+  /**
+   * A first-pass score is a cheap opinion. Before anything is written for a job, the quality model confirms it:
+   * jobs whose local score is within `margin` of the threshold are re-scored by the quality tier.
+   */
+  async confirm({ store, config, candidate, llm, tiers, now }) {
+    if (!tiers?.fast || !llm?.available || !config.per_cycle.confirm) return { skipped: 'no local tier' };
+    const minimum = candidate.preferences.minimum_score ?? 82;
+    // The local model runs hot (about 12 points above the quality model on average), so its score is corrected by `bias` before it is compared.
+    const floor = minimum - tiers.margin + (tiers.bias ?? 0);
+    const pending = store.listScored({ minScore: floor, limit: 500 })
+      .filter(({ job, score }) => this.isFastScore(score) && !ACTIVE.has(job.status))
+      .slice(0, config.per_cycle.confirm).map(({ job }) => job.id);
+    if (!pending.length) return { confirmed: 0 };
+    const summary = await (this.deps.scoreJobs ?? scoreJobs)({ store, resume: candidate.resume, preferences: candidate.preferences, repos: candidate.repos, llm, rescore: true, only: pending, prefilter: 0, limit: pending.length, now });
+    return { confirmed: summary.scored, errors: summary.errors.length };
+  }
+
+  isFastScore(score) { return /^lmstudio:/.test(score?.model ?? ''); }
+
   /** Jobs worth preparing: model-scored at or above the threshold, not acted on, nothing prepared yet. */
-  candidatesToPrepare({ store, candidate, config, limit }) {
+  candidatesToPrepare({ store, candidate, config, limit, tiered = false }) {
     const minimum = candidate.preferences.minimum_score ?? 82;
     return store.listScored({ minScore: minimum, limit: 500 })
       // A form-only job cannot be worked while the forms route is off, and must not use up the cycle's preparation budget.
-      .filter(({ job, score }) => !score.degraded && !ACTIVE.has(job.status) && job.status !== 'needs_input' && !store.getArtifacts(job.id).resume_pdf && (config.routes.form || contactEmailsFor(job).length > 0))
+      .filter(({ job, score }) => !score.degraded && !ACTIVE.has(job.status) && job.status !== 'needs_input' && !store.getArtifacts(job.id).resume_pdf && (config.routes.form || contactEmailsFor(job).length > 0)
+        // With a local tier, only a score the quality model has confirmed counts: a first-pass score never spends a materials run.
+        && !(tiered && this.isFastScore(score)))
       .slice(0, limit).map(({ job }) => job);
   }
 
-  async prepare({ store, config, candidate, llm, now, report }) {
+  async prepare({ store, config, candidate, llm, tiers, now, report }) {
     if (!llm?.available) return { skipped: 'no model' };
     const prepared = [];
-    for (const job of this.candidatesToPrepare({ store, candidate, config, limit: config.per_cycle.prepare })) {
+    for (const job of this.candidatesToPrepare({ store, candidate, config, limit: config.per_cycle.prepare, tiered: Boolean(tiers?.fast) })) {
       const emailRoute = contactEmailsFor(job).length > 0;
       const formUrl = chooseApplyUrl(job);
       if (!emailRoute && !formUrl) continue;

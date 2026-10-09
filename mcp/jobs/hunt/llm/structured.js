@@ -27,9 +27,12 @@ export function extractJson(text) {
  * invalid-output provider is skipped for the next one.
  */
 export function createLlm(providers, { attempts = 2 } = {}) {
+  // Counters for the whole life of this llm: how many model calls were made (the owner watches this for cost).
+  const stats = { calls: 0, failures: 0 };
   return {
     available: providers.length > 0,
     providers: providers.map((provider) => provider.id),
+    stats,
     async json({ system, user, validate }) {
       if (!providers.length) throw new ModelUnavailableError();
       let lastError;
@@ -37,11 +40,13 @@ export function createLlm(providers, { attempts = 2 } = {}) {
         let request = user;
         for (let attempt = 0; attempt < attempts; attempt += 1) {
           try {
+            stats.calls += 1;
             const text = await provider.complete(system, request);
             const value = validate(JSON.parse(extractJson(text)));
             return { value, model: provider.id };
           } catch (error) {
             lastError = error;
+            stats.failures += 1;
             // Retry once on bad output with the problem stated; a failed call moves on to the next provider.
             if (error instanceof SyntaxError || error.code === 'INVALID_OUTPUT') request = `${user}\n\nYour previous reply was rejected: ${String(error.message).slice(0, 300)}. Reply with only the corrected JSON object.`;
             else break;

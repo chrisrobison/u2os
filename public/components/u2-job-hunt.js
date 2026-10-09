@@ -102,6 +102,7 @@ export class U2JobHunt extends HTMLElement {
       : '<button type="button" class="btn" data-ap="live" ' + (this._busy ? 'disabled' : '') + '>Go live...</button>'}
         <button type="button" class="btn" data-ap="run" ${this._busy || a.running ? 'disabled' : ''}>${a.running ? 'Running...' : 'Run a cycle now'}</button>
       </div>
+      ${report?.llm ? `<div class="trigger-row__meta">Model calls last cycle: ${report.llm.fastConfigured ? `${report.llm.fast} local (free), ` : ''}${report.llm.quality} ${report.llm.fastConfigured ? 'cloud' : 'model'}.</div>` : ''}
       ${report ? `<div class="trigger-row__meta">Last cycle ${escapeHtml(formatDateTime(report.finishedAt || report.startedAt))} (${escapeHtml(report.mode)}): ${Object.entries(report.steps || {}).map(([name, step]) => `${name} ${step.error ? 'failed' : escapeHtml(Object.values(step).filter((v) => typeof v === 'number').join('/') || 'ok')}`).join(' · ')}</div>
         ${report.actions?.length ? `<ul>${report.actions.slice(0, 8).map((item) => `<li>${escapeHtml(item.job)}: ${escapeHtml(item.result)}</li>`).join('')}</ul>` : ''}
         ${report.needsYou?.length ? `<div class="application-card__label">Needs you</div><ul>${report.needsYou.slice(0, 8).map((item) => `<li>${escapeHtml(item.job)}: ${escapeHtml(item.why)}</li>`).join('')}</ul>` : ''}

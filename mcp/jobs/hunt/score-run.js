@@ -4,12 +4,13 @@ import { candidateDigest } from './candidate/profile.js';
 /** Scores jobs that have not been scored yet (or all, with `rescore`). */
 export const DEFAULT_PREFILTER = 55;
 
-export async function scoreJobs({ store, resume, preferences, repos = [], llm = null, rescore = false, limit = null, company = null, role = null, concurrency = 2, prefilter = DEFAULT_PREFILTER, onlyDegraded = false, now = new Date(), onProgress = () => {} }) {
+export async function scoreJobs({ store, resume, preferences, repos = [], llm = null, rescore = false, limit = null, company = null, role = null, concurrency = 2, prefilter = DEFAULT_PREFILTER, onlyDegraded = false, only = null, now = new Date(), onProgress = () => {} }) {
   const candidate = { resume, preferences, repos, digest: candidateDigest(resume, preferences) };
   let jobs = store.listJobs({ company, limit: 5000 }).filter((job) => ['discovered', 'scored'].includes(job.status));
   if (!rescore) jobs = jobs.filter((job) => !store.getScore(job.id));
   // Sends only jobs that currently have a rule-scored (degraded) score back through the model.
   if (onlyDegraded) jobs = jobs.filter((job) => store.getScore(job.id)?.degraded);
+  if (only) { const wanted = new Set(only); jobs = jobs.filter((job) => wanted.has(job.id)); }
   if (role) jobs = jobs.filter((job) => String(job.role ?? '').toLowerCase().includes(role.toLowerCase()));
   // Best first by the cheap rule estimate, so a limit (or an interrupted run) spends model calls on the most promising jobs.
   const estimates = new Map(jobs.map((job) => [job.id, ruleBasedScore(job, { resume, preferences, repos })]));

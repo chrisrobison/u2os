@@ -281,3 +281,34 @@ mail_sender: ""
 ```
 
 The owner API: `GET /api/job-hunt/autopilot` (status), `PUT /api/job-hunt/autopilot` with `{ "enabled": true, "mode": "live" }` (only those two keys can be changed this way), `POST /api/job-hunt/autopilot/run` (start a cycle now).
+
+## A local model for the high-volume work
+
+Most of the autopilot's model calls are scoring, the most mechanical judgement. Writing a resume, a letter or an email, and reviewing an application before it is sent, are where quality matters. So the work can be split between two tiers:
+
+- **fast** (local, free): a model on your own machine served by LM Studio scores everything.
+- **quality** (your cloud connections, in the order you set on the Model page, for example Claude then Codex): confirms scores near your threshold and does all writing, form-question drafting and review.
+
+```bash
+npm run u2 -- job models set-local --model qwen/qwen3.5-9b --key-file ./lmstudio.key   # key is read from the file, stored encrypted; delete the file
+npm run u2 -- job models status
+```
+
+This writes `job-hunt/models.yaml` (no secrets):
+
+```yaml
+fast:
+  provider: lmstudio
+  base_url: http://127.0.0.1:1234
+  model: qwen/qwen3.5-9b
+  reasoning: 'off'          # answer directly: much faster than letting a thinking model reason first
+local_bias: 12            # the local model scores about this many points higher than the quality model
+confirm_margin: 10
+quality: planner
+```
+
+The local model is called through LM Studio's native chat API with reasoning off. **Its score is a first opinion, never a decision.** A job whose local score, corrected by `local_bias`, is within `confirm_margin` of your threshold (so a local score of at least threshold - margin + bias) is re-scored by the quality tier before anything is written for it (`per_cycle.confirm` per cycle), and a job with only a local score is not eligible for materials. If the local server is down, fast scoring is **skipped for that cycle**: it never silently moves to the cloud. With no `fast:` section, nothing changes and the quality model does the scoring.
+
+**Measured, not guessed.** `local_bias` and the cutoff come from scoring 40 of your jobs with both models (qwen3.5-9b, reasoning off, against Claude's scores): the two agree well (correlation 0.88) but the local model runs hot, about 12-14 points higher on average, so an uncorrected cutoff would send nearly everything to the cloud. Keeping only jobs with a local score of at least 75 kept every job Claude rated 70 or higher (and 95% of those at 65 or higher) while skipping about a third of the cloud work. It is a small sample, so treat the numbers as a starting point: it takes about 30 seconds per job on a 9B model, which is why the local budget is `per_cycle.score_fast` (default 6).
+
+The Job hunt page shows how many model calls the last cycle made, local and cloud separately.
