@@ -28,6 +28,7 @@ import { resolveAttachments } from '../tools/email-attachments.js';
 import { ensureCombinedPdf } from '../../mcp/jobs/hunt/applications/materials.js';
 import { planApplication, submitApplication } from '../../mcp/jobs/hunt/applications/form/submit.js';
 import { loadAnswers } from '../../mcp/jobs/hunt/candidate/answers.js';
+import { fetchBoard, PORTFOLIO_BOARD } from '../../mcp/jobs/hunt/sources/ats.js';
 import { refilterStored } from '../../mcp/jobs/hunt/jobs/relevance.js';
 import { discoverSources, SOURCES } from '../../mcp/jobs/hunt/discover-sources.js';
 import { resolveBoards } from '../../mcp/jobs/hunt/sources/boards.js';
@@ -53,6 +54,7 @@ export const USAGE = `Usage: npm run u2 -- job <command>
   autopilot setup [--autonomous] | on | off | live | dry-run | status   the autonomous loop (docs/job-hunt.md)
   models status | set-local --url <url> --model <name> --key-file <file> [--reasoning on|off]   the local first-pass model
   mark <job-id> sent [--to <address>]   record an email you sent yourself (for example from Mail)
+  recompany [--dry-run]         correct the company on jobs from portfolio boards (Pear VC and similar)
   reparse                       re-extract contact emails from each job's original text
   refilter [--dry-run]          skip stored, unscored board/aggregator jobs that fail the relevance filter
   list [--min-score <n>] [--limit <n>] [--json]
@@ -287,6 +289,27 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
         const { flags } = parseFlags(rest);
         const result = refilterStored({ store, preferences: loadPreferences(vaultDir), dryRun: flags['dry-run'] === true, now });
         out.log(`${result.examined} unscored board/aggregator jobs examined; ${result.changed} ${flags['dry-run'] ? 'would be' : ''} skipped${Object.keys(result.skipped).length ? ` [${Object.entries(result.skipped).map(([reason, n]) => `${n} ${reason}`).join('; ')}]` : ''}.`);
+        return 0;
+      }
+      case 'recompany': {
+        const { flags } = parseFlags(rest);
+        // Re-read each portfolio board: it publishes the real employer (the department) for every posting.
+        const boards = new Map();
+        for (const job of store.listJobs({ limit: 20000 })) {
+          for (const source of store.listSources(job.id)) if (['ashby', 'greenhouse', 'lever'].includes(source.source) && PORTFOLIO_BOARD.test(String(source.sourceThread ?? ''))) boards.set(`${source.source}:${source.sourceThread}`, true);
+        }
+        const employers = new Map();
+        for (const board of boards.keys()) {
+          try { for (const sighting of await fetchBoard(board, { fetch: fetchImpl })) employers.set(sighting.sourceKey, sighting.company); } catch (error) { out.log(`${board}: ${error.message}`); }
+        }
+        let changed = 0;
+        for (const job of store.listJobs({ limit: 20000 })) {
+          for (const source of store.listSources(job.id)) {
+            const company = employers.get(source.sourceKey);
+            if (company && company !== job.company) { changed += 1; out.log(`${job.company} -> ${company}: ${job.role}`); if (flags['dry-run'] !== true) store.setCompany(job.id, company, now); break; }
+          }
+        }
+        out.log(`${changed} job(s) ${flags['dry-run'] ? 'would be ' : ''}corrected across ${boards.size} portfolio board(s).`);
         return 0;
       }
       case 'reparse': {

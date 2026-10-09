@@ -229,3 +229,59 @@ test('CLI reparse ignores board text but keeps what the poster invited', async (
   const after = openStore((await import('../mcp/jobs/hunt/storage/store.js')).huntDbPath(vault));
   assert.deepEqual(after.getJob(board.id).contactEmails, ['jobs@acme.example']);
 });
+
+const PEAR = { apiVersion: '1', jobs: [
+  { id: 'e1', title: 'Founding Engineer', department: 'Elo', location: 'San Francisco', isListed: true, isRemote: true, jobUrl: 'https://jobs.ashbyhq.com/Pear-VC/e1', applyUrl: 'https://jobs.ashbyhq.com/Pear-VC/e1/application', descriptionHtml: '<p>Ad network SDK.</p>' },
+  { id: 't1', title: 'Founding Engineer', department: 'Tanagram', location: 'San Francisco', isListed: true, isRemote: true, jobUrl: 'https://jobs.ashbyhq.com/Pear-VC/t1', applyUrl: 'https://jobs.ashbyhq.com/Pear-VC/t1/application', descriptionHtml: '<p>Agents.</p>' },
+  { id: 'x1', title: 'Staff Engineer — Shiplight AI', department: 'Engineering', location: 'San Francisco', isListed: true, isRemote: true, jobUrl: 'https://jobs.ashbyhq.com/Pear-VC/x1', applyUrl: 'https://jobs.ashbyhq.com/Pear-VC/x1/application', descriptionHtml: '<p>QA.</p>' },
+] };
+const pearFetch = async () => ({ ok: true, status: 200, text: async () => JSON.stringify(PEAR) });
+
+test('on a portfolio board the company is the employer, not the board, so different companies are never merged or blocked as one', async () => {
+  const { PORTFOLIO_BOARD, employerFromTitle, companyFor } = await import('../mcp/jobs/hunt/sources/ats.js');
+  for (const slug of ['Pear-VC', 'a16z', 'sequoia', 'founders-fund', 'techstars', 'acme-ventures', 'foo-capital']) assert.ok(PORTFOLIO_BOARD.test(slug), slug);
+  for (const slug of ['anthropic', 'palantir', 'ramp', 'stripe']) assert.equal(PORTFOLIO_BOARD.test(slug), false, `${slug} is an ordinary company board`);
+  assert.equal(PORTFOLIO_BOARD.test('tahoma'), false);
+  assert.equal(PORTFOLIO_BOARD.test('anthropic'), false);
+  assert.equal(employerFromTitle('Staff Engineer — Shiplight AI'), 'Shiplight AI');
+  assert.equal(employerFromTitle('Founding Engineer'), null);
+  assert.equal(companyFor('Pear-VC', { department: 'Engineering', title: 'Staff Engineer - Shiplight AI' }, 'Pear VC'), 'Shiplight AI', 'a generic department falls back to the title');
+  assert.equal(companyFor('tahoma', { department: 'Engineering' }, 'Tahoma'), 'Tahoma', 'an ordinary company board keeps its name');
+  const sightings = await fetchBoard('ashby:Pear-VC', { fetch: pearFetch });
+  assert.deepEqual(sightings.map((s) => s.company), ['Elo', 'Tanagram', 'Shiplight AI']);
+  const store = openStore(':memory:');
+  const result = await discoverBoards({ store, boards: ['ashby:Pear-VC'], preferences: PREFS, fetch: pearFetch, now: NOW });
+  assert.equal(result.created, 3, 'two "Founding Engineer" roles at different companies are two opportunities');
+  assert.deepEqual(store.listJobs().map((job) => job.company).sort(), ['Elo', 'Shiplight AI', 'Tanagram']);
+});
+
+test('setCompany moves a job to its real employer, including its company+role identity', () => {
+  const store = openStore(':memory:');
+  const a = store.upsertSighting({ source: 'ashby', sourceKey: 'ashby:Pear-VC:1', sourceThread: 'Pear-VC', company: 'Pear VC', role: 'Founding Engineer', rawText: 'x', applicationUrls: [], contactEmails: [], author: null }).job;
+  store.setCompany(a.id, 'Elo', NOW);
+  assert.equal(store.getJob(a.id).company, 'Elo');
+  assert.ok(store.listEvents(a.id).some((event) => event.type === 'company_corrected' && event.detail.to === 'Elo'));
+  const again = store.upsertSighting({ source: 'greenhouse', sourceKey: 'greenhouse:elo:9', company: 'Elo, Inc.', role: 'Founding Engineer', rawText: 'x', applicationUrls: [], contactEmails: [], author: null });
+  assert.equal(again.created, false, 'the same role at Elo from another source now merges with it');
+  assert.equal(again.job.id, a.id);
+  const other = store.upsertSighting({ source: 'ashby', sourceKey: 'ashby:Pear-VC:2', sourceThread: 'Pear-VC', company: 'Pear VC', role: 'Founding Engineer', rawText: 'x', applicationUrls: [], contactEmails: [], author: null });
+  assert.equal(other.created, true, 'and no longer swallows another company\'s role of the same name');
+});
+
+test('CLI recompany re-reads the portfolio boards and corrects stored jobs by their ATS id', async () => {
+  const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'hunt-recompany-'));
+  fs.mkdirSync(path.join(vault, 'job-hunt'), { recursive: true });
+  const { huntDbPath } = await import('../mcp/jobs/hunt/storage/store.js');
+  const store = openStore(huntDbPath(vault));
+  const mk = (id, role) => store.upsertSighting({ source: 'ashby', sourceKey: `ashby:Pear-VC:${id}`, sourceThread: 'Pear-VC', company: 'Pear VC', role, rawText: 'x', applicationUrls: [`https://jobs.ashbyhq.com/Pear-VC/${id}/application`], contactEmails: [], author: null }).job;
+  const elo = mk('e1', 'Founding Engineer');
+  const shiplight = mk('x1', 'Staff Engineer — Shiplight AI');
+  store.close();
+  const lines = [];
+  assert.equal(await jobCli(['recompany', '--dry-run'], { log: (line) => lines.push(line) }, { vaultDir: vault, fetch: pearFetch, now: NOW }), 0);
+  assert.match(lines.join('\n'), /2 job\(s\) would be corrected across 1 portfolio board/);
+  assert.equal(openStore(huntDbPath(vault)).getJob(elo.id).company, 'Pear VC', 'a dry run changes nothing');
+  await jobCli(['recompany'], { log: () => {} }, { vaultDir: vault, fetch: pearFetch, now: NOW });
+  const after = openStore(huntDbPath(vault));
+  assert.deepEqual([after.getJob(elo.id).company, after.getJob(shiplight.id).company], ['Elo', 'Shiplight AI']);
+});

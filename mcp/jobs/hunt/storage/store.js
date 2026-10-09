@@ -203,6 +203,20 @@ class Store {
     this.db.prepare('UPDATE jobs SET contact_emails = ?, updated_at = ? WHERE id = ?').run(json(emails), now.toISOString(), jobId);
   }
 
+  /** Corrects a job's company (the employer behind a portfolio board) and its company+role identity key. */
+  setCompany(jobId, company, now = new Date()) {
+    this.transaction(() => {
+      const job = this.getJob(jobId);
+      if (!job || job.company === company) return;
+      const row = this.db.prepare('SELECT role_key FROM jobs WHERE id = ?').get(jobId);
+      this.db.prepare('DELETE FROM job_keys WHERE job_id = ? AND key LIKE ?').run(jobId, 'role:%');
+      this.db.prepare('UPDATE jobs SET company = ?, company_key = ?, updated_at = ? WHERE id = ?').run(company, normalizeCompany(company), now.toISOString(), jobId);
+      const key = `role:${normalizeCompany(company)}|${row.role_key}`;
+      if (row.role_key && !this.db.prepare('SELECT 1 FROM job_keys WHERE key = ?').get(key)) this.db.prepare('INSERT INTO job_keys (key, job_id) VALUES (?, ?)').run(key, jobId);
+      this.recordEvent(jobId, 'company_corrected', { detail: { from: job.company, to: company } }, now);
+    });
+  }
+
   getJob(id) { return rowToJob(this.db.prepare('SELECT * FROM jobs WHERE id = ?').get(id)); }
 
   listJobs({ status = null, company = null, limit = 500 } = {}) {
@@ -212,7 +226,7 @@ class Store {
 
   listSources(jobId) {
     return this.db.prepare('SELECT * FROM job_sources WHERE job_id = ? ORDER BY id').all(jobId).map((row) => ({
-      source: row.source, sourceThread: row.source_thread, sourceComment: row.source_comment, sourceUrl: row.source_url,
+      source: row.source, sourceKey: row.source_key, sourceThread: row.source_thread, sourceComment: row.source_comment, sourceUrl: row.source_url,
       author: row.author, rawText: row.raw_text, parseQuality: row.parse_quality, postedAt: row.posted_at, discoveredAt: row.discovered_at,
     }));
   }
