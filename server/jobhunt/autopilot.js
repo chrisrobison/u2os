@@ -11,6 +11,7 @@ import { resolveBoards } from '../../mcp/jobs/hunt/sources/boards.js';
 import { scoreJobs } from '../../mcp/jobs/hunt/score-run.js';
 import { generateMaterials } from '../../mcp/jobs/hunt/applications/materials.js';
 import { contactEmailsFor } from '../../mcp/jobs/hunt/applications/strategy.js';
+import { ensureCombinedPdf } from '../../mcp/jobs/hunt/applications/materials.js';
 import { chooseApplyUrl, planApplication, recoverInterrupted } from '../../mcp/jobs/hunt/applications/form/submit.js';
 import { reviewJob } from '../../mcp/jobs/hunt/review/agent.js';
 import { loadSubject, reviewPolicy } from '../../mcp/jobs/hunt/review/subject.js';
@@ -203,12 +204,13 @@ export class Autopilot {
         continue;
       }
       try {
-        await (this.deps.generateMaterials ?? generateMaterials)({ store, vaultDir: this.vaultDir, job, candidate, llm, minimumScore: candidate.preferences.minimum_score, stage: stageAttachment, now });
+        await (this.deps.generateMaterials ?? generateMaterials)({ store, vaultDir: this.vaultDir, job, candidate, llm, minimumScore: candidate.preferences.minimum_score, stage: stageAttachment, nameStyle: config.file_names, now });
         if (!emailRoute && formUrl) {
-          let application = await (this.deps.planApplication ?? planApplication)({ store, job, candidate, llm, url: formUrl, now });
-          if (application.plan.needs?.includes('cover_letter_required')) {
-            await (this.deps.generateMaterials ?? generateMaterials)({ store, vaultDir: this.vaultDir, job, candidate, llm, minimumScore: candidate.preferences.minimum_score, stage: stageAttachment, force: true, coverLetter: true, now });
-            application = await (this.deps.planApplication ?? planApplication)({ store, job, candidate, llm, url: formUrl, now });
+          let application = await (this.deps.planApplication ?? planApplication)({ store, job, candidate, llm, ensureCombined: ensureCombinedPdf, nameStyle: config.file_names, url: formUrl, now });
+          // A form with no cover-letter upload wants a letter (it goes in front of the resume); a required one needs it.
+          if (application.plan.needs?.includes('cover_letter_required') || application.plan.wants?.includes('cover_letter')) {
+            await (this.deps.generateMaterials ?? generateMaterials)({ store, vaultDir: this.vaultDir, job, candidate, llm, minimumScore: candidate.preferences.minimum_score, stage: stageAttachment, force: true, coverLetter: true, nameStyle: config.file_names, now });
+            application = await (this.deps.planApplication ?? planApplication)({ store, job, candidate, llm, ensureCombined: ensureCombinedPdf, nameStyle: config.file_names, url: formUrl, now });
           }
           if (application.status !== 'planned') report.needsYou.push({ job: `${job.company} - ${job.role ?? ''}`, jobId: job.id, why: application.plan.blockers?.length ? `blocked: ${application.plan.blockers.join(', ')}` : `needs: ${(application.plan.needs ?? []).join(', ') || 'input'}` });
         } else {

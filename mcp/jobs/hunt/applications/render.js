@@ -50,6 +50,15 @@ ${letter.paragraphs.map((p) => `<p>${esc(p)}</p>`).join('\n')}
 <div class="gap"></div><p>${esc(letter.closing)}<br>${esc(letter.signature)}</p></div></body></html>`;
 }
 
+/** One document: the cover letter, then the resume on a fresh page. For forms that have no separate cover-letter upload. */
+export function combinedHtml(letter, resumeDoc, { fontSize = 9.4 } = {}) {
+  const body = (html) => html.match(/<body>([\s\S]*)<\/body>/)?.[1] ?? '';
+  const style = (html) => html.match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? '';
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(resumeDoc.basics.name)} - Cover letter and resume</title><style>${style(resumeHtml(resumeDoc, { fontSize }))}
+  .part-letter { font-size: 10.5pt; } .part-resume { break-before: page; page-break-before: always; }</style></head><body>
+<div class="part-letter">${body(letterHtml(letter))}</div><div class="part-resume">${body(resumeHtml(resumeDoc, { fontSize }))}</div></body></html>`;
+}
+
 async function launch(env) {
   let playwright;
   try { playwright = await import('playwright'); } catch { throw new Error('Playwright is not installed. Run: npm install && npx playwright install chromium'); }

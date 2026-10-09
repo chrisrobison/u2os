@@ -4,7 +4,9 @@ import { JOB_HUNT_DIR } from '../../profile.js';
 import { generateResume, resumeToText } from './resume-generator.js';
 import { assembleEmail, assembleLetter, generateCoverLetter, generateOutreachEmail, letterToText } from './letters.js';
 import { chooseStrategy, needsCoverLetter } from './strategy.js';
-import { letterHtml, renderPdfs, resumeHtml } from './render.js';
+import { combinedHtml, letterHtml, renderPdfs, resumeHtml } from './render.js';
+import { parseLetterText } from './letters.js';
+import { attachmentName } from './names.js';
 
 const slug = (value) => String(value ?? 'unspecified').toLowerCase().replace(/\([^)]*\)/g, ' ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'unspecified';
 
@@ -19,7 +21,7 @@ const write = (file, text) => fs.writeFileSync(file, text, { mode: 0o600 });
  * when useful, and an outreach email draft when the strategy includes email.
  * Idempotent: existing materials are reused unless `force`.
  */
-export async function generateMaterials({ store, vaultDir, job, candidate, llm, minimumScore = 82, force = false, pdf = true, coverLetter = null, stage = null, now = new Date() }) {
+export async function generateMaterials({ store, vaultDir, job, candidate, llm, minimumScore = 82, force = false, pdf = true, coverLetter = null, stage = null, nameStyle = 'plain', now = new Date() }) {
   const score = store.getScore(job.id);
   if (!score) throw new Error(`Job ${job.id} has not been scored: run "job score" first`);
   if (score.degraded) throw new Error('Refusing to write materials from a degraded (rule-based) score; run "job score --rescore" with a model first');
@@ -62,16 +64,20 @@ export async function generateMaterials({ store, vaultDir, job, candidate, llm, 
   let pages = {};
   if (pdf) {
     const entries = [{ file: path.join(dir, 'resume.pdf'), html: (size) => resumeHtml(document, { fontSize: size }), sizes: [9.4, 9, 8.6], maxPages: 2 }];
-    if (letter) entries.push({ file: path.join(dir, 'cover-letter.pdf'), html: () => letterHtml(letter), maxPages: 2 });
+    if (letter) {
+      entries.push({ file: path.join(dir, 'cover-letter.pdf'), html: () => letterHtml(letter), maxPages: 2 });
+      // For forms with no cover-letter upload: the letter first, then the resume, as one file.
+      entries.push({ file: path.join(dir, 'resume-with-cover-letter.pdf'), html: (size) => combinedHtml(letter, document, { fontSize: size }), sizes: [9.4, 9, 8.6], maxPages: 4 });
+    }
     for (const result of await renderPdfs(entries)) pages[path.basename(result.file)] = result.pages;
     files.resume_pdf = path.join(dir, 'resume.pdf');
-    if (letter) files.cover_letter_pdf = path.join(dir, 'cover-letter.pdf');
+    if (letter) { files.cover_letter_pdf = path.join(dir, 'cover-letter.pdf'); files.combined_pdf = path.join(dir, 'resume-with-cover-letter.pdf'); }
   }
   if (email) {
     // Attachments are staged, content-addressed references (email.send never takes a path).
     // Without a stager (or without PDFs) the draft has none.
-    const person = candidate.resume.basics.name.replace(/\s+/g, '_');
-    const toStage = [[files.resume_pdf, `${person}_Resume.pdf`], [files.cover_letter_pdf, `${person}_Cover_Letter.pdf`]].filter(([file]) => file);
+    const name = (kind) => attachmentName({ kind, person: candidate.resume.basics.name, company: job.company, seed: job.id, style: nameStyle });
+    const toStage = [[files.resume_pdf, name('resume')], [files.cover_letter_pdf, name('cover_letter')]].filter(([file]) => file);
     email.attachments = stage ? toStage.map(([file, name]) => stage(vaultDir, file, { name }).ref) : [];
     files.email_json = path.join(dir, 'email.json'); write(files.email_json, `${JSON.stringify(email, null, 2)}\n`);
   }
@@ -83,4 +89,24 @@ export async function generateMaterials({ store, vaultDir, job, candidate, llm, 
     else store.recordEvent(job.id, 'materials_regenerated', { detail: { dir } }, now);
   });
   return { reused: false, dir, strategy: decision, needsInput: email?.needsInput ?? [], artifacts: store.getArtifacts(job.id), pages, letter: Boolean(letter), email };
+}
+
+
+/**
+ * Builds resume-with-cover-letter.pdf for a job whose materials predate it (or whose letter was written later),
+ * from the stored resume.json and cover-letter.txt. No model is involved. Returns the artifact, or null when
+ * there is no letter to combine.
+ */
+export async function ensureCombinedPdf({ store, job, now = new Date(), render = renderPdfs }) {
+  const artifacts = store.getArtifacts(job.id);
+  if (!artifacts.resume_json || !artifacts.cover_letter_txt) return null;
+  const file = path.join(path.dirname(artifacts.resume_json.path), 'resume-with-cover-letter.pdf');
+  const fresh = artifacts.combined_pdf && fs.existsSync(artifacts.combined_pdf.path) && artifacts.combined_pdf.createdAt >= artifacts.cover_letter_txt.createdAt && artifacts.combined_pdf.createdAt >= artifacts.resume_json.createdAt;
+  if (fresh) return artifacts.combined_pdf;
+  const letter = parseLetterText(fs.readFileSync(artifacts.cover_letter_txt.path, 'utf8'));
+  if (!letter) return null;
+  const document = JSON.parse(fs.readFileSync(artifacts.resume_json.path, 'utf8'));
+  await render([{ file, html: (size) => combinedHtml(letter, document, { fontSize: size }), sizes: [9.4, 9, 8.6], maxPages: 4 }]);
+  store.addArtifact(job.id, 'combined_pdf', file, { rebuilt: true }, now);
+  return store.getArtifacts(job.id).combined_pdf;
 }

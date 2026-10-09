@@ -61,6 +61,7 @@ export function startApplyForms() {
       case '/ashby/application': return html(ASHBY_FORM());
       case '/simple/apply': return html(SIMPLE_FORM());
       case '/simple/extra': return html(SIMPLE_FORM('<label for="x">Describe a system you scaled to millions of users *</label><textarea id="x" name="scaled" required></textarea><label for="s">Current salary *</label><input id="s" name="salary_now" required>'));
+      case '/cover/apply': return html(SIMPLE_FORM('<label for="cl">Cover letter</label><input id="cl" name="cover_letter" type="file">'));
       case '/captcha/apply': return html(SIMPLE_FORM('<iframe src="https://www.hcaptcha.com/captcha/frame" title="hCaptcha challenge"></iframe>'));
       case '/login/apply': return html(page('Sign in', '<form action="/login" method="post"><label>Email</label><input name="email"><label>Password</label><input name="password" type="password"><button>Sign in</button></form>'));
       case '/slow/apply': return html(SIMPLE_FORM().replace('/simple/submit', '/slow/submit'));

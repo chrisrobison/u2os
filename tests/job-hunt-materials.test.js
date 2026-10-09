@@ -247,3 +247,45 @@ test('a person posting under their own name is greeted by first name; a company 
   assert.equal(greet('Shared Context Lab'), 'Dear Shared Context Lab team,');
   assert.equal(greet('Pond AI (YC W24)'), 'Dear Pond AI team,');
 });
+
+test('attachment names are memorable, safe, stable per job and personalised; plain style is available', async () => {
+  const { attachmentName } = await import('../mcp/jobs/hunt/applications/names.js');
+  const args = { person: 'Christopher Robison', company: 'Tahoma AI', seed: 'job_abc' };
+  for (const kind of ['resume', 'cover_letter', 'resume_with_letter']) {
+    const name = attachmentName({ kind, ...args });
+    assert.equal(name, attachmentName({ kind, ...args }), 'the same job always gets the same name');
+    assert.match(name, /^[A-Za-z0-9_]+\.pdf$/, 'plain ASCII, no spaces or odd characters');
+    assert.ok(name.length <= 100);
+    assert.match(name, /Christopher_Robison|Tahoma/);
+  }
+  assert.equal(attachmentName({ kind: 'resume', ...args, style: 'plain' }), 'Christopher_Robison_Resume.pdf');
+  assert.equal(attachmentName({ kind: 'cover_letter', ...args, style: 'plain' }), 'Christopher_Robison_Cover_Letter.pdf');
+  assert.equal(attachmentName({ kind: 'resume_with_letter', ...args, style: 'plain' }), 'Christopher_Robison_Resume_and_Cover_Letter.pdf');
+  const names = new Set(Array.from({ length: 40 }, (_, i) => attachmentName({ kind: 'resume', ...args, seed: `job_${i}` })));
+  assert.ok(names.size >= 6, `varied across jobs (${names.size} distinct)`);
+  assert.ok([...names].some((name) => /Hire_Christopher_Robison_Rare_Opportunity/.test(name)), 'the owner\'s own example is among them');
+  for (let i = 0; i < 40; i += 1) assert.doesNotMatch(attachmentName({ kind: 'resume', person: 'Pat Example', company: '', seed: `job_${i}` }), /__|_For_\.|_Meet_Pat|Dear__|Why__/, 'no dangling company slot when the company is unknown');
+  assert.match(attachmentName({ kind: 'resume', person: 'Pat Éxample/../x', company: 'Ac"me; rm -rf <b>', seed: 'x' }), /^[A-Za-z0-9_]+\.pdf$/, 'hostile characters are stripped');
+  assert.throws(() => attachmentName({ kind: 'photo', person: 'x' }), /Unknown attachment kind/);
+});
+
+test('materials stage the email attachments under the chosen style', async (t) => {
+  const { attachmentName } = await import('../mcp/jobs/hunt/applications/names.js');
+  for (const style of ['plain', 'playful']) {
+    const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'hunt-mat-'));
+    const { store, job } = seededStore();
+    const staged = [];
+    const stage = (vaultDir, file, { name }) => { staged.push(name); return { ref: `outbox/${'d'.repeat(64)}/${name}` }; };
+    const email = { subject: 's', requiredSubject: '', greetingName: '', body: EMAIL_BODY, requirements: [] };
+    const f = llmFor(goodResume(), { paragraphs: paragraphs(300) }, email);
+    try {
+      await generateMaterials({ store, vaultDir: vault, job, candidate: candidate(), llm: f.llm, stage, nameStyle: style });
+    } catch (error) { if (/Playwright|browser|Executable/i.test(error.message)) { t.skip('no browser'); return; } throw error; }
+    const expected = ['resume', 'cover_letter'].map((kind) => attachmentName({ kind, person: 'Pat Example', company: job.company, seed: job.id, style }));
+    assert.deepEqual(staged, expected, style);
+    const sent = JSON.parse(fs.readFileSync(store.getArtifacts(job.id).email_json.path, 'utf8'));
+    assert.deepEqual(sent.attachments.map((ref) => ref.split('/').pop()), expected, 'the email draft carries the same names');
+    if (style === 'plain') assert.deepEqual(staged, ['Pat_Example_Resume.pdf', 'Pat_Example_Cover_Letter.pdf']);
+    else assert.notDeepEqual(staged, ['Pat_Example_Resume.pdf', 'Pat_Example_Cover_Letter.pdf']);
+  }
+});

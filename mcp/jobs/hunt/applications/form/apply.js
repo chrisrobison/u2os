@@ -54,7 +54,9 @@ function matchOption(options = [], value) {
 async function setField(page, entry, schemaField, files) {
   const control = page.locator(sel(entry.key));
   if (entry.file) {
-    await control.first().setInputFiles(files[entry.file].path);
+    // Uploaded under a proper name (Christopher_Robison_Resume.pdf), not whatever the file is called on disk.
+    const source = files[entry.file].path;
+    await control.first().setInputFiles(entry.fileName ? { name: entry.fileName, mimeType: 'application/pdf', buffer: fs.readFileSync(source) } : source);
     return true;
   }
   const value = entry.value;

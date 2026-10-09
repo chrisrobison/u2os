@@ -137,3 +137,14 @@ export function assembleEmail({ draft, resume }) {
   const lines = [draft.greetingName ? `Hi ${draft.greetingName},` : 'Hi,', '', draft.body, '', [github && `GitHub: ${github}`, linkedin && `LinkedIn: ${linkedin}`, b.website && `Website: ${b.website}`].filter(Boolean).join('\n'), '', 'Best,', b.name];
   return { subject, needsInput: unmet.map((item) => item.ask), requirements: draft.requirements ?? [], text: `${lines.join('\n').replace(/\n{3,}/g, '\n\n').trim()}\n` };
 }
+
+/** The inverse of letterToText, for materials generated before the combined PDF existed. */
+export function parseLetterText(text) {
+  const parts = String(text).trim().split(/\n\n/);
+  if (parts.length < 5) return null;
+  const [head, date, greeting, ...rest] = parts;
+  const closing = rest.pop();
+  const [name, ...contact] = head.split('\n');
+  const [closingLine, ...signature] = closing.split('\n');
+  return { name, contact: contact.join(' '), date, greeting, paragraphs: rest, closing: closingLine, signature: signature.join(' ') || name };
+}

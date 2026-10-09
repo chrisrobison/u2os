@@ -32,11 +32,11 @@ function letterBody(file) {
 function materialsFor(store, job) {
   const artifacts = store.getArtifacts(job.id);
   const pick = (kind) => (artifacts[kind] ? { path: artifacts[kind].path, sha256: artifacts[kind].sha256 } : undefined);
-  return { resume: pick('resume_pdf'), cover_letter: pick('cover_letter_pdf'), coverLetterText: artifacts.cover_letter_txt ? letterBody(artifacts.cover_letter_txt.path) : null };
+  return { resume: pick('resume_pdf'), cover_letter: pick('cover_letter_pdf'), combined: pick('combined_pdf'), coverLetterText: artifacts.cover_letter_txt ? letterBody(artifacts.cover_letter_txt.path) : null };
 }
 
 /** Plans an application for a job: reads its form (read-only) and stores the plan. */
-export async function planApplication({ store, job, candidate, llm = null, inspect = (url) => inspectApplication({ url }), url = null, now = new Date() }) {
+export async function planApplication({ store, job, candidate, llm = null, inspect = (url) => inspectApplication({ url }), ensureCombined = null, nameStyle = 'plain', url = null, now = new Date() }) {
   const target = url ?? chooseApplyUrl(job);
   if (!target) throw new Error('This job has no application link');
   const key = formKey({ candidate: candidate.resume.basics.email, job, url: target });
@@ -44,7 +44,10 @@ export async function planApplication({ store, job, candidate, llm = null, inspe
   if (existing && BLOCKING.has(existing.status)) throw Object.assign(new Error(`An application for this job is already ${existing.status}`), { code: 'BLOCKED' });
   const source = store.listSources(job.id)[0] ?? null;
   const schema = await inspect(target);
-  const plan = await buildApplicationPlan({ url: target, schema, job, source, candidate, materials: materialsFor(store, job), llm, now });
+  // A form with no cover-letter upload gets the letter and resume as one file: build it now if the materials predate it.
+  const hasCoverUpload = (schema.fields ?? []).some((field) => field.type === 'file' && /cover/i.test(`${field.label} ${field.key}`));
+  if (!hasCoverUpload && ensureCombined && !store.getArtifacts(job.id).combined_pdf) await ensureCombined({ store, job, now });
+  const plan = await buildApplicationPlan({ url: target, schema, job, source, candidate, materials: materialsFor(store, job), llm, nameStyle, now });
   const status = plan.blockers.length ? 'manual_required' : plan.ready ? 'planned' : 'needs_input';
   let application;
   if (existing) { store.updateApplication(existing.id, { status, plan, result: { replanned: now.toISOString() } }, now); application = store.listApplications(job.id).find((entry) => entry.id === existing.id); }
