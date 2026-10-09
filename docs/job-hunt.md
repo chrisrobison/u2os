@@ -327,6 +327,7 @@ or for the autopilot, in `autopilot.yaml`:
 ```yaml
 browser:
   headed: true       # form submits open a visible browser window on this Mac (default false)
+  driver: playwright # which form driver reads and fills forms (default playwright)
 routes:
   form: true         # the forms route is off by default
 ```
@@ -345,3 +346,24 @@ A window opens briefly for each form submit. The forms route stays off by defaul
 - **Part-time / token-pay check.** The review agent now rejects postings that read as part-time, hourly-per-week or equity-plus-discretionary-cash roles (`not_part_time_or_token_pay_unless_allowed`). Opt in with `allow.part_time: true` in `autopilot.yaml`.
 - **Answers are never cut off.** When an open form answer exceeds the field's length limit, the model is asked again for a shorter, complete answer. If it still does not fit, the question stays unresolved (the job goes to `needs_input`) rather than submitting a truncated sentence.
 - **One repair pass.** When the review agent rejects a prepared job with a *blocking concern from the model* (not a failed deterministic rule), the autopilot's `revise` step rewrites the materials once with the reviewer's objections as feedback (still through the claim guard), and the new content is reviewed again. At most two revisions per job (`per_cycle.revise`, default 3 per cycle; set 0 to disable). Jobs that keep failing are left for the owner.
+
+## Form drivers
+
+Reading and filling an application form goes through a `FormDriver` (`mcp/jobs/hunt/applications/form/driver.js`). Playwright is the built-in implementation; the `browser.driver` key in `autopilot.yaml` picks one by name (default `playwright`). An unknown name fails loudly when the config is loaded, listing the drivers that exist.
+
+```js
+inspect({ url })  // -> schema   read-only: open the page and report its form
+execute({ plan, files, submit, headed, beforeSubmit, screenshotDir })
+                  // -> { status, reason?, errors?, missing?, failed?, screenshots? }
+```
+
+Everything else (planning, the plan and file checks' stored hashes, the `submitting` / `uncertain` bookkeeping, the job state changes) stays in `submit.js` and is the same for every driver. A driver must keep these guarantees:
+
+1. A CAPTCHA, login wall or missing form returns `manual_required`; it is never worked around.
+2. If the form's fields no longer hash to `plan.schemaHash` (`schemaHash()` in `schema.js`), return `schema_changed` before filling anything.
+3. If an uploaded file's SHA-256 differs from the plan's, return `files_changed`.
+4. Every required field must end up filled, or return `fill_incomplete`.
+5. `await beforeSubmit()` immediately before the submit action, after all the checks above, and never on a dry run (`submit: false`, which returns `dry_run`). The caller records intent there, so a crash afterwards is `uncertain`.
+6. An outcome that cannot be proven is `unconfirmed`, not `submitted`. Any status the caller does not recognise is treated as `uncertain`. An uncertain or unconfirmed application is never retried.
+
+Another driver registers itself with `registerDriver(name, driver)`; `tests/job-form-driver.test.js` shows the contract against a fake driver. `planApplication` and `submitApplication` take a `driver` (object or registered name); the older `inspect` and `execute` function parameters still work and override the driver.

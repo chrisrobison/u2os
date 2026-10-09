@@ -199,7 +199,7 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
         const resume = loadResume(vaultDir);
         const preferences = loadPreferences(vaultDir);
         const candidate = { resume, preferences, answers: loadAnswers(vaultDir), facts: loadFacts(vaultDir), repos: loadRepos(vaultDir)?.repos ?? [], digest: candidateDigest(resume, preferences) };
-        const application = await planApplication({ store, job, candidate, llm: llmOverride ?? createJobLlm(), ensureCombined: ensureCombinedPdf, nameStyle: loadAutopilotConfig(vaultDir).file_names, url: flags.url ?? null, now });
+        const application = await planApplication({ store, job, candidate, llm: llmOverride ?? createJobLlm(), ensureCombined: ensureCombinedPdf, nameStyle: loadAutopilotConfig(vaultDir).file_names, driver: loadAutopilotConfig(vaultDir).browser.driver, url: flags.url ?? null, now });
         const { plan } = application;
         out.log(`${job.company} - ${job.role ?? ''}: plan ${application.status}  (${plan.fields.length} fields, ${plan.unresolved.length} unresolved)  ${application.url}`);
         for (const field of plan.fields) out.log(`  ${field.origin.padEnd(12)} ${String(field.label).slice(0, 48).padEnd(48)} ${field.file ? `[${field.file} file]` : String(field.value).replace(/\s+/g, ' ').slice(0, 60)}`);
@@ -214,7 +214,7 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
         if (!job) { out.log(`Unknown job ${positional[0] ?? ''}`); return 1; }
         const artifacts = store.getArtifacts(job.id);
         const files = { ...(artifacts.resume_pdf ? { resume: { path: artifacts.resume_pdf.path } } : {}), ...(artifacts.cover_letter_pdf ? { cover_letter: { path: artifacts.cover_letter_pdf.path } } : {}), ...(artifacts.combined_pdf ? { resume_with_letter: { path: artifacts.combined_pdf.path } } : {}) };
-        const { result, application } = await submitApplication({ store, job, files, submit: flags['dry-run'] !== true, headed: flags.headed === true, screenshotDir: path.join(vaultDir, 'job-hunt', 'state', 'screens', job.id), now });
+        const { result, application } = await submitApplication({ store, job, files, submit: flags['dry-run'] !== true, headed: flags.headed === true, driver: loadAutopilotConfig(vaultDir).browser.driver, screenshotDir: path.join(vaultDir, 'job-hunt', 'state', 'screens', job.id), now });
         out.log(`${job.company}: ${result.status}${result.reason ? ` (${result.reason})` : ''}${result.errors ? `: ${result.errors.join('; ')}` : ''}${result.missing?.length ? ` missing: ${result.missing.join(', ')}` : ''}`);
         for (const file of result.screenshots ?? []) out.log(`  screenshot: ${file}`);
         return ['submitted', 'dry_run'].includes(result.status) ? 0 : 1;

@@ -8,7 +8,6 @@ import { loadSubject, reviewPolicy } from './review/subject.js';
 import { failedChecks, runChecks } from './review/checks.js';
 import { idempotencyKey, markContacted } from './applications/send.js';
 import { submitApplication } from './applications/form/submit.js';
-import { executePlan } from './applications/form/apply.js';
 
 // The two things the autopilot is allowed to do to the outside world, and
 // the only way it can: act on a job id. Neither takes a recipient, a body, a
@@ -81,14 +80,14 @@ export function sendApplication({ vaultDir, jobId, mailer, resolveAttachments = 
 }
 
 /** Submits the job's reviewed, approved application form. */
-export function submitApplicationForm({ vaultDir, jobId, execute = executePlan, now = new Date() }) {
+export function submitApplicationForm({ vaultDir, jobId, execute = null, driver = null, now = new Date() }) {
   return withLock(vaultDir, jobId, async () => {
     const { store, job, config, approval } = prepare({ vaultDir, jobId, kind: 'form', now });
     try {
       const artifacts = store.getArtifacts(job.id);
       const files = { ...(artifacts.resume_pdf ? { resume: { path: artifacts.resume_pdf.path } } : {}), ...(artifacts.cover_letter_pdf ? { cover_letter: { path: artifacts.cover_letter_pdf.path } } : {}), ...(artifacts.combined_pdf ? { resume_with_letter: { path: artifacts.combined_pdf.path } } : {}) };
       const live = config.mode === 'live';
-      const { result, application } = await submitApplication({ store, job, files, submit: live, headed: config.browser.headed, execute, screenshotDir: path.join(vaultDir, JOB_HUNT_DIR, 'state', 'screens', job.id), now });
+      const { result, application } = await submitApplication({ store, job, files, submit: live, headed: config.browser.headed, driver: driver ?? config.browser.driver, execute, screenshotDir: path.join(vaultDir, JOB_HUNT_DIR, 'state', 'screens', job.id), now });
       store.recordEvent(job.id, live ? 'application_form_submitted' : 'autopilot_dry_run', { detail: { action: 'submit_application', outcome: result.status, applicationId: application.id, by: 'autopilot', reviewId: approval.id } }, new Date());
       return { status: result.status, company: job.company, role: job.role, ...(result.reason ? { reason: result.reason } : {}), ...(result.errors ? { errors: result.errors } : {}) };
     } finally { store.close(); }
