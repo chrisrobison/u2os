@@ -8,6 +8,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { getVaultDir } from '../vault/vault-dir.js';
+import { getDataDir } from '../db/connection.js';
+import { ExtensionPairings } from '../extension/pairings.js';
 import { openStore, huntDbPath } from '../../mcp/jobs/hunt/storage/store.js';
 import { discover } from '../../mcp/jobs/hunt/discover.js';
 import { importResume, loadPreferences, loadResume } from '../../mcp/jobs/hunt/candidate/profile.js';
@@ -59,6 +61,7 @@ export const USAGE = `Usage: npm run u2 -- job <command>
   refilter [--dry-run]          skip stored, unscored board/aggregator jobs that fail the relevance filter
   list [--min-score <n>] [--limit <n>] [--json]
   show <job-id>
+  extension pair | list | revoke <id>   the Chrome extension (docs/job-hunt.md "Filling in your own Chrome")
   status [--json]`;
 
 function parseFlags(args, valueFlags = []) {
@@ -78,9 +81,10 @@ function parseFlags(args, valueFlags = []) {
   return { flags, positional };
 }
 
-export async function main(argv, out = console, { vaultDir = getVaultDir(), fetch: fetchImpl = fetch, now = new Date(), llm: llmOverride, send: sendOverride, reconcile: reconcileOverride } = {}) {
+export async function main(argv, out = console, { vaultDir = getVaultDir(), fetch: fetchImpl = fetch, now = new Date(), llm: llmOverride, send: sendOverride, reconcile: reconcileOverride, dataDir = null } = {}) {
   const [verb, ...rest] = argv;
   if (!verb || verb === 'help' || verb === '--help') { out.log(USAGE); return 0; }
+  if (verb === 'extension') return extensionCommand(rest, out, dataDir ?? getDataDir());
   const store = openStore(huntDbPath(vaultDir));
   try {
     switch (verb) {
@@ -367,6 +371,35 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
     }
   } finally {
     store.close();
+  }
+}
+
+// Pairing for the Chrome extension: the owner at this machine's terminal mints a one-time code (valid five minutes),
+// the extension exchanges it for a token. Reads and writes the same credentials file the running server reads fresh.
+function extensionCommand(args, out, dataDir) {
+  const pairings = new ExtensionPairings({ dataDir });
+  const [action, id] = args;
+  switch (action) {
+    case 'pair': {
+      const { code, expiresAt } = pairings.createCode();
+      out.log(`Pairing code: ${code}   (one use, expires ${expiresAt})\nIn the extension's side panel, enter this code with your U2OS address (this computer only).`);
+      return 0;
+    }
+    case 'list': {
+      const list = pairings.list();
+      if (!list.length) out.log('No paired extensions. Run: npm run u2 -- job extension pair');
+      for (const entry of list) out.log(`${entry.id}  ${entry.label.padEnd(24)} ${entry.origin}  paired ${entry.createdAt}  last used ${entry.lastUsedAt ?? 'never'}`);
+      return 0;
+    }
+    case 'revoke': {
+      if (!id) { out.log('Usage: job extension revoke <id>   (ids: job extension list)'); return 1; }
+      if (!pairings.revoke(id)) { out.log(`No paired extension ${id}`); return 1; }
+      out.log(`Revoked ${id}. That browser can no longer read plans or report results.`);
+      return 0;
+    }
+    default:
+      out.log('Usage: job extension pair | list | revoke <id>');
+      return 1;
   }
 }
 

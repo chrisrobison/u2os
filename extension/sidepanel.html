@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>U2OS form filler</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <main>
+    <h1>U2OS form filler</h1>
+    <p id="status" role="status" aria-live="polite"></p>
+
+    <section id="pair-view" hidden>
+      <p>Pair this browser with your U2OS on this computer. Run <code>npm run u2 -- job extension pair</code> and enter the code it prints.</p>
+      <form id="pair-form">
+        <label>U2OS address (this computer only)
+          <input id="server" name="server" value="http://127.0.0.1:4000" autocomplete="off" spellcheck="false">
+        </label>
+        <label>Pairing code
+          <input id="code" name="code" autocomplete="off" spellcheck="false" placeholder="ABCDE-FGHJK" required>
+        </label>
+        <button type="submit">Pair</button>
+      </form>
+    </section>
+
+    <section id="main-view" hidden>
+      <div class="row">
+        <h2>Ready to fill</h2>
+        <button id="refresh" type="button">Refresh</button>
+      </div>
+      <ul id="applications"></ul>
+      <p id="empty" hidden>Nothing is waiting. Plan and review an application in U2OS first.</p>
+
+      <h2>Settings</h2>
+      <label class="check"><input id="submit-when-complete" type="checkbox"> Submit when complete</label>
+      <p class="hint">Off by default. When on, and only if U2OS is in live mode and every field was filled with confidence, the extension records its intent with U2OS, presses the form's submit button and reports what the board said. If it cannot tell, the outcome is marked uncertain and never retried. When off, you press submit yourself.</p>
+      <p class="hint" id="paired-with"></p>
+      <button id="unpair" type="button" class="secondary">Forget this pairing</button>
+    </section>
+  </main>
+  <script src="lib/u2-core.js"></script>
+  <script src="sidepanel.js"></script>
+</body>
+</html>
