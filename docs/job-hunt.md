@@ -422,7 +422,7 @@ In the side panel enter your U2OS address (default `http://127.0.0.1:4000`) and 
 
 **Use.** Plan and review an application in U2OS (`job plan <id>`, then the review). The side panel lists applications that are planned and approved. *Fill this application* then:
 
-1. asks Chrome for access to **that job's site only** (a one-time prompt per site; the extension does not ask for access to all sites),
+1. asks Chrome for access to **that job's site only** (a one-time prompt per site; the extension does not ask for access to all sites; access to localhost / 127.0.0.1 is granted at install so the panel can reach U2OS),
 2. fetches the reviewed plan and the exact files, and checks each file's SHA-256 against the plan before using it,
 3. opens the application in a tab, reads the form (same `data-u2` keys and schema hash as the Playwright driver), and fills it with events a React form notices, attaching your resume as a real file upload,
 4. outlines every field: **green** filled, **amber** filled but worth a look (a custom widget, or the page changed the value), **red** left for you (required but not filled, or no safe match),

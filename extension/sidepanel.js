@@ -175,7 +175,7 @@
     let outcome = null;
     try {
       const clicked = await ask(tabId, { type: 'u2-submit' });
-      if (!clicked.clicked) outcome = { notClicked: true };
+      if (!clicked.clicked) outcome = { reason: `the submit button could not be clicked (${clicked.reason}); as far as the extension knows nothing was sent` };
     } catch { /* the page may have navigated away at once */ }
     const deadline = Date.now() + 20_000;
     let last = null;
@@ -187,7 +187,7 @@
       } catch { continue; } // mid-navigation, or left the origin we may read
       if (last.submitted || last.captcha) break;
     }
-    const body = Core.submitResult(plan.planHash, outcome ? null : last);
+    const body = outcome ? { planHash: plan.planHash, status: 'failed', reason: outcome.reason } : Core.submitResult(plan.planHash, last);
     await report(app.jobId, body);
     say(body.status === 'submitted' ? 'Submitted. The board confirmed it.' : `Not confirmed: ${body.reason}`, body.status === 'submitted' ? 'ok' : 'error');
     await refresh();
