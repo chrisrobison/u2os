@@ -18,10 +18,11 @@ import { CAPTCHA_SELECTOR, readFormSchema, schemaHash } from './schema.js';
 const SUCCESS_TEXT = /thank you for (applying|your (application|interest|submission))|application (has been |was )?(received|submitted|sent)|we('ve| have) received your application|successfully (applied|submitted)|your application is (in|complete)/i;
 const SUCCESS_URL = /confirmation|thank-?you|thanks|submitted|success/i;
 
-export async function launchBrowser(env = process.env) {
+export async function launchBrowser(env = process.env, { headed = false } = {}) {
   let playwright;
   try { playwright = await import('playwright'); } catch { throw new Error('Playwright is not installed. Run: npm install && npx playwright install chromium'); }
-  return playwright.chromium.launch({ headless: true, ...(env.JOBS_BROWSER_PATH ? { executablePath: env.JOBS_BROWSER_PATH } : {}) });
+  // `headed` opens a normal, visible window on this machine (some boards' passive bot scoring treats headless browsers differently). Nothing is spoofed or hidden.
+  return playwright.chromium.launch({ headless: !headed, ...(env.JOBS_BROWSER_PATH ? { executablePath: env.JOBS_BROWSER_PATH } : {}) });
 }
 
 const sha256 = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
@@ -121,11 +122,11 @@ async function outcome(page, timeoutMs, formUrl) {
  * @param submit  false fills and checks but never submits (dry run)
  * @param beforeSubmit async () => void  called after everything is verified and before the click; throw to stop
  */
-export async function executePlan({ plan, files = {}, submit = true, beforeSubmit = async () => {}, screenshotDir = null, env = process.env, outcomeTimeoutMs = Number(env.JOBS_SUBMIT_TIMEOUT_MS) || 20_000 }) {
+export async function executePlan({ plan, files = {}, submit = true, headed = false, beforeSubmit = async () => {}, screenshotDir = null, env = process.env, outcomeTimeoutMs = Number(env.JOBS_SUBMIT_TIMEOUT_MS) || 20_000 }) {
   for (const [kind, expected] of Object.entries(plan.files ?? {})) {
     if (!files[kind] || !fs.existsSync(files[kind].path) || sha256(files[kind].path) !== expected.sha256) return { status: 'files_changed', reason: `${kind} is not the file the plan was made with` };
   }
-  const browser = await launchBrowser(env);
+  const browser = await launchBrowser(env, { headed });
   const shots = [];
   const shot = async (page, name) => {
     if (!screenshotDir) return null;

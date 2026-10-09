@@ -69,7 +69,7 @@ export function recoverInterrupted({ store, now = new Date(), staleMs = STALE_SU
  * Submits a planned application. `files` resolve plan.files; `execute` is
  * injectable. Refuses anything not in a submittable state.
  */
-export async function submitApplication({ store, job, files, submit = true, execute = executePlan, screenshotDir = null, now = new Date(), applicationId = null }) {
+export async function submitApplication({ store, job, files, submit = true, headed = false, execute = executePlan, screenshotDir = null, now = new Date(), applicationId = null }) {
   recoverInterrupted({ store, now });
   const application = store.listApplications(job.id).filter((entry) => !applicationId || entry.id === applicationId).at(-1);
   if (!application) throw new Error('No application plan for this job: run "job plan" first');
@@ -78,7 +78,7 @@ export async function submitApplication({ store, job, files, submit = true, exec
   if (['applied', 'contacted', 'rejected', 'withdrawn', 'closed', 'skipped', 'interview'].includes(job.status)) throw Object.assign(new Error(`Not submitting: the job is already ${job.status}`), { code: 'BLOCKED' });
 
   const result = await execute({
-    plan: application.plan, files, submit, screenshotDir,
+    plan: application.plan, files, submit, headed, screenshotDir,
     beforeSubmit: async () => {
       // Intent first: from here a crash means "uncertain", never "try again".
       store.updateApplication(application.id, { status: 'submitting' }, new Date());

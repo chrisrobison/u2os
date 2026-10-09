@@ -47,7 +47,7 @@ export const USAGE = `Usage: npm run u2 -- job <command>
   send <job-id> [--force]       propose the application email through the approval gate
   reconcile                     update jobs from the outcome of approved sends
   plan <job-id> [--url <form-url>]      read the job's application form and plan every answer (submits nothing)
-  submit <job-id> [--dry-run]           fill the planned form (and submit unless --dry-run)
+  submit <job-id> [--dry-run] [--headed]  fill the planned form (and submit unless --dry-run); --headed opens a visible browser window
   review <job-id> [--form]              the review agent: approve or reject the email (or the form plan) for sending
   autopilot setup [--autonomous] | on | off | live | dry-run | status   the autonomous loop (docs/job-hunt.md)
   models status | set-local --url <url> --model <name> --key-file <file> [--reasoning on|off]   the local first-pass model
@@ -210,7 +210,7 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
         if (!job) { out.log(`Unknown job ${positional[0] ?? ''}`); return 1; }
         const artifacts = store.getArtifacts(job.id);
         const files = { ...(artifacts.resume_pdf ? { resume: { path: artifacts.resume_pdf.path } } : {}), ...(artifacts.cover_letter_pdf ? { cover_letter: { path: artifacts.cover_letter_pdf.path } } : {}) };
-        const { result, application } = await submitApplication({ store, job, files, submit: flags['dry-run'] !== true, screenshotDir: path.join(vaultDir, 'job-hunt', 'state', 'screens', job.id), now });
+        const { result, application } = await submitApplication({ store, job, files, submit: flags['dry-run'] !== true, headed: flags.headed === true, screenshotDir: path.join(vaultDir, 'job-hunt', 'state', 'screens', job.id), now });
         out.log(`${job.company}: ${result.status}${result.reason ? ` (${result.reason})` : ''}${result.errors ? `: ${result.errors.join('; ')}` : ''}${result.missing?.length ? ` missing: ${result.missing.join(', ')}` : ''}`);
         for (const file of result.screenshots ?? []) out.log(`  screenshot: ${file}`);
         return ['submitted', 'dry_run'].includes(result.status) ? 0 : 1;

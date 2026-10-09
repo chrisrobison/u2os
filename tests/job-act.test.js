@@ -173,3 +173,16 @@ test('the MCP tools take only a job id', async () => {
     assert.doesNotMatch(schema, /\bto:|recipient|\burl\b|subject|attachments|body/i, 'the input schema offers nothing but the job id');
   }
 });
+
+test('a headed submit is requested from the executor only when the owner opted in', async () => {
+  for (const [yamlText, expected] of [['', false], ['browser:\n  headed: true\n', true]]) {
+    const w = vaultWorld();
+    fs.appendFileSync(path.join(w.vault, 'job-hunt', 'autopilot.yaml'), yamlText);
+    const plan = { jobId: w.job.id, url: 'https://jobs.ashbyhq.com/x/1/application', schemaHash: 's', fields: [{ key: 'name', label: 'Name', type: 'text', required: true, value: 'Pat Example', origin: 'identity' }], unresolved: [], files: {}, blockers: [], needs: [], ready: true, planHash: 'p'.repeat(64) };
+    w.store.addApplication(w.job.id, { url: plan.url, status: 'planned', plan, idempotencyKey: `hk${expected}` });
+    await reviewIt(w, 'form');
+    const seen = [];
+    await submitApplicationForm({ vaultDir: w.vault, jobId: w.job.id, now: NOW, execute: async (options) => { seen.push(options.headed); await options.beforeSubmit?.(); return { status: 'submitted', screenshots: [] }; } });
+    assert.deepEqual(seen, [expected]);
+  }
+});
