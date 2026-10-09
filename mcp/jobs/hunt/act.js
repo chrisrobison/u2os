@@ -88,7 +88,7 @@ export function submitApplicationForm({ vaultDir, jobId, execute = executePlan, 
       const artifacts = store.getArtifacts(job.id);
       const files = { ...(artifacts.resume_pdf ? { resume: { path: artifacts.resume_pdf.path } } : {}), ...(artifacts.cover_letter_pdf ? { cover_letter: { path: artifacts.cover_letter_pdf.path } } : {}) };
       const live = config.mode === 'live';
-      const { result, application } = await submitApplication({ store, job, files, submit: live, execute, screenshotDir: path.join(vaultDir, JOB_HUNT_DIR, 'state', 'screens', job.id), now });
+      const { result, application } = await submitApplication({ store, job, files, submit: live, headed: config.browser.headed, execute, screenshotDir: path.join(vaultDir, JOB_HUNT_DIR, 'state', 'screens', job.id), now });
       store.recordEvent(job.id, live ? 'application_form_submitted' : 'autopilot_dry_run', { detail: { action: 'submit_application', outcome: result.status, applicationId: application.id, by: 'autopilot', reviewId: approval.id } }, new Date());
       return { status: result.status, company: job.company, role: job.role, ...(result.reason ? { reason: result.reason } : {}), ...(result.errors ? { errors: result.errors } : {}) };
     } finally { store.close(); }

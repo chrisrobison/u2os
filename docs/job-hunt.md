@@ -312,3 +312,23 @@ The local model is called through LM Studio's native chat API with reasoning off
 **Measured, not guessed.** `local_bias` and the cutoff come from scoring 40 of your jobs with both models (qwen3.5-9b, reasoning off, against Claude's scores): the two agree well (correlation 0.88) but the local model runs hot, about 12-14 points higher on average, so an uncorrected cutoff would send nearly everything to the cloud. Keeping only jobs with a local score of at least 75 kept every job Claude rated 70 or higher (and 95% of those at 65 or higher) while skipping about a third of the cloud work. It is a small sample, so treat the numbers as a starting point: it takes about 30 seconds per job on a 9B model, which is why the local budget is `per_cycle.score_fast` (default 6).
 
 The Job hunt page shows how many model calls the last cycle made, local and cloud separately.
+
+
+## Visible-browser submits (`headed`)
+
+Some boards' passive bot scoring treats a headless browser differently. Two Ashby applications submitted headless in the first live run were not accepted (no confirmation, the form still on screen, no confirmation email); the same kind of form submitted from a normal, visible Chromium window on this Mac was accepted and showed the board's own "successfully submitted" confirmation. Nothing is spoofed or hidden: it is the same browser, with its window shown.
+
+```bash
+npm run u2 -- job submit <job-id> --headed       # one submit in a visible window
+```
+
+or for the autopilot, in `autopilot.yaml`:
+
+```yaml
+browser:
+  headed: true       # form submits open a visible browser window on this Mac (default false)
+routes:
+  form: true         # the forms route is off by default
+```
+
+A window opens briefly for each form submit. The forms route stays off by default (and form-only jobs just wait for you) until you turn it on; a CAPTCHA challenge or a login wall still stops an application and hands it to you.

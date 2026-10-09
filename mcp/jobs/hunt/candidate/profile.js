@@ -78,7 +78,7 @@ export function candidateDigest(resume, preferences = DEFAULT_PREFERENCES, { nar
   lines.push(`Home: ${[resume.basics.location?.city, resume.basics.location?.region].filter(Boolean).join(', ')}`);
   lines.push('\nEMPLOYMENT (canonical; do not assume anything not listed):');
   for (const job of resume.work) {
-    lines.push(`* ${job.position}, ${job.company} (${job.period || [job.startDate, job.endDate].filter(Boolean).join(' - ')})`);
+    lines.push(`* ${job.position}, ${job.company}${job.location ? `, ${job.location}` : ''} (${job.period || [job.startDate, job.endDate].filter(Boolean).join(' - ')})`);
     const summary = stripHtml(job.summary);
     if (summary) lines.push(summary.split('\n').map((line) => `    ${line}`).join('\n'));
   }

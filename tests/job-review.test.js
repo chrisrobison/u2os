@@ -221,3 +221,14 @@ test('the reviewer is shown all of the candidate\'s facts, not a truncated slice
   const long = { ...candidate, facts: { text: `${'filler. '.repeat(1800)}THE-LAST-FACT-U2OS-APPROVAL`, projects: [], voice: '' } };
   assert.match(buildReviewPrompt({ job: w.job, subject, candidate: long, score: w.store.getScore(w.job.id) }), /THE-LAST-FACT-U2OS-APPROVAL/);
 });
+
+test('the reviewer sees the candidate\'s own public repositories and the resume\'s locations, so supported claims are not called fabricated', () => {
+  const w = world();
+  const subject = loadSubject({ store: w.store, job: w.job, kind: 'email', policy: POLICY() });
+  const withRepos = { ...candidate, repos: [{ name: 'mindgraph', description: 'Graph workbench for AI workflows with agent nodes', language: 'JavaScript' }] };
+  const prompt = buildReviewPrompt({ job: w.job, subject, candidate: withRepos, score: w.store.getScore(w.job.id) });
+  assert.match(prompt, /OWN PUBLIC GITHUB PROJECTS/);
+  assert.match(prompt, /- mindgraph: Graph workbench for AI workflows with agent nodes \[JavaScript\]/);
+  assert.doesNotMatch(buildReviewPrompt({ job: w.job, subject, candidate, score: w.store.getScore(w.job.id) }), /OWN PUBLIC GITHUB PROJECTS/, 'no section when there are none');
+  assert.match(candidateDigest({ ...RESUME, work: [{ ...RESUME.work[0], location: 'San Francisco, CA' }] }, PREFS), /CTO, D\. Harris Tours, Inc\., San Francisco, CA \(/);
+});

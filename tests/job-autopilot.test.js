@@ -289,3 +289,12 @@ test('changing the threshold re-opens a rejected review instead of leaving it st
   assert.equal(third.steps.review.reviewed, 1, 'a lowered threshold re-reviews');
   assert.equal(third.actions.length, 1, 'and the now-approved job is acted on (dry run)');
 });
+
+test('the headed browser option is opt-in, validated, and reaches the form executor', async () => {
+  const w = world({ mode: 'live' });
+  assert.equal(loadAutopilotConfig(w.vault).browser.headed, false, 'headless unless the owner opts in');
+  fs.writeFileSync(path.join(w.vault, 'job-hunt', 'autopilot.yaml'), 'enabled: true\nmode: live\nbrowser:\n  headed: true\n');
+  assert.equal(loadAutopilotConfig(w.vault).browser.headed, true);
+  fs.writeFileSync(path.join(w.vault, 'job-hunt', 'autopilot.yaml'), 'browser:\n  headed: "yes"\n');
+  assert.throws(() => loadAutopilotConfig(w.vault), /browser\.headed must be true or false/);
+});

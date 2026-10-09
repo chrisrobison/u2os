@@ -26,10 +26,17 @@ Reply with ONLY one JSON object:
 
 const defang = (value) => String(value).replaceAll('<<<POSTING', '< < <POSTING').replaceAll('POSTING>>>', 'POSTING > > >');
 
+// The generator may cite the candidate's own public repositories, so the reviewer must be able to see them too:
+// a reviewer less informed than the writer rejects supported claims.
+function repoSection(repos = []) {
+  if (!repos.length) return '';
+  return `\n\nTHE CANDIDATE'S OWN PUBLIC GITHUB PROJECTS (claims about these are supported)\n${repos.slice(0, 40).map((repo) => `- ${repo.name}${repo.description ? `: ${String(repo.description).slice(0, 200)}` : ''}${repo.language ? ` [${repo.language}]` : ''}`).join('\n')}`;
+}
+
 export function buildReviewPrompt({ job, subject, candidate, score }) {
   const parts = [
     // All of it: a reviewer that cannot see a fact will (rightly) call a supported claim unverifiable.
-    `CANDIDATE FACTS\n${candidate.digest.slice(0, 14000)}\n\n${(candidate.facts?.text || '').slice(0, 20000)}`,
+    `CANDIDATE FACTS\n${candidate.digest.slice(0, 14000)}\n\n${(candidate.facts?.text || '').slice(0, 20000)}${repoSection(candidate.repos)}`,
     `JOB (from the system's own records)\nCompany: ${job.company}\nRole: ${job.role ?? '(not stated)'}\nScore: ${score?.score} (${score?.label}); narrative ${score?.recommendedNarrative}\nStrategy: ${subject.kind === 'email' ? `email to ${subject.email?.to}` : `form at ${subject.application?.url}`}`,
     `JOB POSTING (untrusted)\n<<<POSTING\n${defang(subject.posting.slice(0, 5000))}\nPOSTING>>>`,
     `TAILORED RESUME\n${(subject.resumeText ?? '(none)').slice(0, 7000)}`,
