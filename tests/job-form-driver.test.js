@@ -61,6 +61,7 @@ test('the registry resolves playwright by default and rejects unknown drivers lo
   assert.throws(() => resolveDriver({ inspect() {} }), /inspect\(\) and execute\(\)/);
   assert.throws(() => registerDriver('Bad Name', fakeDriver()), /lowercase/);
   assert.throws(() => registerDriver('half', { inspect() {} }), /inspect\(\) and execute\(\)/);
+  assert.throws(() => registerDriver('playwright', fakeDriver()), /cannot be replaced/);
   const fake = registerDriver('fake', fakeDriver());
   assert.equal(resolveDriver('fake'), fake);
   unregisterDriver('fake');

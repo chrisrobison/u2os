@@ -55,6 +55,7 @@ const registry = new Map([[playwrightDriver.name, playwrightDriver]]);
 export function registerDriver(name, driver) {
   if (typeof name !== 'string' || !/^[a-z][a-z0-9_-]*$/.test(name)) throw new Error('Form driver name must be lowercase letters, digits, - or _');
   if (typeof driver?.inspect !== 'function' || typeof driver?.execute !== 'function') throw new Error(`Form driver "${name}" must provide inspect() and execute()`);
+  if (name === DEFAULT_DRIVER) throw new Error('The playwright driver cannot be replaced');
   registry.set(name, driver);
   return driver;
 }
