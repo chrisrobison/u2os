@@ -1,3 +1,6 @@
+import { createExtensionChannel } from './extension/channel.js';
+import { ExtensionPairings } from './extension/pairings.js';
+import { registerExtensionRoutes } from './api/routes/extension.js';
 import http from 'node:http';
 import { getDb, getDataDir, getDbPath, ensureDataDirs } from './db/connection.js';
 import { EventBus } from './events/event-bus.js';
@@ -259,7 +262,9 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
     await runWake;
   };
 
-  const router = new Router({ auth, publicOrigin });
+  // Browser extension channel: loopback-only, bearer-token, independent of U2OS_BIND (SECURITY.md).
+  const extensionChannel = createExtensionChannel({ pairings: new ExtensionPairings({ dataDir }) });
+  const router = new Router({ auth, publicOrigin, extension: extensionChannel });
   const startTime = Date.now();
   registerAuthRoutes(router, { auth, agent, demoOwnerEntityId });
   registerModelRoutes(router, { modelRouter });
@@ -288,6 +293,7 @@ async function initializeServer({ port, bind, sessionIdleSeconds, sessionAbsolut
   registerAddonRoutes(router, { onChanged: async () => { await startMcpServers({ toolRegistry }); } });
   registerOnboardingRoutes(router);
   registerJobApplicationRoutes(router);
+  registerExtensionRoutes(router, { channel: extensionChannel });
   // The autonomous job hunter (docs/job-hunt.md): idle unless job-hunt/autopilot.yaml enables it, and a dry run unless it says live.
   const autopilot = new Autopilot({ agent, toolRegistry, log: (message) => log.error('job-autopilot', message) });
   registerJobHuntRoutes(router, { agent, toolRegistry, autopilot });

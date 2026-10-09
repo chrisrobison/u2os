@@ -367,3 +367,39 @@ Everything else (planning, the plan and file checks' stored hashes, the `submitt
 6. An outcome that cannot be proven is `unconfirmed`, not `submitted`. Any status the caller does not recognise is treated as `uncertain`. An uncertain or unconfirmed application is never retried.
 
 Another driver registers itself with `registerDriver(name, driver)`; `tests/job-form-driver.test.js` shows the contract against a fake driver. `planApplication` and `submitApplication` take a `driver` (object or registered name); the older `inspect` and `execute` function parameters still work and override the driver.
+
+## Browser extension channel
+
+A browser extension (the filling itself is a later piece; this is the channel it will use) can fetch reviewed application plans from U2OS and report what happened. It is a new trust boundary, so it is deliberately narrow.
+
+**Pairing.** The owner, signed in, calls (a UI button is a later piece) `POST /api/extension/pairing-codes` (localhost only) and gets a one-time code, valid five minutes. The extension sends it to `POST /api/extension/v1/pair` and receives a long-lived bearer token, bound to the extension's `chrome-extension://<id>` origin. Only SHA-256 hashes of codes and tokens are stored (`<U2OS_HOME>/credentials/extension-pairings.json`, mode 0600); the token is shown once. `GET /api/extension/pairings` lists pairings and `DELETE /api/extension/pairings/:id` revokes one immediately. Ten wrong codes in a minute lock pairing for the minute.
+
+**Endpoints** (all under `/api/extension/v1/`, `Authorization: Bearer <token>`):
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET applications` | planned applications awaiting the owner (job, company, role, URL) |
+| `GET jobs/:id/plan` | the reviewed plan: fields and values, file list with SHA-256, `autoSubmit` (true only in `live` mode) |
+| `GET jobs/:id/files/:kind` | a reviewed PDF; sent only if its bytes still hash to the plan's SHA-256 |
+| `POST jobs/:id/submitting` | records intent *before* the extension clicks submit (live mode only) |
+| `POST jobs/:id/result` | `{status: filled \| submitted \| failed, planHash, reason?}` |
+
+A plan or file is served only through `act.js` `prepare()`: a review approval bound to the current content hash, plus the deterministic checks run just now; unreviewed, rejected or edited-since-review jobs get 403. The stored plan must also still hash to the approved `planHash`.
+
+**Results go into the same ledger as every other driver.** `filled` is recorded on the still-planned application. After `submitting`, `submitted` marks the application and job applied, and `failed` is recorded as **uncertain** (the click may have happened) and is never retried. A `failed` before `submitting` is safe to retry. A result is accepted only for the exact plan that was served under a valid approval. `submitted` without a prior `submitting` is accepted as the owner pressing submit themselves in their own browser.
+
+**Threat model.**
+
+| Threat | Control |
+| --- | --- |
+| A page on the web calls the channel | Needs a bearer token (never a cookie); CORS echoes only the paired extension origin; an `Origin` that is not that extension is refused even with a valid token |
+| DNS rebinding (`evil.example` resolving to 127.0.0.1) | `Host` must be `localhost`, `127.0.0.1` or `[::1]`; otherwise 403 |
+| Another machine or a proxy reaches the port (`U2OS_BIND`, tunnels, reverse proxy) | Peer address must be loopback, independent of `U2OS_BIND`; forwarding headers are ignored. Note a same-host reverse proxy or tunnel connects from loopback, so do not forward `/api/extension/` through one |
+| Token theft from disk | Only a hash is stored (0600); tokens are 256-bit random, compared in constant time, never logged (the request log records method and route template only), and never accepted in a URL |
+| Guessing a pairing code | 50-bit one-time codes, five-minute expiry, consumed on first use, rate limited |
+| A compromised or malicious extension | It can only read plans the owner already approved and report results for them; it cannot change a plan, see unreviewed jobs, or send email. Revoke it with `DELETE /api/extension/pairings/:id` |
+| Cookie/CSRF scheme | Unchanged. Extension routes never read the session, and owner routes (`pairing-codes`, `pairings`) keep cookie + CSRF |
+
+Plans contain the owner's contact details and answers; they are served only over the loopback interface to the paired extension.
+
+**Follow-up (not in this change).** An `extension` entry in the form driver registry (#526) needs `execute()` to queue the plan and then await a result reported over this channel, with timeouts and the uncertain-outcome rules; that is a separate piece of work. Until then the extension is driven by the owner, not by the autopilot.

@@ -6,8 +6,8 @@ const WRITES = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const PUBLIC = new Set(['GET /api/health', 'GET /api/auth/status', 'POST /api/auth/setup', 'POST /api/auth/login', 'POST /api/auth/logout']);
 
 export class Router {
-  constructor({ auth = null, publicOrigin = null, bodyLimit = Number(process.env.U2OS_BODY_LIMIT_BYTES) || 1048576 } = {}) {
-    this.routes = []; this.auth = auth; this.publicOrigin = publicOrigin; this.bodyLimit = bodyLimit; this.limiter = new RateLimiter();
+  constructor({ auth = null, publicOrigin = null, extension = null, bodyLimit = Number(process.env.U2OS_BODY_LIMIT_BYTES) || 1048576 } = {}) {
+    this.routes = []; this.auth = auth; this.publicOrigin = publicOrigin; this.extension = extension; this.bodyLimit = bodyLimit; this.limiter = new RateLimiter();
   }
   get(p, h, o) { this._add('GET', p, h, o); } post(p, h, o) { this._add('POST', p, h, o); }
   put(p, h, o) { this._add('PUT', p, h, o); } patch(p, h, o) { this._add('PATCH', p, h, o); } delete(p, h, o) { this._add('DELETE', p, h, o); }
@@ -21,13 +21,29 @@ export class Router {
     try { pathname = decodeURIComponent(url.pathname); } catch { return sendJson(res, 400, { error: 'Bad Request' }); }
     const paths = this.routes.filter((r) => r.pattern.test(pathname)); const match = paths.find((r) => r.method === req.method);
     req.routeLogPath = match?.path || paths[0]?.path || '[unmatched]';
+    // Extension channel (server/extension/channel.js): routes marked `extension: 'pair' | 'token'` use bearer-token auth behind a
+    // loopback-only gate. They never see the cookie session, so the web UI's cookie + CSRF scheme is untouched and cannot be ridden from here.
+    if (req.method === 'OPTIONS') {
+      const route = paths.find((r) => r.options.extension);
+      if (route) { if (!this.extension) return sendJson(res, 403, { error: 'Extension channel disabled' }); return this.extension.preflight(req, res, route.options.extension); }
+    }
     if (!match) return sendJson(res, paths.length ? 405 : 404, { error: paths.length ? 'Method Not Allowed' : 'Not Found' });
+    if (match.options.extension) {
+      if (!this.extension) return sendJson(res, 403, { error: 'Extension channel disabled' });
+      const granted = this.extension.gate(req, res, match.options.extension);
+      if (!granted) return;
+      req.extensionAuth = granted;
+      return this._dispatch(req, res, match, pathname, url);
+    }
     if (this.publicOrigin && !validHost(req, this.publicOrigin)) return sendJson(res, 400, { error: 'Invalid Host' });
     req.session = this.auth?.authenticate(req) || null; if (req.session) req.owner = { id: req.session.ownerId };
     if (this.auth && !match.options.public && !PUBLIC.has(`${req.method} ${match.path}`) && !req.session) return sendJson(res, 401, { error: 'Authentication required' });
     const bucket = rateBucket(req.method, match.path);
     if (bucket && !this.limiter.take(`${bucket}:${req.session?.ownerId || req.socket?.remoteAddress || 'unknown'}`, bucket === 'login' ? 8 : 60, 60000)) return sendJson(res, 429, { error: 'Rate limit exceeded', code: 'RATE_LIMITED' });
     if (req.session && WRITES.has(req.method) && (!sameOrigin(req, this.publicOrigin) || req.headers['x-u2os-csrf'] !== req.session.csrfToken)) return sendJson(res, 403, { error: 'CSRF validation failed' });
+    return this._dispatch(req, res, match, pathname, url);
+  }
+  async _dispatch(req, res, match, pathname, url) {
     const found = match.pattern.exec(pathname); req.params = {}; match.paramNames.forEach((n, i) => { req.params[n] = found[i + 1]; }); req.query = Object.fromEntries(url.searchParams.entries());
     try {
       if (WRITES.has(req.method)) req.body = await readJsonBody(req, match.options.bodyLimit || this.bodyLimit);
