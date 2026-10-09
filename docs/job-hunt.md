@@ -332,3 +332,10 @@ routes:
 ```
 
 A window opens briefly for each form submit. The forms route stays off by default (and form-only jobs just wait for you) until you turn it on; a CAPTCHA challenge or a login wall still stops an application and hands it to you.
+
+
+## One PDF when there is no cover-letter field, and memorable file names
+
+**Cover letter and resume as one file.** When an application form has no upload field for a cover letter, the autopilot uploads a single PDF in the resume slot: the cover letter first, then the resume. (A cover-letter text box, if there is one, still gets the letter's text.) A form that does have a cover-letter upload gets two separate files. The combined file is built with the other materials whenever a letter exists (`resume-with-cover-letter.pdf`); for materials made earlier it is rebuilt from the stored resume and letter when a plan needs it, with no model call. If a form has no cover-letter field and there is no letter yet, the plan says it wants one, and the autopilot writes the letter and plans the form again. The review agent's approval already covers the letter, the resume and the plan, so what is reviewed is what is uploaded.
+
+**File names.** What a recruiter sees in an attachment list is not `resume.pdf`. Names are chosen per job, stable across the email attachment and the form upload for the same company, personalised with the company where that reads naturally, plain ASCII, and always a light joke about the candidate rather than a claim: `Hire_Christopher_Robison_Rare_Opportunity.pdf`, `Why_Tahoma_Should_Hire_Christopher_Robison.pdf`, `A_Letter_To_Tahoma_From_Christopher_Robison.pdf`, `Christopher_Robison_Has_Entered_The_Chat_Letter_First.pdf`, and so on. If you would rather have sober names, set `file_names: plain` in `autopilot.yaml` (`Christopher_Robison_Resume.pdf`, `..._Cover_Letter.pdf`, `..._Resume_and_Cover_Letter.pdf`).

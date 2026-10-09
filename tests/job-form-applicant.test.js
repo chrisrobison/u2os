@@ -295,14 +295,14 @@ test('the combined PDF is built for older materials from the stored resume and l
   const letter = assembleLetter({ paragraphs: ['First paragraph about the company.', 'Second paragraph about the work.', 'Third paragraph.'], resume: RESUME, job: { company: 'Tahoma AI' }, date: NOW });
   fs.writeFileSync(path.join(dir, 'cover-letter.txt'), letterToText(letter));
   w.store.addArtifact(w.job.id, 'resume_json', path.join(dir, 'resume.json'));
-  assert.equal(await ensureCombinedPdf({ store: w.store, job: w.job, now: NOW }), null, 'no letter, nothing to combine');
+  assert.equal(await ensureCombinedPdf({ store: w.store, job: w.job }), null, 'no letter, nothing to combine');
   w.store.addArtifact(w.job.id, 'cover_letter_txt', path.join(dir, 'cover-letter.txt'));
-  const built = await ensureCombinedPdf({ store: w.store, job: w.job, now: NOW });
+  const built = await ensureCombinedPdf({ store: w.store, job: w.job });
   assert.ok(built && fs.existsSync(built.path));
   const pdf = fs.readFileSync(built.path);
   assert.equal(pdf.subarray(0, 4).toString(), '%PDF');
   assert.ok((pdf.toString('latin1').match(/\/Type\s*\/Page\b/g) ?? []).length >= 2, 'the letter page and the resume page');
-  const again = await ensureCombinedPdf({ store: w.store, job: w.job, now: NOW });
+  const again = await ensureCombinedPdf({ store: w.store, job: w.job });
   assert.equal(again.sha256, built.sha256, 'not rebuilt while it is current');
   const application = await planApplication({ store: w.store, job: w.job, candidate: candidate(), llm: llmWith({}), ensureCombined: ensureCombinedPdf, now: NOW });
   assert.equal(application.plan.fields.find((field) => field.key === 'resume').file, 'resume_with_letter', 'planning picked the combined file up');
