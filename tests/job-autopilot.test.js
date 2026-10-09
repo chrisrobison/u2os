@@ -49,7 +49,7 @@ function pilot(w, { reply = approve, tools = { 'jobs.send_application': true, 'j
   const toolRegistry = { get: (name) => { if (!tools[name]) throw new Error('unknown'); return { name }; }, isHidden: () => false };
   const autopilot = new Autopilot({
     agent, toolRegistry, vaultDir: w.vault, clock: () => NOW,
-    deps: { createLlm: () => createLlm([f.provider]), discoverSources: async () => [{ source: 'hackernews', created: 2, errors: [] }], scoreJobs: async () => ({ scored: 0, screened: 0, errors: [] }), getAction: (id) => actions.find((a) => a.id === id) ?? { id, status: 'executed' }, ...deps },
+    deps: { createTiers: () => ({ fast: null, quality: createLlm([f.provider]), margin: 10 }), discoverSources: async () => [{ source: 'hackernews', created: 2, errors: [] }], scoreJobs: async () => ({ scored: 0, screened: 0, errors: [] }), getAction: (id) => actions.find((a) => a.id === id) ?? { id, status: 'executed' }, ...deps },
   });
   return { autopilot, proposals, llm: f };
 }

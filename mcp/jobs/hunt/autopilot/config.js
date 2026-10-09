@@ -36,7 +36,7 @@ export const DEFAULTS = Object.freeze({
   sources: ['hn', 'hn-jobs', 'remote', 'boards'], boards_every_minutes: 60,
   allow: { relocation: false, below_salary_minimum: false, equity_only: false },
   blocklist: { companies: [], domains: [], keywords: [] },
-  per_cycle: { score: 6, prepare: 3, act: 3 }, mail_sender: '', routes: { email: true, form: false },
+  per_cycle: { score: 6, score_fast: 6, confirm: 2, prepare: 3, act: 3 }, mail_sender: '', routes: { email: true, form: false },
 });
 
 const int = (value, name, min, max) => {

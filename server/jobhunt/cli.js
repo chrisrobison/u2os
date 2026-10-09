@@ -5,6 +5,7 @@
 //
 // The hunt store lives in the owner's vault (job-hunt/state/hunt.sqlite), not
 // in U2OS_HOME, so these commands do not need the server stopped.
+import fs from 'node:fs';
 import path from 'node:path';
 import { getVaultDir } from '../vault/vault-dir.js';
 import { openStore, huntDbPath } from '../../mcp/jobs/hunt/storage/store.js';
@@ -19,6 +20,8 @@ import { createJobLlm } from './llm.js';
 import { stageAttachment } from '../tools/email-attachments.js';
 import { setAutopilotSwitches } from '../../mcp/jobs/hunt/autopilot/config.js';
 import { revokeAutonomy, setupAutopilot } from '../../mcp/jobs/hunt/autopilot/setup.js';
+import { LMSTUDIO_SECRET, loadModelsConfig, setFastModel } from '../../mcp/jobs/hunt/llm/models.js';
+import { createFastLlm } from './llm.js';
 import { reviewJob } from '../../mcp/jobs/hunt/review/agent.js';
 import { loadAutopilotConfig } from '../../mcp/jobs/hunt/autopilot/config.js';
 import { resolveAttachments } from '../tools/email-attachments.js';
@@ -47,6 +50,7 @@ export const USAGE = `Usage: npm run u2 -- job <command>
   submit <job-id> [--dry-run]           fill the planned form (and submit unless --dry-run)
   review <job-id> [--form]              the review agent: approve or reject the email (or the form plan) for sending
   autopilot setup [--autonomous] | on | off | live | dry-run | status   the autonomous loop (docs/job-hunt.md)
+  models status | set-local --url <url> --model <name> --key-file <file> [--reasoning on|off]   the local first-pass model
   mark <job-id> sent [--to <address>]   record an email you sent yourself (for example from Mail)
   reparse                       re-extract contact emails from each job's original text
   refilter [--dry-run]          skip stored, unscored board/aggregator jobs that fail the relevance filter
@@ -210,6 +214,26 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
         out.log(`${job.company}: ${result.status}${result.reason ? ` (${result.reason})` : ''}${result.errors ? `: ${result.errors.join('; ')}` : ''}${result.missing?.length ? ` missing: ${result.missing.join(', ')}` : ''}`);
         for (const file of result.screenshots ?? []) out.log(`  screenshot: ${file}`);
         return ['submitted', 'dry_run'].includes(result.status) ? 0 : 1;
+      }
+      case 'models': {
+        const { flags, positional } = parseFlags(rest, ['url', 'model', 'key-file', 'reasoning']);
+        const action = positional[0] ?? 'status';
+        if (action === 'set-local') {
+          if (!flags.model || !flags['key-file']) { out.log('Usage: job models set-local --model <name> --key-file <file> [--url http://127.0.0.1:1234] [--reasoning on|off]'); return 1; }
+          // The key is read from a file (never an argument, so it is not in shell history), stored encrypted, and the file is left for you to delete.
+          const apiKey = fs.readFileSync(path.resolve(flags['key-file']), 'utf8').trim();
+          if (!apiKey) { out.log('The key file is empty'); return 1; }
+          const [{ writeEncryptedFile }, { getDataDir }] = await Promise.all([import('../security/vault.js'), import('../db/connection.js')]);
+          writeEncryptedFile(LMSTUDIO_SECRET, { apiKey }, getDataDir());
+          const config = setFastModel(vaultDir, { base_url: flags.url ?? 'http://127.0.0.1:1234', model: flags.model, reasoning: flags.reasoning ?? 'off' });
+          out.log(`Local model set: ${config.fast.model} at ${config.fast.base_url} (reasoning ${config.fast.reasoning}). The key is stored encrypted; delete ${flags['key-file']} now.`);
+        }
+        const config = loadModelsConfig(vaultDir);
+        if (!config.fast) { out.log('No local model configured: everything uses your model connections (the Model page).'); return 0; }
+        const fast = createFastLlm({ vaultDir, dataDir: (await import('../db/connection.js')).getDataDir() });
+        const probe = await fast.probe();
+        out.log(`Local first pass: ${config.fast.model} at ${config.fast.base_url}: ${probe.available ? 'reachable' : `NOT available (${probe.reason})`}; confirm margin ${config.confirm_margin}`);
+        return probe.available ? 0 : 1;
       }
       case 'autopilot': {
         const { flags, positional } = parseFlags(rest);
