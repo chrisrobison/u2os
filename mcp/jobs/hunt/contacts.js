@@ -9,8 +9,8 @@
 // and address, compared case-insensitively. Seeding is INSERT OR IGNORE under
 // UNIQUE (job_id, email_key) and a unique source_key, so reads never duplicate;
 // it never rewrites name, role, title or source of an existing row, only moves
-// last_contact_at FORWARD. An owner delete of a seeded contact keeps a
-// dismissed row so it is not seeded back.
+// last_contact_at FORWARD. An owner delete keeps a dismissed row so the address
+// is not seeded back.
 
 export const ROLE_KINDS = ['recruiter', 'referral', 'hiring_manager', 'other'];
 export const LIMITS = { name: 120, title: 120, email: 254 };
@@ -107,13 +107,12 @@ export function updateContact(store, id, input, now = new Date()) {
   });
 }
 
-/** Idempotent: a missing contact answers removed: false. A seeded one is kept dismissed so it is not seeded back. */
+/** Idempotent: a missing contact answers removed: false. The row is kept dismissed, so nothing seeds the address back later. */
 export function deleteContact(store, id, now = new Date()) {
   return store.transaction(() => {
     const contact = store.getContact(id);
     if (!contact || contact.dismissedAt) return { removed: false };
-    if (contact.source === 'manual') store.deleteContact(id);
-    else store.updateContact(id, { dismissedAt: now.toISOString() }, now);
+    store.updateContact(id, { dismissedAt: now.toISOString() }, now);
     return { removed: true };
   });
 }

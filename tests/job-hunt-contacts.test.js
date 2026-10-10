@@ -100,7 +100,8 @@ test('owner add, edit, delete and mark contacted, with validation', () => {
   bad(() => markContacted(store, 999, NOW), 'UNKNOWN_CONTACT');
   assert.equal(deleteContact(store, sam.id, NOW).removed, true);
   assert.equal(deleteContact(store, sam.id, NOW).removed, false);
-  assert.equal(store.listContacts().length, 0, 'a manual contact is really gone');
+  sent(store, job, 'sam@alpha.example', ago(1), 9);
+  assert.deepEqual(dashboardContacts(store, NOW), [], 'a removed contact is not seeded back from sent mail');
   store.close();
 });
 

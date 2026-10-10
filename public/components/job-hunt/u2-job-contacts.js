@@ -15,7 +15,7 @@ ROLE_LABELS.other = 'Contact';
 /** mailto: for a contact, or null when the address is not one plain address. The subject is one line. */
 export function mailtoHref(contact) {
   if (!plainEmail(contact.email)) return null;
-  const subject = `Re: ${[contact.role, contact.company].filter(Boolean).join(' at ')}`.replace(/\s+/g, ' ').trim();
+  const subject = `Re: ${[contact.role, contact.company].filter(Boolean).join(' at ')}`.replace(/[\x00-\x1f\x7f\s]+/g, ' ').trim();
   return `mailto:${encodeURIComponent(contact.email)}?subject=${encodeURIComponent(subject)}`;
 }
 

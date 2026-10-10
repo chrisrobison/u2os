@@ -108,7 +108,7 @@ const MIGRATIONS = [
   // Networking contacts per job (#537). Additive. email_key is the lowercased
   // address, so a job has one contact per address whatever its case; source_key
   // is set only on seeded rows (listing / sent email) and makes seeding
-  // idempotent. dismissed_at is the owner's delete of a seeded contact: the row
+  // idempotent. dismissed_at is the owner's delete of a contact: the row
   // stays so seeding does not bring it back. No core person ids live here.
   `CREATE TABLE job_contacts (
      id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -519,8 +519,6 @@ class Store {
       .run(next.name, next.roleKind, next.title, next.lastContactAt, next.dismissedAt, now.toISOString(), id);
     return this.getContact(id);
   }
-
-  deleteContact(id) { return this.db.prepare('DELETE FROM job_contacts WHERE id = ?').run(id).changes > 0; }
 
   /** Every contact including dismissed ones, oldest first. */
   listContacts({ jobId = null } = {}) {
