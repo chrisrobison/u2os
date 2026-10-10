@@ -242,6 +242,23 @@
 .jh-input:hover { border-color: var(--border-strong); }
 .jh-form .jh-actions { margin-top: var(--space-2); }
 
+/* ---------- networking contacts (#537) ---------- */
+
+.jh-contacts { list-style: none; margin: 0; padding: 0; }
+.jh-contact { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; padding: var(--space-2) 0; border-top: var(--border-width) solid var(--border-color); }
+.jh-contact:first-child { border-top: 0; padding-top: 0; }
+.jh-contact__who { flex: 1 1 10rem; min-width: 0; font-size: var(--text-sm); }
+.jh-contact__name { font-weight: 650; overflow-wrap: anywhere; }
+.jh-contact__sub { font-size: var(--text-xs); color: var(--text-secondary); overflow-wrap: anywhere; }
+.jh-contact__side { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-1); flex: 0 1 auto; font-size: var(--text-xs); color: var(--text-secondary); }
+.jh-contact__actions { display: flex; align-items: center; gap: var(--space-2); flex: 1 1 100%; justify-content: flex-end; }
+.jh-role { padding: 0 var(--space-2); border-radius: var(--radius-full); background: var(--bg-raised); color: var(--text-secondary); font-weight: 650; white-space: nowrap; }
+.jh-role--recruiter { background: var(--accent-active-soft, var(--bg-raised)); color: var(--accent-strong); }
+.jh-role--hiring_manager { background: var(--accent-pending-soft); color: var(--jh-pending-text); }
+.jh-iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 1.9rem; height: 1.9rem; border: var(--border-width) solid var(--border-color); border-radius: var(--radius-md); color: var(--text-secondary); }
+.jh-iconbtn:hover { border-color: var(--border-strong); color: var(--accent-strong); text-decoration: none; }
+.jh-iconbtn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
 /* ---------- responsive ---------- */
 
 /* Two columns (details beside interviews and tasks) until the page is wide enough for the mockup's three. */

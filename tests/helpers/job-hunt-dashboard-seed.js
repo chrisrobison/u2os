@@ -66,6 +66,10 @@ export function seedHuntStore(vaultDir, jobs = JOBS) {
       store.addInterview(ids['screening-1'], { at: inDays(5, 16).toISOString(), endsAt: inDays(5, 20).toISOString(), kind: 'onsite', round: 'Panel', locationOrLink: 'Hooli HQ, Oakland' });
       store.addTask(ids['screening-1'], { title: 'Prep panel presentation', dueAt: inDays(3, 16).toISOString() });
     }
+    // Networking contacts (#537): most recent first is Priya, Maya, then Tom who was never contacted.
+    if (ids['interview-1']) store.addContact(ids['interview-1'], { name: 'Maya Chen', email: 'maya.chen@delta.example', roleKind: 'recruiter', title: 'Technical Recruiter', lastContactAt: ago(3).toISOString() });
+    if (ids['screening-1']) store.addContact(ids['screening-1'], { name: 'Priya Raman', email: 'priya@hooli.example', roleKind: 'hiring_manager', title: 'Engineering Director', lastContactAt: ago(1).toISOString() });
+    if (ids['applied-2']) store.addContact(ids['applied-2'], { name: 'Tom Baker', email: 'tom@initech.example', roleKind: 'referral' });
     if (ids['offer-1']) store.addArtifact(ids['offer-1'], 'resume_pdf', resume, {}, ago(1));
   } finally { store.close(); }
   return ids;

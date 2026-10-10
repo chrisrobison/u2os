@@ -5,6 +5,7 @@ import { getAgentAction } from '../../policy/policy-engine.js';
 import { openStore, huntDbPath } from '../../../mcp/jobs/hunt/storage/store.js';
 import { buildDashboard, moveJob, DEFAULT_WINDOW_DAYS } from '../../../mcp/jobs/hunt/dashboard.js';
 import { addInterview, updateInterview, deleteInterview, addTask, completeTask, uncompleteTask, snoozeTask } from '../../../mcp/jobs/hunt/schedule.js';
+import { addContact, updateContact, deleteContact, markContacted } from '../../../mcp/jobs/hunt/contacts.js';
 import { jobView, listJobViews } from '../../../mcp/jobs/hunt/view.js';
 import { loadPreferences, loadResume } from '../../../mcp/jobs/hunt/candidate/profile.js';
 import { setAutopilotSwitches } from '../../../mcp/jobs/hunt/autopilot/config.js';
@@ -18,7 +19,7 @@ import { SEND_TOOLS, proposeApplicationEmail, reconcileEmails, recordManualSend 
 
 const JOB_ID = /^job_[0-9a-f]{16}$/;
 const ROW_ID = /^[1-9][0-9]{0,9}$/;
-const SCHEDULE_ERRORS = { BAD_INPUT: 400, UNKNOWN_JOB: 404, UNKNOWN_INTERVIEW: 404, UNKNOWN_TASK: 404, CONFLICT: 409 };
+const SCHEDULE_ERRORS = { BAD_INPUT: 400, UNKNOWN_JOB: 404, UNKNOWN_INTERVIEW: 404, UNKNOWN_TASK: 404, UNKNOWN_CONTACT: 404, CONFLICT: 409 };
 
 function withStore(fn) {
   const store = openStore(huntDbPath(getVaultDir()));
@@ -103,6 +104,13 @@ export function registerJobHuntRoutes(router, { agent, toolRegistry, autopilot =
   router.post('/api/job-hunt/tasks/:id/complete', schedule(ROW_ID, (store, id) => ({ body: completeTask(store, id) })));
   router.post('/api/job-hunt/tasks/:id/uncomplete', schedule(ROW_ID, (store, id) => ({ body: uncompleteTask(store, id) })));
   router.post('/api/job-hunt/tasks/:id/snooze', schedule(ROW_ID, (store, id, body) => ({ body: snoozeTask(store, id, body) })));
+
+  // Networking contacts per job (owner only; logic in mcp/jobs/hunt/contacts.js). The mail action in the UI is a
+  // mailto: link: nothing here sends or drafts mail.
+  router.post('/api/job-hunt/jobs/:id/contacts', schedule(JOB_ID, (store, id, body) => ({ status: 201, body: addContact(store, id, body) })));
+  router.patch('/api/job-hunt/contacts/:id', schedule(ROW_ID, (store, id, body) => ({ body: updateContact(store, id, body) })));
+  router.delete('/api/job-hunt/contacts/:id', schedule(ROW_ID, (store, id) => ({ body: deleteContact(store, id) })));
+  router.post('/api/job-hunt/contacts/:id/contacted', schedule(ROW_ID, (store, id) => ({ body: markContacted(store, id) })));
 
   router.get('/api/job-hunt/jobs/:id', async (req, res) => {
     if (!JOB_ID.test(req.params.id)) return sendJson(res, 400, { error: 'Invalid job id' });

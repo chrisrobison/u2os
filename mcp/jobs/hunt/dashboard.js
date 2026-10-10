@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { upcomingInterviews, dashboardTasks } from './schedule.js';
+import { dashboardContacts } from './contacts.js';
 
 // The job-hunt dashboard: pipeline stages with cards, search analytics derived
 // from application_events, and resume / cover-letter versions. Self-contained
@@ -151,7 +152,7 @@ export function buildDashboard(store, { days = DEFAULT_WINDOW_DAYS, now = new Da
       .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : a.job.id < b.job.id ? -1 : 1));
     return { id, label, statuses: STAGE_STATUSES[id], count: members.length, jobs: members.slice(0, CARDS_PER_STAGE).map(({ job, at }) => card(store, job, at)) };
   });
-  return { generatedAt: now.toISOString(), stages, analytics: computeAnalytics(events, { days, now }), resumeVersions: resumeVersions(store, jobsById), interviews: upcomingInterviews(store, now), tasks: dashboardTasks(store, now) };
+  return { generatedAt: now.toISOString(), stages, analytics: computeAnalytics(events, { days, now }), resumeVersions: resumeVersions(store, jobsById), interviews: upcomingInterviews(store, now), tasks: dashboardTasks(store, now), contacts: dashboardContacts(store, now) };
 }
 
 // Owner moves. Targets are limited to what only the owner can know (the

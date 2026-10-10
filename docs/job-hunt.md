@@ -83,8 +83,9 @@ To re-open a job, edit its status or delete its file.
 - **Resume & Cover Letter Versions**: each distinct file generated for jobs and the jobs that used it.
 - **Upcoming Interviews**: the next 30 days of interviews as dated rows (month and day, company, role and round, time range, format and link or location). Add one with *Add interview* in Job Details.
 - **Tasks & Follow-ups**: a checklist of open tasks (soonest due first, undated last) and those completed in the last week, with *N due this week*. Overdue and due-today labels carry state tones. Tick a task to complete it (untick to undo), *Snooze* pushes it a day, and the company name selects its job. Add your own with *Add task* in Job Details.
+- **Networking & Contacts**: people per job, most recently contacted first, each with a monogram, name, title and company, a role chip (Recruiter, Referral, Hiring Manager, or Contact) and *Last contact 3d ago*. The envelope opens a `mailto:` draft in your own mail client; *Contacted* stamps today, *Edit* changes name, role and title, *Remove* deletes. With no contacts the panel says so and *Add contact* is still there. There is no LinkedIn icon: U2OS makes no external lookups.
 
-The page reads `GET /api/job-hunt/dashboard?days=30` and records moves with `POST /api/job-hunt/jobs/:id/status`. It refreshes on `jobs.*` and `agent.action.*` events. The contacts panel appears once contacts exist. Interview and task changes use the endpoints under *Interviews and tasks* below. The code is in `public/components/job-hunt/` and depends only on `services/api.js`.
+The page reads `GET /api/job-hunt/dashboard?days=30` and records moves with `POST /api/job-hunt/jobs/:id/status`. It refreshes on `jobs.*` and `agent.action.*` events. Interview and task changes use the endpoints under *Interviews and tasks* below, and contact changes those under *Networking contacts*. The code is in `public/components/job-hunt/` and depends only on `services/api.js`.
 
 ## Safety and privacy
 
@@ -228,6 +229,25 @@ Times are ISO 8601 with a zone (`2026-10-12T15:00:00Z`) and are stored in UTC. `
 **Snoozing** by `days` moves the due time that many days past the later of now and the current due time; `dueAt` in the payload is always the effective due time.
 
 **Dashboard payload** gains two fields (existing ones are unchanged): `interviews` (starting within 30 days, or started within the last 4 hours and not yet over, soonest first, at most 50; each `{id, jobId, company, role, at, endsAt, kind, round, locationOrLink, notes}`) and `tasks` (every open task, soonest due first and undated last, then those completed in the last 7 days, newest first; each `{id, jobId, company, role, title, kind, generated, dueAt, snoozedUntil, doneAt}`).
+
+## Networking contacts
+
+Contacts live in the hunt store (`hunt.sqlite`, schema v8, additive: table `job_contacts`) with no core person ids, so the job hunt stays extractable. There is no core people lookup by email today, so contacts are not linked to the rest of U2OS. The logic is `mcp/jobs/hunt/contacts.js`; routes only call it. All endpoints are owner only.
+
+| Endpoint | Body | Answer |
+| --- | --- | --- |
+| `POST /api/job-hunt/jobs/<id>/contacts` | `{name, email, roleKind?, title?}` | `201 {contact}` |
+| `PATCH /api/job-hunt/contacts/<n>` | any of `name`, `roleKind`, `title` | `{contact}` |
+| `DELETE /api/job-hunt/contacts/<n>` | | `{removed}` (idempotent) |
+| `POST /api/job-hunt/contacts/<n>/contacted` | | `{contact}` with `lastContactAt` set to now (never moves backwards) |
+
+`roleKind` is `recruiter`, `referral`, `hiring_manager` or `other` (default). `email` must be one plain address (no display name, list, whitespace or control characters; at most 254 characters) and is the contact's identity: it cannot be edited, so remove and add to change it. Limits: name and title 120 characters, single line. Errors: `400` invalid input, `404` unknown job or contact, `409` the job already has that address (compared case-insensitively).
+
+**Seeding.** Building the dashboard creates, once, a contact for each address in a job's `contactEmails` (source `job_listing`, named from the address) and for each recipient of an email recorded as sent (source `sent_email`, last contact = its latest sent time; drafts do not count). Each job has one contact per address in any case, enforced by a unique key, and a unique `source_key` makes repeated reads add nothing. Seeding never rewrites a name, role, title or source, and only moves `last_contact_at` forward. Removing a contact keeps a dismissed row so it is not seeded back; adding the same address again revives it with what you typed.
+
+**The mail action is a `mailto:` link.** The gated send path (`/api/job-hunt/jobs/<id>/send`, `/drafts`) is bound to a job's application email, its materials and its ledger, so reusing it for an ad hoc contact would either skip those checks or mislabel the job's state. The link only opens your own mail client, and U2OS sends nothing. It is built only from an address that passes the same single-address check, with a one-line subject.
+
+**Dashboard payload** gains `contacts` (existing fields unchanged): at most 50, most recently contacted first and never-contacted last, each `{id, jobId, company, role, name, email, roleKind, title, lastContactAt}`.
 
 ## Emails you send yourself, and drafts for all matches
 
