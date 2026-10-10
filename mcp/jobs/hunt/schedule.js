@@ -29,13 +29,20 @@ const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{
 
 const fail = (code, message) => Object.assign(new Error(message), { code });
 
+// Date.parse rolls 2026-02-30 over to March; a day that does not exist is an error.
+function realDate(value) {
+  const [year, month, day] = value.slice(0, 10).split('-').map(Number);
+  const check = new Date(Date.UTC(year, month - 1, day));
+  return check.getUTCFullYear() === year && check.getUTCMonth() === month - 1 && check.getUTCDate() === day;
+}
+
 /** An ISO-8601 instant with an explicit zone, normalized to UTC; throws BAD_INPUT. */
 function instant(value, name, { required = false } = {}) {
   if (value == null || value === '') {
     if (required) throw fail('BAD_INPUT', `${name} is required`);
     return null;
   }
-  if (typeof value !== 'string' || !ISO.test(value) || Number.isNaN(Date.parse(value))) throw fail('BAD_INPUT', `${name} must be an ISO 8601 time with a zone, like 2026-10-12T15:00:00Z`);
+  if (typeof value !== 'string' || !ISO.test(value) || Number.isNaN(Date.parse(value)) || !realDate(value)) throw fail('BAD_INPUT', `${name} must be an ISO 8601 time with a zone, like 2026-10-12T15:00:00Z`);
   return new Date(value).toISOString();
 }
 

@@ -61,6 +61,7 @@ test('interview and task input is validated', () => {
   bad(() => addInterview(store, job.id, { at: 'tomorrow' }, NOW));
   bad(() => addInterview(store, job.id, { at: '2026-10-12T15:00:00' }, NOW), 'BAD_INPUT'); // no zone
   bad(() => addInterview(store, job.id, { at: '2026-13-45T15:00:00Z' }, NOW));
+  bad(() => addInterview(store, job.id, { at: '2026-02-30T15:00:00Z' }, NOW));
   bad(() => addInterview(store, job.id, { at: at(2), endsAt: at(1) }, NOW));
   bad(() => addInterview(store, job.id, { at: at(2), kind: 'carrier-pigeon' }, NOW));
   bad(() => addInterview(store, job.id, { at: at(2), round: 'x'.repeat(81) }, NOW));
