@@ -55,6 +55,17 @@ export function seedHuntStore(vaultDir, jobs = JOBS) {
       store.addArtifact(ids['interview-1'], 'resume_pdf', resume, {}, ago(2));
       store.addArtifact(ids['interview-1'], 'cover_letter_pdf', letter, {}, ago(2));
     }
+    // Interviews and tasks (#536), relative to now: two upcoming interviews, one overdue and one future task.
+    // Initech is followup_due, so the dashboard generates its follow-up task itself.
+    const inDays = (days, hour) => { const d = new Date(Date.now() + days * DAY); d.setUTCHours(hour, 0, 0, 0); return d; };
+    if (ids['interview-1']) {
+      store.addInterview(ids['interview-1'], { at: inDays(2, 17).toISOString(), endsAt: inDays(2, 18).toISOString(), kind: 'video', round: 'Round 2', locationOrLink: 'https://meet.example.com/delta' });
+      store.addTask(ids['interview-1'], { title: 'Send thank-you note', dueAt: ago(1).toISOString() });
+    }
+    if (ids['screening-1']) {
+      store.addInterview(ids['screening-1'], { at: inDays(5, 16).toISOString(), endsAt: inDays(5, 20).toISOString(), kind: 'onsite', round: 'Panel', locationOrLink: 'Hooli HQ, Oakland' });
+      store.addTask(ids['screening-1'], { title: 'Prep panel presentation', dueAt: inDays(3, 16).toISOString() });
+    }
     if (ids['offer-1']) store.addArtifact(ids['offer-1'], 'resume_pdf', resume, {}, ago(1));
   } finally { store.close(); }
   return ids;

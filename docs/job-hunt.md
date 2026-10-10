@@ -81,8 +81,10 @@ To re-open a job, edit its status or delete its file.
 - **Job Details**: fit ring, salary and location, tabs for Overview, Fit & Skills, Notes and Activity (the job's recorded status history and emails), and the owner's moves: *Move to Recruiter Screen*, *Move to Offer*, *Mark rejected* (the server decides which moves are allowed) and a link to the application. Per-job notes are not stored yet, so the Notes tab says so.
 - **Job Search Analytics**: applications sent, interview rate, response rate and offers over 7, 30 or 90 days, compared with the window before, with a sparkline of applications sent per day.
 - **Resume & Cover Letter Versions**: each distinct file generated for jobs and the jobs that used it.
+- **Upcoming Interviews**: the next 30 days of interviews as dated rows (month and day, company, role and round, time range, format and link or location). Add one with *Add interview* in Job Details.
+- **Tasks & Follow-ups**: a checklist of open tasks (soonest due first, undated last) and those completed in the last week, with *N due this week*. Overdue and due-today labels carry state tones. Tick a task to complete it (untick to undo), *Snooze* pushes it a day, and the company name selects its job. Add your own with *Add task* in Job Details.
 
-The page reads `GET /api/job-hunt/dashboard?days=30` and records moves with `POST /api/job-hunt/jobs/:id/status`. It refreshes on `jobs.*` and `agent.action.*` events. Panels for interviews, follow-ups and contacts appear once those exist. The code is in `public/components/job-hunt/` and depends only on `services/api.js`.
+The page reads `GET /api/job-hunt/dashboard?days=30` and records moves with `POST /api/job-hunt/jobs/:id/status`. It refreshes on `jobs.*` and `agent.action.*` events. The contacts panel appears once contacts exist. Interview and task changes use the endpoints under *Interviews and tasks* below. The code is in `public/components/job-hunt/` and depends only on `services/api.js`.
 
 ## Safety and privacy
 
@@ -203,6 +205,29 @@ Rates are cohort based, so they are always between 0 and 1 and recent applicatio
 **Resume versions** are the distinct `resume_pdf` and `cover_letter_pdf` artifacts (by content hash), newest first, each with the latest job that used it (`job`) and every job that did (`usedBy`).
 
 **Moving a job.** `POST /api/job-hunt/jobs/<id>/status` with `{ "status": "screening" | "offer" | "rejected" }` records the company's answer as a status event (`detail.by = "owner"`). Allowed: `screening` from `applied`, `contacted`, `followup_due`, `uncertain`; `offer` from those plus `screening` and `interview`; `rejected` from any board status, `uncertain` or `needs_input`. Anything else is `409`, an unknown target `400`, an unknown job `404`. Repeating a move changes nothing and answers `changed: false`.
+
+## Interviews and tasks
+
+Both live in the hunt store (`hunt.sqlite`, schema v7, additive: tables `interviews` and `job_tasks`) and are deliberately **not** mirrored into the core calendar or tasks tables, so the job hunt stays extractable. The logic is `mcp/jobs/hunt/schedule.js`; routes only call it. All endpoints are owner only.
+
+| Endpoint | Body | Result |
+|---|---|---|
+| `POST /api/job-hunt/jobs/<id>/interviews` | `{at, endsAt?, kind?, round?, locationOrLink?, notes?}` | `201 {created, moved, status, interview}`; `200` with `created: false` if the job already has an interview at that start time |
+| `PATCH /api/job-hunt/interviews/<n>` | any of the fields above | `{interview}` |
+| `DELETE /api/job-hunt/interviews/<n>` | | `{removed}` (idempotent) |
+| `POST /api/job-hunt/jobs/<id>/tasks` | `{title, dueAt?}` | `201 {task}` |
+| `POST /api/job-hunt/tasks/<n>/complete` / `uncomplete` | | `{changed, task}`; repeating changes nothing and keeps the first completion time |
+| `POST /api/job-hunt/tasks/<n>/snooze` | `{days: 1-30}` or `{until}` | `{task}`; `409` for a completed task |
+
+Times are ISO 8601 with a zone (`2026-10-12T15:00:00Z`) and are stored in UTC. `kind` is `phone`, `video` (default), `onsite` or `other`. Limits: title 200, round 80, link or location 500, notes 2000 characters; `endsAt` must be after `at`. Errors: `400` invalid input, `404` unknown job, interview or task, `409` conflict (a clash with another interview of the job, snoozing a done task).
+
+**Recording an interview** moves the job to `interview` when it is `applied`, `contacted`, `followup_due`, `screening` or `uncertain` (a status event with `detail.by = "owner"`). From any other status (saved, offer, rejected ...) the interview is still recorded and the status is left alone. Every new interview logs an `interview_scheduled` application event; edits and removals log `interview_updated` and `interview_removed`. Removing an interview does not roll the status back.
+
+**Follow-ups are materialized.** Building the dashboard creates a `follow_up` task (once, under a unique `source_key`) for each email recorded as sent with `detail.followUpAfter` (`email:<id>`), and for a job in `followup_due` with no emailed follow-up (`status:<jobId>`, due since the status changed). Repeated reads never duplicate them, and because they are real rows, completing or snoozing one sticks. An open generated follow-up is hidden once its job moves past applied, contacted or followup_due (the company answered).
+
+**Snoozing** by `days` moves the due time that many days past the later of now and the current due time; `dueAt` in the payload is always the effective due time.
+
+**Dashboard payload** gains two fields (existing ones are unchanged): `interviews` (starting within 30 days, or started within the last 4 hours and not yet over, soonest first, at most 50; each `{id, jobId, company, role, at, endsAt, kind, round, locationOrLink, notes}`) and `tasks` (every open task, soonest due first and undated last, then those completed in the last 7 days, newest first; each `{id, jobId, company, role, title, kind, generated, dueAt, snoozedUntil, doneAt}`).
 
 ## Emails you send yourself, and drafts for all matches
 

@@ -38,6 +38,7 @@
   font-size: var(--text-sm); padding: var(--space-1) var(--space-2); background: var(--bg-input); color: var(--text-primary);
   border: var(--border-width) solid var(--border-color); border-radius: var(--radius-sm);
 }
+.jh-panel__meta { font-size: var(--text-sm); color: var(--text-secondary); }
 .jh-link { font-size: var(--text-sm); font-weight: 600; color: var(--accent-strong); }
 .jh-empty { font-size: var(--text-sm); color: var(--text-secondary); padding: var(--space-3) 0; }
 .jh-empty__title { font-weight: 600; color: var(--text-primary); margin-bottom: var(--space-1); }
@@ -54,6 +55,7 @@
   background: color-mix(in srgb, hsl(var(--jh-hue) 70% 50%) 20%, var(--bg-card));
   color: color-mix(in srgb, hsl(var(--jh-hue) 70% 38%) 60%, var(--text-primary));
 }
+.jh-mono--sm { width: 1.25rem; height: 1.25rem; font-size: 0.6rem; border-radius: var(--radius-sm); }
 .jh-mono--lg { width: 3.5rem; height: 3.5rem; font-size: var(--text-lg); border-radius: var(--radius-md); }
 
 /* ---------- fit chips ---------- */
@@ -190,16 +192,78 @@
 .jh-version__date { font-size: var(--text-xs); color: var(--text-secondary); white-space: nowrap; }
 .jh-version .jh-tag { background: var(--bg-raised); color: var(--text-secondary); }
 
+/* ---------- interviews and tasks (#536) ---------- */
+
+.jh-linkbtn { padding: 0; background: none; border: 0; font: inherit; font-weight: 650; color: var(--text-primary); text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.jh-linkbtn:hover { color: var(--accent-strong); text-decoration: underline; }
+.jh-linkbtn:focus-visible, .jh-mini:focus-visible, .jh-check:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.jh-ico { flex: 0 0 auto; }
+
+.jh-interviews, .jh-tasks { list-style: none; margin: 0; padding: 0; }
+.jh-interview { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) 0; border-top: var(--border-width) solid var(--border-color); }
+.jh-interview:first-child { border-top: 0; padding-top: 0; }
+.jh-daybox {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 0 0 auto; width: 2.75rem; padding: var(--space-1) 0;
+  border: var(--border-width) solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-page); line-height: 1.1;
+}
+.jh-daybox__month { font-size: var(--text-xs); font-weight: 650; text-transform: uppercase; color: var(--accent-strong); }
+.jh-daybox__day { font-size: var(--text-md); font-weight: 700; }
+.jh-interview__who { flex: 1 1 auto; min-width: 0; font-size: var(--text-sm); }
+.jh-interview__role { font-size: var(--text-xs); color: var(--text-secondary); overflow-wrap: anywhere; }
+.jh-interview__when { flex: 0 1 auto; min-width: 0; font-size: var(--text-xs); color: var(--text-secondary); text-align: right; }
+.jh-interview__kind { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-1); flex-wrap: wrap; }
+.jh-interview__where { overflow-wrap: anywhere; white-space: normal; }
+
+.jh-task { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-2) 0; border-top: var(--border-width) solid var(--border-color); }
+.jh-task:first-child { border-top: 0; padding-top: 0; }
+.jh-check { flex: 0 0 auto; width: 1.1rem; height: 1.1rem; margin-top: 2px; accent-color: var(--accent-strong); cursor: pointer; }
+.jh-task__body { flex: 1 1 auto; min-width: 0; }
+.jh-task__title { display: block; font-size: var(--text-sm); overflow-wrap: anywhere; cursor: pointer; }
+.jh-task--done .jh-task__title { text-decoration: line-through; color: var(--text-secondary); }
+.jh-task__meta { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin-top: 2px; font-size: var(--text-xs); color: var(--text-secondary); }
+.jh-task__meta .jh-linkbtn { font-size: var(--text-xs); font-weight: 600; color: var(--text-secondary); }
+.jh-task__side { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-1); flex: 0 0 auto; }
+.jh-due { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-xs); color: var(--text-secondary); white-space: nowrap; }
+.jh-due--overdue { color: var(--accent-danger); font-weight: 650; }
+.jh-due--today { color: var(--jh-pending-text); font-weight: 650; }
+.jh-due--done { color: var(--text-secondary); }
+.jh-mini { padding: 0 var(--space-2); background: none; border: var(--border-width) solid var(--border-color); border-radius: var(--radius-sm); font: inherit; font-size: var(--text-xs); color: var(--text-secondary); cursor: pointer; }
+.jh-mini:hover:not(:disabled) { border-color: var(--border-strong); color: var(--text-primary); }
+.jh-task__snoozed { padding: 0 var(--space-2); border-radius: var(--radius-full); background: var(--bg-raised); }
+
+.jh-formhost:not(:empty) { margin-top: var(--space-4); padding-top: var(--space-3); border-top: var(--border-width) solid var(--border-color); }
+.jh-form { display: flex; flex-direction: column; gap: var(--space-2); }
+.jh-field { display: grid; grid-template-columns: minmax(7rem, 9rem) minmax(0, 1fr); gap: var(--space-2); align-items: center; font-size: var(--text-sm); }
+.jh-field__label { color: var(--text-secondary); }
+.jh-input {
+  width: 100%; padding: var(--space-1) var(--space-2); font: inherit; font-size: var(--text-sm);
+  background: var(--bg-input); color: var(--text-primary); border: var(--border-width) solid var(--border-color); border-radius: var(--radius-sm);
+}
+.jh-input:hover { border-color: var(--border-strong); }
+.jh-form .jh-actions { margin-top: var(--space-2); }
+
 /* ---------- responsive ---------- */
 
+/* Two columns (details beside interviews and tasks) until the page is wide enough for the mockup's three. */
+.jh-side--left { grid-row: span 2; }
+@media (min-width: 1750px) {
+  .jh-lower { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 1fr); }
+  .jh-side--left { grid-row: auto; }
+}
 @media (max-width: 1100px) {
   .jh-lower { grid-template-columns: minmax(0, 1fr); }
+  .jh-side--left { grid-row: auto; }
 }
 @media (max-width: 700px) {
   .jh-board { grid-template-columns: repeat(6, minmax(15rem, 78%)); }
   .jh-details__head { gap: var(--space-3); }
-  .jh-mono--lg { width: 2.75rem; height: 2.75rem; font-size: var(--text-md); }
+  .jh-mono--sm { width: 1.25rem; height: 1.25rem; font-size: 0.6rem; border-radius: var(--radius-sm); }
+.jh-mono--lg { width: 2.75rem; height: 2.75rem; font-size: var(--text-md); }
   .jh-ring { width: 4.5rem; height: 4.5rem; }
   .jh-dim { grid-template-columns: 5.5rem minmax(0, 1fr) 2.5rem; }
+  .jh-field { grid-template-columns: minmax(0, 1fr); }
+  .jh-interview { flex-wrap: wrap; }
+  .jh-interview__when { flex-basis: 100%; text-align: left; }
+  .jh-interview__kind { justify-content: flex-start; }
   .jh-search { flex-basis: 100%; }
 }

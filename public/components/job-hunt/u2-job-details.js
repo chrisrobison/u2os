@@ -1,4 +1,5 @@
 import * as api from '../../services/api.js';
+import { interviewForm, taskForm } from './jh-forms.js';
 import { el, svg, monogram, safeUrl, titleCase, formatDay, formatStamp, fitBand } from './jh-util.js';
 
 // Job details for the selected card: header with a fit ring, tabs (Overview,
@@ -52,6 +53,7 @@ export class U2JobDetails extends HTMLElement {
     this._busy = false;
     this._message = null;
     this._shown = '';
+    this._form = null;
   }
 
   connectedCallback() {
@@ -62,21 +64,23 @@ export class U2JobDetails extends HTMLElement {
       this.setAttribute('aria-labelledby', 'jh-details-title');
       this._link = el('a', { class: 'jh-link', hidden: true, target: '_blank', rel: 'noopener noreferrer' });
       this._body = el('div', { class: 'jh-details' });
-      this.append(el('div', { class: 'jh-panel__head' }, el('h2', { id: 'jh-details-title', class: 'jh-panel__title', text: 'Job Details' }), this._link), this._body);
+      // The add forms live outside the re-rendered body so a refresh never wipes what is being typed.
+      this._formHost = el('div', { class: 'jh-formhost', id: 'jh-formhost' });
+      this.append(el('div', { class: 'jh-panel__head' }, el('h2', { id: 'jh-details-title', class: 'jh-panel__title', text: 'Job Details' }), this._link), this._body, this._formHost);
     }
     this._render();
   }
 
   /** Shows a job, fetching it. Stale responses (the owner clicked elsewhere meanwhile) are dropped. */
   async show(id) {
-    if (id !== this._id) { this._id = id; this._job = null; this._message = null; this._shown = ''; this._tab = 'overview'; }
+    if (id !== this._id) { this._id = id; this._job = null; this._message = null; this._shown = ''; this._tab = 'overview'; this._closeForm(); }
     await this._fetch(true);
   }
 
   /** Re-reads the current job quietly after a refresh or a move. */
   async refresh() { if (this._id) await this._fetch(false); }
 
-  clear() { this._seq += 1; this._id = null; this._job = null; this._shown = ''; this._render(); }
+  clear() { this._seq += 1; this._id = null; this._job = null; this._shown = ''; this._closeForm(); this._render(); }
 
   async _fetch(visible) {
     const seq = ++this._seq;
@@ -96,7 +100,7 @@ export class U2JobDetails extends HTMLElement {
   _render() {
     if (!this._built) return;
     const job = this._job;
-    const signature = JSON.stringify([job, this._tab, this._error, this._message, this._busy, this._id]);
+    const signature = JSON.stringify([job, this._tab, this._error, this._message, this._busy, this._id, this._form]);
     if (signature === this._shown) return;
     this._shown = signature;
     const focusTab = this._body.contains(document.activeElement) && document.activeElement.getAttribute?.('role') === 'tab';
@@ -219,8 +223,39 @@ export class U2JobDetails extends HTMLElement {
       button.addEventListener('click', () => this._move(job.id, move.to));
       row.append(button);
     }
+    for (const [kind, label] of [['interview', 'Add interview'], ['task', 'Add task']]) {
+      const button = el('button', { type: 'button', class: 'btn', 'aria-expanded': String(this._form === kind), 'aria-controls': 'jh-formhost', 'data-form': kind, text: label });
+      button.addEventListener('click', () => this._openForm(kind, job));
+      row.append(button);
+    }
     if (apply) row.append(el('a', { class: 'btn jh-btn-link', href: apply, target: '_blank', rel: 'noopener noreferrer', text: 'Open application ↗' }));
     return el('div', {}, row, el('p', { class: this._messageIsError ? 'load-error' : 'jh-note', role: this._messageIsError ? 'alert' : 'status', text: this._message || '' , hidden: !this._message }));
+  }
+
+  _closeForm() {
+    this._form = null;
+    this._formHost.textContent = '';
+  }
+
+  _openForm(kind, job) {
+    if (this._form === kind) return this._closeForm();
+    this._form = kind;
+    const onCancel = () => { this._closeForm(); this._render(); this._body.querySelector(`[data-form="${kind}"]`)?.focus(); };
+    const done = (message) => { this._closeForm(); this._messageIsError = false; this._message = message; this.dispatchEvent(new CustomEvent('jh-changed', { bubbles: true, detail: { id: job.id } })); this._fetch(false); };
+    const form = kind === 'interview'
+      ? interviewForm({ onCancel, async onSubmit(body, fail) {
+        try {
+          const result = await api.addJobHuntInterview(job.id, body);
+          done(!result.created ? 'That interview was already recorded.' : result.moved ? 'Interview added. Moved to Interviewing.' : 'Interview added.');
+        } catch (err) { fail(err.message); }
+      } })
+      : taskForm({ onCancel, async onSubmit(body, fail) {
+        try { await api.addJobHuntTask(job.id, body); done('Task added.'); } catch (err) { fail(err.message); }
+      } });
+    this._formHost.textContent = '';
+    this._formHost.append(form);
+    this._render();
+    form.querySelector('input, select')?.focus();
   }
 
   async _move(id, to) {

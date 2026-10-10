@@ -27,6 +27,13 @@ async function endSession(baseURL) {
   sessions.delete(baseURL);
 }
 
+// A datetime-local value for N days from now at the given local hour.
+function localStamp(days, hour) {
+  const d = new Date(Date.now() + days * 86_400_000);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(hour)}:00`;
+}
+
 const column = (page, label) => page.locator('u2-job-pipeline .jh-col', { has: page.locator('.jh-col__label', { hasText: new RegExp(`^${label}$`) }) });
 const card = (page, company) => page.locator('u2-job-pipeline .jh-card', { hasText: company });
 
@@ -68,8 +75,9 @@ test.describe.serial('job-hunt dashboard (#535)', () => {
       await expect(page.locator('u2-job-details .jh-details__role')).toHaveText('Director of Engineering');
       await expect(card(page, 'Delta Systems')).toHaveAttribute('aria-pressed', 'true');
 
-      // Hidden until interviews, follow-ups and contacts exist (#536, #537), and no upsell or coach.
-      await expect(page.getByText(/Upcoming Interviews|Tasks & Follow-ups|Networking|Upgrade to Pro|Career Coach/i)).toHaveCount(0);
+      // The contacts panel stays hidden until contacts exist (#537), and there is no upsell, coach or calendar link.
+      await expect(page.getByText(/Networking|Upgrade to Pro|Career Coach|View Calendar/i)).toHaveCount(0);
+      await expect(page.locator('.jh-sub')).toContainText('2 interviews are coming up this week');
     } finally { await context.close(); }
   });
 
@@ -196,6 +204,114 @@ test.describe.serial('job-hunt dashboard (#535)', () => {
     } finally { await context.close(); }
   });
 
+  test('Upcoming Interviews and Tasks & Follow-ups show real rows with state tones', async ({ browser }) => {
+    const { context, page } = await signIn(browser, dedicated.baseURL, '#/job-hunt');
+    try {
+      const interviews = page.locator('u2-job-interviews');
+      await expect(interviews.getByRole('heading', { name: 'Upcoming Interviews' })).toBeVisible();
+      await expect(interviews.locator('.jh-interview')).toHaveCount(2);
+      const first = interviews.locator('.jh-interview').first();
+      await expect(first).toContainText('Delta Systems');
+      await expect(first).toContainText('Director of Engineering · Round 2');
+      await expect(first).toContainText('Video call');
+      await expect(first.locator('.jh-daybox__day')).toHaveText(/^\d{1,2}$/);
+      await expect(first.locator('a', { hasText: 'Join link' })).toHaveAttribute('href', 'https://meet.example.com/delta');
+      await expect(first.locator('.jh-interview__when')).toContainText('–');
+      await expect(interviews.locator('.jh-interview').nth(1)).toContainText('Onsite');
+      await expect(interviews.locator('.jh-interview').nth(1)).toContainText('Hooli HQ, Oakland');
+
+      const tasks = page.locator('u2-job-tasks');
+      await expect(tasks.getByRole('heading', { name: 'Tasks & Follow-ups' })).toBeVisible();
+      await expect(tasks.locator('.jh-panel__meta')).toHaveText('3 due this week');
+      await expect(tasks.locator('.jh-task')).toHaveCount(3);
+      const thanks = tasks.locator('.jh-task', { hasText: 'Send thank-you note' });
+      await expect(thanks.locator('.jh-due')).toHaveClass(/jh-due--overdue/);
+      await expect(thanks.locator('.jh-due')).toContainText('Overdue');
+      await expect(tasks.locator('.jh-task', { hasText: 'Follow up with Initech' }).locator('.jh-due')).toHaveClass(/jh-due--overdue/);
+      await expect(tasks.locator('.jh-task', { hasText: 'Prep panel presentation' }).locator('.jh-due')).not.toHaveClass(/jh-due--(overdue|today)/);
+
+      // A company name selects its job.
+      await tasks.locator('.jh-task', { hasText: 'Follow up with Initech' }).getByRole('button', { name: 'Initech', exact: true }).click();
+      await expect(page.locator('u2-job-details .jh-details__company')).toHaveText('Initech');
+    } finally { await context.close(); }
+  });
+
+  test('the owner adds an interview from the details: the job moves to Interviewing and the panel and board follow', async ({ browser }) => {
+    const { context, page } = await signIn(browser, dedicated.baseURL, '#/job-hunt');
+    try {
+      const details = page.locator('u2-job-details');
+      await card(page, 'Hooli').click();
+      await expect(details.locator('.jh-details__role')).toHaveText('Principal Engineer');
+      await details.getByRole('button', { name: 'Add interview' }).click();
+      const form = details.getByRole('form', { name: 'Add an interview' });
+      await expect(form.getByLabel('Starts')).toBeFocused();
+
+      // Validation: no start, then an end before the start.
+      await form.getByRole('button', { name: 'Add interview' }).click();
+      await expect(form.getByRole('alert')).toHaveText('Choose when the interview starts.');
+      await form.getByLabel('Starts').fill(localStamp(1, 10));
+      await form.getByLabel('Ends (optional)').fill(localStamp(1, 9));
+      await form.getByRole('button', { name: 'Add interview' }).click();
+      await expect(form.getByRole('alert')).toHaveText('The end time must be after the start.');
+
+      await form.getByLabel('Ends (optional)').fill(localStamp(1, 11));
+      await form.getByLabel('Format').selectOption('phone');
+      await form.getByLabel('Round (optional)').fill('Hiring manager');
+      await form.getByRole('button', { name: 'Add interview' }).click();
+      await expect(details.locator('.jh-note[role="status"]')).toHaveText('Interview added. Moved to Interviewing.');
+      await expect(form).toHaveCount(0);
+      await expect(column(page, 'Interviewing').locator('.jh-card', { hasText: 'Hooli' })).toHaveCount(1);
+      const rows = page.locator('u2-job-interviews .jh-interview');
+      await expect(rows).toHaveCount(3);
+      await expect(rows.first()).toContainText('Hooli');
+      await expect(rows.first()).toContainText('Principal Engineer · Hiring manager');
+      await expect(rows.first()).toContainText('Phone call');
+      await details.getByRole('tab', { name: 'Activity' }).click();
+      await expect(details.locator('.jh-timeline__item').first()).toContainText('Screening → Interview (you)');
+      await expect(details.locator('.jh-timeline__item').nth(1)).toContainText('Interview scheduled');
+    } finally { await context.close(); }
+  });
+
+  test('the owner adds a task, completes it, and it stays done after a reload; completing again changes nothing', async ({ browser }) => {
+    const { context, page } = await signIn(browser, dedicated.baseURL, '#/job-hunt');
+    try {
+      const details = page.locator('u2-job-details');
+      const tasks = page.locator('u2-job-tasks');
+      await card(page, 'Vandelay').click();
+      await details.getByRole('button', { name: 'Add task' }).click();
+      const form = details.getByRole('form', { name: 'Add a task' });
+      const results = await new AxeBuilder({ page }).include('u2-job-details').include('u2-job-tasks').analyze();
+      expect(results.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`)).toEqual([]);
+      await form.getByRole('button', { name: 'Add task' }).click();
+      await expect(form.getByRole('alert')).toHaveText('Give the task a title.');
+      await form.getByLabel('Task').fill('Review offer letter <b>carefully</b>');
+      await form.getByLabel('Due (optional)').fill(localStamp(2, 9));
+      await form.getByRole('button', { name: 'Add task' }).click();
+      await expect(details.locator('.jh-note[role="status"]')).toHaveText('Task added.');
+
+      const row = tasks.locator('.jh-task', { hasText: 'Review offer letter' });
+      await expect(row).toHaveCount(1);
+      await expect(row.locator('.jh-task__title')).toHaveText('Review offer letter <b>carefully</b>');
+      await expect(tasks.locator('.jh-panel__meta')).toHaveText('4 due this week');
+      const box = row.getByRole('checkbox', { name: /Review offer letter/ });
+      await box.check();
+      await expect(row).toHaveClass(/jh-task--done/);
+      await expect(row.locator('.jh-due')).toHaveText('Done');
+      await expect(tasks.locator('.jh-panel__meta')).toHaveText('3 due this week');
+
+      await page.reload();
+      const after = page.locator('u2-job-tasks .jh-task', { hasText: 'Review offer letter' });
+      await expect(after).toHaveClass(/jh-task--done/);
+      await expect(after.getByRole('checkbox')).toBeChecked();
+      await after.getByRole('checkbox').uncheck();
+      await expect(after).not.toHaveClass(/jh-task--done/);
+      const dueBefore = await after.locator('.jh-due').textContent();
+      await after.getByRole('button', { name: /Snooze/ }).click();
+      await expect(after.locator('.jh-task__snoozed')).toHaveText('Snoozed');
+      await expect(after.locator('.jh-due')).not.toHaveText(dueBefore);
+    } finally { await context.close(); }
+  });
+
   test('refreshes on jobs and action events, and ignores unrelated ones', async ({ browser }) => {
     const { context, page } = await signIn(browser, dedicated.baseURL, '#/job-hunt');
     try {
@@ -279,6 +395,9 @@ test('a fresh install shows honest empty states and no fake data', async ({ brow
     await expect(page.locator('u2-job-analytics .jh-tile__value')).toHaveText(['0', '–', '–', '0']);
     await expect(page.locator('u2-job-analytics')).toContainText('Nothing has been sent in this window yet');
     await expect(page.locator('u2-job-resumes')).toContainText('No resumes or cover letters yet');
+    await expect(page.locator('u2-job-interviews')).toContainText('No interviews in the next 30 days');
+    await expect(page.locator('u2-job-tasks')).toContainText('No tasks yet');
+    await expect(page.locator('u2-job-tasks .jh-panel__meta')).toHaveText('');
     const results = await new AxeBuilder({ page }).include('u2-job-dashboard').analyze();
     expect(results.violations.map((v) => v.id)).toEqual([]);
   } finally {
