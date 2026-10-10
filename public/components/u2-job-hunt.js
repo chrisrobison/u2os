@@ -68,7 +68,7 @@ export class U2JobHunt extends HTMLElement {
     const shown = this._visible();
     this.innerHTML = `
       <div class="workspace__header">
-        <div class="workspace__title">Job hunt</div>
+        <div class="workspace__title">Job Leads</div>
         <div class="workspace__subtitle">Ranked against your resume, projects and preferences. Autonomous threshold ${minimumScore}. ${Object.values(counts).reduce((a, b) => a + b, 0)} jobs discovered.</div>
       </div>
       <div class="trigger-row__actions">

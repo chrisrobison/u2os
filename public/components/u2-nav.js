@@ -22,10 +22,13 @@ export const NAV_GROUPS = [
     ['#/memory', 'Memory', 'brain'],
     ['#/routines', 'Routines', 'repeat'],
     ['#/goals', 'Goals', 'bullseye'],
-    ['#/job-hunt', 'Job hunt', 'user-tie'],
-    ['#/applications', 'Applications', 'briefcase'],
     ['#/automation', 'Automation', 'bolt'],
     ['#/activity', 'Activity', 'clock-rotate-left'],
+  ] },
+  { id: 'jobs', label: 'Job hunt', open: true, routes: [
+    ['#/job-hunt', 'Dashboard', 'table-columns'],
+    ['#/job-hunt/leads', 'Job Leads', 'user-tie'],
+    ['#/applications', 'Applications', 'briefcase'],
   ] },
   { id: 'addons', label: 'Add-ons', open: false, routes: [
     ['#/addons', 'Add-ons', 'cubes'],
@@ -47,7 +50,11 @@ export const NAV_GROUPS = [
 
 // Icons an enabled add-on's navigation entry may use (the self-hosted subset in icons.css).
 const KNOWN_ICONS = new Set(NAV_GROUPS.flatMap((group) => group.routes.map(([, , icon]) => icon)));
-const EXACT_ROUTES = new Set(['#/addons']);
+// #/job-hunt is the dashboard; #/job-hunt/leads is its own entry.
+const EXACT_ROUTES = new Set([
+  '#/addons',
+  '#/job-hunt',
+]);
 
 const STATE_KEY = 'u2-nav-groups';
 

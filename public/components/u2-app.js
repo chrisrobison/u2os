@@ -25,6 +25,7 @@ import './u2-routines.js';
 import './u2-vault.js';
 import './u2-applications.js';
 import './u2-job-hunt.js';
+import './job-hunt/u2-job-dashboard.js';
 import './u2-goals.js';
 import './u2-triggers.js';
 import './u2-packages.js';
@@ -326,7 +327,10 @@ export class U2App extends HTMLElement {
         this._setWorkspace('', document.createElement('u2-applications'));
         break;
       case 'job-hunt':
-        this._setWorkspace('', document.createElement('u2-job-hunt'));
+        // #/job-hunt is the dashboard; the ranked list is "Job Leads".
+        if (!sub) this._setWorkspace('', document.createElement('u2-job-dashboard'));
+        else if (sub === 'leads') this._setWorkspace('', document.createElement('u2-job-hunt'));
+        else this._renderNotFound(hash);
         break;
       case 'vault':
         this._setWorkspace('', document.createElement('u2-vault'));

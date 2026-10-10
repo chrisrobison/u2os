@@ -71,6 +71,19 @@ Every attempt is a Markdown file in your vault. It records the company, title, f
 
 To re-open a job, edit its status or delete its file.
 
+## The dashboard
+
+![The job-hunt dashboard](job-hunt-dashboard.png)
+
+`#/job-hunt` is the job-hunt dashboard; the ranked list that used to live there is **Job Leads** at `#/job-hunt/leads`, and the ledger stays at `#/applications`.
+
+- **Application Pipeline**: six columns (Saved, Applied, Recruiter Screen, Interviewing, Offer, Rejected) of job cards with fit, location and the last status change. Search filters the cards as you type; *Group by* switches between stage and fit band. Selecting a card fills Job Details.
+- **Job Details**: fit ring, salary and location, tabs for Overview, Fit & Skills, Notes and Activity (the job's recorded status history and emails), and the owner's moves: *Move to Recruiter Screen*, *Move to Offer*, *Mark rejected* (the server decides which moves are allowed) and a link to the application. Per-job notes are not stored yet, so the Notes tab says so.
+- **Job Search Analytics**: applications sent, interview rate, response rate and offers over 7, 30 or 90 days, compared with the window before, with a sparkline of applications sent per day.
+- **Resume & Cover Letter Versions**: each distinct file generated for jobs and the jobs that used it.
+
+The page reads `GET /api/job-hunt/dashboard?days=30` and records moves with `POST /api/job-hunt/jobs/:id/status`. It refreshes on `jobs.*` and `agent.action.*` events. Panels for interviews, follow-ups and contacts appear once those exist. The code is in `public/components/job-hunt/` and depends only on `services/api.js`.
+
 ## Safety and privacy
 
 - **Identity comes from your files, not the model.** The model only picks jobs and writes answers and cover letters. It cannot change your name, email, phone, links or resume.
@@ -146,7 +159,7 @@ Refused, whatever else: the draft still needs your input (`needs_input`), the jo
 
 ## The Job hunt page and sending from the running server
 
-**Job hunt** in the app (Memory & automation) lists scored jobs, best first: the score and why, concerns, the recommended narrative, the approach, the materials and the draft email (recipient, subject, body, attachment names). Filters: *Ready to send*, *Needs you* (the listing asked for something your facts do not cover), *Contacted*, *Strong (80+)* and *All scored*.
+**Job Leads** in the app (Job hunt, `#/job-hunt/leads`) lists scored jobs, best first: the score and why, concerns, the recommended narrative, the approach, the materials and the draft email (recipient, subject, body, attachment names). Filters: *Ready to send*, *Needs you* (the listing asked for something your facts do not cover), *Contacted*, *Strong (80+)* and *All scored*.
 
 The buttons propose the email through the running server's own approval gate; nothing is sent until you approve it in **Approvals**:
 
