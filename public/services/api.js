@@ -587,6 +587,10 @@ export function deleteJobHuntInterview(id) { return jobHuntWrite(`/api/job-hunt/
 export function addJobHuntTask(jobId, body) { return jobHuntWrite(`/api/job-hunt/jobs/${encodeURIComponent(jobId)}/tasks`, 'POST', body); }
 export function setJobHuntTaskDone(id, done) { return jobHuntWrite(`/api/job-hunt/tasks/${encodeURIComponent(id)}/${done ? 'complete' : 'uncomplete'}`, 'POST'); }
 export function snoozeJobHuntTask(id, days) { return jobHuntWrite(`/api/job-hunt/tasks/${encodeURIComponent(id)}/snooze`, 'POST', { days }); }
+export function addJobHuntContact(jobId, body) { return jobHuntWrite(`/api/job-hunt/jobs/${encodeURIComponent(jobId)}/contacts`, 'POST', body); }
+export function updateJobHuntContact(id, body) { return jobHuntWrite(`/api/job-hunt/contacts/${encodeURIComponent(id)}`, 'PATCH', body); }
+export function deleteJobHuntContact(id) { return jobHuntWrite(`/api/job-hunt/contacts/${encodeURIComponent(id)}`, 'DELETE'); }
+export function markJobHuntContacted(id) { return jobHuntWrite(`/api/job-hunt/contacts/${encodeURIComponent(id)}/contacted`, 'POST'); }
 export function getAutopilot() { return request('/api/job-hunt/autopilot'); }
 export function setAutopilot(body) { return request('/api/job-hunt/autopilot', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }
 export function runAutopilot() { return request('/api/job-hunt/autopilot/run', { method: 'POST' }); }

@@ -168,7 +168,7 @@ test('the dashboard lists upcoming interviews for 30 days, sorted, and open task
   assert.deepEqual(titles, ['Soon', 'Late', 'Undated', 'Recent done']);
   assert.ok(late && soon);
   // The pre-existing payload fields are untouched.
-  assert.deepEqual(Object.keys(dash).sort(), ['analytics', 'generatedAt', 'interviews', 'resumeVersions', 'stages', 'tasks']);
+  assert.deepEqual(Object.keys(dash).sort(), ['analytics', 'contacts', 'generatedAt', 'interviews', 'resumeVersions', 'stages', 'tasks']);
   store.close();
 });
 
@@ -182,12 +182,12 @@ test('a hunt.sqlite from before interviews and tasks opens, keeps its rows and g
   store.close();
   // Rewind to the schema before #536.
   const raw = new DatabaseSync(file);
-  raw.exec('DROP TABLE interviews; DROP TABLE job_tasks; PRAGMA user_version = 6');
+  raw.exec('DROP TABLE interviews; DROP TABLE job_tasks; DROP TABLE job_contacts; PRAGMA user_version = 6');
   const before = raw.prepare('SELECT id, status, updated_at FROM jobs').all();
   const events = raw.prepare('SELECT COUNT(*) AS n FROM application_events').get().n;
   raw.close();
   store = openStore(file);
-  assert.equal(store.db.prepare('PRAGMA user_version').get().user_version, 7);
+  assert.equal(store.db.prepare('PRAGMA user_version').get().user_version, 8);
   assert.deepEqual(store.db.prepare('SELECT id, status, updated_at FROM jobs').all(), before);
   assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM application_events').get().n, events);
   assert.equal(addInterview(store, job.id, { at: at(2) }, NOW).moved, true);

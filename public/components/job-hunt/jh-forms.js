@@ -5,7 +5,8 @@ import { el } from './jh-util.js';
 // cancels. They only build the request body; the caller sends it.
 
 export const KINDS = [['video', 'Video call'], ['phone', 'Phone call'], ['onsite', 'Onsite'], ['other', 'Other']];
-const LIMITS = { title: 200, round: 80, location: 500, notes: 2000 };
+const LIMITS = { title: 200, round: 80, location: 500, notes: 2000, name: 120, contactTitle: 120, email: 254 };
+export const ROLE_KINDS = [['recruiter', 'Recruiter'], ['referral', 'Referral'], ['hiring_manager', 'Hiring Manager'], ['other', 'Other']];
 
 let counter = 0;
 
@@ -74,6 +75,39 @@ export function taskForm({ onSubmit, onCancel }) {
       const dueAt = due.value ? localToIso(due.value) : null;
       if (due.value && !dueAt) return fail('The due time is not a valid time.');
       await onSubmit({ title: title.value, dueAt }, fail);
+    },
+  });
+}
+
+/** A mailto-safe address: one plain address, nothing that could add recipients or header lines. */
+export function plainEmail(value) {
+  return typeof value === 'string' && value.length <= LIMITS.email && /^[^\s@,;:<>"()[\]\\]{1,64}@[^\s@,;:<>"()[\]\\]+\.[^\s@,;:<>"()[\]\\]+$/.test(value);
+}
+
+/**
+ * Add (with `jobs`, a list of {id, company, role}) or edit (with `contact`) a networking contact. The address
+ * cannot be changed once saved, so the edit form leaves it out.
+ */
+export function contactForm({ jobs = [], contact = null, onSubmit, onCancel }) {
+  const job = el('select', { class: 'jh-input' }, jobs.map((item) => el('option', { value: item.id, text: [item.company, item.role].filter(Boolean).join(' - ') })));
+  const name = input('text', { required: true, maxlength: LIMITS.name, placeholder: 'Jane Doe', value: contact?.name ?? '' });
+  const email = input('email', { required: true, maxlength: LIMITS.email, placeholder: 'jane@example.com' });
+  const kind = el('select', { class: 'jh-input' }, ROLE_KINDS.map(([value, label]) => el('option', { value, text: label })));
+  kind.value = contact?.roleKind ?? 'recruiter';
+  const title = input('text', { maxlength: LIMITS.contactTitle, placeholder: 'Technical Recruiter', value: contact?.title ?? '' });
+  const fields = contact
+    ? [field('Name', name), field('Role', kind), field('Title (optional)', title)]
+    : [field('Job', job), field('Name', name), field('Email', email), field('Role', kind), field('Title (optional)', title)];
+  return shell({
+    title: contact ? 'Edit contact' : 'Add a contact', submitLabel: contact ? 'Save contact' : 'Add contact', onCancel, fields,
+    async onSubmit(fail) {
+      if (!name.value.trim()) return fail('Give the contact a name.');
+      if (!contact) {
+        if (!job.value) return fail('There are no jobs to attach a contact to yet.');
+        if (!plainEmail(email.value.trim())) return fail('Enter one valid email address, like jane@example.com.');
+        return onSubmit({ jobId: job.value, name: name.value, email: email.value.trim(), roleKind: kind.value, title: title.value }, fail);
+      }
+      await onSubmit({ name: name.value, roleKind: kind.value, title: title.value }, fail);
     },
   });
 }

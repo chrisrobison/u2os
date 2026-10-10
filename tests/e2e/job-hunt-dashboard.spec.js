@@ -75,8 +75,8 @@ test.describe.serial('job-hunt dashboard (#535)', () => {
       await expect(page.locator('u2-job-details .jh-details__role')).toHaveText('Director of Engineering');
       await expect(card(page, 'Delta Systems')).toHaveAttribute('aria-pressed', 'true');
 
-      // The contacts panel stays hidden until contacts exist (#537), and there is no upsell, coach or calendar link.
-      await expect(page.getByText(/Networking|Upgrade to Pro|Career Coach|View Calendar/i)).toHaveCount(0);
+      // There is no upsell, coach or calendar link.
+      await expect(page.getByText(/Upgrade to Pro|Career Coach|View Calendar/i)).toHaveCount(0);
       await expect(page.locator('.jh-sub')).toContainText('2 interviews are coming up this week');
     } finally { await context.close(); }
   });
@@ -312,6 +312,95 @@ test.describe.serial('job-hunt dashboard (#535)', () => {
     } finally { await context.close(); }
   });
 
+  test('Networking & Contacts lists real contacts, and the mail action is a mailto link (nothing is sent)', async ({ browser }) => {
+    const { context, page } = await signIn(browser, dedicated.baseURL, '#/job-hunt');
+    try {
+      const panel = page.locator('u2-job-contacts');
+      await expect(panel.getByRole('heading', { name: 'Networking & Contacts' })).toBeVisible();
+      const rows = panel.locator('.jh-contact');
+      await expect(rows).toHaveCount(3);
+      await expect(rows.nth(0)).toContainText('Priya Raman');
+      await expect(rows.nth(0)).toContainText('Engineering Director · Hooli');
+      await expect(rows.nth(0).locator('.jh-role')).toHaveText('Hiring Manager');
+      await expect(rows.nth(0)).toContainText('Last contact 1d ago');
+      await expect(rows.nth(1)).toContainText('Maya Chen');
+      await expect(rows.nth(1).locator('.jh-role')).toHaveText('Recruiter');
+      await expect(rows.nth(1)).toContainText('Last contact 3d ago');
+      await expect(rows.nth(2)).toContainText('Tom Baker');
+      await expect(rows.nth(2).locator('.jh-role')).toHaveText('Referral');
+      await expect(rows.nth(2)).toContainText('Not contacted yet');
+      const mail = rows.nth(1).getByRole('link', { name: 'Email Maya Chen' });
+      await expect(mail).toHaveAttribute('href', 'mailto:maya.chen%40delta.example?subject=Re%3A%20Director%20of%20Engineering%20at%20Delta%20Systems');
+      const results = await new AxeBuilder({ page }).include('u2-job-contacts').analyze();
+      expect(results.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`)).toEqual([]);
+    } finally { await context.close(); }
+  });
+
+  test('the owner adds, edits, marks contacted and removes a contact; it persists and is shown as text', async ({ browser }) => {
+    const { context, page } = await signIn(browser, dedicated.baseURL, '#/job-hunt');
+    try {
+      const panel = page.locator('u2-job-contacts');
+      await panel.getByRole('button', { name: 'Add contact' }).click();
+      const form = panel.getByRole('form', { name: 'Add a contact' });
+      await expect(form.getByLabel('Job')).toBeFocused();
+      await form.getByRole('button', { name: 'Add contact' }).click();
+      await expect(form.getByRole('alert')).toHaveText('Give the contact a name.');
+      await form.getByLabel('Name').fill('<img src=x onerror="window.__xss=9"> Sam');
+      await form.getByLabel('Email').fill('sam@globex.example, other@globex.example');
+      await form.getByRole('button', { name: 'Add contact' }).click();
+      await expect(form.getByRole('alert')).toHaveText('Enter one valid email address, like jane@example.com.');
+      await form.getByLabel('Email').fill('sam@globex.example');
+      await form.getByLabel('Job').selectOption({ label: 'Globex - Engineering Manager' });
+      await form.getByLabel('Role').selectOption('referral');
+      await form.getByLabel('Title (optional)').fill('Staff Engineer');
+      await form.getByRole('button', { name: 'Add contact' }).click();
+      await expect(form).toHaveCount(0);
+
+      const row = panel.locator('.jh-contact', { hasText: 'Sam' });
+      await expect(row).toHaveCount(1);
+      await expect(row.locator('.jh-contact__name')).toHaveText('<img src=x onerror="window.__xss=9"> Sam');
+      await expect(row).toContainText('Staff Engineer · Globex');
+      await expect(row.locator('.jh-role')).toHaveText('Referral');
+      await expect(row).toContainText('Not contacted yet');
+      expect(await page.locator('u2-job-dashboard img').count()).toBe(0);
+      expect(await page.evaluate(() => window.__xss)).toBeUndefined();
+
+      // A duplicate address (any case) on the same job is refused with the server's message.
+      await panel.getByRole('button', { name: 'Add contact' }).click();
+      const again = panel.getByRole('form', { name: 'Add a contact' });
+      await again.getByLabel('Job').selectOption({ label: 'Globex - Engineering Manager' });
+      await again.getByLabel('Name').fill('Sam again');
+      await again.getByLabel('Email').fill('SAM@globex.example');
+      await again.getByRole('button', { name: 'Add contact' }).click();
+      await expect(again.getByRole('alert')).toHaveText('This job already has a contact with that email');
+      await again.getByRole('button', { name: 'Cancel' }).click();
+
+      await row.getByRole('button', { name: /^Edit/ }).click();
+      const edit = panel.getByRole('form', { name: 'Edit contact' });
+      await expect(edit.getByLabel('Name')).toBeFocused();
+      await edit.getByLabel('Name').fill('Samantha Reed');
+      await edit.getByLabel('Role').selectOption('recruiter');
+      await edit.getByLabel('Title (optional)').fill('');
+      await edit.getByRole('button', { name: 'Save contact' }).click();
+      const edited = panel.locator('.jh-contact', { hasText: 'Samantha Reed' });
+      await expect(edited.locator('.jh-role')).toHaveText('Recruiter');
+      await expect(edited).toContainText('Globex');
+      await expect(edited).not.toContainText('Staff Engineer');
+
+      await edited.getByRole('button', { name: /^Mark contacted/ }).click();
+      await expect(panel.locator('.jh-contact').first()).toContainText('Samantha Reed');
+      await expect(panel.locator('.jh-contact').first()).toContainText('Last contact just now');
+
+      await page.reload();
+      await expect(panel.locator('.jh-contact', { hasText: 'Samantha Reed' })).toContainText('Last contact just now');
+      await panel.locator('.jh-contact', { hasText: 'Samantha Reed' }).getByRole('button', { name: /^Remove/ }).click();
+      await expect(panel.locator('.jh-contact')).toHaveCount(3);
+      await page.reload();
+      await expect(panel.locator('.jh-contact')).toHaveCount(3);
+      await expect(panel).not.toContainText('Samantha Reed');
+    } finally { await context.close(); }
+  });
+
   test('refreshes on jobs and action events, and ignores unrelated ones', async ({ browser }) => {
     const { context, page } = await signIn(browser, dedicated.baseURL, '#/job-hunt');
     try {
@@ -398,6 +487,8 @@ test('a fresh install shows honest empty states and no fake data', async ({ brow
     await expect(page.locator('u2-job-interviews')).toContainText('No interviews in the next 30 days');
     await expect(page.locator('u2-job-tasks')).toContainText('No tasks yet');
     await expect(page.locator('u2-job-tasks .jh-panel__meta')).toHaveText('');
+    await expect(page.locator('u2-job-contacts')).toContainText('No contacts yet');
+    await expect(page.locator('u2-job-contacts').getByRole('button', { name: 'Add contact' })).toBeVisible();
     const results = await new AxeBuilder({ page }).include('u2-job-dashboard').analyze();
     expect(results.violations.map((v) => v.id)).toEqual([]);
   } finally {

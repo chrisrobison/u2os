@@ -6,12 +6,14 @@ import './u2-job-analytics.js';
 import './u2-job-resumes.js';
 import './u2-job-interviews.js';
 import './u2-job-tasks.js';
+import './u2-job-contacts.js';
 
 // The job-hunt dashboard (#533): greeting, pipeline, job details, analytics and
 // resume versions, from GET /api/job-hunt/dashboard. Self-contained on purpose:
 // the job hunt is expected to move to its own repo, so this folder depends only
-// on services/api.js. The contacts panel is not rendered until its data exists
-// (#537).
+// on services/api.js.
+// Networking & Contacts (#537) is always shown; with no contacts it explains
+// itself and offers the add form.
 
 const REFRESH_EVENT = /^(jobs\.|agent\.action\.)/;
 // Where the details start when nothing is selected: the most live stage first.
@@ -60,7 +62,7 @@ export class U2JobDashboard extends HTMLElement {
     this.classList.add('jh');
     this._build();
     window.addEventListener('u2-event', this._onEvent);
-    this._ticker = setInterval(() => this._tasks.tick(), TICK_MS);
+    this._ticker = setInterval(() => { this._tasks.tick(); this._contacts.tick(); }, TICK_MS);
     this._load();
   }
 
@@ -84,6 +86,7 @@ export class U2JobDashboard extends HTMLElement {
     this._resumes = el('u2-job-resumes');
     this._interviews = el('u2-job-interviews');
     this._tasks = el('u2-job-tasks');
+    this._contacts = el('u2-job-contacts');
 
     this.addEventListener('jh-select', (event) => this._select(event.detail.id));
     this.addEventListener('jh-changed', () => this._load());
@@ -98,7 +101,7 @@ export class U2JobDashboard extends HTMLElement {
       el('div', { class: 'jh-lower' },
         el('div', { class: 'jh-side jh-side--left' }, this._details, this._analytics),
         el('div', { class: 'jh-side jh-side--middle' }, this._interviews, this._resumes),
-        el('div', { class: 'jh-side jh-side--right' }, this._tasks)));
+        el('div', { class: 'jh-side jh-side--right' }, this._tasks, this._contacts)));
   }
 
   async _load() {
@@ -131,6 +134,7 @@ export class U2JobDashboard extends HTMLElement {
     this._resumes.update(dashboard.resumeVersions);
     this._interviews.update(dashboard.interviews || []);
     this._tasks.update(dashboard.tasks || []);
+    this._contacts.update(dashboard.contacts || [], all);
   }
 
   _select(id) {

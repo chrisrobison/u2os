@@ -10,7 +10,7 @@ import { JOB_HUNT_DIR } from '../../profile.js';
 // store (ADR 0007); consequential applications are additionally recorded as
 // vault files by the existing ledger so the owner always has the record.
 
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 const MIGRATIONS = [
   `CREATE TABLE jobs (
@@ -105,6 +105,21 @@ const MIGRATIONS = [
    );
    CREATE INDEX job_tasks_job ON job_tasks(job_id, id);
    CREATE INDEX job_tasks_open ON job_tasks(done_at, due_at);`,
+  // Networking contacts per job (#537). Additive. email_key is the lowercased
+  // address, so a job has one contact per address whatever its case; source_key
+  // is set only on seeded rows (listing / sent email) and makes seeding
+  // idempotent. dismissed_at is the owner's delete of a seeded contact: the row
+  // stays so seeding does not bring it back. No core person ids live here.
+  `CREATE TABLE job_contacts (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     job_id TEXT NOT NULL REFERENCES jobs(id),
+     name TEXT NOT NULL, email TEXT NOT NULL, email_key TEXT NOT NULL,
+     role_kind TEXT NOT NULL DEFAULT 'other', title TEXT, source TEXT NOT NULL DEFAULT 'manual',
+     source_key TEXT UNIQUE, last_contact_at TEXT, dismissed_at TEXT,
+     created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+     UNIQUE (job_id, email_key)
+   );
+   CREATE INDEX job_contacts_recent ON job_contacts(last_contact_at, id);`,
 ];
 
 export const JOB_STATUSES = ['discovered', 'scored', 'researching', 'qualified', 'materials_generated', 'applying', 'applied', 'contacted', 'needs_input', 'followup_due', 'screening', 'interview', 'offer', 'rejected', 'withdrawn', 'closed', 'skipped', 'error', 'uncertain'];
@@ -152,6 +167,13 @@ function rowToInterview(row) {
 
 function rowToTask(row) {
   return row ? { id: row.id, jobId: row.job_id, title: row.title, dueAt: row.due_at, doneAt: row.done_at, kind: row.kind, snoozedUntil: row.snoozed_until, sourceKey: row.source_key, createdAt: row.created_at, updatedAt: row.updated_at } : null;
+}
+
+function rowToContact(row) {
+  return row ? {
+    id: row.id, jobId: row.job_id, name: row.name, email: row.email, roleKind: row.role_kind, title: row.title, source: row.source,
+    sourceKey: row.source_key, lastContactAt: row.last_contact_at, dismissedAt: row.dismissed_at, createdAt: row.created_at, updatedAt: row.updated_at,
+  } : null;
 }
 
 const mergeList = (a, b) => [...new Set([...(a ?? []), ...(b ?? [])])];
@@ -471,6 +493,38 @@ class Store {
 
   listTasks({ jobId = null } = {}) {
     return this.db.prepare('SELECT * FROM job_tasks WHERE (? IS NULL OR job_id = ?) ORDER BY id').all(jobId, jobId).map(rowToTask);
+  }
+
+  // ---- job contacts (#537) ----
+
+  /** Inserts unless the job already has that address (any case) or the source key exists; returns the row either way. */
+  addContact(jobId, { name, email, roleKind = 'other', title = null, source = 'manual', sourceKey = null, lastContactAt = null }, now = new Date()) {
+    const stamp = now.toISOString();
+    const key = email.toLowerCase();
+    this.db.prepare('INSERT OR IGNORE INTO job_contacts (job_id, name, email, email_key, role_kind, title, source, source_key, last_contact_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(jobId, name, email, key, roleKind, title, source, sourceKey, lastContactAt, stamp, stamp);
+    return this.findContact(jobId, email);
+  }
+
+  getContact(id) { return rowToContact(this.db.prepare('SELECT * FROM job_contacts WHERE id = ?').get(id)); }
+
+  findContact(jobId, email) { return rowToContact(this.db.prepare('SELECT * FROM job_contacts WHERE job_id = ? AND email_key = ?').get(jobId, email.toLowerCase())); }
+
+  /** Sets any of name, roleKind, title, lastContactAt, dismissedAt (null clears). The address never changes. */
+  updateContact(id, fields, now = new Date()) {
+    const row = this.db.prepare('SELECT * FROM job_contacts WHERE id = ?').get(id);
+    if (!row) return null;
+    const next = { ...rowToContact(row), ...fields };
+    this.db.prepare('UPDATE job_contacts SET name = ?, role_kind = ?, title = ?, last_contact_at = ?, dismissed_at = ?, updated_at = ? WHERE id = ?')
+      .run(next.name, next.roleKind, next.title, next.lastContactAt, next.dismissedAt, now.toISOString(), id);
+    return this.getContact(id);
+  }
+
+  deleteContact(id) { return this.db.prepare('DELETE FROM job_contacts WHERE id = ?').run(id).changes > 0; }
+
+  /** Every contact including dismissed ones, oldest first. */
+  listContacts({ jobId = null } = {}) {
+    return this.db.prepare('SELECT * FROM job_contacts WHERE (? IS NULL OR job_id = ?) ORDER BY id').all(jobId, jobId).map(rowToContact);
   }
 
   counts() {
