@@ -160,6 +160,37 @@ A route whose tool is not available is disabled, and the API says why; there is 
 
 Outcomes are reconciled as soon as an action completes, fails or is rejected, and again whenever the page loads, so approved sends move jobs to `contacted` (with a follow-up date) without stopping the server. The same is available over the owner API: `GET /api/job-hunt/jobs[/<id>]`, `POST /api/job-hunt/jobs/<id>/send` with `{ "via": "gmail" | "apple_mail" | "apple_mail_draft", "force": false }`, and `POST /api/job-hunt/reconcile`. `job send` and `job reconcile` on the command line remain for the Gmail route when the server is stopped.
 
+## The dashboard API
+
+`GET /api/job-hunt/dashboard[?days=30]` (owner only; `days` is a whole number from 1 to 365) returns the whole dashboard in one call. The code is `mcp/jobs/hunt/dashboard.js`; the route only calls it.
+
+**Stages.** One function, `stageOf(status)`, maps a job status to a pipeline stage:
+
+| Stage | Statuses |
+|---|---|
+| Saved | `qualified`, `materials_generated` |
+| Applied | `applied`, `contacted`, `followup_due` |
+| Recruiter Screen | `screening` |
+| Interviewing | `interview` |
+| Offer | `offer` |
+| Rejected | `rejected` |
+
+Every other status (`discovered`, `scored`, `uncertain`, `withdrawn`, ...) is not on the board. `screening` and `offer` are new statuses; status is free text in `hunt.sqlite`, so no migration is needed and existing rows are untouched. Each stage has its full `count` and up to 100 cards, newest first. A card is `{id, company, role, location, fit, status, statusLine, timestamp, companyUrl}`: `fit` is the latest score (or null), `timestamp` the job's last status change.
+
+**Analytics** cover the window `[now - days, now)` and the equally long window before it, and are derived only from `application_events` rows of type `status`:
+
+- *Sent*: a job is sent at its first status event to `applied` or `contacted`.
+- *Applications sent*: jobs sent in the window.
+- *Response*: a job that, after being sent, has any status event to `screening`, `interview`, `offer` or `rejected`. *Response rate* = of the jobs sent in the window, the share that has responded (so far).
+- *Interview rate*: the same cohort, the share that reached `screening`, `interview` or `offer` after being sent. A rejection alone is a response but not an interview.
+- *Offers*: jobs whose first status event to `offer` falls in the window.
+
+Rates are cohort based, so they are always between 0 and 1 and recent applications count as not yet answered. A rate with no jobs sent is `null` (never NaN), and so is its `change`. Each metric has `value`, `previous` and `change` (value minus previous, as a fraction for rates); rates add `numerator`, `denominator`, `previousNumerator` and `previousDenominator`. `sentByDay` is the window's sends per UTC day.
+
+**Resume versions** are the distinct `resume_pdf` and `cover_letter_pdf` artifacts (by content hash), newest first, each with the latest job that used it (`job`) and every job that did (`usedBy`).
+
+**Moving a job.** `POST /api/job-hunt/jobs/<id>/status` with `{ "status": "screening" | "offer" | "rejected" }` records the company's answer as a status event (`detail.by = "owner"`). Allowed: `screening` from `applied`, `contacted`, `followup_due`, `uncertain`; `offer` from those plus `screening` and `interview`; `rejected` from any board status, `uncertain` or `needs_input`. Anything else is `409`, an unknown target `400`, an unknown job `404`. Repeating a move changes nothing and answers `changed: false`.
+
 ## Emails you send yourself, and drafts for all matches
 
 **Contact addresses are scraped conservatively.** A plain address in a listing is kept; an obfuscated one ("name [at] example [dot] com") is believed only when it ends in a real top-level domain and looks deliberate, so prose such as "be at home. We" never becomes an address. `npm run u2 -- job reparse` re-extracts every stored job's contacts from its original text.

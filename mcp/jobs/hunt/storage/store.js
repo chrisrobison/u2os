@@ -88,7 +88,7 @@ const MIGRATIONS = [
    CREATE INDEX reviews_job ON reviews(job_id, kind, id);`,
 ];
 
-export const JOB_STATUSES = ['discovered', 'scored', 'researching', 'qualified', 'materials_generated', 'applying', 'applied', 'contacted', 'needs_input', 'followup_due', 'interview', 'rejected', 'withdrawn', 'closed', 'skipped', 'error', 'uncertain'];
+export const JOB_STATUSES = ['discovered', 'scored', 'researching', 'qualified', 'materials_generated', 'applying', 'applied', 'contacted', 'needs_input', 'followup_due', 'screening', 'interview', 'offer', 'rejected', 'withdrawn', 'closed', 'skipped', 'error', 'uncertain'];
 
 export function huntDbPath(vaultDir) {
   return path.join(vaultDir, JOB_HUNT_DIR, 'state', 'hunt.sqlite');
@@ -252,6 +252,19 @@ class Store {
     return this.db.prepare('SELECT * FROM application_events WHERE job_id = ? ORDER BY id').all(jobId).map((row) => ({
       id: row.id, at: row.at, type: row.type, fromStatus: row.from_status, toStatus: row.to_status, detail: parse(row.detail, {}),
     }));
+  }
+
+  /** Every status change across all jobs, oldest first (the dashboard derives its analytics from these). */
+  listStatusEvents() {
+    return this.db.prepare("SELECT id, job_id, at, from_status, to_status FROM application_events WHERE type = 'status' ORDER BY id").all()
+      .map((row) => ({ id: row.id, jobId: row.job_id, at: row.at, fromStatus: row.from_status, toStatus: row.to_status }));
+  }
+
+  /** All artifacts of the given kinds, newest first, with their job. */
+  listArtifactsByKind(kinds) {
+    const marks = kinds.map(() => '?').join(',');
+    return this.db.prepare(`SELECT * FROM artifacts WHERE kind IN (${marks}) ORDER BY id DESC`).all(...kinds)
+      .map((row) => ({ id: row.id, jobId: row.job_id, kind: row.kind, path: row.path, sha256: row.sha256, bytes: row.bytes, createdAt: row.created_at }));
   }
 
   /** Stores the latest score for a job and moves it to `scored` (unless it has moved further on). */

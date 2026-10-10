@@ -3,6 +3,7 @@ import { getVaultDir } from '../../vault/vault-dir.js';
 import { newId } from '../../db/ids.js';
 import { getAgentAction } from '../../policy/policy-engine.js';
 import { openStore, huntDbPath } from '../../../mcp/jobs/hunt/storage/store.js';
+import { buildDashboard, moveJob, DEFAULT_WINDOW_DAYS } from '../../../mcp/jobs/hunt/dashboard.js';
 import { jobView, listJobViews } from '../../../mcp/jobs/hunt/view.js';
 import { loadPreferences, loadResume } from '../../../mcp/jobs/hunt/candidate/profile.js';
 import { setAutopilotSwitches } from '../../../mcp/jobs/hunt/autopilot/config.js';
@@ -52,6 +53,27 @@ export function registerJobHuntRoutes(router, { agent, toolRegistry, autopilot =
     const jobs = withStore((store) => listJobViews(store, { minScore, status: req.query?.status || null, limit: Number(req.query?.limit) || 100, minimumScore: prefs.minimum_score }));
     const counts = withStore((store) => store.counts());
     sendJson(res, 200, { minimumScore: prefs.minimum_score, counts, jobs, sendRoutes: availableRoutes(toolRegistry) });
+  });
+
+  // One call for the dashboard: pipeline stages with cards, analytics over a window, resume versions.
+  router.get('/api/job-hunt/dashboard', async (req, res) => {
+    reconcileOutcomes();
+    const raw = req.query?.days;
+    const days = raw == null || raw === '' ? DEFAULT_WINDOW_DAYS : Number(raw);
+    if (!Number.isInteger(days) || days < 1 || days > 365) return sendJson(res, 400, { error: 'days must be a whole number from 1 to 365' });
+    sendJson(res, 200, withStore((store) => buildDashboard(store, { days })));
+  });
+
+  // The owner records the company's answer: screening, offer or rejected. Idempotent.
+  router.post('/api/job-hunt/jobs/:id/status', async (req, res) => {
+    if (!JOB_ID.test(req.params.id)) return sendJson(res, 400, { error: 'Invalid job id' });
+    try {
+      sendJson(res, 200, withStore((store) => moveJob(store, req.params.id, req.body?.status)));
+    } catch (error) {
+      const status = { UNKNOWN_JOB: 404, BAD_TARGET: 400, BAD_TRANSITION: 409 }[error.code];
+      if (!status) throw error;
+      sendJson(res, status, { error: error.message });
+    }
   });
 
   router.get('/api/job-hunt/jobs/:id', async (req, res) => {
