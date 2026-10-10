@@ -4,6 +4,7 @@ import { newId } from '../../db/ids.js';
 import { getAgentAction } from '../../policy/policy-engine.js';
 import { openStore, huntDbPath } from '../../../mcp/jobs/hunt/storage/store.js';
 import { buildDashboard, moveJob, DEFAULT_WINDOW_DAYS } from '../../../mcp/jobs/hunt/dashboard.js';
+import { addInterview, updateInterview, deleteInterview, addTask, completeTask, uncompleteTask, snoozeTask } from '../../../mcp/jobs/hunt/schedule.js';
 import { jobView, listJobViews } from '../../../mcp/jobs/hunt/view.js';
 import { loadPreferences, loadResume } from '../../../mcp/jobs/hunt/candidate/profile.js';
 import { setAutopilotSwitches } from '../../../mcp/jobs/hunt/autopilot/config.js';
@@ -16,6 +17,8 @@ import { SEND_TOOLS, proposeApplicationEmail, reconcileEmails, recordManualSend 
 // audit); nothing here sends anything itself.
 
 const JOB_ID = /^job_[0-9a-f]{16}$/;
+const ROW_ID = /^[1-9][0-9]{0,9}$/;
+const SCHEDULE_ERRORS = { BAD_INPUT: 400, UNKNOWN_JOB: 404, UNKNOWN_INTERVIEW: 404, UNKNOWN_TASK: 404, CONFLICT: 409 };
 
 function withStore(fn) {
   const store = openStore(huntDbPath(getVaultDir()));
@@ -75,6 +78,31 @@ export function registerJobHuntRoutes(router, { agent, toolRegistry, autopilot =
       sendJson(res, status, { error: error.message });
     }
   });
+
+  // Interviews and tasks tied to a job (owner only; validation lives in mcp/jobs/hunt/schedule.js).
+  // Recording an interview moves the job to `interview` when its status allows it.
+  const schedule = (idPattern, run) => async (req, res) => {
+    const id = req.params.id;
+    if (!idPattern.test(id)) return sendJson(res, 400, { error: 'Invalid id' });
+    try {
+      const { status = 200, body } = withStore((store) => run(store, idPattern === ROW_ID ? Number(id) : id, req.body ?? {}));
+      sendJson(res, status, body);
+    } catch (error) {
+      const status = SCHEDULE_ERRORS[error.code];
+      if (!status) throw error;
+      sendJson(res, status, { error: error.message });
+    }
+  };
+  router.post('/api/job-hunt/jobs/:id/interviews', schedule(JOB_ID, (store, id, body) => {
+    const result = addInterview(store, id, body);
+    return { status: result.created ? 201 : 200, body: result };
+  }));
+  router.patch('/api/job-hunt/interviews/:id', schedule(ROW_ID, (store, id, body) => ({ body: updateInterview(store, id, body) })));
+  router.delete('/api/job-hunt/interviews/:id', schedule(ROW_ID, (store, id) => ({ body: deleteInterview(store, id) })));
+  router.post('/api/job-hunt/jobs/:id/tasks', schedule(JOB_ID, (store, id, body) => ({ status: 201, body: addTask(store, id, body) })));
+  router.post('/api/job-hunt/tasks/:id/complete', schedule(ROW_ID, (store, id) => ({ body: completeTask(store, id) })));
+  router.post('/api/job-hunt/tasks/:id/uncomplete', schedule(ROW_ID, (store, id) => ({ body: uncompleteTask(store, id) })));
+  router.post('/api/job-hunt/tasks/:id/snooze', schedule(ROW_ID, (store, id, body) => ({ body: snoozeTask(store, id, body) })));
 
   router.get('/api/job-hunt/jobs/:id', async (req, res) => {
     if (!JOB_ID.test(req.params.id)) return sendJson(res, 400, { error: 'Invalid job id' });

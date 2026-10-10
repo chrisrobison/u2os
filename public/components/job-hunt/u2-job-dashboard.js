@@ -4,17 +4,20 @@ import './u2-job-pipeline.js';
 import './u2-job-details.js';
 import './u2-job-analytics.js';
 import './u2-job-resumes.js';
+import './u2-job-interviews.js';
+import './u2-job-tasks.js';
 
 // The job-hunt dashboard (#533): greeting, pipeline, job details, analytics and
 // resume versions, from GET /api/job-hunt/dashboard. Self-contained on purpose:
 // the job hunt is expected to move to its own repo, so this folder depends only
-// on services/api.js. Panels for interviews, follow-ups and contacts are not
-// rendered until their data exists (#536, #537).
+// on services/api.js. The contacts panel is not rendered until its data exists
+// (#537).
 
 const REFRESH_EVENT = /^(jobs\.|agent\.action\.)/;
 // Where the details start when nothing is selected: the most live stage first.
 const AUTO_SELECT_ORDER = ['interviewing', 'screening', 'offer', 'applied', 'saved', 'rejected'];
 const WEEK = 7 * 86_400_000;
+const TICK_MS = 60_000; // re-labels due times (overdue, today) without a request
 
 function greeting(now = new Date()) {
   const hour = now.getHours();
@@ -30,6 +33,8 @@ export function summaryLine(dashboard, now = Date.now()) {
   const due = dashboard.stages.flatMap((stage) => stage.jobs).filter((job) => job.status === 'followup_due').length;
   const parts = [sent ? `You sent ${sent} application${sent === 1 ? '' : 's'} this week` : 'No applications sent this week yet'];
   if (due) parts.push(`${due} follow-up${due === 1 ? ' is' : 's are'} due`);
+  const interviews = (dashboard.interviews || []).filter((item) => Date.parse(item.at) < now + WEEK).length;
+  if (interviews) parts.push(`${interviews} interview${interviews === 1 ? ' is' : 's are'} coming up this week`);
   parts.push(`${total} job${total === 1 ? '' : 's'} in your pipeline`);
   return `${parts.join('. ')}.`;
 }
@@ -55,12 +60,14 @@ export class U2JobDashboard extends HTMLElement {
     this.classList.add('jh');
     this._build();
     window.addEventListener('u2-event', this._onEvent);
+    this._ticker = setInterval(() => this._tasks.tick(), TICK_MS);
     this._load();
   }
 
   disconnectedCallback() {
     window.removeEventListener('u2-event', this._onEvent);
     clearTimeout(this._timer);
+    clearInterval(this._ticker);
     this._seq += 1;
     this._workspace?.classList.remove('workspace--wide');
   }
@@ -72,9 +79,11 @@ export class U2JobDashboard extends HTMLElement {
     this._search.addEventListener('input', () => this._pipeline.setQuery(this._search.value));
     this._error = el('p', { class: 'load-error', role: 'alert', hidden: true });
     this._pipeline = el('u2-job-pipeline');
-    this._details = el('u2-job-details', { class: 'jh-lower__details' });
+    this._details = el('u2-job-details');
     this._analytics = el('u2-job-analytics');
     this._resumes = el('u2-job-resumes');
+    this._interviews = el('u2-job-interviews');
+    this._tasks = el('u2-job-tasks');
 
     this.addEventListener('jh-select', (event) => this._select(event.detail.id));
     this.addEventListener('jh-changed', () => this._load());
@@ -86,7 +95,10 @@ export class U2JobDashboard extends HTMLElement {
         el('div', { class: 'jh-search' }, el('label', { class: 'sr-only', for: 'jh-search', text: 'Search the pipeline' }), this._search)),
       this._error,
       this._pipeline,
-      el('div', { class: 'jh-lower' }, this._details, el('div', { class: 'jh-side' }, this._analytics, this._resumes)));
+      el('div', { class: 'jh-lower' },
+        el('div', { class: 'jh-side jh-side--left' }, this._details, this._analytics),
+        el('div', { class: 'jh-side jh-side--middle' }, this._interviews, this._resumes),
+        el('div', { class: 'jh-side jh-side--right' }, this._tasks)));
   }
 
   async _load() {
@@ -117,6 +129,8 @@ export class U2JobDashboard extends HTMLElement {
     this._pipeline.update({ stages: dashboard.stages, selectedId: this._selected });
     this._analytics.update(dashboard.analytics);
     this._resumes.update(dashboard.resumeVersions);
+    this._interviews.update(dashboard.interviews || []);
+    this._tasks.update(dashboard.tasks || []);
   }
 
   _select(id) {

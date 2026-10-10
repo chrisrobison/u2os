@@ -10,7 +10,7 @@ import { JOB_HUNT_DIR } from '../../profile.js';
 // store (ADR 0007); consequential applications are additionally recorded as
 // vault files by the existing ledger so the owner always has the record.
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 const MIGRATIONS = [
   `CREATE TABLE jobs (
@@ -86,6 +86,25 @@ const MIGRATIONS = [
      model TEXT, created_at TEXT NOT NULL
    );
    CREATE INDEX reviews_job ON reviews(job_id, kind, id);`,
+  // Interviews and tasks tied to jobs (#536). Additive: no existing table changes.
+  // job_tasks.source_key is set only on generated follow-ups, so materializing
+  // them is idempotent (INSERT OR IGNORE on the unique key).
+  `CREATE TABLE interviews (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     job_id TEXT NOT NULL REFERENCES jobs(id),
+     at TEXT NOT NULL, ends_at TEXT, kind TEXT NOT NULL DEFAULT 'video', round TEXT,
+     location_or_link TEXT, notes TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+     UNIQUE (job_id, at)
+   );
+   CREATE INDEX interviews_at ON interviews(at);
+   CREATE TABLE job_tasks (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     job_id TEXT NOT NULL REFERENCES jobs(id),
+     title TEXT NOT NULL, due_at TEXT, done_at TEXT, kind TEXT NOT NULL DEFAULT 'task', snoozed_until TEXT,
+     source_key TEXT UNIQUE, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+   );
+   CREATE INDEX job_tasks_job ON job_tasks(job_id, id);
+   CREATE INDEX job_tasks_open ON job_tasks(done_at, due_at);`,
 ];
 
 export const JOB_STATUSES = ['discovered', 'scored', 'researching', 'qualified', 'materials_generated', 'applying', 'applied', 'contacted', 'needs_input', 'followup_due', 'screening', 'interview', 'offer', 'rejected', 'withdrawn', 'closed', 'skipped', 'error', 'uncertain'];
@@ -125,6 +144,14 @@ function rowToJob(row) {
     contactEmails: parse(row.contact_emails, []), applicationUrls: parse(row.application_urls, []),
     companyUrl: row.company_url, status: row.status, firstSeenAt: row.first_seen_at, updatedAt: row.updated_at,
   };
+}
+
+function rowToInterview(row) {
+  return row ? { id: row.id, jobId: row.job_id, at: row.at, endsAt: row.ends_at, kind: row.kind, round: row.round, locationOrLink: row.location_or_link, notes: row.notes, createdAt: row.created_at, updatedAt: row.updated_at } : null;
+}
+
+function rowToTask(row) {
+  return row ? { id: row.id, jobId: row.job_id, title: row.title, dueAt: row.due_at, doneAt: row.done_at, kind: row.kind, snoozedUntil: row.snoozed_until, sourceKey: row.source_key, createdAt: row.created_at, updatedAt: row.updated_at } : null;
 }
 
 const mergeList = (a, b) => [...new Set([...(a ?? []), ...(b ?? [])])];
@@ -388,6 +415,62 @@ class Store {
   validApproval(jobId, kind, contentHash) {
     const review = this.latestReview(jobId, kind);
     return review && review.decision === 'approve' && review.contentHash === contentHash ? review : null;
+  }
+
+  // ---- interviews (#536) ----
+
+  addInterview(jobId, { at, endsAt = null, kind = 'video', round = null, locationOrLink = null, notes = null }, now = new Date()) {
+    const stamp = now.toISOString();
+    const result = this.db.prepare('INSERT INTO interviews (job_id, at, ends_at, kind, round, location_or_link, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(jobId, at, endsAt, kind, round, locationOrLink, notes, stamp, stamp);
+    return this.getInterview(Number(result.lastInsertRowid));
+  }
+
+  getInterview(id) { return rowToInterview(this.db.prepare('SELECT * FROM interviews WHERE id = ?').get(id)); }
+
+  findInterview(jobId, at) { return rowToInterview(this.db.prepare('SELECT * FROM interviews WHERE job_id = ? AND at = ?').get(jobId, at)); }
+
+  updateInterview(id, fields, now = new Date()) {
+    const row = this.db.prepare('SELECT * FROM interviews WHERE id = ?').get(id);
+    if (!row) return null;
+    const next = { ...rowToInterview(row), ...fields };
+    this.db.prepare('UPDATE interviews SET at = ?, ends_at = ?, kind = ?, round = ?, location_or_link = ?, notes = ?, updated_at = ? WHERE id = ?')
+      .run(next.at, next.endsAt, next.kind, next.round, next.locationOrLink, next.notes, now.toISOString(), id);
+    return this.getInterview(id);
+  }
+
+  deleteInterview(id) { return this.db.prepare('DELETE FROM interviews WHERE id = ?').run(id).changes > 0; }
+
+  /** Interviews that start at or after `from` and before `to` (ISO strings), soonest first. */
+  listInterviews({ jobId = null, from = null, to = null } = {}) {
+    const rows = this.db.prepare('SELECT * FROM interviews WHERE (? IS NULL OR job_id = ?) AND (? IS NULL OR at >= ?) AND (? IS NULL OR at < ?) ORDER BY at, id').all(jobId, jobId, from, from, to, to);
+    return rows.map(rowToInterview);
+  }
+
+  // ---- job tasks (#536) ----
+
+  addTask(jobId, { title, dueAt = null, kind = 'task', sourceKey = null }, now = new Date()) {
+    const stamp = now.toISOString();
+    const result = this.db.prepare('INSERT OR IGNORE INTO job_tasks (job_id, title, due_at, kind, source_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(jobId, title, dueAt, kind, sourceKey, stamp, stamp);
+    return result.changes ? this.getTask(Number(result.lastInsertRowid)) : this.getTaskByKey(sourceKey);
+  }
+
+  getTask(id) { return rowToTask(this.db.prepare('SELECT * FROM job_tasks WHERE id = ?').get(id)); }
+
+  getTaskByKey(key) { return key == null ? null : rowToTask(this.db.prepare('SELECT * FROM job_tasks WHERE source_key = ?').get(key)); }
+
+  /** Sets any of doneAt, snoozedUntil (null clears). Returns the updated task, or null if unknown. */
+  updateTask(id, fields, now = new Date()) {
+    const row = this.db.prepare('SELECT * FROM job_tasks WHERE id = ?').get(id);
+    if (!row) return null;
+    const next = { ...rowToTask(row), ...fields };
+    this.db.prepare('UPDATE job_tasks SET done_at = ?, snoozed_until = ?, updated_at = ? WHERE id = ?').run(next.doneAt, next.snoozedUntil, now.toISOString(), id);
+    return this.getTask(id);
+  }
+
+  listTasks({ jobId = null } = {}) {
+    return this.db.prepare('SELECT * FROM job_tasks WHERE (? IS NULL OR job_id = ?) ORDER BY id').all(jobId, jobId).map(rowToTask);
   }
 
   counts() {

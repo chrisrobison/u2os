@@ -579,6 +579,14 @@ export function getJobHuntJob(id) { return request(`/api/job-hunt/jobs/${encodeU
 export function getJobHuntDashboard(params = {}) { return request(`/api/job-hunt/dashboard${qs(params)}`); }
 // The owner records the company's answer: screening, offer or rejected.
 export function moveJobHuntJob(id, status) { return request(`/api/job-hunt/jobs/${encodeURIComponent(id)}/status`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }); }
+// Interviews and tasks tied to jobs (docs/job-hunt.md).
+const jobHuntWrite = (path, method, body) => request(path, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+export function addJobHuntInterview(jobId, body) { return jobHuntWrite(`/api/job-hunt/jobs/${encodeURIComponent(jobId)}/interviews`, 'POST', body); }
+export function updateJobHuntInterview(id, body) { return jobHuntWrite(`/api/job-hunt/interviews/${encodeURIComponent(id)}`, 'PATCH', body); }
+export function deleteJobHuntInterview(id) { return jobHuntWrite(`/api/job-hunt/interviews/${encodeURIComponent(id)}`, 'DELETE'); }
+export function addJobHuntTask(jobId, body) { return jobHuntWrite(`/api/job-hunt/jobs/${encodeURIComponent(jobId)}/tasks`, 'POST', body); }
+export function setJobHuntTaskDone(id, done) { return jobHuntWrite(`/api/job-hunt/tasks/${encodeURIComponent(id)}/${done ? 'complete' : 'uncomplete'}`, 'POST'); }
+export function snoozeJobHuntTask(id, days) { return jobHuntWrite(`/api/job-hunt/tasks/${encodeURIComponent(id)}/snooze`, 'POST', { days }); }
 export function getAutopilot() { return request('/api/job-hunt/autopilot'); }
 export function setAutopilot(body) { return request('/api/job-hunt/autopilot', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }
 export function runAutopilot() { return request('/api/job-hunt/autopilot/run', { method: 'POST' }); }
