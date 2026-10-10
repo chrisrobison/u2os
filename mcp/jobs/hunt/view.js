@@ -20,7 +20,7 @@ export function jobView(store, job, { minimumScore = 82, detail = false } = {}) 
   const strategy = chooseStrategy(job, { score, minimumScore });
   const view = {
     id: job.id, company: job.company, role: job.role, status: job.status, locations: job.locations, remote: job.remote, salary: job.salary?.raw ?? null,
-    contactEmails: job.contactEmails, applicationUrls: job.applicationUrls, companyUrl: job.companyUrl, firstSeenAt: job.firstSeenAt,
+    technologies: job.technologies, contactEmails: job.contactEmails, applicationUrls: job.applicationUrls, companyUrl: job.companyUrl, firstSeenAt: job.firstSeenAt,
     score: score ? { score: score.score, label: score.label, confidence: score.confidence, degraded: score.degraded, narrative: score.recommendedNarrative, reasons: score.reasons, concerns: score.concerns, projects: score.projects, flags: score.flags } : null,
     strategy: { name: strategy.strategy, reason: strategy.reason },
     draft: readDraft(artifacts.email_json),

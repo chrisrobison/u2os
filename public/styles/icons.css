@@ -38,6 +38,7 @@
 .u2-icon--repeat::before { content: "\f363"; }
 .u2-icon--bullseye::before { content: "\f140"; }
 .u2-icon--briefcase::before { content: "\f0b1"; }
+.u2-icon--table-columns::before { content: "\f0db"; }
 .u2-icon--user-tie::before { content: "\f508"; }
 .u2-icon--bolt::before { content: "\f0e7"; }
 .u2-icon--clock-rotate-left::before { content: "\f1da"; }
