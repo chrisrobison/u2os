@@ -263,6 +263,16 @@ test('the retry override refuses a prior plan that contained fields', async (t) 
   assert.equal(w.store.listApplications(w.job.id).length, 1);
 });
 
+test('an interrupted zero-field attempt can also be linked to a fresh plan', async (t) => {
+  if (!browserOk) return t.skip('no browser');
+  const w = world(`${forms.base}/simple/apply`);
+  const key = formKey({ candidate: candidate().resume.basics.email, job: w.job, url: w.job.applicationUrls[0] });
+  const old = w.store.addApplication(w.job.id, { url: w.job.applicationUrls[0], status: 'uncertain', plan: { fields: [], planHash: 'old-plan' }, idempotencyKey: key }, NOW);
+  const next = await planApplication({ store: w.store, job: w.job, candidate: candidate(), llm: llmWith({}), verifiedNoClick: true, now: NOW });
+  assert.equal(next.idempotencyKey, `${key}:retry:${old.id}`);
+  assert.equal(w.store.listApplications(w.job.id)[0].status, 'uncertain');
+});
+
 test('the apply link chosen is the form, and answers.yaml loads strictly', () => {
   assert.equal(chooseApplyUrl({ applicationUrls: ['https://www.tahoma.io/careers', 'https://jobs.ashbyhq.com/tahoma/abc/application'] }), 'https://jobs.ashbyhq.com/tahoma/abc/application');
   assert.equal(chooseApplyUrl({ applicationUrls: ['https://example.com/'] }), 'https://example.com/');
