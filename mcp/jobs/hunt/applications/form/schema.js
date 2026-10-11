@@ -47,6 +47,9 @@ export function readFormSchema(page) {
     for (const element of root.querySelectorAll('input, textarea, select')) {
       const type = element.tagName === 'INPUT' ? (element.type || 'text') : element.tagName.toLowerCase();
       if (['hidden', 'submit', 'button', 'reset', 'image'].includes(type)) continue;
+      // React Select adds a separate required input solely for native form
+      // validation. Its visible combobox is the question we must answer.
+      if (element.getAttribute('aria-hidden') === 'true' || (element.tabIndex === -1 && element.closest('.select-shell'))) continue;
       if (element.name === 'g-recaptcha-response' || /^g-recaptcha-response/.test(element.id || '')) continue;
       const buttons = type === 'checkbox' ? [...(element.parentElement?.querySelectorAll(':scope > button') ?? [])] : [];
       const buttonGroup = buttons.length >= 2;
@@ -77,7 +80,11 @@ export function readFormSchema(page) {
       } else {
         entry.label ||= label;
         if (type === 'select') entry.options = [...element.options].filter((option) => option.value !== '' && !/^select\b/i.test(option.text.trim())).map((option) => clean(option.text));
-        entry.filled = type === 'file' ? element.files.length > 0 : clean(element.value) !== '';
+        entry.filled = type === 'file' ? element.files.length > 0 : element.getAttribute('role') === 'combobox'
+          ? Boolean(clean(element.closest('.select__control')
+            ? element.closest('.select__control').querySelector('[class*="singleValue"]')?.innerText
+            : element.value))
+          : clean(element.value) !== '';
       }
       entry.required ||= element.required || element.getAttribute('aria-required') === 'true' || /\*\s*$/.test(label) || /\(required\)/i.test(label);
     }

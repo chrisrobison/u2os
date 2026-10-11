@@ -182,6 +182,18 @@ test('empty form schemas and old empty plans never reach a submit click', async 
   assert.equal(forms.submissions.length, before);
 });
 
+test('custom comboboxes expose choices once and selected values are verified', async (t) => {
+  if (!browserOk) return t.skip('no browser');
+  const w = world(`${forms.base}/combo/apply`);
+  const owner = candidate({ ...ANSWERS, custom: { country: 'United States' } });
+  const application = await planApplication({ store: w.store, job: w.job, candidate: owner, llm: llmWith({}), now: NOW });
+  assert.equal(application.status, 'planned', JSON.stringify(application.plan.unresolved));
+  assert.equal(application.plan.fields.filter((field) => field.key === 'country').length, 1);
+  assert.equal(application.plan.fields.find((field) => field.key === 'auth').value, 'Yes');
+  const result = await submitApplication({ store: w.store, job: w.job, files: w.files, now: NOW });
+  assert.equal(result.result.status, 'submitted', JSON.stringify(result.result));
+});
+
 test('a changed form, changed files or an incomplete fill stops before anything is submitted', async (t) => {
   if (!browserOk) return t.skip('no browser');
   const w = world(`${forms.base}/simple/apply`);

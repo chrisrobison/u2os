@@ -33,6 +33,33 @@ const SIMPLE_FORM = (extra = '') => page('Apply', `<form id="search" action="/se
   <button type="submit">Submit</button>
 </form>`);
 
+const COMBO_FORM = page('Apply', `<form action="/simple/submit" method="post" enctype="multipart/form-data">
+  <label for="first_name">First Name *</label><input id="first_name" name="first_name" required>
+  <label for="last_name">Last Name *</label><input id="last_name" name="last_name" required>
+  <label for="email">Email *</label><input id="email" name="email" required>
+  <label for="resume">Resume *</label><input id="resume" name="resume" type="file" required>
+  <label for="country">Country *</label><div class="select-shell"><div class="select__control"><input id="country" role="combobox" aria-required="true" aria-expanded="false"><input required tabindex="-1" aria-hidden="true"></div></div>
+  <label for="auth">Are you legally authorized to work in the United States? *</label><div class="select-shell"><div class="select__control"><input id="auth" role="combobox" aria-required="true" aria-expanded="false"><input required tabindex="-1" aria-hidden="true"></div></div>
+  <button type="submit">Submit Application</button>
+</form><script>
+  for (const [id, values] of Object.entries({ country: ['United States', 'Canada'], auth: ['Yes', 'No'] })) {
+    const input = document.getElementById(id);
+    const control = input.closest('.select__control');
+    const show = () => {
+      control.querySelector('[role="listbox"]')?.remove();
+      const list = document.createElement('div'); list.setAttribute('role', 'listbox');
+      for (const value of values.filter((item) => item.toLowerCase().includes(input.value.toLowerCase()))) {
+        const option = document.createElement('button'); option.type = 'button'; option.setAttribute('role', 'option'); option.textContent = value;
+        option.onclick = () => { control.querySelector('.select__singleValue')?.remove(); const selected = document.createElement('span'); selected.className = 'select__singleValue'; selected.textContent = value; control.insertBefore(selected, input); control.querySelector('[aria-hidden]').value = value; input.value = ''; input.setAttribute('aria-expanded', 'false'); list.remove(); };
+        list.append(option);
+      }
+      control.append(list); input.setAttribute('aria-expanded', 'true');
+    };
+    input.addEventListener('click', show); input.addEventListener('input', show);
+    input.addEventListener('keydown', (event) => { if (event.key === 'Escape') { control.querySelector('[role="listbox"]')?.remove(); input.setAttribute('aria-expanded', 'false'); } });
+  }
+</script>`);
+
 export function startApplyForms() {
   const submissions = [];
   let slowSubmits = 0;
@@ -63,6 +90,7 @@ export function startApplyForms() {
       case '/embedded/apply': return html(page('Embedded application', '<form action="/search"><input name="q" aria-label="Search jobs"><button>Search</button></form><iframe title="Greenhouse Job Board" src="/embed/job_app" style="width:100%;height:1000px"></iframe>'));
       case '/embed/job_app': return html(SIMPLE_FORM());
       case '/empty/apply': return html(page('Empty application', '<form><button type="submit">Submit Application</button></form>'));
+      case '/combo/apply': return html(COMBO_FORM);
       case '/simple/extra': return html(SIMPLE_FORM('<label for="x">Describe a system you scaled to millions of users *</label><textarea id="x" name="scaled" required></textarea><label for="s">Current salary *</label><input id="s" name="salary_now" required>'));
       case '/cover/apply': return html(SIMPLE_FORM('<label for="cl">Cover letter</label><input id="cl" name="cover_letter" type="file">'));
       case '/captcha/apply': return html(SIMPLE_FORM('<iframe src="https://www.hcaptcha.com/captcha/frame" title="hCaptcha challenge"></iframe>'));

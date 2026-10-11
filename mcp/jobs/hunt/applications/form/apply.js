@@ -50,12 +50,26 @@ async function applicationScope(page) {
   return frame;
 }
 
+async function readInteractiveSchema(scope) {
+  const schema = await readFormSchema(scope);
+  for (const field of schema.fields.filter((entry) => entry.type === 'combobox' && !entry.options.length)) {
+    const input = scope.locator(sel(field.key)).first();
+    try {
+      await input.click({ timeout: 2000 });
+      await scope.waitForTimeout(150);
+      field.options = await scope.locator('[role="option"]').allInnerTexts();
+      await input.press('Escape');
+    } catch { /* leave the choice unresolved if the widget will not open */ }
+  }
+  return schema;
+}
+
 /** Read-only: open the application page and report its form (used to make a plan). */
 export async function inspectApplication({ url, env = process.env }) {
   const browser = await launchBrowser(env);
   try {
     const page = await openApplication(browser, url);
-    return await readFormSchema(await applicationScope(page));
+    return await readInteractiveSchema(await applicationScope(page));
   } finally { await browser.close().catch(() => {}); }
 }
 
@@ -98,7 +112,9 @@ async function setField(page, entry, schemaField, files) {
         await control.first().click();
         await control.first().fill(String(value));
         await page.waitForTimeout(300);
-        await control.first().press('Enter');
+        const option = page.getByRole('option', { name: String(value), exact: true });
+        if (!await option.count()) return false;
+        await option.first().click();
         return true;
       default:
         await control.first().fill(String(value));
@@ -150,7 +166,7 @@ export async function executePlan({ plan, files = {}, submit = true, headed = fa
   try {
     const page = await openApplication(browser, plan.url);
     const scope = await applicationScope(page);
-    const schema = await readFormSchema(scope);
+    const schema = await readInteractiveSchema(scope);
     if (schema.blockers?.captcha) return { status: 'manual_required', reason: 'captcha', screenshots: [await shot(page, 'blocked')].filter(Boolean) };
     if (!schema.hasForm || schema.blockers?.password) return { status: 'manual_required', reason: schema.blockers?.password ? 'login_required' : 'no_form', screenshots: [await shot(page, 'blocked')].filter(Boolean) };
     if (!schema.fields.length || !plan.fields?.length) return { status: 'schema_changed', reason: 'the application form has no readable fields' };

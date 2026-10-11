@@ -78,7 +78,11 @@ function resolveField(field, ctx) {
   const choose = (key, regexReason) => {
     const truth = boolAnswer(key);
     if (truth === undefined) return unresolved(regexReason);
-    if (isChoice) { const option = yesNo(options, truth); return option ? { value: option, origin: 'owner-answer' } : unresolved('options_do_not_match_yes_no'); }
+    if (isChoice) {
+      const fallback = field.type === 'combobox' && !options.length ? (truth ? 'Yes' : 'No') : null;
+      const option = yesNo(options, truth) ?? fallback;
+      return option ? { value: option, origin: 'owner-answer' } : unresolved('options_do_not_match_yes_no');
+    }
     if (field.type === 'checkbox') return truth ? { value: 'yes', origin: 'owner-answer' } : { skip: true };
     return { value: truth ? 'Yes' : 'No', origin: 'owner-answer' };
   };
@@ -95,7 +99,7 @@ function resolveField(field, ctx) {
     return option ? { value: option, origin: 'source' } : unresolved('no_matching_source_option');
   }
   for (const [fragment, value] of Object.entries(answers.custom)) if (label.toLowerCase().includes(fragment)) {
-    const option = isChoice ? matchOption(options, value) : value;
+    const option = isChoice && options.length ? matchOption(options, value) : value;
     return option ? { value: option, origin: 'owner-answer' } : unresolved('custom_answer_not_in_options');
   }
 
