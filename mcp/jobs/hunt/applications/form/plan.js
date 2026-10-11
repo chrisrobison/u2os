@@ -209,6 +209,7 @@ export async function buildApplicationPlan({ url, schema, job, source, candidate
   const needs = [...new Set(unresolved.filter((entry) => entry.required || entry.reason.startsWith('needs_answer:')).map((entry) => entry.reason))];
   const blockers = [];
   if (!schema.hasForm) blockers.push(schema.blockers?.password ? 'login_required' : 'no_form');
+  if (schema.hasForm && !schema.fields.length) blockers.push('no_form_fields');
   if (schema.blockers?.captcha) blockers.push('captcha');
   if (schema.blockers?.password) blockers.push('login_required');
   const plan = {
