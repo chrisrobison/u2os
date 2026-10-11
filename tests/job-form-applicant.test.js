@@ -154,6 +154,34 @@ test('a dry run fills and verifies; a real run submits exactly what was planned 
   await assert.rejects(planApplication({ store: w.store, job: w.store.getJob(w.job.id), candidate: candidate(), llm: llmWith({}), now: NOW }), /already submitted/);
 });
 
+test('an embedded application is inspected and filled inside its frame', async (t) => {
+  if (!browserOk) return t.skip('no browser');
+  const w = world(`${forms.base}/embedded/apply`);
+  const application = await planApplication({ store: w.store, job: w.job, candidate: candidate(), llm: llmWith({}), now: NOW });
+  assert.equal(application.status, 'planned');
+  assert.equal(application.plan.fields.length, 4);
+  assert.ok(application.plan.fields.some((field) => field.key === 'resume'));
+  const before = forms.submissions.length;
+  const result = await submitApplication({ store: w.store, job: w.job, files: w.files, screenshotDir: path.join(w.dir, 'shots'), now: NOW });
+  assert.equal(result.result.status, 'submitted');
+  assert.equal(forms.submissions.length, before + 1);
+  assert.equal(forms.submissions.at(-1).fields.email, 'pat@example.com');
+  assert.equal(result.result.screenshots.length, 2);
+});
+
+test('empty form schemas and old empty plans never reach a submit click', async (t) => {
+  if (!browserOk) return t.skip('no browser');
+  const w = world(`${forms.base}/empty/apply`);
+  const application = await planApplication({ store: w.store, job: w.job, candidate: candidate(), llm: llmWith({}), now: NOW });
+  assert.equal(application.status, 'manual_required');
+  assert.ok(application.plan.blockers.includes('no_form_fields'));
+  const before = forms.submissions.length;
+  const oldPlan = { ...application.plan, fields: [], blockers: [], ready: true };
+  const result = await executePlan({ plan: oldPlan, files: {}, env });
+  assert.equal(result.status, 'schema_changed');
+  assert.equal(forms.submissions.length, before);
+});
+
 test('a changed form, changed files or an incomplete fill stops before anything is submitted', async (t) => {
   if (!browserOk) return t.skip('no browser');
   const w = world(`${forms.base}/simple/apply`);

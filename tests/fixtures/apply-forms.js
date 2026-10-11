@@ -60,6 +60,9 @@ export function startApplyForms() {
     switch (url.pathname) {
       case '/ashby/application': return html(ASHBY_FORM());
       case '/simple/apply': return html(SIMPLE_FORM());
+      case '/embedded/apply': return html(page('Embedded application', '<form action="/search"><input name="q" aria-label="Search jobs"><button>Search</button></form><iframe title="Greenhouse Job Board" src="/embed/job_app" style="width:100%;height:1000px"></iframe>'));
+      case '/embed/job_app': return html(SIMPLE_FORM());
+      case '/empty/apply': return html(page('Empty application', '<form><button type="submit">Submit Application</button></form>'));
       case '/simple/extra': return html(SIMPLE_FORM('<label for="x">Describe a system you scaled to millions of users *</label><textarea id="x" name="scaled" required></textarea><label for="s">Current salary *</label><input id="s" name="salary_now" required>'));
       case '/cover/apply': return html(SIMPLE_FORM('<label for="cl">Cover letter</label><input id="cl" name="cover_letter" type="file">'));
       case '/captcha/apply': return html(SIMPLE_FORM('<iframe src="https://www.hcaptcha.com/captcha/frame" title="hCaptcha challenge"></iframe>'));

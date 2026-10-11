@@ -32,9 +32,22 @@ async function openApplication(browser, url) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 1600 } });
   page.setDefaultTimeout(15_000);
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-  await page.waitForSelector('form', { timeout: 12_000 }).catch(() => {});
+  await page.waitForSelector('form, iframe[src*="job-boards.greenhouse.io/embed/job_app"]', { timeout: 12_000 }).catch(() => {});
   await page.waitForTimeout(500);
   return page;
+}
+
+// Company career pages often host the actual Greenhouse form in a separate
+// frame. Keep the outer page for screenshots, but inspect and fill that frame.
+async function applicationScope(page) {
+  const pageOrigin = new URL(page.url()).origin;
+  const frame = page.frames().find((entry) => {
+    try { const url = new URL(entry.url()); return url.pathname === '/embed/job_app' && (url.hostname === 'job-boards.greenhouse.io' || url.origin === pageOrigin); }
+    catch { return false; }
+  });
+  if (!frame) return page;
+  await frame.locator('form').first().waitFor({ timeout: 12_000 }).catch(() => {});
+  return frame;
 }
 
 /** Read-only: open the application page and report its form (used to make a plan). */
@@ -42,7 +55,7 @@ export async function inspectApplication({ url, env = process.env }) {
   const browser = await launchBrowser(env);
   try {
     const page = await openApplication(browser, url);
-    return await readFormSchema(page);
+    return await readFormSchema(await applicationScope(page));
   } finally { await browser.close().catch(() => {}); }
 }
 
@@ -103,17 +116,17 @@ async function findSubmit(page) {
   return null;
 }
 
-async function outcome(page, timeoutMs, formUrl) {
+async function outcome(page, scope, timeoutMs, formUrl) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     await page.waitForTimeout(500);
-    if (await page.locator(CAPTCHA_SELECTOR).first().isVisible().catch(() => false)) return { status: 'manual_required', reason: 'captcha_after_submit' };
-    const text = await page.locator('body').innerText().catch(() => '');
-    if (SUCCESS_TEXT.test(text) || SUCCESS_URL.test(new URL(page.url()).pathname)) return { status: 'submitted' };
+    if (await scope.locator(CAPTCHA_SELECTOR).first().isVisible().catch(() => false)) return { status: 'manual_required', reason: 'captcha_after_submit' };
+    const text = await scope.locator('body').innerText().catch(() => '');
+    if (SUCCESS_TEXT.test(text) || SUCCESS_URL.test(new URL(scope.url()).pathname)) return { status: 'submitted' };
   }
-  const errors = await page.locator('[role="alert"], .error, .field-error, .error-message, [aria-invalid="true"]').evaluateAll((elements) => elements
+  const errors = await scope.locator('[role="alert"], .error, .field-error, .error-message, [aria-invalid="true"]').evaluateAll((elements) => elements
     .map((element) => (element.getAttribute('aria-invalid') === 'true' ? `invalid: ${element.name || element.id}` : element.innerText || '').replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 5)).catch(() => []);
-  const stillOnForm = page.url() === formUrl && await page.locator('form').count() > 0;
+  const stillOnForm = page.url() === formUrl && await scope.locator('form').count() > 0;
   // Only a form still showing its own validation errors counts as "not submitted".
   return errors.length && stillOnForm ? { status: 'failed', errors } : { status: 'unconfirmed' };
 }
@@ -136,24 +149,26 @@ export async function executePlan({ plan, files = {}, submit = true, headed = fa
   };
   try {
     const page = await openApplication(browser, plan.url);
-    const schema = await readFormSchema(page);
+    const scope = await applicationScope(page);
+    const schema = await readFormSchema(scope);
     if (schema.blockers?.captcha) return { status: 'manual_required', reason: 'captcha', screenshots: [await shot(page, 'blocked')].filter(Boolean) };
     if (!schema.hasForm || schema.blockers?.password) return { status: 'manual_required', reason: schema.blockers?.password ? 'login_required' : 'no_form', screenshots: [await shot(page, 'blocked')].filter(Boolean) };
+    if (!schema.fields.length || !plan.fields?.length) return { status: 'schema_changed', reason: 'the application form has no readable fields' };
     if (schemaHash(schema.fields) !== plan.schemaHash) return { status: 'schema_changed', reason: 'the form asks different questions than when it was planned' };
 
     const byKey = new Map(schema.fields.map((field) => [field.key, field]));
     const failed = [];
     for (const entry of plan.fields) {
       if (!byKey.has(entry.key)) continue;
-      if (!(await setField(page, entry, byKey.get(entry.key), files))) failed.push(entry.key);
+      if (!(await setField(scope, entry, byKey.get(entry.key), files))) failed.push(entry.key);
     }
-    const after = await readFormSchema(page);
+    const after = await readFormSchema(scope);
     const missing = after.fields.filter((field) => field.required && !field.filled).map((field) => field.label || field.key);
     const formShot = await shot(page, 'form');
     if (failed.length || missing.length) return { status: 'fill_incomplete', failed, missing, screenshots: [formShot].filter(Boolean) };
     if (!submit) return { status: 'dry_run', screenshots: [formShot].filter(Boolean) };
 
-    const button = await findSubmit(page);
+    const button = await findSubmit(scope);
     if (!button) return { status: 'manual_required', reason: 'no_submit_button', screenshots: [formShot].filter(Boolean) };
     await beforeSubmit(); // the caller records intent here: from now on the outcome is uncertain until proven otherwise
     // What the page's own network calls said after the click: the evidence when a submit is not confirmed.
@@ -165,7 +180,7 @@ export async function executePlan({ plan, files = {}, submit = true, headed = fa
       try { evidence.push({ path: new URL(response.url()).pathname.slice(0, 90), status: response.status(), body }); } catch { /* odd url */ }
     });
     await button.click();
-    const result = await outcome(page, outcomeTimeoutMs, plan.url);
+    const result = await outcome(page, scope, outcomeTimeoutMs, plan.url);
     return { ...result, evidence, screenshots: [formShot, await shot(page, 'result')].filter(Boolean) };
   } finally { await browser.close().catch(() => {}); }
 }
