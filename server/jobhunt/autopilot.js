@@ -111,7 +111,7 @@ export class Autopilot {
       }
     } finally {
       // What this cycle cost in model calls, by tier: the owner watches this.
-      report.llm = { fast: tiers?.fast?.stats?.calls ?? 0, quality: tiers?.quality?.stats?.calls ?? 0, fastConfigured: Boolean(tiers?.fast) };
+      report.llm = { fast: tiers?.fast?.stats?.calls ?? 0, quality: (tiers?.quality?.stats?.calls ?? 0) + (tiers?.judge && tiers.judge !== tiers.quality ? tiers.judge.stats.calls : 0), fastConfigured: Boolean(tiers?.fast) };
       report.finishedAt = new Date().toISOString();
       state.lastReport = report;
       this.saveState(state);
@@ -166,7 +166,8 @@ export class Autopilot {
    * A first-pass score is a cheap opinion. Before anything is written for a job, the quality model confirms it:
    * jobs whose local score is within `margin` of the threshold are re-scored by the quality tier.
    */
-  async confirm({ store, config, candidate, llm, tiers, now }) {
+  async confirm({ store, config, candidate, llm: quality, tiers, now }) {
+    const llm = tiers?.judge ?? quality;
     if (!tiers?.fast || !llm?.available || !config.per_cycle.confirm) return { skipped: 'no local tier' };
     const minimum = candidate.preferences.minimum_score ?? 82;
     // The local model runs hot (about 12 points above the quality model on average), so its score is corrected by `bias` before it is compared.
@@ -243,7 +244,8 @@ export class Autopilot {
     return null;
   }
 
-  async review({ store, config, candidate, llm, now, report }) {
+  async review({ store, config, candidate, llm: quality, tiers, now, report }) {
+    const llm = tiers?.judge ?? quality;
     if (!llm?.available) return { skipped: 'no model' };
     let reviewed = 0;
     for (const job of store.listJobs({ limit: 5000 })) {

@@ -15,6 +15,8 @@ import { JOB_HUNT_DIR } from '../../profile.js';
 //   confirm_margin: 10             # a job whose fast score, minus that bias, is within this many points of
 //                                  # your threshold is confirmed by the quality tier
 //   quality: planner               # the model connections you ordered on the Model page
+//   local_fallback: true           # when every cloud connection fails (rate limits), writing steps fall back to the
+//                                  # fast model; scoring confirmation and review never do (they pause instead)
 //
 // Without a `fast` tier everything uses the quality tier, exactly as before.
 
@@ -45,7 +47,9 @@ export function loadModelsConfig(vaultDir) {
   const bias = data.local_bias === undefined ? 12 : data.local_bias;
   if (!Number.isInteger(bias) || bias < -20 || bias > 40) throw new Error('models.yaml: local_bias must be a whole number from -20 to 40');
   if (data.quality !== undefined && data.quality !== 'planner') throw new Error('models.yaml: quality must be "planner" (the connections on the Model page)');
-  return { fast, quality: 'planner', confirm_margin: margin, local_bias: bias };
+  if (data.local_fallback !== undefined && typeof data.local_fallback !== 'boolean') throw new Error('models.yaml: local_fallback must be true or false');
+  if (data.local_fallback === true && !fast) throw new Error('models.yaml: local_fallback needs a fast model');
+  return { fast, quality: 'planner', confirm_margin: margin, local_bias: bias, local_fallback: data.local_fallback === true };
 }
 
 export function setFastModel(vaultDir, { base_url, model, reasoning = 'off' }) {

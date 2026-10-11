@@ -366,3 +366,12 @@ test('a rewrite that passes review is acted on; deterministic rejections and min
   await b.autopilot.runCycle({ now: NOW });
   assert.deepEqual(regenerated2, [], 'no blocking concern, nothing to repair');
 });
+
+test('review pauses when only the writing tier has a model: the judge tier never falls back (#545)', async () => {
+  const w = world({ mode: 'live' });
+  const f = fakeLlm(approve);
+  const { autopilot, proposals } = pilot(w, { reply: approve, deps: { createTiers: () => ({ fast: null, quality: createLlm([f.provider]), judge: createLlm([]), margin: 10 }) } });
+  const report = await autopilot.runCycle({ now: NOW });
+  assert.equal(report.steps.review.skipped, 'no model');
+  assert.equal(proposals.length, 0, 'nothing was approved or sent without a judge model');
+});
