@@ -1,5 +1,6 @@
 import { escapeHtml, formatDateTime } from './util.js';
 import * as api from '../services/api.js';
+import { mergeJobs, needsOwner } from './job-hunt/leads-filter.js';
 
 // The job hunt pipeline (docs/job-hunt.md): jobs discovered on Hacker News,
 // ranked against the owner, with the tailored materials and outreach email
@@ -43,7 +44,9 @@ export class U2JobHunt extends HTMLElement {
   async _load() {
     if (!this._data) this.innerHTML = '<div class="empty-state">Loading jobs...</div>';
     try {
-      const [data, autopilot] = await Promise.all([api.getJobHuntJobs({ min_score: 60, limit: 150 }), api.getAutopilot().catch(() => null)]);
+      // The ranked list stops at 150, so jobs waiting on the owner are fetched too: they may rank far below it.
+      const [data, waiting, autopilot] = await Promise.all([api.getJobHuntJobs({ min_score: 60, limit: 150 }), api.getJobHuntJobs({ status: 'needs_input', limit: 200 }).catch(() => ({ jobs: [] })), api.getAutopilot().catch(() => null)]);
+      data.jobs = mergeJobs(data.jobs, waiting.jobs);
       this._data = data;
       this._autopilot = autopilot;
       this._render();
@@ -56,7 +59,7 @@ export class U2JobHunt extends HTMLElement {
     const jobs = this._data.jobs;
     switch (this._filter) {
       case 'ready': return jobs.filter((job) => job.draft && !job.draft.needsInput.length && !active(job) && !['contacted', 'applied', 'interview', 'rejected'].includes(job.status));
-      case 'needs_input': return jobs.filter((job) => job.draft?.needsInput.length);
+      case 'needs_input': return jobs.filter(needsOwner);
       case 'contacted': return jobs.filter((job) => ['contacted', 'interview'].includes(job.status) || active(job));
       case 'strong': return jobs.filter((job) => (job.score?.score ?? 0) >= 80);
       default: return jobs;
@@ -125,6 +128,7 @@ export class U2JobHunt extends HTMLElement {
         <div class="trigger-row__meta">${escapeHtml(where)}${score ? ` · ${escapeHtml(score.narrative)}` : ''} · ${escapeHtml(job.strategy.name.replace(/_/g, ' ').toLowerCase())}</div>
         ${score?.reasons.length ? `<div class="trigger-row__next">${score.reasons.slice(0, 2).map(escapeHtml).join(' · ')}</div>` : ''}
         ${score?.concerns.length ? `<ul class="routine-row__error">${score.concerns.slice(0, 3).map((c) => `<li>${escapeHtml(c)}</li>`).join('')}</ul>` : ''}
+        ${!draft?.needsInput.length && job.status === 'needs_input' ? `<div class="application-card__section"><div class="application-card__label">The application form is waiting on you</div><div class="trigger-row__meta">It asks for something your facts do not cover, so nothing was sent. Open <a href="#/applications">Applications</a> to see the question, then add the answer to job-hunt/answers.yaml or facts.md.</div></div>` : ''}
         ${draft?.needsInput.length ? `<div class="application-card__section"><div class="application-card__label">The listing asks for things your facts do not cover</div><ul>${draft.needsInput.map((ask) => `<li>${escapeHtml(ask)}</li>`).join('')}</ul><div class="trigger-row__meta">Add what is true to job-hunt/facts.md, then run: npm run u2 -- job materials ${escapeHtml(job.id)} --force</div></div>` : ''}
         ${draft ? `<details class="application-card__details"><summary>Email to ${escapeHtml(draft.to)}</summary>
           <div class="application-card__label">Subject</div><p>${escapeHtml(draft.subject)}</p>
