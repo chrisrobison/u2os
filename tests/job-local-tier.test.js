@@ -73,7 +73,7 @@ test('provider failures are plain and bounded: not JSON, no answer, a server err
 
 test('models.yaml: no local tier by default; a valid one loads; bad values are refused; the setter keeps other keys', () => {
   const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'hunt-models-'));
-  assert.deepEqual(loadModelsConfig(vault), { fast: null, quality: 'planner', confirm_margin: 10, local_bias: 12 });
+  assert.deepEqual(loadModelsConfig(vault), { fast: null, quality: 'planner', confirm_margin: 10, local_bias: 12, local_fallback: false });
   const config = setFastModel(vault, { base_url: 'http://127.0.0.1:1234', model: 'qwen/qwen3.5-9b' });
   assert.deepEqual([config.fast.provider, config.fast.model, config.fast.reasoning, config.fast.timeout_seconds], ['lmstudio', 'qwen/qwen3.5-9b', 'off', 120]);
   const file = path.join(vault, 'job-hunt', 'models.yaml');

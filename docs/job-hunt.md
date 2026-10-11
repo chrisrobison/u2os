@@ -402,6 +402,8 @@ The local model is called through LM Studio's native chat API with reasoning off
 
 The Job hunt page shows how many model calls the last cycle made, local and cloud separately.
 
+**When the cloud models hit their limits.** Set `local_fallback: true` in `models.yaml` (it needs a `fast:` model) and the local model becomes the last resort of the quality tier: if every connection you ordered on the Model page fails (for example both Codex and Claude are at their usage limits), writing a resume, letter or email, planning a form and revising after a review use the local model instead of failing. It is off by default. Two steps never fall back, because they are the judgement calls that gate a real submission: confirming a borderline score and the review agent. They pause until a cloud model answers, and everything the local model writes still passes the same claim guard and deterministic checks. A smaller model writes weaker prose, so expect more reviews to reject and send work back for revision.
+
 
 ## Visible-browser submits (`headed`)
 
