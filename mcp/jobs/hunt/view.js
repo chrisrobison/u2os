@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { jobAttention } from './attention.js';
 import { chooseStrategy } from './applications/strategy.js';
 
 // What the Job hunt page and API show for one job: the facts, the score and
@@ -14,7 +15,7 @@ function readDraft(artifact) {
   } catch { return null; }
 }
 
-export function jobView(store, job, { minimumScore = 82, detail = false } = {}) {
+export function jobView(store, job, { minimumScore = 82, detail = false, screensDir = null } = {}) {
   const score = store.getScore(job.id);
   const artifacts = store.getArtifacts(job.id);
   const strategy = chooseStrategy(job, { score, minimumScore });
@@ -31,8 +32,35 @@ export function jobView(store, job, { minimumScore = 82, detail = false } = {}) 
     view.sources = store.listSources(job.id).map((source) => ({ source: source.source, author: source.author, url: source.sourceUrl, postedAt: source.postedAt, rawText: source.rawText }));
     view.dimensions = score?.dimensions ?? {};
     view.events = store.listEvents(job.id);
+    const applications = store.listApplications(job.id).reverse();
+    const reviews = store.listReviews(job.id);
+    view.applications = applications.map((entry) => applicationView(entry, screensDir ? path.join(screensDir, job.id) : null));
+    view.reviews = reviews.map((review) => ({ id: review.id, kind: review.kind, decision: review.decision, checks: review.checks, concerns: review.concerns, notes: review.notes, model: review.model, createdAt: review.createdAt }));
+    view.contacts = store.listContacts({ jobId: job.id });
+    view.tasks = store.listTasks({ jobId: job.id });
+    view.interviews = store.listInterviews({ jobId: job.id });
+    view.attention = jobAttention({ job, applications, reviews, needsInput: view.draft?.needsInput ?? [] });
   }
   return view;
+}
+
+/** One application attempt for the details page: the plan's answers and the outcome, with screenshots as paths under the job's screens folder. */
+function applicationView(entry, jobScreensDir) {
+  const plan = entry.plan ?? {};
+  const shots = [];
+  for (const file of entry.result?.screenshots ?? []) {
+    if (!jobScreensDir || typeof file !== 'string') continue;
+    const relative = path.relative(jobScreensDir, file);
+    if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) shots.push(relative.split(path.sep).join('/'));
+  }
+  return {
+    id: entry.id, url: entry.url, status: entry.status, createdAt: entry.createdAt, updatedAt: entry.updatedAt,
+    plan: {
+      ready: plan.ready === true, needs: plan.needs ?? [], blockers: plan.blockers ?? [], unresolved: plan.unresolved ?? [],
+      fields: (plan.fields ?? []).map((field) => ({ label: field.label, required: field.required === true, origin: field.origin, ...(field.file ? { file: field.fileName ?? field.file } : { value: field.value }) })),
+    },
+    result: { outcome: entry.result?.outcome ?? null, reason: entry.result?.reason ?? null, errors: entry.result?.errors ?? [], at: entry.result?.at ?? null, screenshots: shots },
+  };
 }
 
 /** Scored jobs, best first, then unscored with materials; optionally filtered. */

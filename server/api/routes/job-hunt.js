@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { sendJson } from '../router.js';
 import { getVaultDir } from '../../vault/vault-dir.js';
 import { newId } from '../../db/ids.js';
@@ -7,6 +9,7 @@ import { buildDashboard, moveJob, DEFAULT_WINDOW_DAYS } from '../../../mcp/jobs/
 import { addInterview, updateInterview, deleteInterview, addTask, completeTask, uncompleteTask, snoozeTask } from '../../../mcp/jobs/hunt/schedule.js';
 import { addContact, updateContact, deleteContact, markContacted } from '../../../mcp/jobs/hunt/contacts.js';
 import { jobView, listJobViews } from '../../../mcp/jobs/hunt/view.js';
+import { JOB_HUNT_DIR } from '../../../mcp/jobs/profile.js';
 import { loadPreferences, loadResume } from '../../../mcp/jobs/hunt/candidate/profile.js';
 import { setAutopilotSwitches } from '../../../mcp/jobs/hunt/autopilot/config.js';
 import { proposeBulkDrafts } from '../../../mcp/jobs/hunt/applications/bulk.js';
@@ -19,6 +22,10 @@ import { SEND_TOOLS, proposeApplicationEmail, reconcileEmails, recordManualSend 
 
 const JOB_ID = /^job_[0-9a-f]{16}$/;
 const ROW_ID = /^[1-9][0-9]{0,9}$/;
+const SCREENSHOT_FILE = /^[A-Za-z0-9_.-]{1,80}\.png$/;
+const SCREENSHOT_DIR = /^[A-Za-z0-9_.-]{1,80}$/;
+const MAX_SCREENSHOT_BYTES = 20 * 1024 * 1024;
+const screensDir = () => path.join(getVaultDir(), JOB_HUNT_DIR, 'state', 'screens');
 const SCHEDULE_ERRORS = { BAD_INPUT: 400, UNKNOWN_JOB: 404, UNKNOWN_INTERVIEW: 404, UNKNOWN_TASK: 404, UNKNOWN_CONTACT: 404, CONFLICT: 409 };
 
 function withStore(fn) {
@@ -115,9 +122,30 @@ export function registerJobHuntRoutes(router, { agent, toolRegistry, autopilot =
   router.get('/api/job-hunt/jobs/:id', async (req, res) => {
     if (!JOB_ID.test(req.params.id)) return sendJson(res, 400, { error: 'Invalid job id' });
     reconcileOutcomes();
-    const view = withStore((store) => { const job = store.getJob(req.params.id); return job ? jobView(store, job, { minimumScore: preferences().minimum_score, detail: true }) : null; });
+    const view = withStore((store) => { const job = store.getJob(req.params.id); return job ? jobView(store, job, { minimumScore: preferences().minimum_score, detail: true, screensDir: screensDir() }) : null; });
     if (!view) return sendJson(res, 404, { error: 'No such job' });
     sendJson(res, 200, view);
+  });
+
+  // A screenshot of one of the job's application attempts: a PNG under
+  // job-hunt/state/screens/<job id>/, a regular file, no links out. The path
+  // is relative to that folder, as the job's `applications[].result.screenshots` lists it.
+  router.get('/api/job-hunt/jobs/:id/screenshot', async (req, res) => {
+    if (!JOB_ID.test(req.params.id)) return sendJson(res, 400, { error: 'Invalid job id' });
+    const parts = String(req.query?.path || '').split('/');
+    const name = parts.pop();
+    if (parts.length > 3 || !SCREENSHOT_FILE.test(name ?? '') || parts.some((part) => !SCREENSHOT_DIR.test(part) || part === '.' || part === '..')) return sendJson(res, 400, { error: 'Not an application screenshot' });
+    const root = path.join(screensDir(), req.params.id);
+    const file = path.join(root, ...parts, name);
+    let stat;
+    try {
+      stat = fs.lstatSync(file);
+      const realRoot = fs.realpathSync(root);
+      const realDir = path.dirname(fs.realpathSync(file));
+      if (!stat.isFile() || stat.size > MAX_SCREENSHOT_BYTES || (realDir !== realRoot && !realDir.startsWith(realRoot + path.sep))) return sendJson(res, 404, { error: 'Not Found' });
+    } catch { return sendJson(res, 404, { error: 'Not Found' }); }
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': stat.size, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
+    fs.createReadStream(file).pipe(res);
   });
 
   router.post('/api/job-hunt/reconcile', async (req, res) => {

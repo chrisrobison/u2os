@@ -63,10 +63,11 @@ export class U2JobDetails extends HTMLElement {
       this.setAttribute('role', 'region');
       this.setAttribute('aria-labelledby', 'jh-details-title');
       this._link = el('a', { class: 'jh-link', hidden: true, target: '_blank', rel: 'noopener noreferrer' });
+      this._page = el('a', { class: 'jh-link', hidden: true, text: 'Open full page' });
       this._body = el('div', { class: 'jh-details' });
       // The add forms live outside the re-rendered body so a refresh never wipes what is being typed.
       this._formHost = el('div', { class: 'jh-formhost', id: 'jh-formhost' });
-      this.append(el('div', { class: 'jh-panel__head' }, el('h2', { id: 'jh-details-title', class: 'jh-panel__title', text: 'Job Details' }), this._link), this._body, this._formHost);
+      this.append(el('div', { class: 'jh-panel__head' }, el('h2', { id: 'jh-details-title', class: 'jh-panel__title', text: 'Job Details' }), this._page, this._link), this._body, this._formHost);
     }
     this._render();
   }
@@ -107,6 +108,8 @@ export class U2JobDetails extends HTMLElement {
 
     this._body.textContent = '';
     const url = safeUrl(job?.companyUrl);
+    this._page.hidden = !job;
+    if (job) this._page.href = `#/job-hunt/jobs/${encodeURIComponent(job.id)}`;
     this._link.hidden = !url;
     if (url) { this._link.href = url; this._link.textContent = 'View on company site ↗'; }
 

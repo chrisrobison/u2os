@@ -26,6 +26,7 @@ import './u2-vault.js';
 import './u2-applications.js';
 import './u2-job-hunt.js';
 import './job-hunt/u2-job-dashboard.js';
+import './job-hunt/u2-job-page.js';
 import './u2-goals.js';
 import './u2-triggers.js';
 import './u2-packages.js';
@@ -300,7 +301,7 @@ export class U2App extends HTMLElement {
     const hash = window.location.hash || '#/home';
     const pathOnly = hash.replace(/^#\/?/, '').split('?')[0];
     const parts = pathOnly.split('/').filter(Boolean);
-    const [root, sub] = parts;
+    const [root, sub, third] = parts;
 
     switch (root) {
       case undefined:
@@ -330,6 +331,11 @@ export class U2App extends HTMLElement {
         // #/job-hunt is the dashboard; the ranked list is "Job Leads".
         if (!sub) this._setWorkspace('', document.createElement('u2-job-dashboard'));
         else if (sub === 'leads') this._setWorkspace('', document.createElement('u2-job-hunt'));
+        else if (sub === 'jobs' && third && parts.length === 3) {
+          const page = document.createElement('u2-job-page');
+          try { page.jobId = decodeURIComponent(third); } catch { page.jobId = third; }
+          this._setWorkspace('', page);
+        }
         else this._renderNotFound(hash);
         break;
       case 'vault':

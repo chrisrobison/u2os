@@ -69,7 +69,7 @@ export class U2Applications extends HTMLElement {
     const answered = Object.entries(item.answered || {});
     return `<article class="trigger-row application-card" data-application="${escapeHtml(item.jobId)}">
       <div class="trigger-row__body">
-        <div class="trigger-row__heading"><strong>${escapeHtml(item.title || item.jobId)}</strong><span class="trigger-state trigger-state--${tone}">${escapeHtml(label)}</span></div>
+        <div class="trigger-row__heading"><strong>${/^job_[0-9a-f]{16}$/.test(item.jobId || '') ? `<a href="#/job-hunt/jobs/${escapeHtml(item.jobId)}">${escapeHtml(item.title || item.jobId)}</a>` : escapeHtml(item.title || item.jobId)}</strong><span class="trigger-state trigger-state--${tone}">${escapeHtml(label)}</span></div>
         <div class="trigger-row__meta">${escapeHtml(item.company || '')} · ${escapeHtml(when)}${item.url ? ` · <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">Posting</a>` : ''}</div>
         ${meaning ? `<div class="trigger-row__next">${escapeHtml(meaning)}${item.reason ? ` ${escapeHtml(item.reason)}` : ''}</div>` : ''}
         ${item.errors.length ? `<ul class="routine-row__error">${item.errors.map((error) => `<li>${escapeHtml(error)}</li>`).join('')}</ul>` : ''}
