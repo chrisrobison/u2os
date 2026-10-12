@@ -80,16 +80,47 @@ export function sendApplication({ vaultDir, jobId, mailer, resolveAttachments = 
 }
 
 /** Submits the job's reviewed, approved application form. */
-export function submitApplicationForm({ vaultDir, jobId, execute = null, driver = null, now = new Date() }) {
+export function submitApplicationForm({ vaultDir, jobId, execute = null, driver = null, owner = false, now = new Date() }) {
   return withLock(vaultDir, jobId, async () => {
     const { store, job, config, approval } = prepare({ vaultDir, jobId, kind: 'form', now });
     try {
       const artifacts = store.getArtifacts(job.id);
       const files = { ...(artifacts.resume_pdf ? { resume: { path: artifacts.resume_pdf.path } } : {}), ...(artifacts.cover_letter_pdf ? { cover_letter: { path: artifacts.cover_letter_pdf.path } } : {}), ...(artifacts.combined_pdf ? { resume_with_letter: { path: artifacts.combined_pdf.path } } : {}) };
-      const live = config.mode === 'live';
+      // The owner pressing the button is the consent to send, whatever the autopilot's mode.
+      const live = owner || config.mode === 'live';
       const { result, application } = await submitApplication({ store, job, files, submit: live, headed: config.browser.headed, driver: driver ?? config.browser.driver, execute, screenshotDir: path.join(vaultDir, JOB_HUNT_DIR, 'state', 'screens', job.id), now });
-      store.recordEvent(job.id, live ? 'application_form_submitted' : 'autopilot_dry_run', { detail: { action: 'submit_application', outcome: result.status, applicationId: application.id, by: 'autopilot', reviewId: approval.id } }, new Date());
+      store.recordEvent(job.id, live ? 'application_form_submitted' : 'autopilot_dry_run', { detail: { action: 'submit_application', outcome: result.status, applicationId: application.id, by: owner ? 'owner' : 'autopilot', reviewId: approval.id } }, new Date());
       return { status: result.status, company: job.company, role: job.role, ...(result.reason ? { reason: result.reason } : {}), ...(result.errors ? { errors: result.errors } : {}) };
     } finally { store.close(); }
   });
+}
+
+/**
+ * The owner looked at a planned application and chose to send it. Records the
+ * owner's approval (bound to the exact content, like the review agent's) and
+ * submits through the same guarded path, live whatever the autopilot's mode.
+ * It overrides only the review agent's judgement: a failed deterministic check
+ * (limits, duplicates, blocklist, a closed job) still refuses, and the plan
+ * must still be the one the owner was shown.
+ */
+export async function ownerApproveAndSubmit({ vaultDir, jobId, planHash, execute = null, driver = null, now = new Date() }) {
+  await withLock(vaultDir, jobId, async () => {
+    const store = openStore(huntDbPath(vaultDir));
+    try {
+      const job = store.getJob(jobId);
+      if (!job) throw new Refused(`Unknown job ${jobId}`, 'UNKNOWN_JOB');
+      const application = store.listApplications(job.id).filter((entry) => entry.kind === 'form').at(-1);
+      if (!application || application.status !== 'planned' || application.plan?.ready !== true) throw new Refused('There is no ready application plan to submit', 'NOT_READY');
+      if (!planHash || application.planHash !== planHash) throw new Refused('The plan changed since you looked at it. Reload the page and look again.', 'STALE_PLAN');
+      const candidate = loadCandidate(vaultDir);
+      const config = loadAutopilotConfig(vaultDir);
+      const subject = loadSubject({ store, job, kind: 'form', policy: reviewPolicy({ preferences: candidate.preferences, config }) });
+      const checks = runChecks({ store, job, subject, score: store.getScore(job.id), preferences: candidate.preferences, config, candidate, now });
+      const failed = failedChecks(checks);
+      if (failed.length) throw new Refused(`Refused by the checks: ${failed.map((entry) => `${entry.name}${entry.detail ? ` (${entry.detail})` : ''}`).join('; ')}`, 'CHECKS_FAILED');
+      const review = store.addReview(job.id, { kind: 'form', decision: 'approve', contentHash: subject.contentHash, checks, concerns: [], notes: 'Approved by the owner from the app, after looking at the planned answers.', model: 'owner' }, now);
+      store.recordEvent(job.id, 'owner_approved', { detail: { kind: 'form', reviewId: review.id, applicationId: application.id } }, now);
+    } finally { store.close(); }
+  });
+  return submitApplicationForm({ vaultDir, jobId, execute, driver, owner: true, now });
 }

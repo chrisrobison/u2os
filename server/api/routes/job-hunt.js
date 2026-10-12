@@ -10,7 +10,7 @@ import { addInterview, updateInterview, deleteInterview, addTask, completeTask, 
 import { addContact, updateContact, deleteContact, markContacted } from '../../../mcp/jobs/hunt/contacts.js';
 import { jobView, listJobViews } from '../../../mcp/jobs/hunt/view.js';
 import { addCustomAnswers } from '../../../mcp/jobs/hunt/candidate/answers.js';
-import { withLock } from '../../../mcp/jobs/hunt/act.js';
+import { ownerApproveAndSubmit, withLock } from '../../../mcp/jobs/hunt/act.js';
 import { planJob } from '../../jobhunt/replan.js';
 import { JOB_HUNT_DIR } from '../../../mcp/jobs/profile.js';
 import { loadPreferences, loadResume } from '../../../mcp/jobs/hunt/candidate/profile.js';
@@ -169,6 +169,24 @@ export function registerJobHuntRoutes(router, { agent, toolRegistry, autopilot =
       const status = { BAD_INPUT: 400, UNKNOWN_JOB: 404, CONFLICT: 409, IN_PROGRESS: 409 }[error.code];
       if (!status) return sendJson(res, 500, { error: String(error.message).slice(0, 300) });
       sendJson(res, status, { error: error.message });
+    }
+  });
+
+  // The owner looked at the planned application and sends it. `planHash` must be the plan they were shown, and `confirm`
+  // must be literally true. Records the owner's approval and submits through the same guarded path as the autopilot, live.
+  router.post('/api/job-hunt/jobs/:id/approve-and-submit', async (req, res) => {
+    if (!JOB_ID.test(req.params.id)) return sendJson(res, 400, { error: 'Invalid job id' });
+    if (req.body?.confirm !== true) return sendJson(res, 400, { error: 'confirm must be true' });
+    if (typeof req.body?.planHash !== 'string' || !req.body.planHash) return sendJson(res, 400, { error: 'planHash is required' });
+    const vaultDir = getVaultDir();
+    try {
+      const outcome = await ownerApproveAndSubmit({ vaultDir, jobId: req.params.id, planHash: req.body.planHash });
+      const job = withStore((store) => { const found = store.getJob(req.params.id); return found ? jobView(store, found, { minimumScore: preferences().minimum_score, detail: true, screensDir: screensDir() }) : null; });
+      sendJson(res, 200, { ...outcome, job });
+    } catch (error) {
+      const status = { UNKNOWN_JOB: 404, NOT_READY: 409, STALE_PLAN: 409, CHECKS_FAILED: 409, IN_PROGRESS: 409, NOT_APPROVED: 409, REFUSED: 409, BLOCKED: 409 }[error.code];
+      if (!status) return sendJson(res, 500, { error: String(error.message).slice(0, 300) });
+      sendJson(res, status, { error: error.message, code: error.code });
     }
   });
 
