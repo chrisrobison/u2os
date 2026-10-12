@@ -59,6 +59,8 @@ function resolveField(field, ctx) {
 
   // Identity, from the owner's resume.
   const person = (basics.name || '').trim().split(/\s+/);
+  // "Legal First and Last Name" asks for the whole name, so it is checked before the single-part rules.
+  if (/first( name)? (and|&|\+) (last|sur)\s?name|^(your )?(full|legal)( legal)? name\b(?! of)/i.test(label)) return { value: basics.name, origin: 'identity' };
   if (/first.?name|given name/i.test(text) && !/last|sur/i.test(text)) return { value: person[0], origin: 'identity' };
   if (/last.?name|surname|family name/i.test(text)) return { value: person.slice(1).join(' '), origin: 'identity' };
   if (/^(full |legal |your )?name\b/i.test(label) || /^_systemfield_name$/i.test(field.key)) return { value: basics.name, origin: 'identity' };
@@ -70,7 +72,7 @@ function resolveField(field, ctx) {
   if (/twitter|x\.com/i.test(text)) return { skip: true };
   if (/(desired|preferred|target) (work )?location|work location|office location/i.test(label)) return { value: ctx.location, origin: 'identity' };
   if (/^(current )?(location|city|where are you (based|located))|current location|city.*(state|country)/i.test(label)) return { value: ctx.location, origin: 'identity' };
-  if (/current (company|employer)|employer/i.test(label)) return ctx.currentCompany ? { value: ctx.currentCompany, origin: 'identity' } : { skip: true };
+  if (/current (company|employer)|^(company|employer)( name)?\??$/i.test(label.trim())) return ctx.currentCompany ? { value: ctx.currentCompany, origin: 'identity' } : { skip: true };
   if (/current (title|role|position)/i.test(label)) return ctx.currentTitle ? { value: ctx.currentTitle, origin: 'identity' } : { skip: true };
 
   // Standard answers: only what the owner put in answers.yaml.
