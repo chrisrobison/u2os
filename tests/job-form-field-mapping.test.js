@@ -43,6 +43,9 @@ test('a question that only mentions "employer" is not answered with the current 
     { key: 'current', label: 'Current employer' },
     { key: 'company', label: 'Company name' },
     { key: 'employer', label: 'Employer' },
+    { key: 'recent', label: 'Current or Most Recent Employer' },
+    { key: 'recentco', label: 'Most recent company' },
+    { key: 'currently', label: 'Do you currently work for a competitor of this employer?', type: 'combobox', options: ['Yes', 'No'] },
   ]);
   assert.equal(valueOf(plan, 'auth'), 'Yes', 'the owner\'s work authorization answer is used');
   assert.equal(plan.fields.find((field) => field.key === 'auth').origin, 'owner-answer');
@@ -50,7 +53,8 @@ test('a question that only mentions "employer" is not answered with the current 
   assert.ok(current, 'the fixture resume has a current employer');
   assert.notEqual(valueOf(plan, 'worked'), current, 'not the current employer');
   assert.ok(plan.unresolved.some((item) => item.key === 'worked'), 'left for the owner rather than guessed');
-  for (const key of ['current', 'company', 'employer']) assert.equal(valueOf(plan, key), current, key);
+  for (const key of ['current', 'company', 'employer', 'recent', 'recentco']) assert.equal(valueOf(plan, key), current, key);
+  assert.notEqual(valueOf(plan, 'currently'), current);
 });
 
 test('displayCompany restores the capitalization a posting uses, and falls back to a capital letter', () => {
