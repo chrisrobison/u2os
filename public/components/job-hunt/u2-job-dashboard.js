@@ -2,6 +2,7 @@ import * as api from '../../services/api.js';
 import { el } from './jh-util.js';
 import './u2-job-pipeline.js';
 import './u2-job-details.js';
+import './u2-job-submit.js';
 import './u2-job-analytics.js';
 import './u2-job-resumes.js';
 import './u2-job-interviews.js';
@@ -89,6 +90,7 @@ export class U2JobDashboard extends HTMLElement {
     this._contacts = el('u2-job-contacts');
 
     this.addEventListener('jh-select', (event) => this._select(event.detail.id));
+    this.addEventListener('jh-approve', (event) => this._approve(event.detail.id, event.target));
     this.addEventListener('jh-changed', () => this._load());
     this.addEventListener('jh-window', (event) => { this._days = event.detail.days; this._load(); });
 
@@ -102,6 +104,35 @@ export class U2JobDashboard extends HTMLElement {
         el('div', { class: 'jh-side jh-side--left' }, this._details, this._analytics),
         el('div', { class: 'jh-side jh-side--middle' }, this._interviews, this._resumes),
         el('div', { class: 'jh-side jh-side--right' }, this._tasks, this._contacts)));
+  }
+
+  /**
+   * Approve a ready application from the board. The job is fetched fresh, and the
+   * same two-step confirmation as on the details page runs inside a dialog, so
+   * nothing is sent from a single click on a card.
+   */
+  async _approve(id, opener) {
+    const title = el('h2', { id: 'jh-approve-title', class: 'jh-approve-dialog__title', text: 'Approve and submit' });
+    const close = el('button', { type: 'button', class: 'btn', text: 'Close' });
+    const body = el('div', {}, el('p', { class: 'jh-empty', text: 'Loading...' }));
+    const dialog = el('dialog', { class: 'jh-approve-dialog', 'aria-labelledby': 'jh-approve-title' }, el('div', { class: 'jh-approve-dialog__head' }, title, close), body);
+    const submit = document.createElement('u2-job-submit');
+    submit.setAttribute('standalone', '');
+    submit.addEventListener('jh-job-updated', () => this._load());
+    const closeUnlessBusy = () => { if (!submit.busy) dialog.close(); };
+    close.addEventListener('click', closeUnlessBusy);
+    dialog.addEventListener('cancel', (event) => { if (submit.busy) event.preventDefault(); });
+    dialog.addEventListener('close', () => { dialog.remove(); this._load(); if (opener?.isConnected) opener.focus(); });
+    document.body.append(dialog);
+    dialog.showModal();
+    try {
+      const job = await api.getJobHuntJob(id);
+      title.textContent = `Approve: ${job.role || 'this role'} at ${job.company}`;
+      submit.job = job;
+      body.replaceChildren(submit);
+    } catch (err) {
+      body.replaceChildren(el('p', { class: 'load-error', role: 'alert', text: `Couldn't load this job: ${err.message}` }));
+    }
   }
 
   async _load() {

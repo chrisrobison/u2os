@@ -319,3 +319,12 @@
 .jh-page__buttons { display: flex; gap: var(--space-3); margin-top: var(--space-2); flex-wrap: wrap; }
 .jh-page__submit > .btn { margin-top: var(--space-3); }
 .jh-page__danger { border-color: var(--accent-danger); color: var(--accent-danger); font-weight: 650; }
+
+/* Dashboard: approve a ready application from the board */
+.jh-card__approve { display: block; width: 100%; margin-top: var(--space-1); padding: var(--space-1) var(--space-2); font: inherit; font-size: var(--text-sm); font-weight: 650; color: var(--accent-strong); background: var(--accent-active-soft); border: var(--border-width) solid var(--accent-active); border-radius: var(--radius-sm); cursor: pointer; }
+.jh-card__approve:hover { border-color: var(--accent-strong); text-decoration: underline; }
+.jh-card__approve:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.jh-approve-dialog { width: min(40rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); padding: var(--space-4); color: var(--text-primary); background: var(--bg-card); border: var(--border-width) solid var(--border-color); border-radius: var(--radius-md); overflow: auto; }
+.jh-approve-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+.jh-approve-dialog__head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-3); margin-bottom: var(--space-2); }
+.jh-approve-dialog__title { margin: 0; font-size: var(--text-md); overflow-wrap: anywhere; }

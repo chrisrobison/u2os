@@ -69,7 +69,7 @@ test('the dashboard groups cards by stage with fit, location and timestamp, and 
   assert.equal(saved.count, 2);
   assert.deepEqual(saved.jobs.map((j) => j.company), ['Gamma', 'Beta'], 'newest first');
   assert.equal(saved.jobs[1].fit, null);
-  assert.deepEqual(dash.stages[1].jobs[0], { id: a.id, company: 'Alpha', role: 'Engineer', location: 'Oakland', fit: 88, status: 'applied', statusLine: 'Applied', timestamp: ago(5).toISOString(), companyUrl: 'https://alpha.example' });
+  assert.deepEqual(dash.stages[1].jobs[0], { id: a.id, company: 'Alpha', role: 'Engineer', location: 'Oakland', fit: 88, status: 'applied', statusLine: 'Applied', timestamp: ago(5).toISOString(), companyUrl: 'https://alpha.example', ready: false });
   assert.equal(dash.resumeVersions.length, 2, 'two distinct resumes; other kinds ignored');
   assert.equal(dash.resumeVersions[0].job.company, 'Gamma');
   const shared = dash.resumeVersions.find((v) => v.usedBy.length === 2);
@@ -77,6 +77,31 @@ test('the dashboard groups cards by stage with fit, location and timestamp, and 
   assert.equal(shared.job.company, 'Beta', 'latest job to use it');
   assert.equal(shared.file, 'one.pdf');
   store.close(); fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a card is marked ready only when its latest form application is planned and ready and the job is not already sent', () => {
+  const store = openStore(':memory:');
+  const plan = (n, over = {}) => ({ jobId: 'x', url: `https://x.test/${n}`, schemaHash: 's', fields: [], unresolved: [], blockers: [], needs: [], ready: true, planHash: String(n).repeat(64).slice(0, 64), ...over });
+  const withApp = (n, company, { status = 'planned', ready = true, jobStatus = 'qualified' } = {}) => {
+    const job = addJob(store, n, company);
+    walk(store, job.id, [[jobStatus, 3]]);
+    const app = store.addApplication(job.id, { url: `https://x.test/${n}`, status: 'planned', plan: plan(n, { ready }), idempotencyKey: `k${n}` });
+    if (status !== 'planned') store.updateApplication(app.id, { status });
+    return job;
+  };
+  withApp(1, 'Ready');
+  withApp(2, 'NotReady', { ready: false });
+  withApp(3, 'NeedsInput', { status: 'needs_input' });
+  withApp(4, 'AlreadyApplied', { jobStatus: 'applied' });
+  withApp(5, 'Uncertain', { status: 'uncertain', jobStatus: 'uncertain' });
+  addJob(store, 6, 'NoPlan');
+  // A newer attempt replaces an older ready one.
+  const replaced = withApp(7, 'Replaced');
+  store.addApplication(replaced.id, { url: 'https://x.test/7b', status: 'planned', plan: plan(7, { ready: false }), idempotencyKey: 'k7b' });
+  const cards = buildDashboard(store, { now: NOW }).stages.flatMap((stage) => stage.jobs);
+  const ready = Object.fromEntries(cards.map((entry) => [entry.company, entry.ready]));
+  assert.deepEqual(ready, { Ready: true, NotReady: false, NeedsInput: false, AlreadyApplied: false, Replaced: false });
+  assert.ok(cards.every((entry) => entry.company === 'Ready' || entry.ready === false), 'nothing else is ready (NoPlan and Uncertain are not on the board at all)');
 });
 
 test('moving a job validates the transition, records the event and is idempotent', () => {

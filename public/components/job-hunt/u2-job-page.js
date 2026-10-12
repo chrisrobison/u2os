@@ -1,6 +1,7 @@
 import * as api from '../../services/api.js';
 import { el, monogram, safeUrl, titleCase, formatStamp, emptyNote } from './jh-util.js';
 import { fitRing } from './u2-job-details.js';
+import { answersTable } from './u2-job-submit.js';
 
 // #/job-hunt/jobs/<id>: everything U2OS knows about one job on one page, and,
 // when the job needs the owner, what is needed. Read only: the owner's moves
@@ -8,7 +9,6 @@ import { fitRing } from './u2-job-details.js';
 
 const JOB_ID = /^job_[0-9a-f]{16}$/;
 const section = (title, ...body) => el('section', { class: 'jh-page__section' }, el('h3', { class: 'jh-section__title', text: title }), ...body);
-const answersTable = (plan) => el('table', { class: 'jh-page__table' }, el('tbody', {}, plan.fields.map((field) => el('tr', {}, el('th', { scope: 'row', text: `${field.label}${field.required ? ' *' : ''}` }), el('td', { text: field.file ? `[file] ${field.file}` : String(field.value ?? '') })))));
 const list = (items, className = 'jh-list') => el('ul', { class: className }, items.map((item) => el('li', { text: item })));
 
 export class U2JobPage extends HTMLElement {
@@ -20,8 +20,9 @@ export class U2JobPage extends HTMLElement {
     this._seq = 0;
     this._busy = false;
     this._notice = null;
-    this._confirming = false;
-    this._submitNotice = null;
+    // Kept across renders so a submit's progress and result are not lost when the page redraws.
+    this._submitEl = document.createElement('u2-job-submit');
+    this._submitEl.addEventListener('jh-job-updated', (event) => { this._job = event.detail.job; this._render(); });
   }
 
   /** The job id comes from the route: #/job-hunt/jobs/<id>. */
@@ -70,7 +71,7 @@ export class U2JobPage extends HTMLElement {
           el('div', { class: 'jh-details__line' }, el('span', { class: 'jh-tag', text: titleCase(job.status) }), where ? ` ${where}` : ''),
           links.length ? el('div', { class: 'jh-details__line' }, links.map(([label, url]) => el('a', { class: 'jh-link', href: url, target: '_blank', rel: 'noopener noreferrer', text: `${label} ↗` }))) : null),
         fitRing(job.score, job.score?.label)),
-      this._submitBox(job),
+      this._submitSlot(job),
       this._attention(job),
       this._posting(job),
       this._fit(job),
@@ -81,60 +82,9 @@ export class U2JobPage extends HTMLElement {
       this._history(job));
   }
 
-  /** A planned, ready application can be approved and sent from here, after a second, explicit click. */
-  _submitBox(job) {
-    const attempt = job.applications?.[0];
-    if (!attempt || attempt.status !== 'planned' || !attempt.plan.ready) {
-      // The box goes away once the application is sent; its result stays visible.
-      return this._submitNotice ? el('p', { class: this._submitNotice.error ? 'load-error' : 'jh-page__ok', role: this._submitNotice.error ? 'alert' : 'status', 'data-submit-notice': '', text: this._submitNotice.text }) : null;
-    }
-    const rejected = job.reviews?.[0]?.decision === 'reject' ? job.reviews[0] : null;
-    const blocking = (rejected?.concerns ?? []).filter((concern) => concern.severity === 'blocking').map((concern) => concern.text);
-    const url = safeUrl(attempt.url);
-    const box = el('section', { class: 'jh-page__submit', role: 'region', 'aria-label': 'Ready to submit', 'data-submit-box': '' },
-      el('h3', { class: 'jh-page__attention-title', text: 'Ready to submit' }),
-      el('p', { text: `The form for ${job.role || 'this role'} at ${job.company} is planned. Check what will be sent:` }),
-      attempt.plan.fields.length ? answersTable(attempt.plan) : null,
-      url ? el('p', {}, el('a', { class: 'jh-link', href: url, target: '_blank', rel: 'noopener noreferrer', text: 'The application form ↗' })) : null,
-      rejected ? el('div', { class: 'jh-page__override', 'data-override': '' },
-        el('strong', { text: `The review agent said no (${rejected.kind}).` }),
-        blocking.length ? list(blocking) : (rejected.notes ? el('p', { text: rejected.notes }) : null),
-        el('p', { text: 'Approving here overrides that judgement. The rules (limits, duplicates, blocklist) still apply.' })) : null);
-    if (this._confirming) {
-      const yes = el('button', { type: 'button', class: 'btn jh-page__danger', 'data-confirm-submit': '', text: 'Yes, submit this application' });
-      const no = el('button', { type: 'button', class: 'btn', text: 'Cancel' });
-      yes.disabled = this._busy; no.disabled = this._busy;
-      yes.addEventListener('click', () => this._submit(job, attempt));
-      no.addEventListener('click', () => { this._confirming = false; this._render(); });
-      box.append(el('p', { class: 'jh-page__action', text: `This sends your application to ${job.company} now, from a browser window on this computer. It cannot be undone.` }), el('div', { class: 'jh-page__buttons' }, yes, no));
-    } else {
-      const start = el('button', { type: 'button', class: 'btn', 'data-approve-submit': '', text: 'Approve and submit…' });
-      start.disabled = this._busy;
-      start.addEventListener('click', () => { this._confirming = true; this._submitNotice = null; this._render(); });
-      box.append(start);
-    }
-    if (this._submitNotice) box.append(el('p', { class: this._submitNotice.error ? 'load-error' : 'jh-page__ok', role: this._submitNotice.error ? 'alert' : 'status', text: this._submitNotice.text }));
-    return box;
-  }
-
-  async _submit(job, attempt) {
-    this._busy = true; this._submitNotice = { text: 'Submitting... a browser window opens on this computer. This can take a minute.' }; this._render();
-    try {
-      const result = await api.approveAndSubmitJobHuntJob(job.id, attempt.planHash);
-      if (result.job) this._job = result.job;
-      this._confirming = false;
-      const messages = {
-        submitted: { text: `Submitted to ${job.company}. The board showed its confirmation.` },
-        unconfirmed: { error: true, text: 'The form was sent but the board showed no confirmation. Check your email before anything else: U2OS will not send it again.' },
-        failed: { error: true, text: `The board showed errors and nothing was sent${result.errors?.length ? `: ${result.errors.join('; ')}` : '.'}` },
-      };
-      this._submitNotice = messages[result.status] ?? { error: result.status !== 'dry_run', text: `Result: ${result.status}${result.reason ? ` (${result.reason})` : ''}.` };
-    } catch (error) {
-      this._confirming = false;
-      this._submitNotice = { error: true, text: error.message };
-    }
-    this._busy = false;
-    this._render();
+  _submitSlot(job) {
+    this._submitEl.job = job;
+    return this._submitEl;
   }
 
   _attention(job) {
