@@ -312,3 +312,10 @@
 .jh-input { width: 100%; padding: var(--space-2); font: inherit; color: var(--text-primary); background: var(--bg-input); border: var(--border-width) solid var(--border-color); border-radius: var(--radius-sm); }
 .jh-input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .jh-page__answers .btn { align-self: flex-start; }
+
+.jh-page__submit { margin-top: var(--space-4); padding: var(--space-3) var(--space-4); border: var(--border-width) solid var(--accent-active); border-radius: var(--radius-md); background: var(--accent-active-soft); }
+.jh-page__override { margin-top: var(--space-3); padding: var(--space-2) var(--space-3); border-left: 3px solid var(--accent-pending); background: var(--accent-pending-soft); }
+.jh-page__override p { margin: var(--space-1) 0 0; }
+.jh-page__buttons { display: flex; gap: var(--space-3); margin-top: var(--space-2); flex-wrap: wrap; }
+.jh-page__submit > .btn { margin-top: var(--space-3); }
+.jh-page__danger { border-color: var(--accent-danger); color: var(--accent-danger); font-weight: 650; }

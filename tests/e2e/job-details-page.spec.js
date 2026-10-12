@@ -124,3 +124,61 @@ test('unanswered questions can be answered on the page, and the page updates aft
     await stopDedicatedServer(null, dedicated);
   }
 });
+
+test('a planned application can be approved and submitted from the page, after a second explicit click', async ({ browser }) => {
+  const dedicated = await startDedicatedServer();
+  const context = await browser.newContext();
+  try {
+    await createOwner(dedicated.baseURL, PASSPHRASE);
+    const page = await context.newPage();
+    const ready = JSON.parse(JSON.stringify(detail));
+    ready.status = 'materials_generated';
+    ready.applications[0] = { ...ready.applications[0], status: 'planned', planHash: 'abc123', plan: { ...ready.applications[0].plan, ready: true, unresolved: [] } };
+    ready.attention = { needsYou: false, reasons: [] };
+    const submitted = JSON.parse(JSON.stringify(ready));
+    submitted.status = 'applied';
+    submitted.applications[0].status = 'submitted';
+    let calls = [];
+    await page.route(`**/api/job-hunt/jobs/${ID}`, (route) => route.fulfill({ json: calls.length && calls.at(-1).ok ? submitted : ready }));
+    await page.route(`**/api/job-hunt/jobs/${ID}/approve-and-submit`, async (route) => {
+      const body = route.request().postDataJSON();
+      const ok = calls.length > 0;
+      calls.push({ body, ok });
+      if (!ok) return route.fulfill({ status: 409, json: { error: 'Refused by the checks: not_on_blocklist', code: 'CHECKS_FAILED' } });
+      return route.fulfill({ json: { status: 'submitted', company: 'FormCo', role: 'Staff Engineer', job: submitted } });
+    });
+    await page.goto(`${dedicated.baseURL}/#/job-hunt/jobs/${ID}`);
+    await page.locator('input[name="passphrase"]').fill(PASSPHRASE);
+    await page.locator('form button[type="submit"]').click();
+
+    const box = page.locator('u2-job-page [data-submit-box]');
+    await expect(box).toContainText('Ready to submit');
+    await expect(box).toContainText('First Name');
+    await expect(box.locator('[data-override]')).toContainText('The review agent said no');
+    await expect(box.locator('[data-override]')).toContainText('Clearance unanswered');
+    expect(calls).toHaveLength(0);
+
+    // The first click only asks; it does not send anything.
+    await box.getByRole('button', { name: 'Approve and submit…' }).click();
+    await expect(box).toContainText('It cannot be undone.');
+    expect(calls).toHaveLength(0);
+    await box.getByRole('button', { name: 'Cancel' }).click();
+    await expect(box.getByRole('button', { name: 'Approve and submit…' })).toBeVisible();
+
+    // A refusal from the server is shown and nothing changes.
+    await box.getByRole('button', { name: 'Approve and submit…' }).click();
+    await box.getByRole('button', { name: 'Yes, submit this application' }).click();
+    await expect(box.locator('[role="alert"]')).toContainText('Refused by the checks: not_on_blocklist');
+    expect(calls[0].body).toEqual({ planHash: 'abc123', confirm: true });
+
+    // The second try succeeds, and the box goes away because the application is no longer planned.
+    await box.getByRole('button', { name: 'Approve and submit…' }).click();
+    await box.getByRole('button', { name: 'Yes, submit this application' }).click();
+    await expect(page.locator('u2-job-page [data-submit-box]')).toHaveCount(0);
+    await expect(page.locator('u2-job-page [data-submit-notice]')).toHaveText('Submitted to FormCo. The board showed its confirmation.');
+    expect(calls).toHaveLength(2);
+  } finally {
+    await context.close();
+    await stopDedicatedServer(null, dedicated);
+  }
+});

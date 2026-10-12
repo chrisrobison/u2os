@@ -54,7 +54,7 @@ function applicationView(entry, jobScreensDir) {
     if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) shots.push(relative.split(path.sep).join('/'));
   }
   return {
-    id: entry.id, url: entry.url, status: entry.status, createdAt: entry.createdAt, updatedAt: entry.updatedAt,
+    id: entry.id, url: entry.url, status: entry.status, planHash: entry.planHash, createdAt: entry.createdAt, updatedAt: entry.updatedAt,
     plan: {
       ready: plan.ready === true, needs: plan.needs ?? [], blockers: plan.blockers ?? [], unresolved: plan.unresolved ?? [],
       fields: (plan.fields ?? []).map((field) => ({ label: field.label, required: field.required === true, origin: field.origin, ...(field.file ? { file: field.fileName ?? field.file } : { value: field.value }) })),
