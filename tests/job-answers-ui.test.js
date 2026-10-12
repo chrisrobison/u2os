@@ -94,3 +94,11 @@ test('the change is logged with question text only, never the answer', (t) => {
   assert.ok(!JSON.stringify(entry).includes('Secret-clearance-detail'));
   assert.equal(customFragment('  A   B '), 'a b');
 });
+
+test('demographics are validated and loaded', (t) => {
+  const dir = vault(t, 'demographics:\n  gender: Male\n  race: White\n  pronouns: He/him\n  veteran: false\n  disability: false\n');
+  assert.deepEqual(loadAnswers(dir).demographics, { gender: 'Male', race: 'White', pronouns: 'He/him', veteran: false, disability: false });
+  assert.deepEqual(loadAnswers(vault(t, 'start_date: now\n')).demographics, {});
+  assert.throws(() => loadAnswers(vault(t, 'demographics:\n  veteran: "no"\n')), /veteran must be true or false/);
+  assert.throws(() => loadAnswers(vault(t, 'demographics:\n  religion: x\n')), /not a known answer/);
+});

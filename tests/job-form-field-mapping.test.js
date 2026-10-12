@@ -92,3 +92,43 @@ test('the owner\'s own answer to the exact question settles a sensitive one; a s
   const none = await withAnswers({});
   assert.equal(none.unresolved.length, 2);
 });
+
+// #583: the owner's demographics answers are used when the form offers a matching option, and never invented.
+async function eeoPlan(fields, demographics) {
+  const schema = { hasForm: true, blockers: {}, submitLabel: 'Submit', fields: fields.map((field) => ({ type: 'select', required: true, filled: false, ...field })) };
+  return buildApplicationPlan({ url: 'https://x.test/apply', schema, job, candidate: { ...candidate, answers: { ...ANSWERS, demographics } }, materials: files, now: NOW });
+}
+const DEMO = { gender: 'Male', race: 'White', pronouns: 'He/him', veteran: false, disability: false };
+const DECLINE_OPT = 'I do not wish to answer';
+
+test('demographic questions use the owner\'s answers when an option matches', async () => {
+  const plan = await eeoPlan([
+    { key: 'g', label: 'Gender', options: ['Male', 'Female', 'Non-binary', DECLINE_OPT] },
+    { key: 'r', label: 'Race', options: ['Asian', 'Black or African American', 'White', 'Two or More Races', DECLINE_OPT] },
+    { key: 'r2', label: 'Race/Ethnicity', options: ['White (Not Hispanic or Latino)', 'Asian (Not Hispanic or Latino)', DECLINE_OPT] },
+    { key: 'p', label: 'What are your pronouns?', options: ['She/her', 'He/him', 'They/them', DECLINE_OPT] },
+    { key: 'v', label: 'Veteran Status', options: ['I identify as one or more of the classifications of protected veteran', 'I am not a protected veteran', DECLINE_OPT] },
+    { key: 'd', label: 'Do you have a disability?', options: ['Yes, I have a disability', 'No, I do not have a disability', DECLINE_OPT] },
+    { key: 'free', label: 'Gender', type: 'text', options: [] },
+  ], DEMO);
+  assert.equal(valueOf(plan, 'g'), 'Male');
+  assert.equal(valueOf(plan, 'r'), 'White');
+  assert.equal(valueOf(plan, 'r2'), 'White (Not Hispanic or Latino)');
+  assert.equal(valueOf(plan, 'p'), 'He/him');
+  assert.equal(valueOf(plan, 'v'), 'I am not a protected veteran');
+  assert.equal(valueOf(plan, 'd'), 'No, I do not have a disability');
+  assert.equal(valueOf(plan, 'free'), 'Male');
+});
+
+test('with no answer, or no matching option, or other EEO questions, the decline option is used as before', async () => {
+  const none = await eeoPlan([{ key: 'g', label: 'Gender', options: ['Male', 'Female', DECLINE_OPT] }], {});
+  assert.equal(valueOf(none, 'g'), DECLINE_OPT);
+  const nomatch = await eeoPlan([{ key: 'r', label: 'Race', options: ['Asian', 'Black', DECLINE_OPT] }], DEMO);
+  assert.equal(valueOf(nomatch, 'r'), DECLINE_OPT);
+  const other = await eeoPlan([
+    { key: 'o', label: 'Sexual orientation', options: ['Heterosexual', 'Gay', DECLINE_OPT] },
+    { key: 't', label: 'Do you identify as transgender?', options: ['Yes', 'No', DECLINE_OPT] },
+    { key: 'h', label: 'Are you Hispanic or Latino?', options: ['Yes', 'No', DECLINE_OPT] },
+  ], DEMO);
+  for (const key of ['o', 't', 'h']) assert.equal(valueOf(other, key), DECLINE_OPT, key);
+});
