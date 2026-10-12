@@ -139,3 +139,51 @@ test('autopilot API: status shows the safe defaults, the owner can switch it, an
   assert.equal(status.running, false);
   assert.ok(fs.existsSync(path.join(vault, 'job-hunt')));
 });
+
+test('Apply via Email proposes through the gate (Gmail when Apple Mail is off) even below the score threshold; Prepare Email needs the Apple add-on', async (t) => {
+  const { vault, get, post } = await fixture(t);
+  const store = openStore(huntDbPath(vault));
+  const { job } = store.upsertSighting({ source: 'hackernews', sourceKey: 'hackernews:8#0', company: 'Kite', role: 'Engineer', rawText: 'Kite', applicationUrls: [], contactEmails: ['j@kite.example'], author: 'b' });
+  store.saveScore(job.id, { ...SCORE, score: 60, label: 'possible' });
+  const file = path.join(vault, 'kite.json');
+  const ref = fs.readdirSync(path.join(vault, 'outbox')).map((hash) => `outbox/${hash}/Pat_Resume.pdf`)[0];
+  fs.writeFileSync(file, JSON.stringify({ to: 'j@kite.example', subject: 'Kite', text: 'T', attachments: [ref], needsInput: [] }));
+  store.addArtifact(job.id, 'email_json', file);
+  store.close();
+
+  assert.equal((await post(`/api/job-hunt/jobs/${job.id}/email`, { mode: 'bogus' })).status, 400);
+  const draft = await post(`/api/job-hunt/jobs/${job.id}/email`, { mode: 'draft' });
+  assert.equal(draft.status, 409);
+  assert.match((await draft.json()).error, /Enable the Apple add-on/);
+
+  const sent = await post(`/api/job-hunt/jobs/${job.id}/email`, { mode: 'send' });
+  const body = await sent.json();
+  assert.equal(sent.status, 200, JSON.stringify(body));
+  assert.equal(body.via, 'gmail');
+  assert.equal(body.status, 'pending', 'the gate still asks the owner');
+  assert.equal(body.job.emails[0].status, 'proposed');
+  assert.equal(body.job.sendRoutes.gmail, true);
+  assert.equal((await post(`/api/job-hunt/jobs/${job.id}/email`, { mode: 'send' })).status, 409, 'never proposed twice');
+  assert.equal((await (await get(`/api/job-hunt/jobs/${job.id}`)).json()).sendRoutes.apple_mail, false);
+});
+
+test('materials are written on demand, and without a model the owner is told so; a listing with no address or link is explained', async (t) => {
+  const { vault, post } = await fixture(t);
+  const store = openStore(huntDbPath(vault));
+  const mk = (n, over) => { const { job } = store.upsertSighting({ source: 'hackernews', sourceKey: `hackernews:${n}#0`, company: `Co${n}`, role: 'Engineer', rawText: 'x', applicationUrls: [], contactEmails: [], author: 'b', ...over }); store.saveScore(job.id, SCORE); return job; };
+  const withEmail = mk(20, { contactEmails: ['a@co20.example'] });
+  const bare = mk(21, {});
+  store.close();
+  const noModel = await post(`/api/job-hunt/jobs/${withEmail.id}/email`, { mode: 'send' });
+  assert.equal(noModel.status, 409);
+  assert.match((await noModel.json()).error, /No model is available|Connect one/);
+  assert.match((await (await post(`/api/job-hunt/jobs/${bare.id}/email`, { mode: 'send' })).json()).error, /no email address/);
+  assert.match((await (await post(`/api/job-hunt/jobs/${bare.id}/plan`)).json()).error, /no application link/);
+});
+
+test('Reject moves a lead that never reached the pipeline to Rejected', async (t) => {
+  const { ready, post, get } = await fixture(t);
+  const moved = await post(`/api/job-hunt/jobs/${ready.id}/status`, { status: 'rejected' });
+  assert.equal(moved.status, 200);
+  assert.equal((await (await get(`/api/job-hunt/jobs/${ready.id}`)).json()).status, 'rejected');
+});

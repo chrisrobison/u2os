@@ -166,7 +166,8 @@ const PIPELINE = ['qualified', 'materials_generated', 'applied', 'contacted', 'f
 export const MOVE_RULES = {
   screening: ['applied', 'contacted', 'followup_due', 'uncertain'],
   offer: ['applied', 'contacted', 'followup_due', 'screening', 'interview', 'uncertain'],
-  rejected: PIPELINE,
+  // "Reject" also covers a lead the owner turns down before it ever reached the pipeline.
+  rejected: [...PIPELINE, 'discovered', 'scored', 'researching', 'error'],
 };
 
 /**

@@ -12,6 +12,8 @@ import { jobView, listJobViews } from '../../../mcp/jobs/hunt/view.js';
 import { addCustomAnswers } from '../../../mcp/jobs/hunt/candidate/answers.js';
 import { ownerApproveAndSubmit, withLock } from '../../../mcp/jobs/hunt/act.js';
 import { planJob } from '../../jobhunt/replan.js';
+import { ensureMaterials } from '../../jobhunt/ensure-materials.js';
+import { chooseApplyUrl } from '../../../mcp/jobs/hunt/applications/form/submit.js';
 import { JOB_HUNT_DIR } from '../../../mcp/jobs/profile.js';
 import { loadPreferences, loadResume } from '../../../mcp/jobs/hunt/candidate/profile.js';
 import { setAutopilotSwitches } from '../../../mcp/jobs/hunt/autopilot/config.js';
@@ -45,7 +47,7 @@ export function reconcileOutcomes({ followUpDays = 5, now = new Date() } = {}) {
   return withStore((store) => reconcileEmails({ store, lookup: (id) => getAgentAction(id), followUpDays, now }));
 }
 
-export function registerJobHuntRoutes(router, { agent, toolRegistry, autopilot = null }) {
+export function registerJobHuntRoutes(router, { agent, toolRegistry, autopilot = null, jobLlm = null }) {
   if (autopilot) {
     router.get('/api/job-hunt/autopilot', async (req, res) => sendJson(res, 200, autopilot.status()));
     // Owner-only. Switching to live is the owner's decision, the same as editing autopilot.yaml.
@@ -127,7 +129,7 @@ export function registerJobHuntRoutes(router, { agent, toolRegistry, autopilot =
     reconcileOutcomes();
     const view = withStore((store) => { const job = store.getJob(req.params.id); return job ? jobView(store, job, { minimumScore: preferences().minimum_score, detail: true, screensDir: screensDir() }) : null; });
     if (!view) return sendJson(res, 404, { error: 'No such job' });
-    sendJson(res, 200, view);
+    sendJson(res, 200, { ...view, sendRoutes: availableRoutes(toolRegistry) });
   });
 
   // The owner answers questions the planner could not. The questions come from the job's latest plan (a client cannot invent
@@ -161,7 +163,7 @@ export function registerJobHuntRoutes(router, { agent, toolRegistry, autopilot =
           let replanned = null; let replanError = null;
           try { replanned = await planJob({ vaultDir, store, job }); } catch (error) { replanError = String(error.message).slice(0, 300); }
           const fresh = store.getJob(job.id);
-          return { saved, status: replanned?.status ?? application.status, unresolved: (replanned?.plan ?? application.plan).unresolved.length, ...(replanError ? { replanError } : {}), job: jobView(store, fresh, { minimumScore: preferences().minimum_score, detail: true, screensDir: screensDir() }) };
+          return { saved, status: replanned?.status ?? application.status, unresolved: (replanned?.plan ?? application.plan).unresolved.length, ...(replanError ? { replanError } : {}), job: { ...jobView(store, fresh, { minimumScore: preferences().minimum_score, detail: true, screensDir: screensDir() }), sendRoutes: availableRoutes(toolRegistry) } };
         } finally { store.close(); }
       });
       sendJson(res, 200, body);
@@ -169,6 +171,67 @@ export function registerJobHuntRoutes(router, { agent, toolRegistry, autopilot =
       const status = { BAD_INPUT: 400, UNKNOWN_JOB: 404, CONFLICT: 409, IN_PROGRESS: 409 }[error.code];
       if (!status) return sendJson(res, 500, { error: String(error.message).slice(0, 300) });
       sendJson(res, status, { error: error.message });
+    }
+  });
+
+  // The owner pressed "Prepare Email" (mode draft: a draft in Mail's Drafts, nothing sent) or "Apply via Email" (mode send).
+  // Writes the job's materials first when they do not exist yet. Both go through the same gate as every other action: a
+  // policy that wants approval shows up as `pending`. The score threshold is the owner's call here; duplicates still block.
+  router.post('/api/job-hunt/jobs/:id/email', async (req, res) => {
+    if (!JOB_ID.test(req.params.id)) return sendJson(res, 400, { error: 'Invalid job id' });
+    const mode = req.body?.mode;
+    if (!['draft', 'send'].includes(mode)) return sendJson(res, 400, { error: 'mode must be draft or send' });
+    const routes = availableRoutes(toolRegistry);
+    const via = mode === 'draft' ? 'apple_mail_draft' : (routes.apple_mail ? 'apple_mail' : 'gmail');
+    const tool = SEND_TOOLS[via];
+    if (!routes[via]) return sendJson(res, 409, { error: mode === 'draft' ? `${tool} is not available. Enable the Apple add-on on the Add-ons page (macOS only), then try again.` : 'No email route is available: enable the Apple add-on or connect Gmail.' });
+    const vaultDir = getVaultDir();
+    let resume;
+    try { resume = loadResume(vaultDir); } catch (error) { return sendJson(res, 409, { error: error.message }); }
+    try {
+      const body = await withLock(vaultDir, req.params.id, async () => {
+        const store = openStore(huntDbPath(vaultDir));
+        try {
+          const job = store.getJob(req.params.id);
+          if (!job) throw Object.assign(new Error('No such job'), { code: 'UNKNOWN_JOB' });
+          if (!job.contactEmails.length && !store.getArtifacts(job.id).email_json) throw Object.assign(new Error('This listing has no email address. Use Apply Online, or add a contact.'), { code: 'CONFLICT' });
+          await ensureMaterials({ vaultDir, store, job, llm: jobLlm });
+          const result = await proposeApplicationEmail({
+            store, job: store.getJob(job.id), candidateEmail: resume.basics.email, minimumScore: preferences().minimum_score, tool, force: true,
+            propose: (proposal) => agent.evaluateAndMaybeExecute({ tool: proposal.tool, arguments: proposal.arguments, requestedBy: 'owner', requestText: proposal.requestText, reasoningSummary: proposal.reasoning, correlationId: newId('corr'), actor: { type: 'user', id: 'user' } }),
+          });
+          const fresh = store.getJob(job.id);
+          return { mode, via, status: result.outcome.status, actionId: result.outcome.id, reason: result.outcome.reason ?? null, email: { id: result.email.id, to: result.email.to, status: result.email.status }, job: { ...jobView(store, fresh, { minimumScore: preferences().minimum_score, detail: true, screensDir: screensDir() }), sendRoutes: routes } };
+        } finally { store.close(); }
+      });
+      sendJson(res, 200, body);
+    } catch (error) {
+      const status = { BAD_INPUT: 400, UNKNOWN_JOB: 404, CONFLICT: 409, IN_PROGRESS: 409, NO_MODEL: 409, BLOCKED: 409 }[error.code];
+      sendJson(res, status ?? 500, { error: String(error.message).slice(0, 400) });
+    }
+  });
+
+  // "Apply Online": reads the job's application form and plans every answer. Submits nothing; the owner's two-step approval does that.
+  router.post('/api/job-hunt/jobs/:id/plan', async (req, res) => {
+    if (!JOB_ID.test(req.params.id)) return sendJson(res, 400, { error: 'Invalid job id' });
+    const vaultDir = getVaultDir();
+    try {
+      const body = await withLock(vaultDir, req.params.id, async () => {
+        const store = openStore(huntDbPath(vaultDir));
+        try {
+          const job = store.getJob(req.params.id);
+          if (!job) throw Object.assign(new Error('No such job'), { code: 'UNKNOWN_JOB' });
+          const url = chooseApplyUrl(job);
+          if (!url) throw Object.assign(new Error('This listing has no application link. Use Apply via Email.'), { code: 'CONFLICT' });
+          await ensureMaterials({ vaultDir, store, job, need: 'form', llm: jobLlm });
+          const application = await planJob({ vaultDir, store, job: store.getJob(job.id), llm: jobLlm, url });
+          return { status: application.status, ready: application.plan?.ready === true, unresolved: application.plan?.unresolved?.length ?? 0, job: { ...jobView(store, store.getJob(job.id), { minimumScore: preferences().minimum_score, detail: true, screensDir: screensDir() }), sendRoutes: availableRoutes(toolRegistry) } };
+        } finally { store.close(); }
+      });
+      sendJson(res, 200, body);
+    } catch (error) {
+      const status = { UNKNOWN_JOB: 404, CONFLICT: 409, IN_PROGRESS: 409, NO_MODEL: 409 }[error.code];
+      sendJson(res, status ?? 500, { error: String(error.message).slice(0, 400) });
     }
   });
 
@@ -181,7 +244,7 @@ export function registerJobHuntRoutes(router, { agent, toolRegistry, autopilot =
     const vaultDir = getVaultDir();
     try {
       const outcome = await ownerApproveAndSubmit({ vaultDir, jobId: req.params.id, planHash: req.body.planHash });
-      const job = withStore((store) => { const found = store.getJob(req.params.id); return found ? jobView(store, found, { minimumScore: preferences().minimum_score, detail: true, screensDir: screensDir() }) : null; });
+      const job = withStore((store) => { const found = store.getJob(req.params.id); return found ? { ...jobView(store, found, { minimumScore: preferences().minimum_score, detail: true, screensDir: screensDir() }), sendRoutes: availableRoutes(toolRegistry) } : null; });
       sendJson(res, 200, { ...outcome, job });
     } catch (error) {
       const status = { UNKNOWN_JOB: 404, NOT_READY: 409, STALE_PLAN: 409, CHECKS_FAILED: 409, IN_PROGRESS: 409, NOT_APPROVED: 409, REFUSED: 409, BLOCKED: 409 }[error.code];
