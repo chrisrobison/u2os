@@ -39,7 +39,7 @@ async function launchKeptBrowser(env) {
   const executable = env.JOBS_BROWSER_PATH || playwright.chromium.executablePath();
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'u2-form-'));
   const port = await new Promise((resolve, reject) => { const server = net.createServer(); server.listen(0, '127.0.0.1', () => { const { port: free } = server.address(); server.close(() => resolve(free)); }); server.on('error', reject); });
-  const child = spawn(executable, [`--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', ...(env.JOBS_FORCE_HEADLESS === '1' ? ['--headless=new'] : []), 'about:blank'], { detached: true, stdio: 'ignore' });
+  const child = spawn(executable, [`--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', ...(env.JOBS_FORCE_HEADLESS === '1' ? ['--headless=new'] : []), ...(process.getuid?.() === 0 || env.CI ? ['--no-sandbox'] : []), 'about:blank'], { detached: true, stdio: 'ignore' });
   child.unref();
   const endpoint = `http://127.0.0.1:${port}`;
   for (let attempt = 0; attempt < 50; attempt += 1) {
