@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'js-yaml';
 import { JOB_HUNT_DIR } from '../../profile.js';
+import { writeConfigFile } from '../../../../server/vault/config-log.js';
 import { driverNames } from '../applications/form/driver.js';
 
 // job-hunt/autopilot.yaml: how the autonomous job hunter behaves. Everything
@@ -90,7 +91,7 @@ export function loadAutopilotConfig(vaultDir) {
  * (Comments in the file are not preserved.) Only these two keys can be set
  * this way: limits and allowances are edited in the file by the owner.
  */
-export function setAutopilotSwitches(vaultDir, { enabled, mode }) {
+export function setAutopilotSwitches(vaultDir, { enabled, mode }, { channel = 'api' } = {}) {
   if (enabled !== undefined && typeof enabled !== 'boolean') throw new Error('enabled must be true or false');
   if (mode !== undefined && !['dry_run', 'live'].includes(mode)) throw new Error('mode must be dry_run or live');
   let data = {};
@@ -98,7 +99,6 @@ export function setAutopilotSwitches(vaultDir, { enabled, mode }) {
   if (typeof data !== 'object' || Array.isArray(data)) data = {};
   if (enabled !== undefined) data.enabled = enabled;
   if (mode !== undefined) data.mode = mode;
-  fs.mkdirSync(path.dirname(autopilotPath(vaultDir)), { recursive: true });
-  fs.writeFileSync(autopilotPath(vaultDir), `# Autopilot settings (docs/job-hunt.md). Edit freely; the app only ever changes enabled and mode.\n${yaml.dump(data, { lineWidth: 120 })}`, { mode: 0o600 });
+  writeConfigFile(vaultDir, 'job-hunt/autopilot.yaml', `# Autopilot settings (docs/job-hunt.md). Edit freely; the app only ever changes enabled and mode.\n${yaml.dump(data, { lineWidth: 120 })}`, { channel });
   return loadAutopilotConfig(vaultDir);
 }

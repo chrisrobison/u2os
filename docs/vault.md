@@ -135,6 +135,8 @@ It's your own history, readable with any tool and kept with the rest of your dig
 {"ts":"2026-09-28T07:00:09.884Z","type":"agent.action.completed","source":"agent","subject":{"type":"agent_action","id":"act_…"},"correlationId":"corr_…","eventId":"evt_…","data":{"tool":"notifications.send"}}
 ```
 
+**Configuration changes.** Every change to a file that decides what U2OS may do for you is journaled as `config.changed`: `policies.yaml`, `mcp.yaml`, `addons.yaml`, `coding-agents.yaml`, `job-hunt/autopilot.yaml`, `job-hunt/models.yaml` and `job-hunt/answers.yaml`. The entry names the file, the keys that changed with their old and new values, and the channel: `api` (the app and its API), `cli` (`npm run u2 -- ...`) or `external` (an edit made any other way, such as a text editor or another tool). Edits outside U2OS are found by comparing each file with a snapshot (`journal/.config-snapshot.json`) at server start and once a minute; the first check only takes the baseline. Values that look like credentials are shown as `[redacted]`, and `answers.yaml` records key names only. The journal cannot say *who* made an external edit, only that it was not U2OS.
+
 Entries hold types, identifiers, timestamps and a few metadata fields (tool, routine, key names, error codes). **They never hold** message bodies, action arguments, memory values, or model or provider text. Look up the detail by ID in U2OS's Activity, Operations and **Why?** views. Raw connector observations such as every synced email are not journaled. The journal is append-only; U2OS never rewrites it. If it cannot be written, events still flow normally and a warning is logged once.
 
 ## Moving existing memory into the vault

@@ -105,6 +105,7 @@ export class U2JobHunt extends HTMLElement {
       : '<button type="button" class="btn" data-ap="live" ' + (this._busy ? 'disabled' : '') + '>Go live...</button>'}
         <button type="button" class="btn" data-ap="run" ${this._busy || a.running ? 'disabled' : ''}>${a.running ? 'Running...' : 'Run a cycle now'}</button>
       </div>
+      ${a.lastChange ? `<div class="trigger-row__meta" data-ap-last-change>Last changed ${escapeHtml(formatDateTime(a.lastChange.at))} ${a.lastChange.channel === 'external' ? 'by an edit outside U2OS' : `from the ${a.lastChange.channel === 'cli' ? 'command line' : 'app'}`}: ${escapeHtml(a.lastChange.changes.map((change) => `${change.key} ${change.from ?? '(unset)'} → ${change.to ?? '(removed)'}`).join(', '))}.</div>` : ''}
       ${report?.llm ? `<div class="trigger-row__meta">Model calls last cycle: ${report.llm.fastConfigured ? `${report.llm.fast} local (free), ` : ''}${report.llm.quality} ${report.llm.fastConfigured ? 'cloud' : 'model'}.</div>` : ''}
       ${report ? `<div class="trigger-row__meta">Last cycle ${escapeHtml(formatDateTime(report.finishedAt || report.startedAt))} (${escapeHtml(report.mode)}): ${Object.entries(report.steps || {}).map(([name, step]) => `${name} ${step.error ? 'failed' : escapeHtml(Object.values(step).filter((v) => typeof v === 'number').join('/') || 'ok')}`).join(' · ')}</div>
         ${report.actions?.length ? `<ul>${report.actions.slice(0, 8).map((item) => `<li>${escapeHtml(item.job)}: ${escapeHtml(item.result)}</li>`).join('')}</ul>` : ''}

@@ -255,7 +255,7 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
           return 0;
         }
         if (['on', 'off', 'live', 'dry-run'].includes(action)) {
-          const config = setAutopilotSwitches(vaultDir, action === 'on' ? { enabled: true } : action === 'off' ? { enabled: false } : action === 'live' ? { enabled: true, mode: 'live' } : { mode: 'dry_run' });
+          const config = setAutopilotSwitches(vaultDir, action === 'on' ? { enabled: true } : action === 'off' ? { enabled: false } : action === 'live' ? { enabled: true, mode: 'live' } : { mode: 'dry_run' }, { channel: 'cli' });
           out.log(`Autopilot: ${config.enabled ? 'on' : 'off'}, ${config.mode === 'live' ? 'LIVE (it sends and submits)' : 'dry run (it sends nothing)'}`);
           return 0;
         }

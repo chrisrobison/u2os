@@ -142,8 +142,8 @@ export class U2Vault extends HTMLElement {
   }
 
   _journalEntry(entry) {
-    const label = EVENT_LABELS[entry.type] || entry.type.replace(/[._]+/g, ' ');
-    const details = JOURNAL_DETAIL.filter((key) => entry.data?.[key] !== undefined && entry.data[key] !== null && entry.data[key] !== '' && entry.data[key] !== 0)
+    const label = entry.type === 'config.changed' ? `Changed ${entry.data?.file || 'a settings file'}` : EVENT_LABELS[entry.type] || entry.type.replace(/[._]+/g, ' ');
+    const details = entry.type === 'config.changed' ? [`${entry.data?.channel === 'external' ? 'edited outside U2OS' : entry.data?.channel === 'cli' ? 'command line' : 'app'}`, ...(entry.data?.changes || []).map((change) => `${change.key}${'from' in change || 'to' in change ? `: ${change.from ?? '(unset)'} → ${change.to ?? '(removed)'}` : ''}`)] : JOURNAL_DETAIL.filter((key) => entry.data?.[key] !== undefined && entry.data[key] !== null && entry.data[key] !== '' && entry.data[key] !== 0)
       .map((key) => `${key === 'pendingApprovals' ? 'waiting for approval' : key}: ${entry.data[key]}`);
     return `<li data-journal-type="${escapeHtml(entry.type)}">
       <span class="vault-journal__time">${escapeHtml(formatDateTime(entry.ts))}</span>
