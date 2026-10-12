@@ -40,7 +40,7 @@ export function registerJobHuntRoutes(router, { agent, toolRegistry, autopilot =
     router.get('/api/job-hunt/autopilot', async (req, res) => sendJson(res, 200, autopilot.status()));
     // Owner-only. Switching to live is the owner's decision, the same as editing autopilot.yaml.
     router.put('/api/job-hunt/autopilot', async (req, res) => {
-      try { setAutopilotSwitches(getVaultDir(), { enabled: req.body?.enabled, mode: req.body?.mode }); } catch (error) { return sendJson(res, 400, { error: error.message }); }
+      try { setAutopilotSwitches(getVaultDir(), { enabled: req.body?.enabled, mode: req.body?.mode }, { channel: 'api' }); } catch (error) { return sendJson(res, 400, { error: error.message }); }
       sendJson(res, 200, autopilot.status());
     });
     router.post('/api/job-hunt/autopilot/run', async (req, res) => {

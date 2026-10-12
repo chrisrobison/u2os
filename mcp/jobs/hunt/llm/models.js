@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'js-yaml';
 import { JOB_HUNT_DIR } from '../../profile.js';
+import { writeConfigFile } from '../../../../server/vault/config-log.js';
 
 // job-hunt/models.yaml: which model does which job-hunt work. No secrets here
 // (the LM Studio key lives in U2OS's encrypted vault).
@@ -52,11 +53,10 @@ export function loadModelsConfig(vaultDir) {
   return { fast, quality: 'planner', confirm_margin: margin, local_bias: bias, local_fallback: data.local_fallback === true };
 }
 
-export function setFastModel(vaultDir, { base_url, model, reasoning = 'off' }) {
+export function setFastModel(vaultDir, { base_url, model, reasoning = 'off' }, { channel = 'cli' } = {}) {
   let data = {};
   try { data = yaml.load(fs.readFileSync(modelsPath(vaultDir), 'utf8'), { schema: yaml.CORE_SCHEMA }) ?? {}; } catch (error) { if (error.code !== 'ENOENT') throw error; }
   data.fast = { provider: 'lmstudio', base_url, model, reasoning };
-  fs.mkdirSync(path.dirname(modelsPath(vaultDir)), { recursive: true });
-  fs.writeFileSync(modelsPath(vaultDir), `# Which model does which job-hunt work (docs/job-hunt.md). No secrets: the key is in the encrypted vault.\n${yaml.dump(data, { lineWidth: 120 })}`, { mode: 0o600 });
+  writeConfigFile(vaultDir, 'job-hunt/models.yaml', `# Which model does which job-hunt work (docs/job-hunt.md). No secrets: the key is in the encrypted vault.\n${yaml.dump(data, { lineWidth: 120 })}`, { channel });
   return loadModelsConfig(vaultDir);
 }

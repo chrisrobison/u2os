@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'js-yaml';
+import { writeConfigFile } from '../../../../server/vault/config-log.js';
 
 // One-time wiring of the autopilot into the owner's vault, written by an
 // explicit owner command (`job autopilot setup`):
@@ -14,12 +15,11 @@ const TOOLS = ['send_application', 'submit_application'];
 function readYaml(file) {
   try { const data = yaml.load(fs.readFileSync(file, 'utf8'), { schema: yaml.CORE_SCHEMA }); return data && typeof data === 'object' && !Array.isArray(data) ? data : {}; } catch (error) { if (error.code === 'ENOENT') return {}; throw error; }
 }
-function writeYaml(file, header, data) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `${header}\n${yaml.dump(data, { lineWidth: 120, noRefs: true })}`, { mode: 0o600 });
+function writeYaml(vaultDir, file, header, data, channel) {
+  writeConfigFile(vaultDir, file, `${header}\n${yaml.dump(data, { lineWidth: 120, noRefs: true })}`, { channel });
 }
 
-export function setupAutopilot(vaultDir, { autonomous = false } = {}) {
+export function setupAutopilot(vaultDir, { autonomous = false, channel = 'cli' } = {}) {
   const changes = [];
   const mcpFile = path.join(vaultDir, 'mcp.yaml');
   const mcp = readYaml(mcpFile);
@@ -30,7 +30,7 @@ export function setupAutopilot(vaultDir, { autonomous = false } = {}) {
   for (const name of TOOLS) tools[name] = { classification: 'personal' };
   if (!existing || JSON.stringify({ ...existing, tools: undefined }) !== JSON.stringify({ ...wanted, tools: undefined }) || TOOLS.some((name) => !existing?.tools?.[name])) {
     mcp.servers.jobs = { ...(existing ?? {}), ...wanted, tools };
-    writeYaml(mcpFile, '# Tool servers U2OS may start for you (docs/mcp.md).', mcp);
+    writeYaml(vaultDir, 'mcp.yaml', '# Tool servers U2OS may start for you (docs/mcp.md).', mcp, channel);
     changes.push('mcp.yaml: registered the jobs tool server with send_application and submit_application');
   }
   if (autonomous) {
@@ -39,17 +39,17 @@ export function setupAutopilot(vaultDir, { autonomous = false } = {}) {
     policies.jobs ??= {};
     let changed = false;
     for (const name of TOOLS) if (policies.jobs[name] !== 'autonomous') { policies.jobs[name] = 'autonomous'; changed = true; }
-    if (changed) { writeYaml(policyFile, '# What U2OS may do without asking (docs/policies.md).', policies); changes.push('policies.yaml: jobs.send_application and jobs.submit_application run without asking (every other action keeps its own policy)'); }
+    if (changed) { writeYaml(vaultDir, 'policies.yaml', '# What U2OS may do without asking (docs/policies.md).', policies, channel); changes.push('policies.yaml: jobs.send_application and jobs.submit_application run without asking (every other action keeps its own policy)'); }
   }
   return changes;
 }
 
 /** Removes the autonomy (not the tool registration): the two tools go back to needing approval. */
-export function revokeAutonomy(vaultDir) {
+export function revokeAutonomy(vaultDir, { channel = 'cli' } = {}) {
   const policyFile = path.join(vaultDir, 'policies.yaml');
   const policies = readYaml(policyFile);
   let changed = false;
   for (const name of TOOLS) if (policies.jobs?.[name] === 'autonomous') { policies.jobs[name] = 'confirm'; changed = true; }
-  if (changed) writeYaml(policyFile, '# What U2OS may do without asking (docs/policies.md).', policies);
+  if (changed) writeYaml(vaultDir, 'policies.yaml', '# What U2OS may do without asking (docs/policies.md).', policies, channel);
   return changed;
 }
