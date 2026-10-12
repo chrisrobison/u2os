@@ -21,15 +21,17 @@ import { resolveAttachments, describeAttachments } from '../../../server/tools/e
 const SCRIPT = `on run argv
   set theMode to item 1 of argv
   set theSender to item 2 of argv
-  set theTo to item 3 of argv
-  set theSubject to item 4 of argv
-  set theBody to item 5 of argv
+  set theBcc to item 3 of argv
+  set theTo to item 4 of argv
+  set theSubject to item 5 of argv
+  set theBody to item 6 of argv
   set thePaths to {}
-  if (count of argv) > 5 then set thePaths to items 6 thru -1 of argv
+  if (count of argv) > 6 then set thePaths to items 7 thru -1 of argv
   tell application "Mail"
     set theMessage to make new outgoing message with properties {subject:theSubject, content:theBody & return & return, visible:false}
     tell theMessage
       make new to recipient at end of to recipients with properties {address:theTo}
+      if theBcc is not "" then make new bcc recipient at end of bcc recipients with properties {address:theBcc}
       if theSender is not "" then set sender to theSender
       repeat with thePath in thePaths
         make new attachment with properties {file name:(POSIX file (thePath as text))} at after the last paragraph
@@ -64,8 +66,11 @@ function osascript(args, { timeoutMs = TIMEOUT_MS } = {}) {
  * Builds the two handlers. `run(args)` runs the fixed AppleScript with the
  * given arguments and returns its output; it is injected in tests.
  */
-export function createMailSender({ vaultDir, sender = '', run = osascript, tmpdir = os.tmpdir() } = {}) {
+export function createMailSender({ vaultDir, sender = '', bcc = '', run = osascript, tmpdir = os.tmpdir() } = {}) {
   if (!SENDER.test(sender)) throw new Error('mail_sender must be a single line');
+  // The owner's own copy: set by the add-on's mail_bcc setting, never by the tool's arguments.
+  const bccAddress = String(bcc ?? '').trim();
+  if (bccAddress && (!ADDRESS.test(bccAddress) || bccAddress.length > 320)) throw new Error('mail_bcc must be one valid email address');
 
   async function deliver(mode, args) {
     if (typeof args.to !== 'string' || !ADDRESS.test(args.to.trim()) || args.to.length > 320) throw new Error('to: exactly one valid email address is required');
@@ -88,7 +93,7 @@ export function createMailSender({ vaultDir, sender = '', run = osascript, tmpdi
       }
       let output;
       try {
-        output = await run([mode, sender, args.to.trim(), args.subject, args.body, ...paths]);
+        output = await run([mode, sender, bccAddress, args.to.trim(), args.subject, args.body, ...paths]);
       } catch (error) {
         // After the script starts, failure does not prove nothing was sent (Mail may have queued it).
         if (error.timedOut || mode === 'send') {
@@ -121,7 +126,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   const flag = (name) => { const at = process.argv.indexOf(name); return at >= 0 ? process.argv[at + 1] : undefined; };
   const vaultDir = path.resolve(flag('--vault') ?? process.cwd());
   const sender = flag('--sender') ?? '';
-  const mail = createMailSender({ vaultDir, sender });
+  const bcc = flag('--bcc') || process.env.U2OS_MAIL_BCC || '';
+  const mail = createMailSender({ vaultDir, sender, bcc });
   serveStdio({
     name: 'u2os-apple-mail',
     tools: {

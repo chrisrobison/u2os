@@ -15,10 +15,11 @@ export function encodeHeaderValue(value) {
  * are `{ filename, contentType, content: Buffer }`. Filenames must already be
  * sanitised (server/tools/email-attachments.js safeFilename).
  */
-export function buildMultipart({ to, subject, body, attachments }) {
+export function buildMultipart({ to, bcc, subject, body, attachments }) {
   const boundary = `u2os-${crypto.randomBytes(12).toString('hex')}`;
   const lines = [
     `To: ${to}`,
+    ...(bcc ? [`Bcc: ${bcc}`] : []),
     `Subject: ${encodeHeaderValue(subject)}`,
     'MIME-Version: 1.0',
     `Content-Type: multipart/mixed; boundary="${boundary}"`,

@@ -166,7 +166,7 @@ function assertNoHeaderInjection(value, fieldName) {
   }
 }
 
-function buildRawMessage({ to, subject, body, attachments }) {
+function buildRawMessage({ to, bcc, subject, body, attachments }) {
   const toList = Array.isArray(to) ? Array.from(to) : [to];
   if (!toList.length || toList.some((addr) => typeof addr !== 'string' || !addr.trim())) {
     throw new Error('gmail: "to" must be a nonempty string or nonempty flat array of nonempty strings; no message was attempted');
@@ -176,20 +176,21 @@ function buildRawMessage({ to, subject, body, attachments }) {
   }
   for (const addr of toList) assertNoHeaderInjection(addr, 'to');
   assertNoHeaderInjection(subject, 'subject');
+  assertNoHeaderInjection(bcc, 'bcc');
   const toHeader = toList.join(', ');
   if (attachments !== undefined) {
     // Already resolved and hash-verified by email.send; only their shape is checked here.
     if (!Array.isArray(attachments) || !attachments.length || attachments.some((item) => !item || !Buffer.isBuffer(item.content) || typeof item.filename !== 'string' || typeof item.contentType !== 'string')) {
       throw new Error('gmail: invalid attachments; no message was attempted');
     }
-    return Buffer.from(buildMultipart({ to: toHeader, subject, body, attachments }), 'utf8').toString('base64url');
+    return Buffer.from(buildMultipart({ to: toHeader, bcc, subject, body, attachments }), 'utf8').toString('base64url');
   }
-  const message = [`To: ${toHeader}`, `Subject: ${subject}`, '', body].join('\r\n');
+  const message = [`To: ${toHeader}`, ...(bcc ? [`Bcc: ${bcc}`] : []), `Subject: ${subject}`, '', body].join('\r\n');
   return Buffer.from(message, 'utf8').toString('base64url');
 }
 
-export async function sendEmail({ to, subject, body, attachments }, { fetchImpl = globalThis.fetch, dataDir, instance, timeoutMs = 30_000, timers = globalThis } = {}) {
-  const raw = buildRawMessage({ to, subject, body, attachments });
+export async function sendEmail({ to, bcc, subject, body, attachments }, { fetchImpl = globalThis.fetch, dataDir, instance, timeoutMs = 30_000, timers = globalThis } = {}) {
+  const raw = buildRawMessage({ to, bcc, subject, body, attachments });
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 30_000) {
     throw new Error('gmail: invalid send deadline; no message was attempted');
   }

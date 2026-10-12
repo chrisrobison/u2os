@@ -21,13 +21,13 @@ function world() {
 test('send passes every value as an argument and gives Mail verified copies that are removed afterwards', async () => {
   const w = world();
   const seen = [];
-  const mail = createMailSender({ vaultDir: w.vault, sender: 'Pat <pat@example.com>', tmpdir: w.dir, run: async (args) => {
-    const files = args.slice(5);
-    seen.push({ args: args.slice(0, 5), bytes: files.map((file) => fs.readFileSync(file)), names: files.map((file) => path.basename(file)), mode: fs.statSync(path.dirname(files[0])).mode & 0o777 });
+  const mail = createMailSender({ vaultDir: w.vault, sender: 'Pat <pat@example.com>', bcc: 'pat@example.com', tmpdir: w.dir, run: async (args) => {
+    const files = args.slice(6);
+    seen.push({ args: args.slice(0, 6), bytes: files.map((file) => fs.readFileSync(file)), names: files.map((file) => path.basename(file)), mode: fs.statSync(path.dirname(files[0])).mode & 0o777 });
     return 'sent';
   } });
   const result = await mail.send({ to: 'dylan@example.test', subject: 'Résumé "quoted" \\ & $(whoami)', body: 'Line one\n"two" `three` $HOME', attachments: [w.ref] });
-  assert.deepEqual(seen[0].args, ['send', 'Pat <pat@example.com>', 'dylan@example.test', 'Résumé "quoted" \\ & $(whoami)', 'Line one\n"two" `three` $HOME']);
+  assert.deepEqual(seen[0].args, ['send', 'Pat <pat@example.com>', 'pat@example.com', 'dylan@example.test', 'Résumé "quoted" \\ & $(whoami)', 'Line one\n"two" `three` $HOME']);
   assert.deepEqual(seen[0].bytes, [PDF]);
   assert.deepEqual(seen[0].names, ['Pat_Resume.pdf']);
   assert.equal(seen[0].mode, 0o700);
@@ -75,4 +75,15 @@ test('the Apple add-on manifest is valid and declares send and draft as unsugges
   assert.deepEqual(server.tools.map((tool) => tool.name).sort(), ['draft', 'send']);
   assert.ok(server.tools.every((tool) => tool.suggestedRead === false));
   assert.equal(manifest.settings.mail_sender.type, 'string');
+});
+
+test('the Bcc is the add-on setting, empty by default, and never comes from the arguments', async () => {
+  const w = world();
+  const seen = [];
+  const run = async (args) => { seen.push(args); return args[0] === 'send' ? 'sent' : 'saved'; };
+  await createMailSender({ vaultDir: w.vault, tmpdir: w.dir, run }).send({ to: 'a@b.test', subject: 's', body: 'b', bcc: 'evil@x.test' });
+  await createMailSender({ vaultDir: w.vault, bcc: ' me@example.test ', tmpdir: w.dir, run }).draft({ to: 'a@b.test', subject: 's', body: 'b', bcc: 'evil@x.test' });
+  assert.equal(seen[0][2], '');
+  assert.equal(seen[1][2], 'me@example.test');
+  assert.throws(() => createMailSender({ vaultDir: w.vault, bcc: 'a@b.test, c@d.test' }), /mail_bcc/);
 });
