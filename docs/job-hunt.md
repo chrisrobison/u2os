@@ -436,12 +436,13 @@ or for the autopilot, in `autopilot.yaml`:
 ```yaml
 browser:
   headed: true       # form submits open a visible browser window on this Mac (default false)
+  keep_open: true    # leave that window open after the submit click (default true)
   driver: playwright # which form driver reads and fills forms (default playwright)
 routes:
   form: true         # the forms route is off by default
 ```
 
-A window opens briefly for each form submit. The forms route stays off by default (and form-only jobs just wait for you) until you turn it on; a CAPTCHA challenge or a login wall still stops an application and hands it to you.
+A window opens for each form submit. With `keep_open: true` (the default whenever `headed` is on) the window **stays open whatever happened**: after the submit click (so you can see what the board showed), and also when something needs you (a CAPTCHA, a login wall, a multi-step form, a field it could not fill), with as much filled in as possible, so you can finish by hand. It is a separate Chrome that also survives a server restart, and you close it yourself. Only a dry run closes its window. The forms route stays off by default (and form-only jobs just wait for you) until you turn it on; a CAPTCHA challenge or a login wall still stops an application and hands it to you.
 
 
 ## One PDF when there is no cover-letter field, and memorable file names

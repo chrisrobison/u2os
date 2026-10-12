@@ -463,3 +463,35 @@ test('an open answer longer than the field allows is asked again, shorter; it is
   assert.equal(unresolved.unresolved.find((entry) => entry.key === 'why').reason, 'not_supported_by_facts', 'a model that will not fit the limit leaves the question unresolved, not truncated');
   assert.ok(!JSON.stringify(unresolved.fields).includes('mid'), 'nothing was cut and submitted');
 });
+
+test('a kept headed window stays open after the submit and at a CAPTCHA; a dry run leaves no window (#576)', async (t) => {
+  if (!browserOk) return t.skip('no browser');
+  const headless = { ...env, JOBS_FORCE_HEADLESS: '1' };
+  const alive = async (endpoint) => { try { return (await fetch(`${endpoint}/json/version`)).ok; } catch { return false; } };
+  const w = world(`${forms.base}/ashby/application`);
+  const application = await planApplication({ store: w.store, job: w.job, candidate: candidate(), llm: llmWith({ why: whyAnswer }), now: NOW });
+  let endpoint;
+  try {
+    const sent = await executePlan({ plan: application.plan, files: w.files, submit: true, headed: true, keepOpen: true, env: headless });
+    endpoint = sent.window;
+    assert.ok(endpoint, 'the result says where the window is');
+    assert.equal(await alive(endpoint), true, 'the browser is still running after the submit');
+    const pages = await (await fetch(`${endpoint}/json/list`)).json();
+    assert.ok(pages.some((entry) => entry.type === 'page' && entry.url.startsWith(forms.base)), 'the submitted page is still open');
+  } finally {
+    if (endpoint) { const { chromium } = await import('playwright'); const browser = await chromium.connectOverCDP(endpoint); await (await browser.newBrowserCDPSession()).send('Browser.close').catch(() => {}); }
+  }
+  // A CAPTCHA wall also leaves the window open for the owner to take over.
+  const wall = world(`${forms.base}/captcha/apply`);
+  const blocked = await planApplication({ store: wall.store, job: wall.job, candidate: candidate(), llm: llmWith({}), now: NOW });
+  const stopped = await executePlan({ plan: { ...blocked.plan, fields: [], files: {} }, files: {}, submit: true, headed: true, keepOpen: true, env: headless });
+  assert.equal(stopped.status, 'manual_required');
+  assert.ok(stopped.window && await alive(stopped.window), 'the CAPTCHA page stays open');
+  { const { chromium } = await import('playwright'); const browser = await chromium.connectOverCDP(stopped.window); await (await browser.newBrowserCDPSession()).send('Browser.close').catch(() => {}); }
+  // A dry run never reaches the click, so its window is closed and not reported.
+  const w2 = world(`${forms.base}/ashby/application`);
+  const planned = await planApplication({ store: w2.store, job: w2.job, candidate: candidate(), llm: llmWith({ why: whyAnswer }), now: NOW });
+  const dry = await executePlan({ plan: planned.plan, files: w2.files, submit: false, headed: true, keepOpen: true, env: headless });
+  assert.equal(dry.status, 'dry_run');
+  assert.equal(dry.window, undefined);
+});

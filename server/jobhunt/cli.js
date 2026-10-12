@@ -216,7 +216,7 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
         if (!job) { out.log(`Unknown job ${positional[0] ?? ''}`); return 1; }
         const artifacts = store.getArtifacts(job.id);
         const files = { ...(artifacts.resume_pdf ? { resume: { path: artifacts.resume_pdf.path } } : {}), ...(artifacts.cover_letter_pdf ? { cover_letter: { path: artifacts.cover_letter_pdf.path } } : {}), ...(artifacts.combined_pdf ? { resume_with_letter: { path: artifacts.combined_pdf.path } } : {}) };
-        const { result, application } = await submitApplication({ store, job, files, submit: flags['dry-run'] !== true, headed: flags.headed === true, driver: loadAutopilotConfig(vaultDir).browser.driver, screenshotDir: path.join(vaultDir, 'job-hunt', 'state', 'screens', job.id), now });
+        const { result, application } = await submitApplication({ store, job, files, submit: flags['dry-run'] !== true, headed: flags.headed === true, keepOpen: loadAutopilotConfig(vaultDir).browser.keep_open, driver: loadAutopilotConfig(vaultDir).browser.driver, screenshotDir: path.join(vaultDir, 'job-hunt', 'state', 'screens', job.id), now });
         out.log(`${job.company}: ${result.status}${result.reason ? ` (${result.reason})` : ''}${result.errors ? `: ${result.errors.join('; ')}` : ''}${result.missing?.length ? ` missing: ${result.missing.join(', ')}` : ''}`);
         for (const file of result.screenshots ?? []) out.log(`  screenshot: ${file}`);
         return ['submitted', 'dry_run'].includes(result.status) ? 0 : 1;

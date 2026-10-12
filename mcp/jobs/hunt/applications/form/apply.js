@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
 import { CAPTCHA_SELECTOR, readFormSchema, schemaHash } from './schema.js';
@@ -25,11 +26,46 @@ export async function launchBrowser(env = process.env, { headed = false } = {}) 
   return playwright.chromium.launch({ headless: !headed, ...(env.JOBS_BROWSER_PATH ? { executablePath: env.JOBS_BROWSER_PATH } : {}) });
 }
 
+/**
+ * A visible Chrome that outlives this process: spawned detached and driven over
+ * CDP, so disconnecting (or the server restarting) leaves the window open for
+ * the owner to look at. Returns the connected browser; the page opens in the
+ * browser's own default context so it is not torn down on disconnect.
+ */
+async function launchKeptBrowser(env) {
+  const playwright = await import('playwright');
+  const os = await import('node:os');
+  const { spawn } = await import('node:child_process');
+  const executable = env.JOBS_BROWSER_PATH || playwright.chromium.executablePath();
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'u2-form-'));
+  const port = await new Promise((resolve, reject) => { const server = net.createServer(); server.listen(0, '127.0.0.1', () => { const { port: free } = server.address(); server.close(() => resolve(free)); }); server.on('error', reject); });
+  const child = spawn(executable, [`--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', ...(env.JOBS_FORCE_HEADLESS === '1' ? ['--headless=new'] : []), 'about:blank'], { detached: true, stdio: 'ignore' });
+  child.unref();
+  const endpoint = `http://127.0.0.1:${port}`;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    try { if ((await fetch(`${endpoint}/json/version`)).ok) break; } catch { /* still starting */ }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  const browser = await playwright.chromium.connectOverCDP(endpoint);
+  browser.u2Endpoint = endpoint; browser.u2Child = child; browser.u2Profile = profile;
+  return browser;
+}
+
+/** Closes a kept browser entirely (the run never reached the submit click, so there is nothing to look at). */
+async function closeKept(browser) {
+  await browser.close().catch(() => {});
+  try { browser.u2Child?.kill('SIGTERM'); } catch { /* already gone */ }
+  await new Promise((resolve) => setTimeout(resolve, 800));
+  try { fs.rmSync(browser.u2Profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 }); } catch { /* best effort */ }
+}
+
 const sha256 = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const sel = (key) => `[data-u2=${JSON.stringify(key)}]`;
 
-async function openApplication(browser, url) {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 1600 } });
+async function openApplication(browser, url, { kept = false } = {}) {
+  const viewport = { width: 1280, height: 1600 };
+  const page = kept ? await browser.contexts()[0].newPage() : await browser.newPage({ viewport });
+  if (kept) await page.setViewportSize(viewport);
   page.setDefaultTimeout(15_000);
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await page.waitForSelector('form, iframe[src*="job-boards.greenhouse.io/embed/job_app"]', { timeout: 12_000 }).catch(() => {});
@@ -173,18 +209,26 @@ async function outcome(page, scope, timeoutMs, formUrl) {
  * @param submit  false fills and checks but never submits (dry run)
  * @param beforeSubmit async () => void  called after everything is verified and before the click; throw to stop
  */
-export async function executePlan({ plan, files = {}, submit = true, headed = false, beforeSubmit = async () => {}, screenshotDir = null, env = process.env, outcomeTimeoutMs = Number(env.JOBS_SUBMIT_TIMEOUT_MS) || 20_000 }) {
+export async function executePlan(options) {
+  const state = {};
+  const result = await runPlan(options, state);
+  return state.window ? { ...result, window: state.window } : result;
+}
+
+async function runPlan({ plan, files = {}, submit = true, headed = false, keepOpen = false, beforeSubmit = async () => {}, screenshotDir = null, env = process.env, outcomeTimeoutMs = Number(env.JOBS_SUBMIT_TIMEOUT_MS) || 20_000 }, state) {
   for (const [kind, expected] of Object.entries(plan.files ?? {})) {
     if (!files[kind] || !fs.existsSync(files[kind].path) || sha256(files[kind].path) !== expected.sha256) return { status: 'files_changed', reason: `${kind} is not the file the plan was made with` };
   }
-  const browser = await launchBrowser(env, { headed });
+  const kept = headed && keepOpen;
+  let keep = kept; // a kept window stays open whatever happened (submitted, CAPTCHA, login wall, partial fill) so the owner can finish by hand; only a dry run closes it
+  const browser = kept ? await launchKeptBrowser(env) : await launchBrowser(env, { headed });
   const shots = [];
   const shot = async (page, name) => {
     if (!screenshotDir) return null;
     try { fs.mkdirSync(screenshotDir, { recursive: true }); const file = path.join(screenshotDir, `${name}.png`); await page.screenshot({ path: file, fullPage: true }); shots.push(file); return file; } catch { return null; }
   };
   try {
-    const page = await openApplication(browser, plan.url);
+    const page = await openApplication(browser, plan.url, { kept });
     const scope = await applicationScope(page);
     const schema = await readInteractiveSchema(scope);
     if (schema.blockers?.captcha) return { status: 'manual_required', reason: 'captcha', screenshots: [await shot(page, 'blocked')].filter(Boolean) };
@@ -202,7 +246,7 @@ export async function executePlan({ plan, files = {}, submit = true, headed = fa
     const missing = after.fields.filter((field) => field.required && !field.filled).map((field) => field.label || field.key);
     const formShot = await shot(page, 'form');
     if (failed.length || missing.length) return { status: 'fill_incomplete', failed, missing, screenshots: [formShot].filter(Boolean) };
-    if (!submit) return { status: 'dry_run', screenshots: [formShot].filter(Boolean) };
+    if (!submit) { keep = false; return { status: 'dry_run', screenshots: [formShot].filter(Boolean) }; }
 
     const button = await findSubmit(scope);
     if (!button) return { status: 'manual_required', reason: 'no_submit_button', screenshots: [formShot].filter(Boolean) };
@@ -218,5 +262,9 @@ export async function executePlan({ plan, files = {}, submit = true, headed = fa
     await button.click();
     const result = await outcome(page, scope, outcomeTimeoutMs, plan.url);
     return { ...result, evidence, screenshots: [formShot, await shot(page, 'result')].filter(Boolean) };
-  } finally { await browser.close().catch(() => {}); }
+  } finally {
+    if (keep) state.window = browser.u2Endpoint;
+    // A kept window is only disconnected from (it stays open for the owner); any other run closes its browser.
+    if (kept && !keep) await closeKept(browser); else await browser.close().catch(() => {});
+  }
 }

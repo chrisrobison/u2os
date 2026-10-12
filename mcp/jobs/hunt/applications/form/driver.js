@@ -28,7 +28,7 @@ import { executePlan, inspectApplication } from './apply.js';
  * @typedef {object} FormDriver
  * @property {(args: {url: string}) => Promise<FormSchema>} inspect
  *   Read-only: open the application page and report its form. Never fills or submits.
- * @property {(args: {plan: object, files?: object, submit?: boolean, headed?: boolean,
+ * @property {(args: {plan: object, files?: object, submit?: boolean, headed?: boolean, keepOpen?: boolean,
  *   beforeSubmit?: () => Promise<void>, screenshotDir?: string|null}) => Promise<ExecuteResult>} execute
  *   Fill the reviewed plan and (when `submit`) submit it. A driver MUST:
  *   1. stop with manual_required on a CAPTCHA, login wall or missing form (never evade);
