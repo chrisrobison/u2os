@@ -36,7 +36,8 @@ export function runChecks({ store, job, subject, score, preferences, config, can
   out.push(check('not_already_contacted', !sentEmails.length && !forms.length, [...sentEmails.map((email) => `email ${email.status}`), ...forms.map((application) => `form ${application.status}`)].join('; ')));
   const dayAgo = now.getTime() - 86_400_000;
   const recentEmails = store.listEmails().filter((email) => email.kind === 'application' && ['sent', 'proposed'].includes(email.status) && Date.parse(email.updatedAt) > dayAgo).length;
-  const recentForms = store.listApplications().filter((application) => ['submitted', 'unconfirmed', 'submitting'].includes(application.status) && Date.parse(application.updatedAt) > dayAgo).length;
+  // An attempt that read no fields filled nothing and sent nothing (the board's form was not read), so it does not count against the day's limit.
+  const recentForms = store.listApplications().filter((application) => ['submitted', 'unconfirmed', 'submitting'].includes(application.status) && application.plan?.fields?.length !== 0 && Date.parse(application.updatedAt) > dayAgo).length;
   out.push(check(kind === 'email' ? 'under_daily_email_limit' : 'under_daily_application_limit', kind === 'email' ? recentEmails < config.limits.emails_per_day : recentForms < config.limits.applications_per_day, kind === 'email' ? `${recentEmails} of ${config.limits.emails_per_day} emails today` : `${recentForms} of ${config.limits.applications_per_day} applications today`));
   const company = job.company.toLowerCase();
   const cutoff = now.getTime() - config.limits.per_company_days * 86_400_000;
