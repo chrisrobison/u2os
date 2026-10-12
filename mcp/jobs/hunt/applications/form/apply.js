@@ -56,8 +56,9 @@ async function readInteractiveSchema(scope) {
     const input = scope.locator(sel(field.key)).first();
     try {
       await input.click({ timeout: 2000 });
+      if (await input.getAttribute('aria-expanded') !== 'true') await input.press('ArrowDown');
       await scope.waitForTimeout(150);
-      field.options = await scope.locator('[role="option"]').allInnerTexts();
+      if (await input.getAttribute('aria-expanded') === 'true') field.options = await scope.locator('[role="option"]').allInnerTexts();
       await input.press('Escape');
     } catch { /* leave the choice unresolved if the widget will not open */ }
   }
@@ -76,6 +77,19 @@ export async function inspectApplication({ url, env = process.env }) {
 function matchOption(options = [], value) {
   const wanted = String(value).trim().toLowerCase();
   return options.find((option) => option.toLowerCase() === wanted) || options.find((option) => option.toLowerCase().startsWith(wanted)) || options.find((option) => option.toLowerCase().includes(wanted)) || null;
+}
+
+function matchComboboxOption(options, value) {
+  const normalized = (text) => String(text).toLowerCase().replace(/\s+/g, '').trim();
+  const exact = options.find((option) => normalized(option) === normalized(value));
+  if (exact) return exact;
+  const wanted = String(value).trim();
+  const city = wanted.match(/^([^,]+),\s*[A-Z]{2}$/)?.[1];
+  if (city) {
+    const matches = options.filter((option) => option.toLowerCase().startsWith(`${city.toLowerCase()}, `) && /, united states$/i.test(option));
+    if (matches.length === 1) return matches[0];
+  }
+  return null;
 }
 
 async function setField(page, entry, schemaField, files) {
@@ -110,11 +124,17 @@ async function setField(page, entry, schemaField, files) {
       }
       case 'combobox':
         await control.first().click();
-        await control.first().fill(String(value));
-        await page.waitForTimeout(300);
-        const option = page.getByRole('option', { name: String(value), exact: true });
-        if (!await option.count()) return false;
-        await option.first().click();
+        await control.first().fill(String(value).replace(/\s*\+\s*(\d+)$/, ' +$1'));
+        await page.waitForTimeout(500);
+        let choices = await page.getByRole('option').allInnerTexts();
+        if (!choices.length && String(value).includes(',')) {
+          await control.first().fill(String(value).split(',')[0]);
+          await page.waitForTimeout(800);
+          choices = await page.getByRole('option').allInnerTexts();
+        }
+        const selected = matchComboboxOption(choices, value);
+        if (!selected) return false;
+        await page.getByRole('option', { name: selected, exact: true }).first().click();
         return true;
       default:
         await control.first().fill(String(value));

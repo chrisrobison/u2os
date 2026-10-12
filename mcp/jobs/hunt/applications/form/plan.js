@@ -24,7 +24,7 @@ export function planHash(plan) {
 }
 
 const yesNo = (options, truth) => options.find((option) => (truth ? /^\s*(yes|true|i am|i do|i have)\b/i : /^\s*(no|false|i am not|i do not|i don'?t|i have not)\b/i).test(option)) ?? null;
-const matchOption = (options, wanted) => { const w = String(wanted).trim().toLowerCase(); return options.find((o) => o.toLowerCase() === w) || options.find((o) => o.toLowerCase().includes(w)) || null; };
+const matchOption = (options, wanted) => { const w = String(wanted).trim().toLowerCase(); return options.find((o) => o.toLowerCase() === w) || options.find((o) => o.toLowerCase().replace(/\s+/g, '') === w.replace(/\s+/g, '')) || options.find((o) => o.toLowerCase().includes(w)) || null; };
 
 function hearAbout(sourceName) {
   return { hackernews: 'Hacker News', hnjobs: 'Hacker News', remoteok: 'RemoteOK', weworkremotely: 'We Work Remotely', greenhouse: 'Company website', lever: 'Company website', ashby: 'Company website' }[sourceName] ?? 'Job board';

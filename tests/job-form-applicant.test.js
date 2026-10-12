@@ -185,13 +185,28 @@ test('empty form schemas and old empty plans never reach a submit click', async 
 test('custom comboboxes expose choices once and selected values are verified', async (t) => {
   if (!browserOk) return t.skip('no browser');
   const w = world(`${forms.base}/combo/apply`);
-  const owner = candidate({ ...ANSWERS, custom: { country: 'United States' } });
+  const owner = candidate({ ...ANSWERS, custom: { country: 'United States+1' } });
   const application = await planApplication({ store: w.store, job: w.job, candidate: owner, llm: llmWith({}), now: NOW });
   assert.equal(application.status, 'planned', JSON.stringify(application.plan.unresolved));
   assert.equal(application.plan.fields.filter((field) => field.key === 'country').length, 1);
+  assert.equal(application.plan.fields.find((field) => field.key === 'candidate-location').value, 'San Francisco, CA');
   assert.equal(application.plan.fields.find((field) => field.key === 'auth').value, 'Yes');
   const result = await submitApplication({ store: w.store, job: w.job, files: w.files, now: NOW });
   assert.equal(result.result.status, 'submitted', JSON.stringify(result.result));
+});
+
+test('each execution keeps its own screenshot files', async (t) => {
+  if (!browserOk) return t.skip('no browser');
+  const w = world(`${forms.base}/simple/apply`);
+  await planApplication({ store: w.store, job: w.job, candidate: candidate(), llm: llmWith({}), now: NOW });
+  const screenshotDir = path.join(w.dir, 'shots');
+  const first = await submitApplication({ store: w.store, job: w.job, files: w.files, submit: false, screenshotDir, now: NOW });
+  const second = await submitApplication({ store: w.store, job: w.job, files: w.files, submit: false, screenshotDir, now: NOW });
+  assert.equal(first.result.status, 'dry_run');
+  assert.equal(second.result.status, 'dry_run');
+  assert.notEqual(first.result.screenshots[0], second.result.screenshots[0]);
+  assert.ok(first.result.screenshots.every((file) => fs.existsSync(file)));
+  assert.ok(second.result.screenshots.every((file) => fs.existsSync(file)));
 });
 
 test('a changed form, changed files or an incomplete fill stops before anything is submitted', async (t) => {
