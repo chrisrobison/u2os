@@ -16,6 +16,12 @@ import { writeConfigFile } from '../../../../server/vault/config-log.js';
 //   over_18: true
 //   salary_expectation: "$200,000 - $240,000"
 //   start_date: "Available immediately"
+//   demographics:                    # self-identification questions; only what is written here is ever answered
+//     gender: Male
+//     race: White
+//     pronouns: He/him
+//     veteran: false
+//     disability: false
 //   custom:                          # any other question, matched by words in its label
 //     "how many years of python": "20+"
 //   policy:
@@ -26,6 +32,8 @@ export const answersPath = (vaultDir) => path.join(vaultDir, JOB_HUNT_DIR, 'answ
 
 const BOOLEANS = ['work_authorization_us', 'requires_sponsorship', 'willing_to_relocate', 'open_to_onsite', 'over_18'];
 const TEXTS = ['salary_expectation', 'start_date'];
+const DEMOGRAPHIC_TEXTS = ['gender', 'race', 'pronouns'];
+const DEMOGRAPHIC_BOOLEANS = ['veteran', 'disability'];
 
 export function loadAnswers(vaultDir) {
   let data = {};
@@ -35,9 +43,15 @@ export function loadAnswers(vaultDir) {
     data = yaml.load(fs.readFileSync(answersPath(vaultDir), 'utf8'), { schema: yaml.CORE_SCHEMA }) ?? {};
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   if (typeof data !== 'object' || Array.isArray(data)) throw new Error('answers.yaml must be a mapping');
-  const answers = { custom: {}, policy: { accept_privacy_notices: true, accept_truthfulness_attestations: false } };
+  const answers = { custom: {}, demographics: {}, policy: { accept_privacy_notices: true, accept_truthfulness_attestations: false } };
   for (const key of BOOLEANS) if (data[key] !== undefined) { if (typeof data[key] !== 'boolean') throw new Error(`answers.yaml: ${key} must be true or false`); answers[key] = data[key]; }
   for (const key of TEXTS) if (data[key] !== undefined && data[key] !== null) answers[key] = String(data[key]).slice(0, 300);
+  if (data.demographics !== undefined && data.demographics !== null) {
+    if (typeof data.demographics !== 'object' || Array.isArray(data.demographics)) throw new Error('answers.yaml: demographics must be a mapping');
+    for (const key of Object.keys(data.demographics)) if (![...DEMOGRAPHIC_TEXTS, ...DEMOGRAPHIC_BOOLEANS].includes(key)) throw new Error(`answers.yaml: demographics.${key} is not a known answer`);
+    for (const key of DEMOGRAPHIC_TEXTS) if (data.demographics[key] !== undefined) { if (typeof data.demographics[key] !== 'string' || !data.demographics[key].trim()) throw new Error(`answers.yaml: demographics.${key} must be text`); answers.demographics[key] = data.demographics[key].trim().slice(0, 100); }
+    for (const key of DEMOGRAPHIC_BOOLEANS) if (data.demographics[key] !== undefined) { if (typeof data.demographics[key] !== 'boolean') throw new Error(`answers.yaml: demographics.${key} must be true or false`); answers.demographics[key] = data.demographics[key]; }
+  }
   if (data.custom && typeof data.custom === 'object') for (const [fragment, value] of Object.entries(data.custom)) if (['string', 'number', 'boolean'].includes(typeof value)) answers.custom[fragment.toLowerCase()] = String(value);
   if (data.policy && typeof data.policy === 'object') for (const key of Object.keys(answers.policy)) if (typeof data.policy[key] === 'boolean') answers.policy[key] = data.policy[key];
   return answers;

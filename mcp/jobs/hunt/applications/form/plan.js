@@ -30,6 +30,36 @@ function hearAbout(sourceName) {
   return { hackernews: 'Hacker News', hnjobs: 'Hacker News', remoteok: 'RemoteOK', weworkremotely: 'We Work Remotely', greenhouse: 'Company website', lever: 'Company website', ashby: 'Company website' }[sourceName] ?? 'Job board';
 }
 
+// The owner's own demographic answers (answers.yaml `demographics:`), matched to the form's options. Null when the owner
+// gave no answer for the question or the form offers no matching option; the caller then declines as before.
+const GENDER_WORDS = { male: ['male', 'man'], female: ['female', 'woman'] };
+function demographicAnswer(text, field, options, d) {
+  if (!d) return null;
+  const pickRe = (re) => options.find((option) => re.test(option)) ?? null;
+  const finish = (value, option) => (options.length ? (option ? { value: option, origin: 'owner-answer' } : null) : { value, origin: 'owner-answer' });
+  if (/veteran/i.test(text)) {
+    if (typeof d.veteran !== 'boolean') return null;
+    if (!options.length) return null;
+    return finish(null, d.veteran ? pickRe(/^(yes|i am a|i identify as)\b/i) : pickRe(/not a (protected )?veteran|^no\b|i am not/i));
+  }
+  if (/disabilit/i.test(text)) {
+    if (typeof d.disability !== 'boolean') return null;
+    if (!options.length) return null;
+    return finish(null, d.disability ? pickRe(/^(yes|i have)\b|yes, i (have|do)/i) : pickRe(/no,? (i )?(do not|don'?t|have not|have no)|^no\b|do not have a disability/i));
+  }
+  if (/pronoun/i.test(text)) return d.pronouns ? finish(d.pronouns, matchOption(options, d.pronouns) ?? (options.length ? pickRe(new RegExp(`^${d.pronouns.split('/')[0].trim()}\\b`, 'i')) : null)) : null;
+  if (/gender|\bsex\b/i.test(text) && !/identity.*(trans|different)|transgender/i.test(text)) {
+    if (!d.gender) return null;
+    const words = GENDER_WORDS[d.gender.toLowerCase()] ?? [d.gender.toLowerCase()];
+    return finish(d.gender, options.find((option) => words.includes(option.trim().toLowerCase())) ?? null);
+  }
+  if (/\brace\b|racial|ethnic/i.test(text) && !/hispanic|latino/i.test(`${field.label ?? ''}`.replace(/race|ethnic\w*/gi, ''))) {
+    if (!d.race) return null;
+    return finish(d.race, options.find((option) => option.trim().toLowerCase() === d.race.toLowerCase()) ?? options.find((option) => new RegExp(`^${d.race}\\b`, 'i').test(option.trim())) ?? null);
+  }
+  return null;
+}
+
 /** Value for a field from the owner's data, or { unresolved } / { skip }. */
 function resolveField(field, ctx) {
   const { basics, answers, sourceName } = ctx;
@@ -64,6 +94,8 @@ function resolveField(field, ctx) {
   }
   if (SENSITIVE.test(text)) return field.required ? unresolved('sensitive_never_inferred') : { skip: true };
   if (EEO.test(text)) {
+    const own = demographicAnswer(text, field, options, answers.demographics);
+    if (own) return own;
     const decline = options.find((o) => DECLINE.test(o));
     if (decline) return { value: decline, origin: 'decline' };
     return field.required ? unresolved('eeo_without_decline_option') : { skip: true };
