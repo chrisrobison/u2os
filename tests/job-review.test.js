@@ -154,6 +154,34 @@ test('prompt injection in a posting is delimited, cannot escape, and cannot appr
   assert.equal(f2.calls.length, 0);
 });
 
+test('the daily application limit counts attempts that could have sent something, not zero-field reads', async () => {
+  const { runChecks } = await import('../mcp/jobs/hunt/review/checks.js');
+  const { loadSubject } = await import('../mcp/jobs/hunt/review/subject.js');
+  const w = world();
+  const config = { ...CONFIG, limits: { ...CONFIG.limits, applications_per_day: 3 } };
+  const attempt = (n, status, fields) => {
+    const { job } = w.store.upsertSighting({ source: 'greenhouse', sourceKey: `greenhouse:lim:${n}`, company: `Limit${n}`, role: 'Engineer', rawText: 'x', applicationUrls: [], contactEmails: [], author: null });
+    const plan = { jobId: job.id, url: `https://x.test/${n}`, schemaHash: 's', fields, unresolved: [], blockers: [], needs: [], ready: true, planHash: String(n).repeat(64).slice(0, 64) };
+    const app = w.store.addApplication(job.id, { url: plan.url, status: 'planned', plan, idempotencyKey: `lim${n}` });
+    w.store.updateApplication(app.id, { status });
+  };
+  const fields = [{ key: 'name', label: 'Name', type: 'text', required: true, value: 'Pat', origin: 'identity' }];
+  const limit = () => {
+    const job = w.store.getJob(w.job.id);
+    const subject = loadSubject({ store: w.store, job, kind: 'form', policy: reviewPolicy({ preferences: PREFS, config }) });
+    return runChecks({ store: w.store, job, subject, score: w.store.getScore(job.id), preferences: PREFS, config, candidate, now: new Date() }).find((entry) => entry.name === 'under_daily_application_limit');
+  };
+  for (let n = 1; n <= 5; n += 1) attempt(n, 'unconfirmed', []);
+  assert.equal(limit().pass, true, 'five zero-field attempts sent nothing');
+  assert.match(limit().detail, /^0 of 3/);
+  attempt(6, 'unconfirmed', fields);
+  attempt(7, 'submitted', fields);
+  assert.equal(limit().pass, true);
+  assert.match(limit().detail, /^2 of 3/);
+  attempt(8, 'submitting', fields);
+  assert.equal(limit().pass, false, 'real attempts still reach the limit');
+});
+
 test('form review: a ready plan is approved; an unready plan or a blocker is rejected before any model', async () => {
   const w = world();
   const plan = (over = {}) => ({ jobId: w.job.id, url: 'https://jobs.ashbyhq.com/x/1/application', schemaHash: 's', fields: [{ key: 'name', label: 'Name', type: 'text', required: true, value: 'Pat Example', origin: 'identity' }, { key: 'why', label: 'Why Tahoma?', type: 'textarea', required: true, value: 'Tahoma builds deterministic orchestration around agents, which I build with U2OS.', origin: 'model' }], unresolved: [], files: {}, blockers: [], needs: [], ready: true, planHash: 'p'.repeat(64), ...over });
