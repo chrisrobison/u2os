@@ -2,6 +2,7 @@ import { invalid } from '../llm/structured.js';
 import { NARRATIVES } from '../candidate/narratives.js';
 import { assertNoStockPhrases, assertNoUnverifiablePhrases, assertSupported, buildCorpus, wordCount } from './guard.js';
 import { candidateCorpus } from './resume-generator.js';
+import { displayCompany } from '../jobs/normalize.js';
 
 // Cover letters and the short outreach email. Same rules as the resume: only
 // supplied facts, enforced by the claim guard, plus length and stock-phrase
@@ -32,7 +33,7 @@ Reply with ONLY one JSON object: {"subject":"","requiredSubject":"","greetingNam
 
 function userPrompt({ job, source, digest, facts, score, narrativeId, extra = '' }) {
   const narrative = NARRATIVES[narrativeId];
-  const listing = `Company: ${job.company}\nRole: ${job.role ?? '(not stated)'}\nPosted by: ${source?.author ?? 'unknown'}\n\n${source?.rawText ?? job.description}`.slice(0, 5000);
+  const listing = `Company: ${displayCompany(job.company, source?.rawText ?? job.description)}\nRole: ${job.role ?? '(not stated)'}\nPosted by: ${source?.author ?? 'unknown'}\n\n${source?.rawText ?? job.description}`.slice(0, 5000);
   return [
     `CANDIDATE RESUME\n${digest}`, `APPROVED FACTS\n${facts.text || '(none)'}`,
     facts.voice ? `VOICE SAMPLE (the candidate's own writing; match the tone, do not copy sentences)\n${facts.voice.slice(0, 3000)}` : '',
@@ -116,7 +117,7 @@ export function stripFraming(body) {
 export function assembleLetter({ paragraphs, resume, job, date = new Date() }) {
   const b = resume.basics;
   const contact = [[b.location?.city, b.location?.region].filter(Boolean).join(', '), b.phone, b.email, b.website?.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, ''), 'github.com/chrisrobison'].filter(Boolean);
-  const company = job.company.replace(/\s*\(.*?\)\s*/g, ' ').trim();
+  const company = displayCompany(job.company, job.description).replace(/\s*\(.*?\)\s*/g, ' ').trim();
   return {
     name: b.name, contact: contact.join(' | '),
     date: date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),

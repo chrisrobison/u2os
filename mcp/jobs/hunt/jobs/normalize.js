@@ -15,6 +15,25 @@ export function normalizeCompany(name) {
     .trim();
 }
 
+/**
+ * A company name fit to print. Board jobs carry the board's slug ("openai"),
+ * so a name with no capital letter and no space is looked up in the posting
+ * text and shown the way the posting writes it ("OpenAI"); with no such
+ * spelling it just gets a capital first letter. Names that already have
+ * capitals or spaces are left alone. Display only: never a dedupe key.
+ */
+export function displayCompany(name, text = '') {
+  const company = String(name ?? '').trim();
+  if (!company || /[A-Z\s]/.test(company)) return company;
+  const escaped = company.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const counts = new Map();
+  for (const [spelling] of String(text ?? '').matchAll(new RegExp(`(?<![A-Za-z0-9])${escaped}(?![A-Za-z0-9])`, 'gi'))) {
+    if (/[a-z]/.test(spelling) && /[A-Z]/.test(spelling)) counts.set(spelling, (counts.get(spelling) ?? 0) + 1);
+  }
+  const best = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  return best ?? company.charAt(0).toUpperCase() + company.slice(1);
+}
+
 const ROLE_REPLACEMENTS = [
   [/\bsr\.?(?=\s)/g, 'senior'],
   [/\bjr\.?(?=\s)/g, 'junior'],
