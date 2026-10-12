@@ -305,3 +305,10 @@
 .jh-page__shot img { display: block; width: 14rem; max-width: 100%; max-height: 16rem; object-fit: cover; object-position: top; border: var(--border-width) solid var(--border-color); border-radius: var(--radius-sm); }
 .jh-page__shot:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 @media (max-width: 40rem) { .jh-page { padding: var(--space-3); } .jh-page__table th { width: 45%; } }
+
+.jh-page__answers { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-3); }
+.jh-page__answer { display: flex; flex-direction: column; gap: var(--space-1); }
+.jh-page__answer label { font-weight: 600; overflow-wrap: anywhere; }
+.jh-input { width: 100%; padding: var(--space-2); font: inherit; color: var(--text-primary); background: var(--bg-input); border: var(--border-width) solid var(--border-color); border-radius: var(--radius-sm); }
+.jh-input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.jh-page__answers .btn { align-self: flex-start; }

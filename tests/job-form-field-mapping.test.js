@@ -76,3 +76,19 @@ test('the letter greets the company by its proper name', () => {
   const fallback = assembleLetter({ paragraphs: ['One.'], resume: RESUME, job: { company: 'harvey', description: '' }, date: NOW });
   assert.equal(fallback.greeting, 'Dear Harvey team,');
 });
+
+test('the owner\'s own answer to the exact question settles a sensitive one; a short fragment never does', async () => {
+  const sensitive = [{ key: 'clearance', label: 'Do you have a security clearance?', type: 'combobox', options: ['Yes', 'No'] }, { key: 'sanctions', label: 'What is your citizenship and country of residence?', type: 'combobox', options: ['Yes', 'No'] }];
+  const withAnswers = async (custom) => {
+    const answered = { ...candidate, answers: { ...ANSWERS, custom } };
+    const schema = { hasForm: true, blockers: {}, submitLabel: 'Submit', fields: sensitive.map((field) => ({ required: true, filled: false, ...field })) };
+    return buildApplicationPlan({ url: 'https://x.test/apply', schema, job, candidate: answered, materials: files, now: NOW });
+  };
+  const exact = await withAnswers({ 'do you have a security clearance?': 'No', country: 'Yes' });
+  assert.equal(valueOf(exact, 'clearance'), 'No');
+  assert.equal(exact.fields.find((field) => field.key === 'clearance').origin, 'owner-answer');
+  assert.ok(exact.unresolved.some((item) => item.key === 'sanctions'), 'the short fragment "country" does not answer a sensitive question');
+  assert.deepEqual(exact.unresolved.find((item) => item.key === 'sanctions').options, ['Yes', 'No'], 'choices are kept so the app can offer them');
+  const none = await withAnswers({});
+  assert.equal(none.unresolved.length, 2);
+});

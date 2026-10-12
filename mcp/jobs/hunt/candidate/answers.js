@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'js-yaml';
 import { JOB_HUNT_DIR } from '../../profile.js';
+import { writeConfigFile } from '../../../../server/vault/config-log.js';
 
 // job-hunt/answers.yaml: the owner's standard answers to common application
 // questions. Only what is written here is ever answered for the owner: work
@@ -40,4 +41,56 @@ export function loadAnswers(vaultDir) {
   if (data.custom && typeof data.custom === 'object') for (const [fragment, value] of Object.entries(data.custom)) if (['string', 'number', 'boolean'].includes(typeof value)) answers.custom[fragment.toLowerCase()] = String(value);
   if (data.policy && typeof data.policy === 'object') for (const key of Object.keys(answers.policy)) if (typeof data.policy[key] === 'boolean') answers.policy[key] = data.policy[key];
   return answers;
+}
+
+const MAX_FRAGMENT = 200;
+const MAX_ANSWER = 2000;
+const CUSTOM_HEADER = /^custom:\s*(#.*)?$/;
+const CUSTOM_EMPTY = /^custom:\s*\{\s*\}\s*(#.*)?$/;
+
+/** What a question's label is stored as under `custom:`: the plan matches when the label contains it. */
+export const customFragment = (label) => String(label ?? '').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, MAX_FRAGMENT);
+
+/**
+ * Adds answers to questions U2OS could not answer, as entries under `custom:`
+ * in answers.yaml, from the Job details page. The file is edited as text so
+ * the owner's comments and other entries stay exactly as they were; an entry
+ * for the same question is replaced. Goes through the config-change log.
+ * entries: [{ label, value }]
+ */
+export function addCustomAnswers(vaultDir, entries, { channel = 'api' } = {}) {
+  const wanted = new Map();
+  for (const entry of entries) {
+    const fragment = customFragment(entry?.label);
+    const value = typeof entry?.value === 'string' || typeof entry?.value === 'number' || typeof entry?.value === 'boolean' ? String(entry.value).trim() : '';
+    if (!fragment) throw Object.assign(new Error('Every answer needs the question it answers'), { code: 'BAD_INPUT' });
+    if (!value) throw Object.assign(new Error(`The answer to "${fragment.slice(0, 60)}" is empty`), { code: 'BAD_INPUT' });
+    if (value.length > MAX_ANSWER || /\0/.test(value)) throw Object.assign(new Error(`The answer to "${fragment.slice(0, 60)}" is too long`), { code: 'BAD_INPUT' });
+    wanted.set(fragment, value);
+  }
+  if (!wanted.size) return { saved: 0 };
+  loadAnswers(vaultDir); // a damaged file is refused before anything is written
+  let text = '';
+  try { text = fs.readFileSync(answersPath(vaultDir), 'utf8'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  const lines = text.split('\n');
+  const header = lines.findIndex((line) => CUSTOM_HEADER.test(line) || CUSTOM_EMPTY.test(line));
+  const added = [...wanted].map(([fragment, value]) => `  ${JSON.stringify(fragment)}: ${JSON.stringify(value)}`);
+  if (header === -1) {
+    const body = text.replace(/\s*$/, '');
+    text = `${body}${body ? '\n\n' : ''}custom:\n${added.join('\n')}\n`;
+  } else {
+    // Drop older entries for the same questions (single-line entries inside the custom block), then add the new ones first.
+    let end = header + 1;
+    while (end < lines.length && (/^\s/.test(lines[end]) || lines[end].trim() === '')) end += 1;
+    const kept = lines.slice(header + 1, end).filter((line) => {
+      if (!line.trim() || line.trim().startsWith('#')) return true;
+      try { const parsed = yaml.load(line.trim(), { schema: yaml.CORE_SCHEMA }); const key = parsed && typeof parsed === 'object' ? Object.keys(parsed)[0] : null; return !(key && wanted.has(customFragment(key))); } catch { return true; }
+    });
+    lines.splice(header, end - header, CUSTOM_HEADER.test(lines[header]) ? lines[header] : 'custom:', ...added, ...kept);
+    text = lines.join('\n');
+  }
+  const check = yaml.load(text, { schema: yaml.CORE_SCHEMA });
+  for (const [fragment, value] of wanted) if (String(check?.custom?.[Object.keys(check.custom ?? {}).find((key) => customFragment(key) === fragment)] ?? '') !== value) throw new Error('Could not write the answers safely; answers.yaml was not changed');
+  writeConfigFile(vaultDir, 'job-hunt/answers.yaml', text, { channel });
+  return { saved: wanted.size };
 }

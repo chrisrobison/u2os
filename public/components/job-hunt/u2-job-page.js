@@ -17,6 +17,8 @@ export class U2JobPage extends HTMLElement {
     this._job = null;
     this._error = null;
     this._seq = 0;
+    this._busy = false;
+    this._notice = null;
   }
 
   /** The job id comes from the route: #/job-hunt/jobs/<id>. */
@@ -83,7 +85,48 @@ export class U2JobPage extends HTMLElement {
       attention.reasons.map((reason) => el('div', { class: 'jh-page__reason', 'data-reason': reason.kind },
         el('strong', { text: reason.title }),
         reason.items.length ? list(reason.items) : null,
+        reason.kind === 'needs_answers' ? this._answerForm(job) : null,
         reason.action ? el('p', { class: 'jh-page__action', text: reason.action }) : null)));
+  }
+
+  /** One input per unanswered question of the latest plan; choice questions offer the form's own options. */
+  _answerForm(job) {
+    const questions = (job.applications?.[0]?.plan?.unresolved ?? []).filter((question) => question.key);
+    if (!questions.length) return null;
+    const form = el('form', { class: 'jh-page__answers', 'data-answer-form': '' });
+    const inputs = new Map();
+    questions.forEach((question, index) => {
+      const id = `jh-answer-${index}`;
+      const choices = question.options?.length ? question.options : question.type === 'checkbox' ? ['Yes'] : null;
+      let input;
+      if (choices) input = el('select', { id, class: 'jh-input' }, el('option', { value: '', text: 'Choose...' }), choices.map((choice) => el('option', { value: choice, text: choice })));
+      else if (question.type === 'textarea' || String(question.label).length > 120) input = el('textarea', { id, class: 'jh-input', rows: '3', maxlength: '2000' });
+      else input = el('input', { id, class: 'jh-input', type: 'text', maxlength: '2000' });
+      inputs.set(question.key, input);
+      form.append(el('div', { class: 'jh-page__answer' }, el('label', { for: id, text: `${question.label}${question.required ? ' *' : ''}` }), input));
+    });
+    const save = el('button', { type: 'submit', class: 'btn', text: 'Save answers and re-plan' });
+    save.disabled = this._busy;
+    form.append(save, this._notice ? el('p', { class: this._notice.error ? 'load-error' : 'jh-page__ok', role: this._notice.error ? 'alert' : 'status', text: this._notice.text }) : null);
+    form.addEventListener('submit', (event) => { event.preventDefault(); this._saveAnswers(job, inputs); });
+    return form;
+  }
+
+  async _saveAnswers(job, inputs) {
+    const answers = [...inputs].map(([key, input]) => ({ key, value: input.value.trim() })).filter((answer) => answer.value);
+    if (!answers.length) { this._notice = { error: true, text: 'Type or choose at least one answer.' }; this._render(); return; }
+    this._busy = true; this._notice = { text: 'Saving, then reading the form again...' }; this._render();
+    try {
+      const result = await api.answerJobHuntQuestions(job.id, answers);
+      this._job = result.job;
+      this._notice = result.replanError
+        ? { error: true, text: `Saved ${result.saved} answer${result.saved === 1 ? '' : 's'}, but the form could not be read again: ${result.replanError}` }
+        : { text: result.unresolved ? `Saved. ${result.unresolved} question${result.unresolved === 1 ? ' is' : 's are'} still unanswered.` : 'Saved. Every question is answered and the application is planned again.' };
+    } catch (error) {
+      this._notice = { error: true, text: error.message };
+    }
+    this._busy = false;
+    this._render();
   }
 
   _posting(job) {

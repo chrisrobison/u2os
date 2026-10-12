@@ -80,3 +80,47 @@ test('an unknown job shows a plain message', async ({ browser }) => {
     await stopDedicatedServer(null, dedicated);
   }
 });
+
+test('unanswered questions can be answered on the page, and the page updates after re-planning', async ({ browser }) => {
+  const dedicated = await startDedicatedServer();
+  const context = await browser.newContext();
+  try {
+    await createOwner(dedicated.baseURL, PASSPHRASE);
+    const page = await context.newPage();
+    const waiting = JSON.parse(JSON.stringify(detail));
+    waiting.applications[0].plan.unresolved = [
+      { key: 'clearance', label: 'Do you have a security clearance?', type: 'combobox', required: true, reason: 'sensitive_never_inferred', options: ['Yes', 'No'] },
+      { key: 'scaled', label: 'Describe a system you scaled', type: 'text', required: true, reason: 'unknown_required_field' },
+    ];
+    const done = JSON.parse(JSON.stringify(waiting));
+    done.applications[0].status = 'planned';
+    done.applications[0].plan.unresolved = [];
+    done.attention = { needsYou: false, reasons: [] };
+    let sent = null;
+    await page.route(`**/api/job-hunt/jobs/${ID}`, (route) => route.fulfill({ json: waiting }));
+    await page.route(`**/api/job-hunt/jobs/${ID}/answers`, async (route) => {
+      sent = route.request().postDataJSON();
+      await route.fulfill({ json: { saved: 2, status: 'planned', unresolved: 0, job: done } });
+    });
+    await page.goto(`${dedicated.baseURL}/#/job-hunt/jobs/${ID}`);
+    await page.locator('input[name="passphrase"]').fill(PASSPHRASE);
+    await page.locator('form button[type="submit"]').click();
+
+    const form = page.locator('u2-job-page [data-answer-form]');
+    await expect(form).toBeVisible();
+    await expect(form.locator('select option')).toHaveText(['Choose...', 'Yes', 'No']);
+    await form.getByRole('button', { name: 'Save answers and re-plan' }).click();
+    await expect(form.locator('[role="alert"]')).toHaveText('Type or choose at least one answer.');
+    expect(sent).toBeNull();
+
+    await form.getByLabel('Do you have a security clearance? *').selectOption('No');
+    await form.getByLabel('Describe a system you scaled *').fill('A dispatch platform.');
+    await form.getByRole('button', { name: 'Save answers and re-plan' }).click();
+    await expect(page.locator('u2-job-page [data-needs-you]')).toHaveCount(0);
+    await expect(page.locator('u2-job-page')).toContainText('Nothing is waiting on you for this job.');
+    expect(sent).toEqual({ answers: [{ key: 'clearance', value: 'No' }, { key: 'scaled', value: 'A dispatch platform.' }] });
+  } finally {
+    await context.close();
+    await stopDedicatedServer(null, dedicated);
+  }
+});
