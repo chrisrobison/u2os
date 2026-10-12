@@ -9,6 +9,9 @@ import { buildDashboard, moveJob, DEFAULT_WINDOW_DAYS } from '../../../mcp/jobs/
 import { addInterview, updateInterview, deleteInterview, addTask, completeTask, uncompleteTask, snoozeTask } from '../../../mcp/jobs/hunt/schedule.js';
 import { addContact, updateContact, deleteContact, markContacted } from '../../../mcp/jobs/hunt/contacts.js';
 import { jobView, listJobViews } from '../../../mcp/jobs/hunt/view.js';
+import { addCustomAnswers } from '../../../mcp/jobs/hunt/candidate/answers.js';
+import { withLock } from '../../../mcp/jobs/hunt/act.js';
+import { planJob } from '../../jobhunt/replan.js';
 import { JOB_HUNT_DIR } from '../../../mcp/jobs/profile.js';
 import { loadPreferences, loadResume } from '../../../mcp/jobs/hunt/candidate/profile.js';
 import { setAutopilotSwitches } from '../../../mcp/jobs/hunt/autopilot/config.js';
@@ -125,6 +128,48 @@ export function registerJobHuntRoutes(router, { agent, toolRegistry, autopilot =
     const view = withStore((store) => { const job = store.getJob(req.params.id); return job ? jobView(store, job, { minimumScore: preferences().minimum_score, detail: true, screensDir: screensDir() }) : null; });
     if (!view) return sendJson(res, 404, { error: 'No such job' });
     sendJson(res, 200, view);
+  });
+
+  // The owner answers questions the planner could not. The questions come from the job's latest plan (a client cannot invent
+  // one or change its label), the answers are saved under `custom:` in answers.yaml, and the form is planned again.
+  router.post('/api/job-hunt/jobs/:id/answers', async (req, res) => {
+    if (!JOB_ID.test(req.params.id)) return sendJson(res, 400, { error: 'Invalid job id' });
+    const given = req.body?.answers;
+    if (!Array.isArray(given) || !given.length || given.length > 50) return sendJson(res, 400, { error: 'answers must be a list of 1 to 50 { key, value }' });
+    const vaultDir = getVaultDir();
+    try {
+      const body = await withLock(vaultDir, req.params.id, async () => {
+        const store = openStore(huntDbPath(vaultDir));
+        try {
+          const job = store.getJob(req.params.id);
+          if (!job) throw Object.assign(new Error('No such job'), { code: 'UNKNOWN_JOB' });
+          const application = store.listApplications(job.id).at(-1);
+          if (!application || !['needs_input', 'planned'].includes(application.status) || !application.plan?.unresolved?.length) throw Object.assign(new Error('This job has no unanswered questions'), { code: 'CONFLICT' });
+          const entries = [];
+          for (const item of given) {
+            const question = application.plan.unresolved.find((entry) => entry.key === item?.key);
+            if (!question) throw Object.assign(new Error('That question is not waiting for an answer'), { code: 'BAD_INPUT' });
+            let value = typeof item.value === 'string' ? item.value.trim() : item.value;
+            if (question.options?.length) {
+              const option = question.options.find((entry) => entry.toLowerCase() === String(value).trim().toLowerCase());
+              if (!option) throw Object.assign(new Error(`"${String(question.label).slice(0, 80)}" must be one of the form's choices`), { code: 'BAD_INPUT' });
+              value = option;
+            }
+            entries.push({ label: question.label, value });
+          }
+          const { saved } = addCustomAnswers(vaultDir, entries, { channel: 'api' });
+          let replanned = null; let replanError = null;
+          try { replanned = await planJob({ vaultDir, store, job }); } catch (error) { replanError = String(error.message).slice(0, 300); }
+          const fresh = store.getJob(job.id);
+          return { saved, status: replanned?.status ?? application.status, unresolved: (replanned?.plan ?? application.plan).unresolved.length, ...(replanError ? { replanError } : {}), job: jobView(store, fresh, { minimumScore: preferences().minimum_score, detail: true, screensDir: screensDir() }) };
+        } finally { store.close(); }
+      });
+      sendJson(res, 200, body);
+    } catch (error) {
+      const status = { BAD_INPUT: 400, UNKNOWN_JOB: 404, CONFLICT: 409, IN_PROGRESS: 409 }[error.code];
+      if (!status) return sendJson(res, 500, { error: String(error.message).slice(0, 300) });
+      sendJson(res, status, { error: error.message });
+    }
   });
 
   // A screenshot of one of the job's application attempts: a PNG under

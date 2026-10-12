@@ -50,6 +50,18 @@ function resolveField(field, ctx) {
     }
     return field.required ? unresolved('unknown_upload') : { skip: true };
   }
+  // A question U2OS never infers is still settled by the owner's own answer to that exact question (entered in the app
+  // or in answers.yaml). Only a full-label match counts, so a short fragment such as "country" cannot answer one by accident.
+  if (SENSITIVE.test(text) || EEO.test(text)) {
+    const exact = label.toLowerCase().replace(/\s+/g, ' ').trim();
+    for (const [fragment, value] of Object.entries(answers.custom)) {
+      const wanted = fragment.replace(/\s+/g, ' ').trim();
+      if (exact === wanted || (wanted.length >= 200 && exact.startsWith(wanted))) {
+        const option = isChoice && options.length ? matchOption(options, value) : value;
+        return option ? { value: option, origin: 'owner-answer' } : unresolved('custom_answer_not_in_options');
+      }
+    }
+  }
   if (SENSITIVE.test(text)) return field.required ? unresolved('sensitive_never_inferred') : { skip: true };
   if (EEO.test(text)) {
     const decline = options.find((o) => DECLINE.test(o));
@@ -202,7 +214,7 @@ export async function buildApplicationPlan({ url, schema, job, source, candidate
     const result = resolveField(field, ctx);
     const base = { key: field.key, label: field.label, type: field.type, required: field.required };
     if (result.skip) continue;
-    if (result.unresolved) { unresolved.push({ ...base, reason: result.unresolved }); continue; }
+    if (result.unresolved) { unresolved.push({ ...base, ...(field.options?.length ? { options: field.options.slice(0, 60).map((option) => String(option).slice(0, 200)) } : {}), reason: result.unresolved }); continue; }
     if (result.open) { open.push({ ...base, maxLength: field.maxLength }); continue; }
     fields.push({ ...base, ...(result.file ? { file: result.file, fileName: result.fileName } : { value: String(result.value).slice(0, 5000) }), origin: result.file ? 'upload' : result.origin, options: field.options?.length ? field.options : undefined });
   }

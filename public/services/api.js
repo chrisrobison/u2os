@@ -591,6 +591,7 @@ export function addJobHuntContact(jobId, body) { return jobHuntWrite(`/api/job-h
 export function updateJobHuntContact(id, body) { return jobHuntWrite(`/api/job-hunt/contacts/${encodeURIComponent(id)}`, 'PATCH', body); }
 export function deleteJobHuntContact(id) { return jobHuntWrite(`/api/job-hunt/contacts/${encodeURIComponent(id)}`, 'DELETE'); }
 export function markJobHuntContacted(id) { return jobHuntWrite(`/api/job-hunt/contacts/${encodeURIComponent(id)}/contacted`, 'POST'); }
+export function answerJobHuntQuestions(id, answers) { return jobHuntWrite(`/api/job-hunt/jobs/${encodeURIComponent(id)}/answers`, 'POST', { answers }); }
 export function getAutopilot() { return request('/api/job-hunt/autopilot'); }
 export function setAutopilot(body) { return request('/api/job-hunt/autopilot', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }
 export function runAutopilot() { return request('/api/job-hunt/autopilot/run', { method: 'POST' }); }

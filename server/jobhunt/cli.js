@@ -19,6 +19,7 @@ import { generateMaterials } from '../../mcp/jobs/hunt/applications/materials.js
 import { loadFacts } from '../../mcp/jobs/hunt/candidate/facts.js';
 import { candidateDigest } from '../../mcp/jobs/hunt/candidate/profile.js';
 import { createJobLlm } from './llm.js';
+import { planJob } from './replan.js';
 import { stageAttachment } from '../tools/email-attachments.js';
 import { setAutopilotSwitches } from '../../mcp/jobs/hunt/autopilot/config.js';
 import { revokeAutonomy, setupAutopilot } from '../../mcp/jobs/hunt/autopilot/setup.js';
@@ -200,10 +201,7 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
         const { flags, positional } = parseFlags(rest, ['url']);
         const job = store.getJob(positional[0]);
         if (!job) { out.log(`Unknown job ${positional[0] ?? ''}`); return 1; }
-        const resume = loadResume(vaultDir);
-        const preferences = loadPreferences(vaultDir);
-        const candidate = { resume, preferences, answers: loadAnswers(vaultDir), facts: loadFacts(vaultDir), repos: loadRepos(vaultDir)?.repos ?? [], digest: candidateDigest(resume, preferences) };
-        const application = await planApplication({ store, job, candidate, llm: llmOverride ?? createJobLlm(), ensureCombined: ensureCombinedPdf, nameStyle: loadAutopilotConfig(vaultDir).file_names, driver: loadAutopilotConfig(vaultDir).browser.driver, url: flags.url ?? null, verifiedNoClick: flags['verified-no-click'] === true, now });
+        const application = await planJob({ vaultDir, store, job, llm: llmOverride, url: flags.url ?? null, verifiedNoClick: flags['verified-no-click'] === true, now });
         const { plan } = application;
         out.log(`${job.company} - ${job.role ?? ''}: plan ${application.status}  (${plan.fields.length} fields, ${plan.unresolved.length} unresolved)  ${application.url}`);
         for (const field of plan.fields) out.log(`  ${field.origin.padEnd(12)} ${String(field.label).slice(0, 48).padEnd(48)} ${field.file ? `[${field.file} file]` : String(field.value).replace(/\s+/g, ' ').slice(0, 60)}`);
