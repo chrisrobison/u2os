@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import path from 'node:path';
 import { normalizeCompany, normalizeRole, canonicalUrl } from '../../jobs/normalize.js';
 import { buildApplicationPlan } from './plan.js';
 import { resolveDriver } from './driver.js';
@@ -94,7 +95,8 @@ export async function submitApplication({ store, job, files, submit = true, head
   if (['applied', 'contacted', 'rejected', 'withdrawn', 'closed', 'skipped', 'interview'].includes(job.status)) throw Object.assign(new Error(`Not submitting: the job is already ${job.status}`), { code: 'BLOCKED' });
 
   const result = await (execute ?? resolveDriver(driver).execute)({
-    plan: application.plan, files, submit, headed, screenshotDir,
+    plan: application.plan, files, submit, headed,
+    screenshotDir: screenshotDir ? path.join(screenshotDir, `application-${application.id}`, crypto.randomUUID()) : null,
     beforeSubmit: async () => {
       // Intent first: from here a crash means "uncertain", never "try again".
       store.updateApplication(application.id, { status: 'submitting' }, new Date());

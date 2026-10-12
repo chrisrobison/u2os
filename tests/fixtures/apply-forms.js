@@ -39,16 +39,17 @@ const COMBO_FORM = page('Apply', `<form action="/simple/submit" method="post" en
   <label for="email">Email *</label><input id="email" name="email" required>
   <label for="resume">Resume *</label><input id="resume" name="resume" type="file" required>
   <label for="country">Country *</label><div class="select-shell"><div class="select__control"><input id="country" role="combobox" aria-required="true" aria-expanded="false"><input required tabindex="-1" aria-hidden="true"></div></div>
+  <label for="candidate-location">Location (City) *</label><div class="select-shell"><div class="select__control"><input id="candidate-location" role="combobox" aria-required="true" aria-expanded="false"><input required tabindex="-1" aria-hidden="true"></div></div>
   <label for="auth">Are you legally authorized to work in the United States? *</label><div class="select-shell"><div class="select__control"><input id="auth" role="combobox" aria-required="true" aria-expanded="false"><input required tabindex="-1" aria-hidden="true"></div></div>
   <button type="submit">Submit Application</button>
 </form><script>
-  for (const [id, values] of Object.entries({ country: ['United States', 'Canada'], auth: ['Yes', 'No'] })) {
+  for (const [id, values] of Object.entries({ country: ['United States +1', 'Canada +1'], 'candidate-location': ['San Francisco, California, United States', 'San Francisco de Macorís, Dominican Republic'], auth: ['Yes', 'No'] })) {
     const input = document.getElementById(id);
     const control = input.closest('.select__control');
     const show = () => {
       control.querySelector('[role="listbox"]')?.remove();
       const list = document.createElement('div'); list.setAttribute('role', 'listbox');
-      for (const value of values.filter((item) => item.toLowerCase().includes(input.value.toLowerCase()))) {
+      for (const value of values.filter((item) => id === 'candidate-location' ? input.value.length >= 3 && item.toLowerCase().startsWith(input.value.toLowerCase()) : item.toLowerCase().includes(input.value.toLowerCase()))) {
         const option = document.createElement('button'); option.type = 'button'; option.setAttribute('role', 'option'); option.textContent = value;
         option.onclick = () => { control.querySelector('.select__singleValue')?.remove(); const selected = document.createElement('span'); selected.className = 'select__singleValue'; selected.textContent = value; control.insertBefore(selected, input); control.querySelector('[aria-hidden]').value = value; input.value = ''; input.setAttribute('aria-expanded', 'false'); list.remove(); };
         list.append(option);
