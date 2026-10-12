@@ -1,4 +1,5 @@
 // Local stand-ins for application forms on different boards, for tests/job-form-applicant.test.js.
+import crypto from 'node:crypto';
 import http from 'node:http';
 
 const page = (title, body, head = '') => `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>${head}</head><body>${body}</body></html>`;
@@ -87,6 +88,12 @@ export function startApplyForms() {
     }
     switch (url.pathname) {
       case '/ashby/application': return html(ASHBY_FORM());
+      case '/ashby-radios/apply': {
+        // Like Ashby: radio names carry a form-instance uuid that is new on every load.
+        const instance = crypto.randomUUID();
+        const q1 = 'eebeac06-e08c-4eee-b866-81971c178736';
+        return html(SIMPLE_FORM(`<fieldset><legend>Will you require sponsorship? *</legend><label><input type="radio" name="${instance}_${q1}" value="yes" required> Yes</label> <label><input type="radio" name="${instance}_${q1}" value="no"> No</label></fieldset>`));
+      }
       case '/simple/apply': return html(SIMPLE_FORM());
       case '/embedded/apply': return html(page('Embedded application', '<form action="/search"><input name="q" aria-label="Search jobs"><button>Search</button></form><iframe title="Greenhouse Job Board" src="/embed/job_app" style="width:100%;height:1000px"></iframe>'));
       case '/embed/job_app': return html(SIMPLE_FORM());

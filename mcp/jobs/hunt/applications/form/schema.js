@@ -54,7 +54,9 @@ export function readFormSchema(page) {
       const buttons = type === 'checkbox' ? [...(element.parentElement?.querySelectorAll(':scope > button') ?? [])] : [];
       const buttonGroup = buttons.length >= 2;
       if (type !== 'file' && !buttonGroup && !visible(element) && !(type === 'radio' || type === 'checkbox')) continue;
-      const base = element.name || element.id || `field_${counter}`;
+      // Ashby names its radios "<form instance uuid>_<question uuid>" and the instance part changes on every page load,
+      // which would change the form's hash each time it is read. Only the question part identifies the field.
+      const base = (element.name || element.id || `field_${counter}`).replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_(?=.)/i, '');
       counter += 1;
       const key = base;
       if (!groups.has(key)) groups.set(key, { key, type: buttonGroup ? 'buttons' : element.getAttribute('role') === 'combobox' ? 'combobox' : type, label: '', required: false, filled: false, options: [], maxLength: element.maxLength > 0 ? element.maxLength : null, accept: element.accept || null });

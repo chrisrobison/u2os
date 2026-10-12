@@ -169,6 +169,22 @@ test('an embedded application is inspected and filled inside its frame', async (
   assert.equal(result.result.screenshots.length, 2);
 });
 
+test('field keys do not change between page loads, so a planned form still matches when it is filled (Ashby radios)', async (t) => {
+  if (!browserOk) return t.skip('no browser');
+  const url = `${forms.base}/ashby-radios/apply`;
+  const first = await inspectApplication({ url });
+  const second = await inspectApplication({ url });
+  assert.deepEqual(first.fields.map((field) => field.key), second.fields.map((field) => field.key));
+  assert.ok(first.fields.every((field) => !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}_/i.test(field.key)), 'no random form-instance prefix in any key');
+  assert.ok(first.fields.some((field) => field.key === 'eebeac06-e08c-4eee-b866-81971c178736'), 'the question id is the key');
+  assert.equal(schemaHash(first.fields), schemaHash(second.fields));
+  const w = world(url);
+  const application = await planApplication({ store: w.store, job: w.job, candidate: candidate(), llm: llmWith({}), now: NOW });
+  assert.ok(application.plan.fields.some((field) => /sponsorship/i.test(field.label)), 'the radio question is planned');
+  const dry = await submitApplication({ store: w.store, job: w.job, files: w.files, submit: false, now: NOW });
+  assert.equal(dry.result.status, 'dry_run', 'the planned form is recognised at fill time');
+});
+
 test('empty form schemas and old empty plans never reach a submit click', async (t) => {
   if (!browserOk) return t.skip('no browser');
   const w = world(`${forms.base}/empty/apply`);
