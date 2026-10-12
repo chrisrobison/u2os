@@ -14,6 +14,9 @@ const ROUTES = [['apple_mail', 'Send with Mail'], ['gmail', 'Send with Gmail'], 
 
 const active = (job) => job.emails.some((email) => email.kind === 'application' && ['proposing', 'proposed', 'sent', 'uncertain'].includes(email.status));
 
+// A job named in the autopilot's report opens its details page.
+const jobLink = (item) => (/^job_[0-9a-f]{16}$/.test(item.jobId || '') ? `<a href="#/job-hunt/jobs/${escapeHtml(item.jobId)}">${escapeHtml(item.job)}</a>` : escapeHtml(item.job));
+
 export class U2JobHunt extends HTMLElement {
   constructor() {
     super();
@@ -107,8 +110,8 @@ export class U2JobHunt extends HTMLElement {
       </div>
       ${report?.llm ? `<div class="trigger-row__meta">Model calls last cycle: ${report.llm.fastConfigured ? `${report.llm.fast} local (free), ` : ''}${report.llm.quality} ${report.llm.fastConfigured ? 'cloud' : 'model'}.</div>` : ''}
       ${report ? `<div class="trigger-row__meta">Last cycle ${escapeHtml(formatDateTime(report.finishedAt || report.startedAt))} (${escapeHtml(report.mode)}): ${Object.entries(report.steps || {}).map(([name, step]) => `${name} ${step.error ? 'failed' : escapeHtml(Object.values(step).filter((v) => typeof v === 'number').join('/') || 'ok')}`).join(' · ')}</div>
-        ${report.actions?.length ? `<ul>${report.actions.slice(0, 8).map((item) => `<li>${escapeHtml(item.job)}: ${escapeHtml(item.result)}</li>`).join('')}</ul>` : ''}
-        ${report.needsYou?.length ? `<div class="application-card__label">Needs you</div><ul>${report.needsYou.slice(0, 8).map((item) => `<li>${escapeHtml(item.job)}: ${escapeHtml(item.why)}</li>`).join('')}</ul>` : ''}
+        ${report.actions?.length ? `<ul>${report.actions.slice(0, 8).map((item) => `<li>${jobLink(item)}: ${escapeHtml(item.result)}</li>`).join('')}</ul>` : ''}
+        ${report.needsYou?.length ? `<div class="application-card__label">Needs you</div><ul>${report.needsYou.slice(0, 8).map((item) => `<li>${jobLink(item)}: ${escapeHtml(item.why)}</li>`).join('')}</ul>` : ''}
         ${report.errors?.length ? `<ul class="routine-row__error">${report.errors.slice(0, 5).map((error) => `<li>${escapeHtml(error)}</li>`).join('')}</ul>` : ''}` : '<div class="trigger-row__meta">No cycle has run yet.</div>'}
     </div></section>`;
   }
@@ -122,13 +125,13 @@ export class U2JobHunt extends HTMLElement {
     const where = [job.locations.join('; '), job.remote === true ? 'remote' : job.remote === false ? 'on-site' : '', job.salary].filter(Boolean).join(' · ');
     return `<article class="trigger-row application-card" data-job="${escapeHtml(job.id)}">
       <div class="trigger-row__body">
-        <div class="trigger-row__heading"><strong>${escapeHtml(job.role || '(no role stated)')} at ${escapeHtml(job.company)}</strong>
+        <div class="trigger-row__heading"><strong><a href="#/job-hunt/jobs/${escapeHtml(job.id)}" data-job-link>${escapeHtml(job.role || '(no role stated)')} at ${escapeHtml(job.company)}</a></strong>
           ${score ? `<span class="trigger-state trigger-state--${LABEL_TONE[score.label] || 'paused'}">${score.score} ${escapeHtml(score.label)}</span>` : ''}
           <span class="trigger-state trigger-state--${STATUS_TONE[job.status] || 'paused'}">${escapeHtml(job.status.replace(/_/g, ' '))}</span></div>
         <div class="trigger-row__meta">${escapeHtml(where)}${score ? ` · ${escapeHtml(score.narrative)}` : ''} · ${escapeHtml(job.strategy.name.replace(/_/g, ' ').toLowerCase())}</div>
         ${score?.reasons.length ? `<div class="trigger-row__next">${score.reasons.slice(0, 2).map(escapeHtml).join(' · ')}</div>` : ''}
         ${score?.concerns.length ? `<ul class="routine-row__error">${score.concerns.slice(0, 3).map((c) => `<li>${escapeHtml(c)}</li>`).join('')}</ul>` : ''}
-        ${!draft?.needsInput.length && job.status === 'needs_input' ? `<div class="application-card__section"><div class="application-card__label">The application form is waiting on you</div><div class="trigger-row__meta">It asks for something your facts do not cover, so nothing was sent. Open <a href="#/applications">Applications</a> to see the question, then add the answer to job-hunt/answers.yaml or facts.md.</div></div>` : ''}
+        ${!draft?.needsInput.length && job.status === 'needs_input' ? `<div class="application-card__section"><div class="application-card__label">The application form is waiting on you</div><div class="trigger-row__meta">It asks for something your facts do not cover, so nothing was sent. <a href="#/job-hunt/jobs/${escapeHtml(job.id)}">Open the job</a> to see the question, then add the answer to job-hunt/answers.yaml or facts.md.</div></div>` : ''}
         ${draft?.needsInput.length ? `<div class="application-card__section"><div class="application-card__label">The listing asks for things your facts do not cover</div><ul>${draft.needsInput.map((ask) => `<li>${escapeHtml(ask)}</li>`).join('')}</ul><div class="trigger-row__meta">Add what is true to job-hunt/facts.md, then run: npm run u2 -- job materials ${escapeHtml(job.id)} --force</div></div>` : ''}
         ${draft ? `<details class="application-card__details"><summary>Email to ${escapeHtml(draft.to)}</summary>
           <div class="application-card__label">Subject</div><p>${escapeHtml(draft.subject)}</p>

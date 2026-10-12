@@ -176,6 +176,14 @@ A route whose tool is not available is disabled, and the API says why; there is 
 
 Outcomes are reconciled as soon as an action completes, fails or is rejected, and again whenever the page loads, so approved sends move jobs to `contacted` (with a follow-up date) without stopping the server. The same is available over the owner API: `GET /api/job-hunt/jobs[/<id>]`, `POST /api/job-hunt/jobs/<id>/send` with `{ "via": "gmail" | "apple_mail" | "apple_mail_draft", "force": false }`, and `POST /api/job-hunt/reconcile`. `job send` and `job reconcile` on the command line remain for the Gmail route when the server is stopped.
 
+## The job details page
+
+Click any job in Job Leads, the autopilot's *Needs you* and activity lists, the applications ledger, or *Open full page* in the dashboard's details panel to open `#/job-hunt/jobs/<job-id>`. The URL can be bookmarked and reloaded. The page shows everything U2OS has stored for the job: the posting text and links, the score and why, every application attempt (the planned answers, what was left unanswered, the outcome and its screenshots), every review (failed checks, blocking and minor concerns, notes), the materials and email, contacts, tasks, interviews and the history.
+
+At the top, **Needs you** says in words what is waiting on you and what to do about it: unanswered required questions, a CAPTCHA or login wall, an application whose outcome is unknown, a form that showed no confirmation, or the review agent's objections. A job that is applied, contacted or otherwise settled shows nothing there (except an uncertain one). The page is read-only; sending and stage moves stay where they are.
+
+`GET /api/job-hunt/jobs/:id` carries all of this (`applications`, `reviews`, `contacts`, `tasks`, `interviews`, `attention`), and `GET /api/job-hunt/jobs/:id/screenshot?path=<file>` serves one attempt screenshot: a PNG inside `job-hunt/state/screens/<job-id>/`, a regular file, owner only.
+
 ## The dashboard API
 
 `GET /api/job-hunt/dashboard[?days=30]` (owner only; `days` is a whole number from 1 to 365) returns the whole dashboard in one call. The code is `mcp/jobs/hunt/dashboard.js`; the route only calls it.

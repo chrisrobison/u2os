@@ -433,6 +433,12 @@ class Store {
     return row ? { id: row.id, jobId: row.job_id, kind: row.kind, decision: row.decision, contentHash: row.content_hash, checks: parse(row.checks, []), concerns: parse(row.concerns, []), notes: row.notes, model: row.model, createdAt: row.created_at } : null;
   }
 
+  /** Every review of a job, newest first. */
+  listReviews(jobId) {
+    return this.db.prepare('SELECT * FROM reviews WHERE job_id = ? ORDER BY id DESC').all(jobId)
+      .map((row) => ({ id: row.id, jobId: row.job_id, kind: row.kind, decision: row.decision, contentHash: row.content_hash, checks: parse(row.checks, []), concerns: parse(row.concerns, []), notes: row.notes, model: row.model, createdAt: row.created_at }));
+  }
+
   /** The latest approval for this exact content, or null: any change to what is reviewed invalidates it. */
   validApproval(jobId, kind, contentHash) {
     const review = this.latestReview(jobId, kind);
