@@ -54,12 +54,14 @@ function location(job) {
   return job.remote ? 'Remote' : null;
 }
 
-function card(store, job, at) {
+function card(store, job, at, ready = false) {
   const score = store.getScore(job.id);
   return {
     id: job.id, company: job.company, role: job.role, location: location(job),
     fit: score ? score.score : null, status: job.status, statusLine: STATUS_LINES[job.status] ?? job.status,
     timestamp: at ?? job.updatedAt, companyUrl: job.companyUrl ?? null,
+    // A planned, ready application the owner can approve and submit (the details page checks again before anything is sent).
+    ready,
   };
 }
 
@@ -146,11 +148,14 @@ export function buildDashboard(store, { days = DEFAULT_WINDOW_DAYS, now = new Da
   for (const event of events) lastStatusAt.set(event.jobId, event.at);
   const jobs = store.listJobs({ limit: 5000 });
   const jobsById = new Map(jobs.map((job) => [job.id, job]));
+  const latestForm = new Map();
+  for (const application of store.listApplications()) if (application.kind === 'form') latestForm.set(application.jobId, application);
+  const readyToSubmit = (job) => { const application = latestForm.get(job.id); return Boolean(application && application.status === 'planned' && application.plan?.ready === true && !['applied', 'contacted', 'rejected', 'withdrawn', 'closed', 'skipped', 'interview', 'uncertain'].includes(job.status)); };
   const stages = STAGES.map(({ id, label }) => {
     const members = jobs.filter((job) => stageOf(job.status) === id)
       .map((job) => ({ job, at: lastStatusAt.get(job.id) ?? job.updatedAt }))
       .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : a.job.id < b.job.id ? -1 : 1));
-    return { id, label, statuses: STAGE_STATUSES[id], count: members.length, jobs: members.slice(0, CARDS_PER_STAGE).map(({ job, at }) => card(store, job, at)) };
+    return { id, label, statuses: STAGE_STATUSES[id], count: members.length, jobs: members.slice(0, CARDS_PER_STAGE).map(({ job, at }) => card(store, job, at, readyToSubmit(job))) };
   });
   return { generatedAt: now.toISOString(), stages, analytics: computeAnalytics(events, { days, now }), resumeVersions: resumeVersions(store, jobsById), interviews: upcomingInterviews(store, now), tasks: dashboardTasks(store, now), contacts: dashboardContacts(store, now) };
 }

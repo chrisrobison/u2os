@@ -1,7 +1,8 @@
 import { el, monogram, fitChip, fitBand, FIT_BANDS, relTime } from './jh-util.js';
 
 // The application pipeline: one column per stage (or per fit band), a card per
-// job. Selecting a card dispatches `jh-select` with the job id. Search and
+// job. Selecting a card dispatches `jh-select` with the job id; a card with a
+// ready application also has an Approve button that dispatches `jh-approve`. Search and
 // group-by are client-side over the cards the dashboard API returned.
 
 const GROUPINGS = [['stage', 'Stage'], ['fit', 'Fit']];
@@ -80,7 +81,10 @@ export class U2JobPipeline extends HTMLElement {
           job.location ? el('span', { class: 'jh-card__loc', text: job.location }) : null)),
       el('span', { class: 'jh-card__foot' }, fitChip(job.fit), el('span', { class: 'jh-card__meta', text: [job.statusLine, when].filter(Boolean).join(' · ') })));
     button.addEventListener('click', () => this.dispatchEvent(new CustomEvent('jh-select', { bubbles: true, detail: { id: job.id } })));
-    return el('li', { class: 'jh-board__item' }, button);
+    // A planned, ready application can be approved from the board; the dashboard asks again before anything is sent.
+    const approve = job.ready ? el('button', { type: 'button', class: 'jh-card__approve', 'data-approve': job.id, 'aria-label': `Approve ${job.role || 'this role'} at ${job.company}`, text: 'Approve' }) : null;
+    approve?.addEventListener('click', () => this.dispatchEvent(new CustomEvent('jh-approve', { bubbles: true, detail: { id: job.id } })));
+    return el('li', { class: 'jh-board__item' }, button, approve);
   }
 
   _render() {
