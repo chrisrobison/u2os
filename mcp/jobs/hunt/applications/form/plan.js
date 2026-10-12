@@ -72,7 +72,7 @@ function resolveField(field, ctx) {
   if (/twitter|x\.com/i.test(text)) return { skip: true };
   if (/(desired|preferred|target) (work )?location|work location|office location/i.test(label)) return { value: ctx.location, origin: 'identity' };
   if (/^(current )?(location|city|where are you (based|located))|current location|city.*(state|country)/i.test(label)) return { value: ctx.location, origin: 'identity' };
-  if (/current (company|employer)|^(company|employer)( name)?\??$/i.test(label.trim())) return ctx.currentCompany ? { value: ctx.currentCompany, origin: 'identity' } : { skip: true };
+  if (/\b(current|most recent|latest)\b.*\b(company|employer)\b|^(company|employer)( name)?\??$/i.test(label.trim())) return ctx.currentCompany ? { value: ctx.currentCompany, origin: 'identity' } : { skip: true };
   if (/current (title|role|position)/i.test(label)) return ctx.currentTitle ? { value: ctx.currentTitle, origin: 'identity' } : { skip: true };
 
   // Standard answers: only what the owner put in answers.yaml.
