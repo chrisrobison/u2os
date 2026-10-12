@@ -76,7 +76,7 @@ test('browser.driver in autopilot.yaml defaults to playwright; a registered name
   const write = (text) => fs.writeFileSync(path.join(vault, 'job-hunt', 'autopilot.yaml'), text);
   assert.equal(loadAutopilotConfig(vault).browser.driver, 'playwright');
   write('browser:\n  headed: true\n');
-  assert.deepEqual(loadAutopilotConfig(vault).browser, { driver: 'playwright', headed: true });
+  assert.deepEqual(loadAutopilotConfig(vault).browser, { driver: 'playwright', headed: true, keep_open: true });
   write('browser:\n  driver: fake\n');
   assert.throws(() => loadAutopilotConfig(vault), /browser\.driver must be one of playwright/);
   registerDriver('fake', fakeDriver());

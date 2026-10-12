@@ -88,7 +88,7 @@ export function submitApplicationForm({ vaultDir, jobId, execute = null, driver 
       const files = { ...(artifacts.resume_pdf ? { resume: { path: artifacts.resume_pdf.path } } : {}), ...(artifacts.cover_letter_pdf ? { cover_letter: { path: artifacts.cover_letter_pdf.path } } : {}), ...(artifacts.combined_pdf ? { resume_with_letter: { path: artifacts.combined_pdf.path } } : {}) };
       // The owner pressing the button is the consent to send, whatever the autopilot's mode.
       const live = owner || config.mode === 'live';
-      const { result, application } = await submitApplication({ store, job, files, submit: live, headed: config.browser.headed, driver: driver ?? config.browser.driver, execute, screenshotDir: path.join(vaultDir, JOB_HUNT_DIR, 'state', 'screens', job.id), now });
+      const { result, application } = await submitApplication({ store, job, files, submit: live, headed: config.browser.headed, keepOpen: config.browser.keep_open, driver: driver ?? config.browser.driver, execute, screenshotDir: path.join(vaultDir, JOB_HUNT_DIR, 'state', 'screens', job.id), now });
       store.recordEvent(job.id, live ? 'application_form_submitted' : 'autopilot_dry_run', { detail: { action: 'submit_application', outcome: result.status, applicationId: application.id, by: owner ? 'owner' : 'autopilot', reviewId: approval.id } }, new Date());
       return { status: result.status, company: job.company, role: job.role, ...(result.reason ? { reason: result.reason } : {}), ...(result.errors ? { errors: result.errors } : {}) };
     } finally { store.close(); }
