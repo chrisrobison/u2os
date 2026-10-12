@@ -65,6 +65,8 @@ An executing worker renews its lease while a provider call is in flight. The lea
 
 ## Email attachments
 
+**Bcc to the owner.** Every `email.send` (Gmail and SMTP) is Bcc'd to the address in `U2OS_MAIL_BCC` or `mailBcc` in `config.json`, so the owner can see that mail went out. The Bcc comes only from that configuration: a `bcc` argument from a model or routine is dropped. The Apple Mail add-on does the same for `apple_mail.send` and `apple_mail.draft` with its `mail_bcc` setting (falling back to `U2OS_MAIL_BCC`). A malformed address fails the send rather than skipping the Bcc.
+
 `email.send` accepts an optional `attachments` list of **staged references**. It never accepts a file path, so a model or routine cannot attach (or exfiltrate) an arbitrary file.
 
 A file is staged by copying it into the vault outbox under its own SHA-256, `<vault>/outbox/<sha256>/<filename>`, which the owner or software acting for them does deliberately (`stageAttachment()` in `server/tools/email-attachments.js`; `u2 job materials` stages the tailored resume and cover letter). The reference is `outbox/<sha256>/<filename>`. It is part of the approved arguments, so the approval screen shows the file name and the start of the hash.

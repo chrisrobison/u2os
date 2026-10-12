@@ -62,7 +62,7 @@ servers:
   # No suggestions: both tools are actions that need confirmation until you decide otherwise.
   apple_mail:
     command: node
-    args: ["${ADDON_DIR}/mail-send/server.js", "--vault", "${VAULT}", "--sender", "${setting.mail_sender}"]
+    args: ["${ADDON_DIR}/mail-send/server.js", "--vault", "${VAULT}", "--sender", "${setting.mail_sender}", "--bcc", "${setting.mail_bcc}"]
     timeout_seconds: 90
     tools:
       send: { description: "Send an email through the Mail app on this Mac, with optional staged attachments (resume, cover letter)." }
@@ -73,3 +73,7 @@ settings:
     type: string
     default: ""
     description: "Optional: the Mail account to send from, as Mail shows it, for example Name <me@example.com>. Empty uses Mail's default account."
+  mail_bcc:
+    type: string
+    default: ""
+    description: "Optional: your own address, Bcc'd on every message sent or drafted through the apple_mail server, so you can see that mail went out. Empty falls back to U2OS_MAIL_BCC."

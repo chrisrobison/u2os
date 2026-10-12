@@ -122,3 +122,19 @@ test('two IMAP accounts send through their explicitly paired SMTP identities', a
     ]);
   } finally { cleanup(dir); }
 });
+
+test('SMTP passes a valid Bcc to the transport and refuses an invalid one before connecting', async () => {
+  const dir = withHome();
+  try {
+    const sender = createConnectionInstance(getDb(), { connectorId: 'smtp', label: 'Sender', status: 'connected', credentials: { host: 'smtp.example.test', port: 587, username: 'owner', password: 'fixture', from: 'owner@example.test' }, dataDir: dir });
+    const sent = [];
+    const transportFactory = () => ({ async sendMail(message) { sent.push(message); return { accepted: [message.to[0]], rejected: [] }; }, close() {} });
+    const options = { dataDir: dir, instance: findInstance(getDb(), 'smtp', sender.id), transportFactory };
+    await sendEmail({ to: 'alice@example.test', bcc: 'me@example.test', subject: 'S', body: 'B' }, options);
+    await sendEmail({ to: 'alice@example.test', subject: 'S', body: 'B' }, options);
+    assert.equal(sent[0].bcc, 'me@example.test');
+    assert.equal('bcc' in sent[1], false);
+    await assert.rejects(sendEmail({ to: 'alice@example.test', bcc: 'a@b.test\nX: y', subject: 'S', body: 'B' }, options), /invalid Bcc/);
+    assert.equal(sent.length, 2);
+  } finally { cleanup(dir); }
+});

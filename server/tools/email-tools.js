@@ -5,6 +5,7 @@ import { assertSmtpIdentity } from '../agent/account-binding.js';
 import { withObservedSender } from './email-sender.js';
 import { assertAttachmentRefs, describeAttachments, resolveAttachments } from './email-attachments.js';
 import { getVaultDir } from '../vault/vault-dir.js';
+import { ownerBcc } from './mail-bcc.js';
 
 const SENDER_DESCRIPTION = ' sender_address is a conservative single mailbox derived from the untrusted From header, not authenticated identity or Reply-To. Use it for recipient references only when non-null; otherwise ask the owner. Original from_addr is preserved. Threaded replies are not supported.';
 
@@ -118,7 +119,10 @@ export class EmailSendTool extends Tool {
     if (context.accountBinding.providerId !== 'mock' && provider.id === mockEmailProvider.id) {
       throw new Error('email: configured real provider is not connected; no message was sent');
     }
-    const message = resolved ? { ...args, attachments: resolved } : args;
+    // The Bcc is the owner's configuration, never an argument: a model cannot add or remove it.
+    const bcc = ownerBcc();
+    const { bcc: _ignored, ...given } = args;
+    const message = { ...given, ...(resolved ? { attachments: resolved } : {}), ...(bcc ? { bcc } : {}) };
     const sent = await provider.sendEmail(message, { smtpIdentity: context.accountBinding.smtpIdentity });
     const attachments = resolved ? describeAttachments(resolved) : undefined;
     const email = attachments ? { ...sent, attachments } : sent;
