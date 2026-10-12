@@ -51,9 +51,8 @@ export function journalPath(timestamp, vaultDir = getVaultDir()) {
   return path.join(vaultDir, 'journal', `${month}.jsonl`);
 }
 
-export function appendToJournal(event, { vaultDir = getVaultDir() } = {}) {
-  const entry = journalEntry(event);
-  if (!entry) return false;
+/** Appends one already-built entry to the month's journal file. */
+export function appendJournalLine(entry, { vaultDir = getVaultDir() } = {}) {
   const file = journalPath(entry.ts || Date.now(), vaultDir);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   try {
@@ -63,6 +62,12 @@ export function appendToJournal(event, { vaultDir = getVaultDir() } = {}) {
     if (error.code !== 'ENOENT') throw error;
   }
   fs.appendFileSync(file, `${JSON.stringify(entry)}\n`, { mode: 0o600 });
+}
+
+export function appendToJournal(event, { vaultDir = getVaultDir() } = {}) {
+  const entry = journalEntry(event);
+  if (!entry) return false;
+  appendJournalLine(entry, { vaultDir });
   return true;
 }
 

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { getVaultDir } from '../vault/vault-dir.js';
+import { checkExternalConfigChanges, lastConfigChange } from '../vault/config-log.js';
 import { getAgentAction } from '../policy/policy-engine.js';
 import { newId } from '../db/ids.js';
 import { openStore, huntDbPath } from '../../mcp/jobs/hunt/storage/store.js';
@@ -58,7 +59,9 @@ export class Autopilot {
   /** A one-minute tick; a cycle starts when the configured interval has passed. */
   start({ tickMs = MIN } = {}) {
     if (this.timer) return;
+    checkExternalConfigChanges(this.vaultDir);
     this.timer = this.setIntervalFn(() => {
+      checkExternalConfigChanges(this.vaultDir);
       let config;
       try { config = loadAutopilotConfig(this.vaultDir); } catch { return; }
       if (!config.enabled || this.running) return;
@@ -88,7 +91,9 @@ export class Autopilot {
   status() {
     let config = null; let error = null;
     try { config = loadAutopilotConfig(this.vaultDir); } catch (e) { error = e.message; }
-    return { config, error, running: this.running, lastReport: this.lastReport ?? this.loadState().lastReport, policy: this.policyStatus() };
+    let lastChange = null;
+    try { lastChange = lastConfigChange(this.vaultDir, 'job-hunt/autopilot.yaml'); } catch { /* the journal is optional */ }
+    return { config, error, running: this.running, lastReport: this.lastReport ?? this.loadState().lastReport, policy: this.policyStatus(), lastChange: lastChange ? { at: lastChange.ts, channel: lastChange.data.channel, changes: lastChange.data.changes } : null };
   }
 
   async runCycle({ now = this.clock() } = {}) {
