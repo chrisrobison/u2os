@@ -609,3 +609,6 @@ export function relocateVault(vaultDir, options = {}) { return request('/api/vau
 export function inspectVault(path) { return request(`/api/vault/inspect?path=${encodeURIComponent(path)}`); }
 export function getStarterRoutines() { return request('/api/vault/starter-routines'); }
 export function installStarterRoutines(ids) { return request('/api/vault/starter-routines', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ ids }) }); }
+// The job page's action bar (docs/job-hunt.md): email routes and the form plan.
+export function emailJobHuntJob(id, mode) { return jobHuntWrite(`/api/job-hunt/jobs/${encodeURIComponent(id)}/email`, 'POST', { mode }); }
+export function planJobHuntForm(id) { return jobHuntWrite(`/api/job-hunt/jobs/${encodeURIComponent(id)}/plan`, 'POST', {}); }
