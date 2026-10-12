@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { openStore } from '../mcp/jobs/hunt/storage/store.js';
 import { inspectApplication, executePlan } from '../mcp/jobs/hunt/applications/form/apply.js';
-import { chooseApplyUrl, planApplication, recoverInterrupted, submitApplication, STALE_SUBMITTING_MS } from '../mcp/jobs/hunt/applications/form/submit.js';
+import { chooseApplyUrl, formKey, planApplication, recoverInterrupted, submitApplication, STALE_SUBMITTING_MS } from '../mcp/jobs/hunt/applications/form/submit.js';
 import { buildApplicationPlan } from '../mcp/jobs/hunt/applications/form/plan.js';
 import { schemaHash } from '../mcp/jobs/hunt/applications/form/schema.js';
 import { loadAnswers } from '../mcp/jobs/hunt/candidate/answers.js';
@@ -231,6 +231,46 @@ test('a submit with no confirmation is unconfirmed and never retried; an interru
   assert.equal(b.store.listApplications(b.job.id)[0].status, 'uncertain');
   assert.equal(b.store.getJob(b.job.id).status, 'uncertain');
   await assert.rejects(submitApplication({ store: b.store, job: b.store.getJob(b.job.id), files: b.files, now: NOW }), /already uncertain/);
+});
+
+test('a verified zero-field attempt gets a new audited plan without erasing the old outcome', async (t) => {
+  if (!browserOk) return t.skip('no browser');
+  const w = world(`${forms.base}/simple/apply`);
+  const key = formKey({ candidate: candidate().resume.basics.email, job: w.job, url: w.job.applicationUrls[0] });
+  const oldPlan = { url: w.job.applicationUrls[0], fields: [], files: {}, blockers: [], ready: true, planHash: 'old-plan' };
+  const old = w.store.addApplication(w.job.id, { url: oldPlan.url, status: 'unconfirmed', plan: oldPlan, idempotencyKey: key }, NOW);
+  w.store.updateApplication(old.id, { result: { outcome: 'unconfirmed', screenshots: ['old-form.png', 'old-result.png'] } }, NOW);
+  await assert.rejects(planApplication({ store: w.store, job: w.job, candidate: candidate(), now: NOW }), /already unconfirmed/);
+  const next = await planApplication({ store: w.store, job: w.job, candidate: candidate(), llm: llmWith({}), verifiedNoClick: true, now: NOW });
+  assert.notEqual(next.id, old.id);
+  assert.equal(next.idempotencyKey, `${key}:retry:${old.id}`);
+  assert.ok(next.plan.fields.length > 0);
+  const preserved = w.store.listApplications(w.job.id)[0];
+  assert.equal(preserved.status, 'unconfirmed');
+  assert.deepEqual(preserved.result.screenshots, ['old-form.png', 'old-result.png']);
+  assert.equal(w.store.listEvents(w.job.id).filter((event) => event.type === 'application_retry_verified_no_click').length, 1);
+  const replanned = await planApplication({ store: w.store, job: w.job, candidate: candidate(), llm: llmWith({}), now: NOW });
+  assert.equal(replanned.id, next.id, 'ordinary replanning uses the new attempt');
+  await assert.rejects(planApplication({ store: w.store, job: w.job, candidate: candidate(), verifiedNoClick: true, now: NOW }), /verified no-click retry needs/);
+});
+
+test('the retry override refuses a prior plan that contained fields', async (t) => {
+  if (!browserOk) return t.skip('no browser');
+  const w = world(`${forms.base}/simple/apply`);
+  const key = formKey({ candidate: candidate().resume.basics.email, job: w.job, url: w.job.applicationUrls[0] });
+  w.store.addApplication(w.job.id, { url: w.job.applicationUrls[0], status: 'uncertain', plan: { fields: [{ key: 'email', value: 'old' }], planHash: 'old-plan' }, idempotencyKey: key }, NOW);
+  await assert.rejects(planApplication({ store: w.store, job: w.job, candidate: candidate(), verifiedNoClick: true, now: NOW }), /verified no-click retry needs/);
+  assert.equal(w.store.listApplications(w.job.id).length, 1);
+});
+
+test('an interrupted zero-field attempt can also be linked to a fresh plan', async (t) => {
+  if (!browserOk) return t.skip('no browser');
+  const w = world(`${forms.base}/simple/apply`);
+  const key = formKey({ candidate: candidate().resume.basics.email, job: w.job, url: w.job.applicationUrls[0] });
+  const old = w.store.addApplication(w.job.id, { url: w.job.applicationUrls[0], status: 'uncertain', plan: { fields: [], planHash: 'old-plan' }, idempotencyKey: key }, NOW);
+  const next = await planApplication({ store: w.store, job: w.job, candidate: candidate(), llm: llmWith({}), verifiedNoClick: true, now: NOW });
+  assert.equal(next.idempotencyKey, `${key}:retry:${old.id}`);
+  assert.equal(w.store.listApplications(w.job.id)[0].status, 'uncertain');
 });
 
 test('the apply link chosen is the form, and answers.yaml loads strictly', () => {

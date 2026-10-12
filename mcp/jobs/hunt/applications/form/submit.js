@@ -36,11 +36,21 @@ function materialsFor(store, job) {
 }
 
 /** Plans an application for a job: reads its form (read-only) and stores the plan. */
-export async function planApplication({ store, job, candidate, llm = null, driver = null, inspect = null, ensureCombined = null, nameStyle = 'plain', url = null, now = new Date() }) {
+export async function planApplication({ store, job, candidate, llm = null, driver = null, inspect = null, ensureCombined = null, nameStyle = 'plain', url = null, verifiedNoClick = false, now = new Date() }) {
   const target = url ?? chooseApplyUrl(job);
   if (!target) throw new Error('This job has no application link');
-  const key = formKey({ candidate: candidate.resume.basics.email, job, url: target });
-  const existing = store.findApplicationByKey(key);
+  const baseKey = formKey({ candidate: candidate.resume.basics.email, job, url: target });
+  let key = baseKey;
+  let existing = store.listApplications(job.id).filter((entry) => entry.idempotencyKey === baseKey || entry.idempotencyKey.startsWith(`${baseKey}:retry:`)).at(-1) ?? null;
+  let retryFrom = null;
+  if (verifiedNoClick) {
+    if (!existing || !['unconfirmed', 'uncertain'].includes(existing.status) || existing.plan.fields?.length !== 0) {
+      throw Object.assign(new Error('A verified no-click retry needs an unconfirmed or uncertain zero-field attempt'), { code: 'BLOCKED' });
+    }
+    retryFrom = existing;
+    key = `${baseKey}:retry:${existing.id}`;
+    existing = null;
+  }
   if (existing && BLOCKING.has(existing.status)) throw Object.assign(new Error(`An application for this job is already ${existing.status}`), { code: 'BLOCKED' });
   const source = store.listSources(job.id)[0] ?? null;
   const schema = await (inspect ?? ((url) => resolveDriver(driver).inspect({ url })))(target);
@@ -49,11 +59,14 @@ export async function planApplication({ store, job, candidate, llm = null, drive
   if (!hasCoverUpload && ensureCombined && !store.getArtifacts(job.id).combined_pdf) await ensureCombined({ store, job, now });
   const plan = await buildApplicationPlan({ url: target, schema, job, source, candidate, materials: materialsFor(store, job), llm, nameStyle, now });
   const status = plan.blockers.length ? 'manual_required' : plan.ready ? 'planned' : 'needs_input';
-  let application;
-  if (existing) { store.updateApplication(existing.id, { status, plan, result: { replanned: now.toISOString() } }, now); application = store.listApplications(job.id).find((entry) => entry.id === existing.id); }
-  else application = store.addApplication(job.id, { url: target, status, plan, idempotencyKey: key }, now);
-  store.recordEvent(job.id, 'application_planned', { detail: { applicationId: application.id, status, needs: plan.needs, blockers: plan.blockers, unresolved: plan.unresolved.length } }, now);
-  return application;
+  return store.transaction(() => {
+    let application;
+    if (existing) { store.updateApplication(existing.id, { status, plan, result: { replanned: now.toISOString() } }, now); application = store.listApplications(job.id).find((entry) => entry.id === existing.id); }
+    else application = store.addApplication(job.id, { url: target, status, plan, idempotencyKey: key }, now);
+    if (retryFrom) store.recordEvent(job.id, 'application_retry_verified_no_click', { detail: { previousApplicationId: retryFrom.id, applicationId: application.id, previousStatus: retryFrom.status } }, now);
+    store.recordEvent(job.id, 'application_planned', { detail: { applicationId: application.id, status, needs: plan.needs, blockers: plan.blockers, unresolved: plan.unresolved.length } }, now);
+    return application;
+  });
 }
 
 /** Marks submits that were interrupted (no outcome recorded) as uncertain. */

@@ -50,7 +50,7 @@ export const USAGE = `Usage: npm run u2 -- job <command>
   materials <job-id> [--force] [--no-pdf] [--cover-letter | --no-cover-letter]
   send <job-id> [--force]       propose the application email through the approval gate
   reconcile                     update jobs from the outcome of approved sends
-  plan <job-id> [--url <form-url>]      read the job's application form and plan every answer (submits nothing)
+  plan <job-id> [--url <form-url>] [--verified-no-click]  plan answers; opt-in retry only for an inspected zero-field attempt
   submit <job-id> [--dry-run] [--headed]  fill the planned form (and submit unless --dry-run); --headed opens a visible browser window
   review <job-id> [--form]              the review agent: approve or reject the email (or the form plan) for sending
   autopilot setup [--autonomous] | on | off | live | dry-run | status   the autonomous loop (docs/job-hunt.md)
@@ -203,7 +203,7 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
         const resume = loadResume(vaultDir);
         const preferences = loadPreferences(vaultDir);
         const candidate = { resume, preferences, answers: loadAnswers(vaultDir), facts: loadFacts(vaultDir), repos: loadRepos(vaultDir)?.repos ?? [], digest: candidateDigest(resume, preferences) };
-        const application = await planApplication({ store, job, candidate, llm: llmOverride ?? createJobLlm(), ensureCombined: ensureCombinedPdf, nameStyle: loadAutopilotConfig(vaultDir).file_names, driver: loadAutopilotConfig(vaultDir).browser.driver, url: flags.url ?? null, now });
+        const application = await planApplication({ store, job, candidate, llm: llmOverride ?? createJobLlm(), ensureCombined: ensureCombinedPdf, nameStyle: loadAutopilotConfig(vaultDir).file_names, driver: loadAutopilotConfig(vaultDir).browser.driver, url: flags.url ?? null, verifiedNoClick: flags['verified-no-click'] === true, now });
         const { plan } = application;
         out.log(`${job.company} - ${job.role ?? ''}: plan ${application.status}  (${plan.fields.length} fields, ${plan.unresolved.length} unresolved)  ${application.url}`);
         for (const field of plan.fields) out.log(`  ${field.origin.padEnd(12)} ${String(field.label).slice(0, 48).padEnd(48)} ${field.file ? `[${field.file} file]` : String(field.value).replace(/\s+/g, ' ').slice(0, 60)}`);
