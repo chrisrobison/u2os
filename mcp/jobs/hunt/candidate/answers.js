@@ -24,6 +24,7 @@ import { writeConfigFile } from '../../../../server/vault/config-log.js';
 //     disability: false
 //     sexual_orientation: Straight
 //     hispanic: false                # Hispanic or Latino
+//     transgender: false
 //   custom:                          # any other question, matched by words in its label
 //     "how many years of python": "20+"
 //   policy:
@@ -35,7 +36,7 @@ export const answersPath = (vaultDir) => path.join(vaultDir, JOB_HUNT_DIR, 'answ
 const BOOLEANS = ['work_authorization_us', 'requires_sponsorship', 'willing_to_relocate', 'open_to_onsite', 'over_18'];
 const TEXTS = ['salary_expectation', 'start_date'];
 const DEMOGRAPHIC_TEXTS = ['gender', 'race', 'pronouns', 'sexual_orientation'];
-const DEMOGRAPHIC_BOOLEANS = ['veteran', 'disability', 'hispanic'];
+const DEMOGRAPHIC_BOOLEANS = ['veteran', 'disability', 'hispanic', 'transgender'];
 
 export function loadAnswers(vaultDir) {
   let data = {};

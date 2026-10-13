@@ -52,6 +52,10 @@ function demographicAnswer(text, field, options, d) {
     const straight = /^(straight|heterosexual)$/i.test(d.sexual_orientation.trim());
     return finish(d.sexual_orientation, straight ? pickRe(/^(straight|heterosexual)\b/i) : matchOption(options, d.sexual_orientation));
   }
+  if (/transgender|identity.*(trans|different)|trans\b/i.test(text)) {
+    if (typeof d.transgender !== 'boolean' || !options.length) return null;
+    return finish(null, d.transgender ? pickRe(/^(yes|i am|i identify)\b/i) : pickRe(/^no\b|not transgender|cisgender|i am not/i));
+  }
   if (/hispanic|latino|latinx/i.test(`${field.label ?? ''}`)) {
     if (typeof d.hispanic !== 'boolean' || !options.length) return null;
     return finish(null, d.hispanic ? pickRe(/^(yes|hispanic|i am hispanic)\b/i) : pickRe(/^no\b|not hispanic/i));
