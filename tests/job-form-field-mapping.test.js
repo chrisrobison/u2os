@@ -98,7 +98,7 @@ async function eeoPlan(fields, demographics) {
   const schema = { hasForm: true, blockers: {}, submitLabel: 'Submit', fields: fields.map((field) => ({ type: 'select', required: true, filled: false, ...field })) };
   return buildApplicationPlan({ url: 'https://x.test/apply', schema, job, candidate: { ...candidate, answers: { ...ANSWERS, demographics } }, materials: files, now: NOW });
 }
-const DEMO = { gender: 'Male', race: 'White', pronouns: 'He/him', veteran: false, disability: false };
+const DEMO = { gender: 'Male', race: 'White', pronouns: 'He/him', veteran: false, disability: false, sexual_orientation: 'Straight', hispanic: false };
 const DECLINE_OPT = 'I do not wish to answer';
 
 test('demographic questions use the owner\'s answers when an option matches', async () => {
@@ -110,7 +110,13 @@ test('demographic questions use the owner\'s answers when an option matches', as
     { key: 'v', label: 'Veteran Status', options: ['I identify as one or more of the classifications of protected veteran', 'I am not a protected veteran', DECLINE_OPT] },
     { key: 'd', label: 'Do you have a disability?', options: ['Yes, I have a disability', 'No, I do not have a disability', DECLINE_OPT] },
     { key: 'free', label: 'Gender', type: 'text', options: [] },
+    { key: 'o', label: 'Sexual orientation', options: ['Heterosexual', 'Gay', DECLINE_OPT] },
+    { key: 'o2', label: 'Sexual Orientation', options: ['Straight', 'Gay or Lesbian', DECLINE_OPT] },
+    { key: 'h', label: 'Are you Hispanic or Latino?', options: ['Yes', 'No', DECLINE_OPT] },
   ], DEMO);
+  assert.equal(valueOf(plan, 'o'), 'Heterosexual');
+  assert.equal(valueOf(plan, 'o2'), 'Straight');
+  assert.equal(valueOf(plan, 'h'), 'No');
   assert.equal(valueOf(plan, 'g'), 'Male');
   assert.equal(valueOf(plan, 'r'), 'White');
   assert.equal(valueOf(plan, 'r2'), 'White (Not Hispanic or Latino)');
@@ -126,9 +132,7 @@ test('with no answer, or no matching option, or other EEO questions, the decline
   const nomatch = await eeoPlan([{ key: 'r', label: 'Race', options: ['Asian', 'Black', DECLINE_OPT] }], DEMO);
   assert.equal(valueOf(nomatch, 'r'), DECLINE_OPT);
   const other = await eeoPlan([
-    { key: 'o', label: 'Sexual orientation', options: ['Heterosexual', 'Gay', DECLINE_OPT] },
     { key: 't', label: 'Do you identify as transgender?', options: ['Yes', 'No', DECLINE_OPT] },
-    { key: 'h', label: 'Are you Hispanic or Latino?', options: ['Yes', 'No', DECLINE_OPT] },
   ], DEMO);
-  for (const key of ['o', 't', 'h']) assert.equal(valueOf(other, key), DECLINE_OPT, key);
+  for (const key of ['t']) assert.equal(valueOf(other, key), DECLINE_OPT, key);
 });

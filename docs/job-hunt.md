@@ -90,7 +90,7 @@ The page reads `GET /api/job-hunt/dashboard?days=30` and records moves with `POS
 ## Safety and privacy
 
 - **Identity comes from your files, not the model.** The model only picks jobs and writes answers and cover letters. It cannot change your name, email, phone, links or resume.
-- **Demographic questions** (gender, race, pronouns, veteran status, disability) are only ever answered from the `demographics:` block of your own `answers.yaml`, never by the model, and only when the form offers a matching option (otherwise the form's *decline* option is chosen). Sexual orientation, transgender and Hispanic/Latino questions are always declined unless you answer that exact question under `custom:`.
+- **Demographic questions** (gender, race, pronouns, veteran status, disability, sexual orientation, Hispanic/Latino) are only ever answered from the `demographics:` block of your own `answers.yaml`, never by the model, and only when the form offers a matching option (otherwise the form's *decline* option is chosen). Transgender questions are always declined unless you answer that exact question under `custom:`.
 
   ```yaml
   demographics:
@@ -99,6 +99,8 @@ The page reads `GET /api/job-hunt/dashboard?days=30` and records moves with `POS
     pronouns: He/him
     veteran: false
     disability: false
+    sexual_orientation: Straight
+    hispanic: false
   ```
 - **The model never supplies a web address.** Form addresses are built from board and job ids, so the browser only goes to Greenhouse and Lever application pages.
 - **Unanswerable questions stop the application** before anything is sent.
