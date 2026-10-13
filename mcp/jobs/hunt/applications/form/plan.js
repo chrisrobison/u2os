@@ -47,6 +47,15 @@ function demographicAnswer(text, field, options, d) {
     if (!options.length) return null;
     return finish(null, d.disability ? pickRe(/^(yes|i have)\b|yes, i (have|do)/i) : pickRe(/no,? (i )?(do not|don'?t|have not|have no)|^no\b|do not have a disability/i));
   }
+  if (/sexual orientation/i.test(text)) {
+    if (!d.sexual_orientation) return null;
+    const straight = /^(straight|heterosexual)$/i.test(d.sexual_orientation.trim());
+    return finish(d.sexual_orientation, straight ? pickRe(/^(straight|heterosexual)\b/i) : matchOption(options, d.sexual_orientation));
+  }
+  if (/hispanic|latino|latinx/i.test(`${field.label ?? ''}`)) {
+    if (typeof d.hispanic !== 'boolean' || !options.length) return null;
+    return finish(null, d.hispanic ? pickRe(/^(yes|hispanic|i am hispanic)\b/i) : pickRe(/^no\b|not hispanic/i));
+  }
   if (/pronoun/i.test(text)) return d.pronouns ? finish(d.pronouns, matchOption(options, d.pronouns) ?? (options.length ? pickRe(new RegExp(`^${d.pronouns.split('/')[0].trim()}\\b`, 'i')) : null)) : null;
   if (/gender|\bsex\b/i.test(text) && !/identity.*(trans|different)|transgender/i.test(text)) {
     if (!d.gender) return null;
