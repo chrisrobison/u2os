@@ -164,6 +164,8 @@ export function buildDashboard(store, { days = DEFAULT_WINDOW_DAYS, now = new Da
 // company's answer); everything else is recorded by the pipeline itself.
 const PIPELINE = ['qualified', 'materials_generated', 'applied', 'contacted', 'followup_due', 'screening', 'interview', 'offer', 'uncertain', 'needs_input'];
 export const MOVE_RULES = {
+  // "Mark Applied" records an application the owner sent themselves, from any job not yet sent or closed.
+  applied: ['discovered', 'scored', 'researching', 'qualified', 'materials_generated', 'needs_input', 'uncertain', 'error'],
   screening: ['applied', 'contacted', 'followup_due', 'uncertain'],
   offer: ['applied', 'contacted', 'followup_due', 'screening', 'interview', 'uncertain'],
   // "Reject" also covers a lead the owner turns down before it ever reached the pipeline.

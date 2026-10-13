@@ -118,6 +118,10 @@ test('moving a job validates the transition, records the event and is idempotent
   const fresh = addJob(store, 2, 'Beta');
   assert.throws(() => moveJob(store, fresh.id, 'offer', NOW), { code: 'BAD_TRANSITION' });
   assert.throws(() => moveJob(store, fresh.id, 'screening', NOW), { code: 'BAD_TRANSITION' });
+  const marked = moveJob(store, fresh.id, 'applied', NOW);
+  assert.equal(marked.job.status, 'applied');
+  assert.equal(moveJob(store, fresh.id, 'applied', NOW).changed, false);
+  assert.throws(() => moveJob(store, a.id, 'applied', NOW), { code: 'BAD_TRANSITION' }, 'already past applied');
   assert.equal(moveJob(store, a.id, 'rejected', NOW).changed, true);
   assert.throws(() => moveJob(store, a.id, 'offer', NOW), { code: 'BAD_TRANSITION' });
   store.close();
