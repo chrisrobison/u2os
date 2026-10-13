@@ -195,6 +195,7 @@ Click any job in Job Leads, the autopilot's *Needs you* and activity lists, the 
 - **Apply via Email** writes the materials if needed, asks you to confirm, then proposes the send through the action gate (`POST /api/job-hunt/jobs/:id/email`, `mode: send`): Apple Mail when the add-on is on, otherwise Gmail. If your policy wants approval first, the result says it is waiting on the Approvals page. Your score threshold does not apply to a button you press; a duplicate send still does.
 - **Prepare Email** does the same but saves the message in Apple Mail's Drafts folder (`mode: draft`). Nothing is sent.
 - **Answer Questions** opens a modal with one input per question the form asked that U2OS could not answer. Answers are saved to `job-hunt/answers.yaml` and reused for every later application, then the form is planned again. Sensitive questions are listed but never answered for you.
+- **Mark Applied** asks for confirmation, then records that you applied yourself (moves the job to *Applied*, so the autopilot skips it and the analytics count it). Nothing is sent. Not offered once a job is already applied or closed.
 - **Reject** asks for confirmation, then moves the job to *Rejected* (also for leads that never reached the pipeline). Nothing is sent to the company.
 
 Every outgoing email is Bcc'd to the address in `mailBcc` ([tools](tools.md#email-attachments)).

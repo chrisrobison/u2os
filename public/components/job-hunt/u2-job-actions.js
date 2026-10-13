@@ -29,6 +29,7 @@ export function jobActions(job) {
     online: { why: reason([[settled, settledWhy], [!(job.applicationUrls?.length), 'This listing has no application link.'], [isReadyToSubmit(job), 'The application is planned and ready: approve it below.']]) },
     send: { why: reason([[settled, settledWhy], [!hasEmail, 'This listing has no email address.'], [!routes.apple_mail && !routes.gmail, 'No email route is available: enable the Apple add-on or connect Gmail.'], [Boolean(emailBlock), `An email to ${emailBlock?.to} is already ${emailBlock?.status}.`]]) },
     draft: { why: reason([[settled, settledWhy], [!hasEmail, 'This listing has no email address.'], [!routes.apple_mail_draft, 'Drafts need the Apple add-on (macOS), enabled on the Add-ons page.'], [Boolean(draftBlock), `A draft to ${draftBlock?.to} is already ${draftBlock?.status}.`]]) },
+    applied: { why: reason([[settled, settledWhy]]) },
     reject: { why: reason([[job.status === 'rejected', 'Already rejected.'], [['withdrawn', 'closed', 'skipped', 'offer'].includes(job.status), settledWhy]]) },
     answers: { why: questions ? null : 'Nothing is waiting for an answer.', count: questions },
     via: routes.apple_mail ? 'Apple Mail' : 'Gmail',
@@ -83,6 +84,7 @@ export class U2JobActions extends HTMLElement {
       button('send', 'Apply via Email', (opener) => this._email(job, 'send', actions, opener)),
       button('draft', 'Prepare Email', (opener) => this._email(job, 'draft', actions, opener)),
       answers,
+      button('applied', 'Mark Applied', (opener) => this._markApplied(job, opener)),
       button('reject', 'Reject', (opener) => this._reject(job, opener), { danger: true })));
     if (this._notice) this.append(el('p', { class: this._notice.error ? 'load-error' : 'jh-page__ok', role: this._notice.error ? 'alert' : 'status', 'data-action-notice': '', text: this._notice.text }));
   }
@@ -134,6 +136,16 @@ export class U2JobActions extends HTMLElement {
         blocked: `Policy blocked it${result.reason ? `: ${result.reason}` : '.'}`,
       }[result.status];
       return { job: result.job, notice: text ? { error: result.status === 'blocked', text } : { error: true, text: `Result: ${result.status}${result.reason ? ` (${result.reason})` : ''}.` } };
+    });
+  }
+
+  async _markApplied(job, opener) {
+    const ok = await confirmDialog({ title: 'Mark as applied', confirmText: 'Mark Applied', opener,
+      body: [`Record that you applied for ${job.role || 'this role'} at ${job.company} yourself. Nothing is sent, and the autopilot will not apply to it again.`] });
+    if (!ok) return;
+    await this._run('applied', 'Marking applied...', async () => {
+      await api.moveJobHuntJob(job.id, 'applied');
+      return { job: await api.getJobHuntJob(job.id), notice: { text: 'Marked as applied.' } };
     });
   }
 

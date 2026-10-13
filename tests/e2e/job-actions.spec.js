@@ -4,7 +4,7 @@ import { startDedicatedServer, stopDedicatedServer, createOwner } from './helper
 const PASSPHRASE = 'correct horse battery staple';
 const ID = 'job_00000000000000bb';
 
-// The job page's action bar: Apply Online, Apply via Email, Prepare Email, Answer Questions, Reject.
+// The job page's action bar: Apply Online, Apply via Email, Prepare Email, Answer Questions, Mark Applied, Reject.
 
 const base = {
   id: ID, company: 'MailCo', role: 'Staff Engineer', status: 'qualified', locations: ['Remote'], remote: true, salary: null, technologies: [],
@@ -89,7 +89,7 @@ test('Answer Questions opens a modal, saves the answers and the page shows the r
     await expect(dialog.locator('[role="alert"]')).toHaveText('Type or choose at least one answer.');
     await dialog.getByLabel('Describe a system you scaled *').fill('A dispatch platform.');
     await dialog.getByRole('button', { name: 'Save answers and re-plan' }).click();
-    expect(sent).toEqual({ answers: [{ key: 'scaled', value: 'A dispatch platform.' }] });
+    await expect.poll(() => sent).toEqual({ answers: [{ key: 'scaled', value: 'A dispatch platform.' }] });
     await expect(dialog).toHaveCount(0, { timeout: 5000 }).catch(() => {});
     await expect(page.locator('u2-job-actions').getByRole('button', { name: 'Answer Questions' })).toBeDisabled();
   } finally {
@@ -123,6 +123,13 @@ test('Reject asks first, then moves the job; Apply Online plans the form', async
     await page.locator('[data-confirm-dialog] [data-confirm]').click();
     await expect(bar.getByRole('button', { name: 'Reject' })).toBeDisabled();
     expect(moved).toEqual(['rejected']);
+
+    current = { ...base, status: 'qualified' };
+    await page.reload();
+    await bar.getByRole('button', { name: 'Mark Applied' }).click();
+    await page.locator('[data-confirm-dialog] [data-confirm]').click();
+    await expect(bar.locator('[data-action-notice]')).toContainText('Marked as applied');
+    expect(moved).toEqual(['rejected', 'applied']);
   } finally {
     await context?.close();
     await stopDedicatedServer(null, dedicated);
