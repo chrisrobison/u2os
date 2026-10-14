@@ -136,3 +136,17 @@ test('with no answer, or no matching option, or other EEO questions, the decline
   const other = await eeoPlan([{ key: 't', label: 'Do you identify as transgender?', options: ['Yes', 'No', DECLINE_OPT] }], { ...DEMO, transgender: undefined });
   assert.equal(valueOf(other, 't'), DECLINE_OPT);
 });
+
+test('#591: a question that merely says "resources" is not a referral-source question; the owner\'s saved answer settles it', async () => {
+  const label = "To ensure a fair assessment, Waymo prohibits unauthorized outside assistance, including AI tools or third-party resources, unless authorized. By submitting this application, you acknowledge and agree";
+  const field = { key: 'policy', label, type: 'select', options: ['I acknowledge the above policies'] };
+  const unanswered = await planFor([field]);
+  assert.notEqual(unanswered.unresolved[0]?.reason, 'no_matching_source_option');
+  const answered = await buildApplicationPlan({
+    url: 'https://x.test/apply', job, materials: files, now: NOW,
+    schema: { hasForm: true, blockers: {}, submitLabel: 'Submit', fields: [{ required: true, filled: false, ...field }] },
+    candidate: { ...candidate, answers: { ...ANSWERS, custom: { [label.toLowerCase().slice(0, 60)]: 'I acknowledge the above policies' } } },
+  });
+  assert.equal(valueOf(answered, 'policy'), 'I acknowledge the above policies');
+  assert.equal(answered.unresolved.length, 0);
+});

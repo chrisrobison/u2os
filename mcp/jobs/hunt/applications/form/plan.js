@@ -152,7 +152,7 @@ function resolveField(field, ctx) {
   if (/(at least|over) 18|18 years|legal age/i.test(text)) return choose('over_18', 'needs_answer:over_18');
   if (/salary|compensation|pay (expectation|range)|expected (pay|comp)/i.test(text)) return answers.salary_expectation ? { value: answers.salary_expectation, origin: 'owner-answer' } : unresolved('needs_answer:salary_expectation');
   if (/start date|when (can|could|would) you (start|join)|notice period|availability|earliest/i.test(text)) return answers.start_date ? { value: answers.start_date, origin: 'owner-answer' } : unresolved('needs_answer:start_date');
-  if (/how did you (hear|find|learn)|where did you (hear|find|learn)|referral source|source/i.test(text) && !/open source/i.test(text)) {
+  if (/how did you (hear|find|learn)|where did you (hear|find|learn)|referral source|\bsource\b/i.test(text) && !/open source/i.test(text)) {
     const wanted = hearAbout(sourceName);
     const option = isChoice ? (matchOption(options, wanted) || matchOption(options, 'Job board') || matchOption(options, 'Other')) : wanted;
     return option ? { value: option, origin: 'source' } : unresolved('no_matching_source_option');
