@@ -440,6 +440,15 @@ quality: planner
 
 The local model is called through LM Studio's native chat API with reasoning off. **Its score is a first opinion, never a decision.** A job whose local score, corrected by `local_bias`, is within `confirm_margin` of your threshold (so a local score of at least threshold - margin + bias) is re-scored by the quality tier before anything is written for it (`per_cycle.confirm` per cycle), and a job with only a local score is not eligible for materials. If the local server is down, fast scoring is **skipped for that cycle**: it never silently moves to the cloud. With no `fast:` section, nothing changes and the quality model does the scoring.
 
+**A ladder of local models (`escalate`).** The local tier can be several models. List bigger ones under `escalate:` and the fast tier tries `fast` first, then each escalation model in order whenever the one before it fails or returns output that does not validate. Cloud behaviour is unchanged (a borderline score is still confirmed by the quality tier, and the confirm and review steps never use local models).
+
+```yaml
+escalate:
+  - { provider: lmstudio, model: qwen/qwen3.8-27b, reasoning: 'on', timeout_seconds: 300 }
+```
+
+Up to four models; each takes the same keys as `fast`. Without `escalate`, nothing changes. Escalation is on invalid output or failure only; routing by task type (coding versus reasoning) is not built yet. The server probe checks only the `fast` model, and LM Studio loads an escalation model on first use, so the first escalated call is slow.
+
 **Measured, not guessed.** `local_bias` and the cutoff come from scoring 40 of your jobs with both models (qwen3.5-9b, reasoning off, against Claude's scores): the two agree well (correlation 0.88) but the local model runs hot, about 12-14 points higher on average, so an uncorrected cutoff would send nearly everything to the cloud. Keeping only jobs with a local score of at least 75 kept every job Claude rated 70 or higher (and 95% of those at 65 or higher) while skipping about a third of the cloud work. It is a small sample, so treat the numbers as a starting point: it takes about 30 seconds per job on a 9B model, which is why the local budget is `per_cycle.score_fast` (default 6).
 
 The Job hunt page shows how many model calls the last cycle made, local and cloud separately.
