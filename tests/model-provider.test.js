@@ -8,7 +8,7 @@ import { createToolRegistry } from '../server/tools/register-all.js';
 const registry = createToolRegistry();
 test('OpenAI-compatible provider returns a locally validated registered-tool plan', async () => {
   const fetchImpl = async (_url, request) => {
-    const sent = JSON.parse(request.body); assert.equal(sent.model, 'local-model'); assert.ok(sent.messages[1].content.includes('tasks.create'));
+    const sent = JSON.parse(request.body); assert.equal(sent.model, 'local-model'); assert.equal(sent.response_format.type, 'json_schema'); assert.ok(sent.response_format.json_schema.schema); assert.ok(sent.messages[1].content.includes('tasks.create'));
     return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ reasoning_summary: 'Create it', actions: [{ tool: 'tasks.create', arguments: { title: 'Call Sarah' } }] }) } }] }), { status: 200 });
   };
   const provider = new OpenAICompatibleProvider({ baseUrl: 'http://localhost:11434', model: 'local-model', fetchImpl });
