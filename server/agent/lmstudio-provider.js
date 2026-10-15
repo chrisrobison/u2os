@@ -21,7 +21,8 @@ export class LmStudioProvider extends ModelProvider {
     this.baseUrl = url.origin;
     this.model = model;
     this.apiKey = apiKey;
-    this.reasoning = reasoning === 'on' ? 'on' : 'off';
+    // on/off for models with a thinking switch; low/medium/high for models that only take an effort level (gpt-oss).
+    this.reasoning = ['on', 'low', 'medium', 'high'].includes(reasoning) ? reasoning : 'off';
     this.maxOutputTokens = Math.min(Math.max(Number(maxOutputTokens) || 2048, 64), MAX_OUTPUT);
     this.timeoutMs = timeoutMs;
     this.fetchImpl = fetchImpl;

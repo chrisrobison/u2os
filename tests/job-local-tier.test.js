@@ -177,3 +177,10 @@ test('call counters count model calls per tier, including retries', async () => 
   assert.equal(llm.stats.calls, 2, 'a malformed answer is retried once, and both calls are counted');
   assert.equal(llm.stats.failures, 2);
 });
+
+test('reasoning accepts effort levels for models like gpt-oss that reject off', async () => {
+  const sent = [];
+  const fetchImpl = async (_url, init) => { sent.push(JSON.parse(init.body).reasoning); return new Response(JSON.stringify({ output: [{ type: 'message', content: '{"ok":true}' }] }), { status: 200 }); };
+  for (const reasoning of ['low', 'medium', 'high', 'on', 'bogus']) await new LmStudioProvider({ model: 'm', reasoning, fetchImpl }).complete('s', 'u');
+  assert.deepEqual(sent, ['low', 'medium', 'high', 'on', 'off']);
+});
