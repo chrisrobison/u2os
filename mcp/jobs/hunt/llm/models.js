@@ -11,7 +11,7 @@ import { writeConfigFile } from '../../../../server/vault/config-log.js';
 //     provider: lmstudio
 //     base_url: http://127.0.0.1:1234
 //     model: qwen/qwen3.5-9b
-//     reasoning: off               # answer directly (fast); "on" lets it think first
+//     reasoning: off               # answer directly (fast); "on" lets it think first; gpt-oss takes only low, medium or high
 //   escalate:                      # optional bigger local models, tried in order when fast gives invalid output or fails
 //     - { model: qwen/qwen3.8-27b, reasoning: on, timeout_seconds: 300 }
 //   local_bias: 12                 # how many points higher the local model tends to score than the quality model
@@ -33,7 +33,7 @@ function parseLocalModel(f, label) {
   let origin;
   try { origin = new URL(f.base_url ?? 'http://127.0.0.1:1234'); } catch { throw new Error(`models.yaml: ${label}.base_url must be a URL`); }
   if (!/^https?:$/.test(origin.protocol)) throw new Error(`models.yaml: ${label}.base_url must be http(s)`);
-  if (f.reasoning !== undefined && !['on', 'off'].includes(String(f.reasoning))) throw new Error(`models.yaml: ${label}.reasoning must be on or off`);
+  if (f.reasoning !== undefined && !['on', 'off', 'low', 'medium', 'high'].includes(String(f.reasoning))) throw new Error(`models.yaml: ${label}.reasoning must be on, off, low, medium or high`);
   return { provider: 'lmstudio', base_url: origin.origin, model: f.model, reasoning: String(f.reasoning ?? 'off'), max_output_tokens: Number.isInteger(f.max_output_tokens) ? Math.min(Math.max(f.max_output_tokens, 64), 4096) : 2048, timeout_seconds: Number.isInteger(f.timeout_seconds) ? Math.min(Math.max(f.timeout_seconds, 10), 600) : 120 };
 }
 
