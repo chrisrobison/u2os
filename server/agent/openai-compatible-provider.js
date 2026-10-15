@@ -29,7 +29,7 @@ export class OpenAICompatibleProvider extends ModelProvider {
           messages: [
             { role: 'system', content: PLANNER_SYSTEM_PROMPT },
             { role: 'user', content: JSON.stringify(buildPlanRequestPayload(context, objective)) },
-          ], response_format: { type: 'json_object' },
+          ], response_format: { type: 'json_schema', json_schema: { name: 'plan', schema: { type: 'object' } } },
         }),
       });
       if (!response.ok) throw new Error(`Model provider unavailable (HTTP ${response.status})`);
