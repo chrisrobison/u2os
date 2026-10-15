@@ -25,19 +25,21 @@ export function createJobLlm({ dataDir, router = null, lastResort = [] } = {}) {
  * The local first-pass model from job-hunt/models.yaml, or null when none is
  * configured. Its availability is checked with probe() by the caller.
  */
-function localProvider({ vaultDir, dataDir, fetchImpl = globalThis.fetch }) {
-  const config = loadModelsConfig(vaultDir).fast;
-  if (!config) return null;
+function localProviders({ vaultDir, dataDir, fetchImpl = globalThis.fetch }) {
+  const { fast, escalate } = loadModelsConfig(vaultDir);
+  if (!fast) return [];
   let apiKey = null;
   try { apiKey = readEncryptedFile(LMSTUDIO_SECRET, dataDir)?.apiKey ?? null; } catch { apiKey = null; }
-  return new LmStudioProvider({ baseUrl: config.base_url, model: config.model, apiKey, reasoning: config.reasoning, maxOutputTokens: config.max_output_tokens, timeoutMs: config.timeout_seconds * 1000, fetchImpl });
+  return [fast, ...escalate].map((config) => new LmStudioProvider({ baseUrl: config.base_url, model: config.model, apiKey, reasoning: config.reasoning, maxOutputTokens: config.max_output_tokens, timeoutMs: config.timeout_seconds * 1000, fetchImpl }));
 }
+const localProvider = (options) => localProviders(options)[0] ?? null;
 
 export function createFastLlm({ vaultDir, dataDir, fetchImpl = globalThis.fetch } = {}) {
-  const provider = localProvider({ vaultDir, dataDir, fetchImpl });
-  if (!provider) return null;
-  const llm = createLlm([{ id: provider.id, complete: (system, user) => provider.complete(system, user) }]);
-  llm.probe = () => provider.probe();
+  // fast first; each `escalate` model (models.yaml) is tried in turn when the one before it fails or answers invalidly.
+  const providers = localProviders({ vaultDir, dataDir, fetchImpl });
+  if (!providers.length) return null;
+  const llm = createLlm(providers.map((provider) => ({ id: provider.id, complete: (system, user) => provider.complete(system, user) })));
+  llm.probe = () => providers[0].probe();
   return llm;
 }
 
