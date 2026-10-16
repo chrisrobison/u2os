@@ -68,3 +68,42 @@ test('screenshots are served only from the ledger folder', async (t) => {
     ['/etc/passwd', 400],
   ]) assert.equal((await get(`/api/job-applications/screenshot?path=${encodeURIComponent(query)}`)).status, status, query);
 });
+
+test('applications the autopilot emailed or submitted are listed from the hunt store, and the ledger wins', async (t) => {
+  const { vault, get } = await fixture(t);
+  const { openStore, huntDbPath } = await import('../mcp/jobs/hunt/storage/store.js');
+  const store = openStore(huntDbPath(vault));
+  const sighting = (company, role) => ({ company, role, applicationUrls: [`https://example.com/${company}`], contactEmails: [], source: 'hackernews', sourceKey: `test:${company}`, rawText: 'x', author: null });
+  const emailed = store.upsertSighting(sighting('Astoria AI', 'Founding AI Engineer')).job;
+  const unsent = store.upsertSighting(sighting('Draftco', 'Engineer')).job;
+  const submitted = store.upsertSighting(sighting('Formco', 'Engineer')).job;
+  const both = store.upsertSighting(sighting('Bothco', 'Engineer')).job;
+  const email = (job, status, kind = 'application') => store.addEmail(job.id, { kind, to: 'hire@example.com', subject: `HN ${job.company}`, body: 'Hi there', attachments: ['outbox/abc/Resume.pdf'], status, idempotencyKey: `${job.id}:${kind}:${status}` });
+  email(emailed, 'sent');
+  email(unsent, 'drafted');
+  email(emailed, 'sent', 'draft');
+  store.addApplication(submitted.id, { url: 'https://boards.greenhouse.io/formco/jobs/1', status: 'submitted', plan: { planHash: 'h1' }, idempotencyKey: 'form-1' });
+  store.addApplication(unsent.id, { url: 'https://boards.greenhouse.io/draftco/jobs/1', status: 'planned', plan: { planHash: 'h2' }, idempotencyKey: 'form-2' });
+  email(both, 'sent');
+  store.close();
+  writeRecord(vault, { job_id: both.id, company: 'Bothco', title: 'Engineer', status: 'skipped' });
+
+  const body = await (await get('/api/job-applications')).json();
+  const byCompany = Object.fromEntries(body.applications.map((item) => [item.company, item]));
+  assert.deepEqual(Object.keys(byCompany).sort(), ['Astoria AI', 'Bothco', 'Formco']);
+  assert.equal(byCompany['Astoria AI'].status, 'emailed');
+  assert.equal(byCompany['Astoria AI'].emailedTo, 'hire@example.com');
+  assert.equal(byCompany['Astoria AI'].subject, 'HN Astoria AI');
+  assert.deepEqual(byCompany['Astoria AI'].attachments, ['Resume.pdf']);
+  assert.equal(byCompany.Formco.status, 'applied');
+  assert.equal(byCompany.Bothco.status, 'skipped', 'the ledger record wins');
+  assert.equal(body.counts.emailed, 1);
+  const filtered = await (await get('/api/job-applications?status=emailed')).json();
+  assert.deepEqual(filtered.applications.map((item) => item.company), ['Astoria AI']);
+});
+
+test('a vault without a hunt database lists nothing and does not create one', async (t) => {
+  const { vault, get } = await fixture(t);
+  assert.deepEqual((await (await get('/api/job-applications')).json()).applications, []);
+  assert.equal(fs.existsSync(path.join(vault, 'job-hunt', 'state', 'hunt.sqlite')), false);
+});
