@@ -2,7 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { sendJson } from '../router.js';
 import { getVaultDir } from '../../vault/vault-dir.js';
-import { applicationsDir, listRecords, STATUSES } from '../../../mcp/jobs/ledger.js';
+import { applicationsDir, listRecords, STATUSES as LEDGER_STATUSES } from '../../../mcp/jobs/ledger.js';
+import { listHuntApplications } from '../hunt-applications.js';
+
+// The Markdown ledger plus what the autopilot's hunt store shows was sent.
+const STATUSES = [...LEDGER_STATUSES, 'emailed'];
 
 // Owner-only (router default). The job-hunt ledger is files in the owner's
 // vault (docs/job-hunt.md), written by the job-hunt MCP server; these
@@ -15,7 +19,10 @@ export function registerJobApplicationRoutes(router) {
   router.get('/api/job-applications', async (req, res) => {
     const status = req.query?.status || null;
     if (status && !STATUSES.includes(status)) return sendJson(res, 400, { error: `status must be one of ${STATUSES.join(', ')}` });
-    const all = listRecords(getVaultDir()).sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+    const vaultDir = getVaultDir();
+    const ledger = listRecords(vaultDir);
+    const known = new Set(ledger.map((record) => record.job_id));
+    const all = [...ledger, ...listHuntApplications(vaultDir).filter((record) => !known.has(record.job_id))].sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
     const counts = Object.fromEntries(STATUSES.map((name) => [name, all.filter((record) => record.status === name).length]));
     sendJson(res, 200, { counts, applications: all.filter((record) => !status || record.status === status).map(present) });
   });
@@ -52,6 +59,9 @@ function present(record) {
     openQuestions: Array.isArray(record.open_questions) ? record.open_questions : [],
     errors: Array.isArray(record.errors) ? record.errors : [],
     reason: record.reason ?? null,
+    emailedTo: typeof record.emailed_to === 'string' ? record.emailed_to : null,
+    subject: typeof record.subject === 'string' ? record.subject : null,
+    attachments: Array.isArray(record.attachments) ? record.attachments.filter((item) => typeof item === 'string') : [],
     coverLetter: record.notes || null,
     screenshots: [record.screenshot, record.result_screenshot].filter((item) => typeof item === 'string' && SCREENSHOT.test(item)),
   };
