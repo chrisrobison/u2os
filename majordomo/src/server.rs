@@ -93,7 +93,19 @@ async fn handle_connection(
 
     let service = service_fn(move |req: hyper::Request<hyper::body::Incoming>| {
         let state = state.clone();
-        async move { Ok::<_, Infallible>(api::route(&state, req.method(), req.uri().path())) }
+        async move {
+            let method = req.method().clone();
+            let target = req.uri().path_and_query().map_or_else(
+                || req.uri().path().to_string(),
+                |pq| pq.as_str().to_string(),
+            );
+            // Routes may read the vault from disk; keep that off the async workers.
+            let response =
+                tokio::task::spawn_blocking(move || api::route(&state, &method, &target))
+                    .await
+                    .unwrap_or_else(|_| api::internal_error());
+            Ok::<_, Infallible>(response)
+        }
     });
     let conn = http1::Builder::new()
         .timer(TokioTimer::new())

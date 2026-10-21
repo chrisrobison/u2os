@@ -26,12 +26,16 @@ pub struct Config {
     pub run_dir: PathBuf,
     pub lock_path: PathBuf,
     pub socket_path: PathBuf,
+    /// Where the owner's vault lives (read-only for Majordomo).
+    pub vault_dir: PathBuf,
 }
 
 impl Config {
     /// Resolve from the process environment (`U2OS_HOME`, then `HOME`).
     pub fn from_env() -> Result<Self> {
-        Self::for_home(home_from_env()?)
+        let mut config = Self::for_home(home_from_env()?)?;
+        config.vault_dir = crate::vault::locate(&config.home, std::env::var_os("U2OS_VAULT"));
+        Ok(config)
     }
 
     pub fn for_home(home: impl Into<PathBuf>) -> Result<Self> {
@@ -63,7 +67,9 @@ impl Config {
         let lock_path = data_dir.join(LOCK_FILE_NAME);
         let socket_path = run_dir.join(SOCKET_FILE_NAME);
         check_socket_path_len(&socket_path)?;
+        let vault_dir = crate::vault::locate(&home, None);
         Ok(Config {
+            vault_dir,
             home,
             data_dir,
             run_dir,

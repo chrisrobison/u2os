@@ -25,6 +25,8 @@ Tests use temporary homes and never touch `~/.u2os`.
 ./target/release/u2 status          # or: u2 status --json
 ./target/release/u2 doctor
 ./target/release/u2 vault check    # read-only; no daemon needed; --vault DIR, --json
+./target/release/u2 memory search peanut
+./target/release/u2 memory show ent_abc123   # or a vault path; also: list, links
 ```
 
 | Variable | Meaning |
@@ -54,9 +56,10 @@ HTTP/1.1 over the Unix socket. There is no TCP listener. Only a peer running as 
 | Route | Response |
 |---|---|
 | `GET /api/v1/health` | `{"status":"ok","version":"…"}` |
-| `GET /api/v1/status` | version, pid, uptime, home, socket, and per-responsibility ownership (all `owner: node`, `majordomo: disabled` in this phase) |
+| `GET /api/v1/status` | version, pid, uptime, home, socket, and per-responsibility ownership (always `owner: node`; Majordomo is `read-only` for the vault index, `disabled` for the rest) |
+| `GET /api/v1/vault`, `/memories`, `/memories/{id}`, `/memories/{id}/links`, `/search?q=` | read-only memory queries; see [docs/majordomo.md](../docs/majordomo.md#memory-queries-phase-2b) |
 
-Anything else is 404, or 405 for non-GET methods. At most 64 connections are served at once; header reads time out after 5 s.
+Anything else is 404, or 405 for non-GET methods. The vault is read-only for Majordomo. At most 64 connections are served at once; header reads time out after 5 s.
 
 ## Service units (not installed automatically)
 
@@ -79,4 +82,4 @@ launchd, `~/Library/LaunchAgents/io.u2os.majordomo.plist`: run `~/bin/majordomo`
 
 ## Not in this phase
 
-Memory queries and search, the watcher, Git history, policy, events, scheduler, action queue, capabilities, TCP/HTTP exposure, configuration reload, Windows. See the phase table in [docs/majordomo.md](../docs/majordomo.md).
+The watcher, Git history, policy, events, scheduler, action queue, capabilities, TCP/HTTP exposure, configuration reload, Windows. See the phase table in [docs/majordomo.md](../docs/majordomo.md).

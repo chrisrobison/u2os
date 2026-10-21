@@ -146,7 +146,9 @@ Tracking issue: [#602](https://github.com/chrisrobison/u2os/issues/602). The own
 
 - [x] [#603](https://github.com/chrisrobison/u2os/issues/603) Phase 0: audit, ADR 0011, migration plan
 - [x] [#604](https://github.com/chrisrobison/u2os/issues/604) Phase 1: daemon foundation (lock, lifecycle, local socket, `u2 status`/`doctor`)
-- [ ] [#607](https://github.com/chrisrobison/u2os/issues/607) Phase 2a: read-only vault scanner, parser and `u2 vault check` (then [#608](https://github.com/chrisrobison/u2os/issues/608) queries and search, [#609](https://github.com/chrisrobison/u2os/issues/609) watcher)
+- [x] [#607](https://github.com/chrisrobison/u2os/issues/607) Phase 2a: read-only vault scanner, parser and `u2 vault check`
+- [x] [#608](https://github.com/chrisrobison/u2os/issues/608) Phase 2b: memory queries, full-text search and link navigation
+- [ ] [#609](https://github.com/chrisrobison/u2os/issues/609) Phase 2c: vault watcher and reconcile
 - Phases 3–8 (Git history, events/scheduler/actions, policy parity, add-ons and agent bridge, ownership handoffs, benchmarks and packaging) get issues when their predecessor merges.
 
 ## Later — deferred until the product is proven

@@ -1,12 +1,15 @@
 //! Routing for the local `/api/v1` API. Pure functions over method + path so
 //! the behaviour is unit-testable without a socket.
 
+use crate::memory::{view, IndexHandle, Query};
+use crate::vault::Classification;
 use bytes::Bytes;
 use http_body_util::Full;
 use hyper::header::{HeaderValue, ALLOW, CACHE_CONTROL, CONTENT_TYPE, X_CONTENT_TYPE_OPTIONS};
 use hyper::{Method, Response, StatusCode};
 use serde_json::{json, Value};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 pub const API_VERSION: &str = "v1";
@@ -28,17 +31,19 @@ pub struct AppState {
     pub pid: u32,
     pub home: PathBuf,
     pub socket: PathBuf,
+    pub memory: Arc<IndexHandle>,
     started: Instant,
     started_at_unix: u64,
 }
 
 impl AppState {
-    pub fn new(home: PathBuf, socket: PathBuf) -> Self {
+    pub fn new(home: PathBuf, socket: PathBuf, vault_dir: PathBuf) -> Self {
         AppState {
             version: env!("CARGO_PKG_VERSION"),
             pid: std::process::id(),
             home,
             socket,
+            memory: Arc::new(IndexHandle::new(vault_dir)),
             started: Instant::now(),
             started_at_unix: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -48,8 +53,20 @@ impl AppState {
     }
 }
 
-pub fn route(state: &AppState, method: &Method, path: &str) -> Response<Full<Bytes>> {
-    let known = matches!(path, "/api/v1/health" | "/api/v1/status");
+/// `target` is the request path with an optional `?query`. May read the vault
+/// from disk, so callers on an async runtime should run it on a blocking thread.
+pub fn route(state: &AppState, method: &Method, target: &str) -> Response<Full<Bytes>> {
+    let (path, query) = target.split_once('?').unwrap_or((target, ""));
+    let segments: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+    let known = matches!(
+        segments.as_slice(),
+        [
+            "api",
+            "v1",
+            "health" | "status" | "vault" | "memories" | "search"
+        ] | ["api", "v1", "memories", _]
+            | ["api", "v1", "memories", _, "links"]
+    );
     if !known {
         return error(StatusCode::NOT_FOUND, "not_found", "unknown route");
     }
@@ -63,11 +80,117 @@ pub fn route(state: &AppState, method: &Method, path: &str) -> Response<Full<Byt
             .insert(ALLOW, HeaderValue::from_static("GET, HEAD"));
         return resp;
     }
-    let body = match path {
-        "/api/v1/health" => health(state),
-        _ => status(state),
-    };
-    json_response(StatusCode::OK, &body)
+    match segments.as_slice() {
+        ["api", "v1", "health"] => json_response(StatusCode::OK, &health(state)),
+        ["api", "v1", "status"] => json_response(StatusCode::OK, &status(state)),
+        ["api", "v1", "vault"] => with_index(state, |index| Ok(view::vault_status(index))),
+        ["api", "v1", "memories"] => with_index(state, |index| list(index, query, false)),
+        ["api", "v1", "search"] => with_index(state, |index| list(index, query, true)),
+        ["api", "v1", "memories", id] => with_index(state, |index| {
+            let record = lookup(index, id)?;
+            Ok(view::full(record))
+        }),
+        ["api", "v1", "memories", id, "links"] => with_index(state, |index| {
+            let record = lookup(index, id)?;
+            Ok(view::links(index, record))
+        }),
+        _ => error(StatusCode::NOT_FOUND, "not_found", "unknown route"),
+    }
+}
+
+type ApiResult = Result<Value, (StatusCode, &'static str, String)>;
+
+fn with_index(
+    state: &AppState,
+    f: impl FnOnce(&crate::memory::MemoryIndex) -> ApiResult,
+) -> Response<Full<Bytes>> {
+    match state.memory.current() {
+        Err(message) => {
+            tracing::warn!(error = %message, "vault unavailable");
+            error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "vault_unavailable",
+                "the vault could not be read",
+            )
+        }
+        Ok(index) => match f(&index) {
+            Ok(body) => json_response(StatusCode::OK, &body),
+            Err((status, code, message)) => error(status, code, &message),
+        },
+    }
+}
+
+fn lookup<'a>(
+    index: &'a crate::memory::MemoryIndex,
+    id: &str,
+) -> Result<&'a crate::vault::Record, (StatusCode, &'static str, String)> {
+    let valid = !id.is_empty()
+        && id.len() <= 128
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-');
+    if !valid {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "bad_id",
+            "malformed memory id".into(),
+        ));
+    }
+    index.get(id).ok_or((
+        StatusCode::NOT_FOUND,
+        "not_found",
+        "no memory with that id".into(),
+    ))
+}
+
+fn list(index: &crate::memory::MemoryIndex, query: &str, require_text: bool) -> ApiResult {
+    let bad = |message: String| (StatusCode::BAD_REQUEST, "bad_query", message);
+    let mut q = Query::default();
+    let mut text = String::new();
+    for (key, value) in form_urlencoded::parse(query.as_bytes()) {
+        match key.as_ref() {
+            "q" => text = value.into_owned(),
+            "type" => q.type_name = Some(value.into_owned()),
+            "classification" => {
+                q.classification = Some(
+                    parse_classification(&value)
+                        .ok_or_else(|| bad("unknown classification".into()))?,
+                )
+            }
+            "fact" => {
+                let (k, v) = value
+                    .split_once(':')
+                    .ok_or_else(|| bad("fact must be key:value".into()))?;
+                q.facts.push((k.to_string(), v.to_string()));
+            }
+            "limit" => {
+                q.limit = value
+                    .parse()
+                    .map_err(|_| bad("limit must be a number".into()))?
+            }
+            "offset" => {
+                q.offset = value
+                    .parse()
+                    .map_err(|_| bad("offset must be a number".into()))?
+            }
+            _ => return Err(bad(format!("unknown parameter: {key}"))),
+        }
+    }
+    let q = q.with_text(&text).map_err(bad)?;
+    if require_text && q.terms.is_empty() {
+        return Err(bad("q is required".into()));
+    }
+    Ok(view::page(&index.search(&q)))
+}
+
+pub fn parse_classification(text: &str) -> Option<Classification> {
+    match text {
+        "public" => Some(Classification::Public),
+        "personal" => Some(Classification::Personal),
+        "private" => Some(Classification::Private),
+        "sensitive" => Some(Classification::Sensitive),
+        _ => None,
+    }
 }
 
 /// Liveness only. No dependency or path detail.
@@ -81,7 +204,10 @@ fn status(state: &AppState) -> Value {
         .map(|name| {
             (
                 (*name).to_string(),
-                json!({ "owner": "node", "majordomo": "disabled" }),
+                json!({
+                    "owner": "node",
+                    "majordomo": if *name == "vault_index" { "read-only" } else { "disabled" },
+                }),
             )
         })
         .collect();
@@ -89,7 +215,7 @@ fn status(state: &AppState) -> Value {
         "status": "ok",
         "api": API_VERSION,
         "version": state.version,
-        "phase": "foundation",
+        "phase": "vault-read",
         "pid": state.pid,
         "startedAtUnix": state.started_at_unix,
         "uptimeSeconds": state.started.elapsed().as_secs(),
@@ -97,6 +223,14 @@ fn status(state: &AppState) -> Value {
         "socket": state.socket.display().to_string(),
         "responsibilities": responsibilities,
     })
+}
+
+pub fn internal_error() -> Response<Full<Bytes>> {
+    error(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "internal",
+        "internal error",
+    )
 }
 
 fn error(status: StatusCode, code: &str, message: &str) -> Response<Full<Bytes>> {
@@ -125,7 +259,11 @@ mod tests {
     use http_body_util::BodyExt;
 
     fn state() -> AppState {
-        AppState::new("/h".into(), "/h/majordomo/run/majordomo.sock".into())
+        AppState::new(
+            "/h".into(),
+            "/h/majordomo/run/majordomo.sock".into(),
+            "/h/vault".into(),
+        )
     }
 
     async fn body_json(resp: Response<Full<Bytes>>) -> Value {
@@ -143,14 +281,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn status_reports_all_responsibilities_disabled() {
+    async fn status_reports_node_as_owner_of_everything() {
         let v = body_json(route(&state(), &Method::GET, "/api/v1/status")).await;
-        assert_eq!(v["phase"], "foundation");
+        assert_eq!(v["phase"], "vault-read");
         let r = v["responsibilities"].as_object().unwrap();
         assert_eq!(r.len(), RESPONSIBILITIES.len());
-        for (_, entry) in r {
+        for (name, entry) in r {
             assert_eq!(entry["owner"], "node");
-            assert_eq!(entry["majordomo"], "disabled");
+            let expected = if name == "vault_index" {
+                "read-only"
+            } else {
+                "disabled"
+            };
+            assert_eq!(entry["majordomo"], expected);
         }
     }
 

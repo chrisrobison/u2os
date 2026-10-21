@@ -3,6 +3,7 @@
 //! Contains no business logic; it talks to the daemon's socket API (and, for
 //! `doctor`, inspects the home read-only).
 
+use majordomo::memory::{view, MemoryIndex, Query};
 use majordomo::vault;
 use majordomo::{client, config, doctor, Config, Error};
 use serde_json::Value;
@@ -15,6 +16,12 @@ USAGE:
     u2 doctor            check the Majordomo footprint in the U2OS home
     u2 vault check [--vault DIR] [--json]
                          read-only check of the vault (no daemon needed)
+    u2 memory list   [--type T] [--classification C] [--limit N] [--offset N]
+    u2 memory search <words...> [same filters]
+    u2 memory show   <id|path>
+    u2 memory links  <id|path>
+                         read-only queries over the vault (no daemon needed);
+                         all accept --vault DIR and --json
     u2 --version | --help
 
 ENVIRONMENT:
@@ -45,6 +52,7 @@ async fn main() -> ExitCode {
         ["status", "--json"] => finish(status(true).await),
         ["doctor"] => finish(run_doctor().await),
         ["vault", "check", rest @ ..] => finish(vault_check(rest)),
+        ["memory", sub, rest @ ..] => finish(memory(sub, rest)),
         other => {
             eprintln!("u2: unknown command: {}\n\n{USAGE}", other.join(" "));
             ExitCode::from(64)
@@ -170,4 +178,179 @@ fn vault_check(args: &[&str]) -> Result<bool, Error> {
         println!("ok: every vault file was read and understood");
     }
     Ok(index.invalid.is_empty())
+}
+
+struct Opts {
+    positional: Vec<String>,
+    json: bool,
+    vault: Option<std::path::PathBuf>,
+    query: Query,
+}
+
+fn parse_opts(args: &[&str]) -> Result<Opts, Error> {
+    let mut o = Opts {
+        positional: Vec::new(),
+        json: false,
+        vault: None,
+        query: Query::default(),
+    };
+    let mut it = args.iter();
+    let bad = |m: String| Error::Config(m);
+    while let Some(arg) = it.next() {
+        let mut value = |name: &str| -> Result<String, Error> {
+            it.next()
+                .map(|v| (*v).to_string())
+                .ok_or_else(|| bad(format!("{name} needs a value")))
+        };
+        match *arg {
+            "--json" => o.json = true,
+            "--vault" => o.vault = Some(value("--vault")?.into()),
+            "--type" => o.query.type_name = Some(value("--type")?),
+            "--classification" => {
+                let v = value("--classification")?;
+                o.query.classification = Some(
+                    majordomo::api::parse_classification(&v)
+                        .ok_or_else(|| bad(format!("unknown classification: {v}")))?,
+                );
+            }
+            "--limit" => {
+                o.query.limit = value("--limit")?
+                    .parse()
+                    .map_err(|_| bad("--limit must be a number".into()))?
+            }
+            "--offset" => {
+                o.query.offset = value("--offset")?
+                    .parse()
+                    .map_err(|_| bad("--offset must be a number".into()))?
+            }
+            flag if flag.starts_with("--") => return Err(bad(format!("unknown option: {flag}"))),
+            word => o.positional.push(word.to_string()),
+        }
+    }
+    Ok(o)
+}
+
+fn memory(sub: &str, args: &[&str]) -> Result<bool, Error> {
+    let mut opts = parse_opts(args)?;
+    let root = match opts.vault.take() {
+        Some(d) => d,
+        None => vault::locate(&config::home_from_env()?, std::env::var_os("U2OS_VAULT")),
+    };
+    let index = MemoryIndex::build(vault::scan(&root)?);
+    match sub {
+        "list" => {
+            if !opts.positional.is_empty() {
+                return Err(Error::Config(
+                    "memory list takes no arguments; use memory search".into(),
+                ));
+            }
+            print_page(&index, &opts, &opts.query.clone())
+        }
+        "search" => {
+            if opts.positional.is_empty() {
+                return Err(Error::Config(
+                    "memory search needs at least one word".into(),
+                ));
+            }
+            let q = opts
+                .query
+                .clone()
+                .with_text(&opts.positional.join(" "))
+                .map_err(Error::Config)?;
+            print_page(&index, &opts, &q)
+        }
+        "show" | "links" => {
+            let [key] = opts.positional.as_slice() else {
+                return Err(Error::Config(format!(
+                    "memory {sub} needs exactly one id or path"
+                )));
+            };
+            let Some(record) = index.get(key).or_else(|| index.vault.by_path(key)) else {
+                return Err(Error::Config(format!("no memory with id or path: {key}")));
+            };
+            if sub == "show" {
+                show(record, opts.json)
+            } else {
+                links(&index, record, opts.json)
+            }
+        }
+        other => Err(Error::Config(format!("unknown memory command: {other}"))),
+    }
+}
+
+fn print_json(value: &Value) -> Result<bool, Error> {
+    let out = serde_json::to_string_pretty(value).map_err(|e| Error::Http(e.to_string()))?;
+    println!("{out}");
+    Ok(true)
+}
+
+fn print_page(index: &MemoryIndex, opts: &Opts, q: &Query) -> Result<bool, Error> {
+    let page = index.search(q);
+    if opts.json {
+        return print_json(&view::page(&page));
+    }
+    for hit in &page.hits {
+        let r = hit.record;
+        println!(
+            "{:<31} {:<10} {}  ({})",
+            r.id,
+            r.kind.type_name(),
+            r.name,
+            r.path
+        );
+        if let Some(s) = &hit.snippet {
+            println!("    {s}");
+        }
+    }
+    println!("{} of {} shown", page.hits.len(), page.total);
+    Ok(true)
+}
+
+fn show(r: &vault::Record, json: bool) -> Result<bool, Error> {
+    if json {
+        return print_json(&view::full(r));
+    }
+    println!("{}  [{}]", r.name, r.kind.type_name());
+    println!(
+        "  id:             {}{}",
+        r.id,
+        if r.id_from_file {
+            ""
+        } else {
+            "  (derived from path)"
+        }
+    );
+    println!("  path:           {}", r.path);
+    println!("  classification: {:?}", r.classification);
+    for (key, fact) in &r.facts {
+        let level = if fact.classification == r.classification {
+            String::new()
+        } else {
+            format!("  [{:?}]", fact.classification)
+        };
+        println!("  {key}: {}{level}", text(&fact.value));
+    }
+    Ok(true)
+}
+
+fn links(index: &MemoryIndex, r: &vault::Record, json: bool) -> Result<bool, Error> {
+    if json {
+        return print_json(&view::links(index, r));
+    }
+    println!("{} ({})", r.name, r.id);
+    println!("  links to:");
+    for l in index.outgoing(&r.id) {
+        match l.to.as_deref().and_then(|id| index.get(id)) {
+            Some(t) => println!("    {} -> {} ({})", l.predicate, t.name, t.id),
+            None => println!("    {} -> {}  DANGLING", l.predicate, l.target),
+        }
+    }
+    println!("  linked from:");
+    for l in index.backlinks(&r.id) {
+        let from = index
+            .get(&l.from)
+            .map_or(l.from.as_str(), |f| f.name.as_str());
+        println!("    {from} {} this", l.predicate);
+    }
+    Ok(true)
 }

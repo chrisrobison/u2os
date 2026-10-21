@@ -14,7 +14,7 @@ mod scanner;
 pub use locate::locate;
 pub use markdown::{parse_markdown, Parsed, MAX_VAULT_FILE_BYTES};
 pub use record::{describe, path_derived_id, Classification, Fact, Record, RecordKind};
-pub use scanner::{scan, InvalidFile, VaultIndex};
+pub use scanner::{scan, signature, InvalidFile, VaultIndex};
 
 /// A vault file that cannot be interpreted. The message is for the owner.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
