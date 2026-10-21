@@ -1,0 +1,216 @@
+{
+  "invalid": [
+    "people/bad-class.md",
+    "people/bad-yaml.md",
+    "people/dave.md"
+  ],
+  "records": [
+    {
+      "classification": "personal",
+      "facts": {
+        "notes": {
+          "classification": "personal",
+          "value": "Paid on the 3rd."
+        },
+        "status": {
+          "classification": "personal",
+          "value": "done"
+        }
+      },
+      "id": "ent_vault_6c4d4fa0900e33420710",
+      "name": "Pay invoice",
+      "path": "commitments/done-item.md",
+      "status": "done",
+      "type": "Commitment"
+    },
+    {
+      "classification": "personal",
+      "facts": {
+        "due": {
+          "classification": "personal",
+          "value": "2026-10-01"
+        }
+      },
+      "id": "ent_vault_6429f6804827c3c1e328",
+      "name": "Send Q3 report to Dana",
+      "path": "commitments/send-report.md",
+      "status": "open",
+      "type": "Commitment"
+    },
+    {
+      "facts": {
+        "home_city": {
+          "classification": "personal",
+          "value": "San Francisco"
+        },
+        "name": {
+          "classification": "personal",
+          "value": "Chris"
+        },
+        "notes": {
+          "classification": "personal",
+          "value": "I prefer mornings for deep work."
+        }
+      },
+      "path": "me.md",
+      "type": "Person"
+    },
+    {
+      "classification": "personal",
+      "facts": {},
+      "id": "ent_vault_7f242a13d9f6c92e8e72",
+      "name": "Upper Case Ext",
+      "path": "people/UPPER.MD",
+      "type": "Person"
+    },
+    {
+      "classification": "private",
+      "facts": {
+        "birthday": {
+          "classification": "private",
+          "value": "1990-05-01"
+        },
+        "email": {
+          "classification": "public",
+          "value": "alice@example.com"
+        },
+        "notes": {
+          "classification": "private",
+          "value": "Allergic to peanuts. Prefers texts to calls."
+        },
+        "phone": {
+          "classification": "sensitive",
+          "value": "+1 555 0100"
+        },
+        "relationship": {
+          "classification": "private",
+          "value": "sister"
+        }
+      },
+      "id": "ent_vault_95333b06711b659c30ba",
+      "name": "Alice Chen",
+      "path": "people/alice-chen.md",
+      "type": "Person"
+    },
+    {
+      "classification": "personal",
+      "facts": {
+        "notes": {
+          "classification": "personal",
+          "value": "# Bob Stone\nMet at the conference."
+        }
+      },
+      "id": "ent_vault_050c39f94a8f889e2a05",
+      "name": "Bob Stone",
+      "path": "people/bob.md",
+      "type": "Person"
+    },
+    {
+      "classification": "personal",
+      "facts": {
+        "notes": {
+          "classification": "personal",
+          "value": "plain text only"
+        }
+      },
+      "id": "ent_vault_e52dae4fda5a12b627fb",
+      "name": "Carol D E",
+      "path": "people/carol-d_e.md",
+      "type": "Person"
+    },
+    {
+      "classification": "personal",
+      "facts": {
+        "city": {
+          "classification": "personal",
+          "value": "Oslo"
+        },
+        "notes": {
+          "classification": "personal",
+          "value": "Windows line endings."
+        }
+      },
+      "id": "ent_vault_a2cc11329a44c586168d",
+      "name": "Crlf Person",
+      "path": "people/crlf.md",
+      "type": "Person"
+    },
+    {
+      "classification": "personal",
+      "facts": {},
+      "id": "ent_known_dave",
+      "name": "Dave Again",
+      "path": "people/dave-copy.md",
+      "type": "Person"
+    },
+    {
+      "classification": "personal",
+      "facts": {
+        "notes": {
+          "classification": "personal",
+          "value": "---\n---\nbody after an empty block"
+        }
+      },
+      "id": "ent_vault_98efbd59a9afa3d1e9ad",
+      "name": "Empty Block",
+      "path": "people/empty-block.md",
+      "type": "Person"
+    },
+    {
+      "classification": "personal",
+      "facts": {},
+      "id": "ent_vault_c971b4d3eaa1d943f209",
+      "name": "42",
+      "path": "people/numeric-name.md",
+      "type": "Person"
+    },
+    {
+      "classification": "personal",
+      "facts": {
+        "notes": {
+          "classification": "personal",
+          "value": "# House renovation\nKitchen first."
+        }
+      },
+      "id": "ent_vault_4e927969d4c59db38462",
+      "name": "House renovation",
+      "path": "projects/house.md",
+      "type": "Project"
+    },
+    {
+      "classification": "personal",
+      "facts": {
+        "budget": {
+          "classification": "sensitive",
+          "value": 1200.5
+        },
+        "flag": {
+          "classification": "personal",
+          "value": true
+        },
+        "owner": {
+          "classification": "personal",
+          "value": {
+            "name": "Chris",
+            "since": "2026-01-01"
+          }
+        },
+        "status": {
+          "classification": "personal",
+          "value": "active"
+        },
+        "tags": {
+          "classification": "personal",
+          "value": [
+            "rust",
+            "vault"
+          ]
+        }
+      },
+      "id": "ent_vault_406ac24477b4b7f8a69e",
+      "name": "Nested",
+      "path": "projects/nested.md",
+      "type": "Project"
+    }
+  ]
+}

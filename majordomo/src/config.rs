@@ -31,22 +31,27 @@ pub struct Config {
 impl Config {
     /// Resolve from the process environment (`U2OS_HOME`, then `HOME`).
     pub fn from_env() -> Result<Self> {
-        let home = match std::env::var_os("U2OS_HOME").filter(|v| !v.is_empty()) {
-            Some(v) => PathBuf::from(v),
-            None => {
-                let user_home = std::env::var_os("HOME")
-                    .filter(|v| !v.is_empty())
-                    .ok_or_else(|| {
-                        Error::Config("neither U2OS_HOME nor HOME is set".to_string())
-                    })?;
-                PathBuf::from(user_home).join(".u2os")
-            }
-        };
-        Self::for_home(home)
+        Self::for_home(home_from_env()?)
     }
 
     pub fn for_home(home: impl Into<PathBuf>) -> Result<Self> {
-        let home: PathBuf = home.into();
+        Self::build(home.into())
+    }
+}
+
+/// The U2OS home as Node resolves it: `U2OS_HOME`, else `~/.u2os`.
+pub fn home_from_env() -> Result<PathBuf> {
+    if let Some(v) = std::env::var_os("U2OS_HOME").filter(|v| !v.is_empty()) {
+        return Ok(PathBuf::from(v));
+    }
+    let user_home = std::env::var_os("HOME")
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| Error::Config("neither U2OS_HOME nor HOME is set".to_string()))?;
+    Ok(PathBuf::from(user_home).join(".u2os"))
+}
+
+impl Config {
+    fn build(home: PathBuf) -> Result<Self> {
         if !home.is_absolute() {
             return Err(Error::Config(format!(
                 "U2OS home must be an absolute path, got {}",

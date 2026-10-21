@@ -78,7 +78,8 @@ CLI `u2` (separate from `npm run u2`, which is the Node package CLI and is uncha
 |---|---|
 | `u2 status` | 1, implemented |
 | `u2 doctor` | 1, implemented (read-only: home, directory and lock-file permissions, socket health, Node data present) |
-| `u2 vault check`, `u2 memory ...` | 2 |
+| `u2 vault check [--vault DIR] [--json]` | 2a, implemented (read-only, no daemon needed) |
+| `u2 memory ...` | 2b |
 | `u2 history`, `u2 diff`, `u2 rewind` | 3 |
 | `u2 actions list` | 4 |
 | `u2 daemon start`/`stop` | later (foreground `majordomo` first; units documented) |
@@ -110,7 +111,7 @@ Out of scope: a compromised owner account, a malicious root user, network attack
 |---|---|---|
 | 0 | This page and ADR 0011 | Reviewed; no code |
 | 1 | Cargo crate, config, lock, lifecycle, logging, socket API, `u2 status`/`doctor` | Clean start/stop, second instance refused, peer checks, tests green |
-| 2 | Vault + memory read engine, watcher, search, backlinks, `u2 vault check` | Externally edited vault indexed and queryable; unrelated files untouched; parity fixtures vs Node indexer |
+| 2 | Vault + memory read engine (2a [#607](https://github.com/chrisrobison/u2os/issues/607) scanner and `u2 vault check`: implemented; 2b [#608](https://github.com/chrisrobison/u2os/issues/608) queries and search; 2c [#609](https://github.com/chrisrobison/u2os/issues/609) watcher), watcher, search, backlinks, `u2 vault check` | Externally edited vault indexed and queryable; unrelated files untouched; parity fixtures vs Node indexer |
 | 3 | Git history | Rename-surviving history, read-only snapshots; no auto-publish |
 | 4 | Events, scheduler, action state machine, mock capabilities | Simulated crash never duplicates a consequential action |
 | 5 | Policy parity | Shared fixtures identical to Node; no bypass via routine/agent/event/API |
@@ -123,3 +124,20 @@ Out of scope: a compromised owner account, a malicious root user, network attack
 - Fixtures live under `majordomo/tests/fixtures/` and are shared with a Node-side test that records Node's observable output; a Rust test compares.
 - Existing `U2OS_HOME` installations stay valid. Majordomo only adds `<home>/majordomo/`. Deleting that directory returns the home to pure-Node operation.
 - Everything Majordomo reads must tolerate being run against a copy of a real home in tests; tests never touch the owner's real home or vault.
+
+## Vault reader (Phase 2a)
+
+`majordomo::vault` reads the vault exactly as the Node indexer interprets it: `me.md` plus regular, non-hidden `.md` files directly in `people/`, `projects/` and `commitments/`; files over 256 KiB, invalid YAML, invalid classifications and duplicate ids are reported, never silently dropped; a path-derived id is `ent_vault_` + the first 20 hex characters of SHA-256 of the relative path. It never writes, never creates the vault and never follows symlinks.
+
+Parity is enforced by a shared golden: `tests/majordomo-vault-golden.test.js` indexes `majordomo/tests/fixtures/vault/` with the Node indexer and must equal `majordomo/tests/fixtures/vault-expected.json`; the Rust test `matches_the_node_indexer_golden` asserts the same file. Regenerate on purpose with `UPDATE_MAJORDOMO_GOLDEN=1 node --test tests/majordomo-vault-golden.test.js`.
+
+Deliberate differences from Node (none affects a vault Node accepts, except where noted):
+
+| Area | Node | Majordomo |
+|---|---|---|
+| `id:` | must match `ent_…` and name a record in the database | also accepts a hyphenated UUID (for new canonical memories, ADR 0011); cannot check the database, so existence is not verified |
+| Symlinked `people/`, `projects/`, `commitments/` | followed | skipped with a note (no escape from the vault) |
+| Unknown `!!` YAML tags | error | ignored (custom `!tag` is an error in both) |
+| `me.md` | linked to the owner account's entity | read as a record with a path-derived placeholder id |
+| `id:` given as a list | accepted if it stringifies to a valid id | invalid |
+| Case where `^` follows a lone `\r` in the heading fallback | matches | does not match |
