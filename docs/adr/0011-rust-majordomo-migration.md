@@ -33,7 +33,7 @@ PLAN.md previously said a Rust core "is not planned" until the add-on contract w
 | `PolicyDecision` enum | Levels per `domain.operation` + sub-category context, `blocked` | Projection in decision 5 |
 | Rust owns SQLite action queue | Node owns `u2os.sqlite`, exclusive runtime guard | Separate Rust store; handoff protocol (decisions 2–3) |
 | Session/CSRF HTTP API | Passphrase owner session, cookie `u2os_session`, CSRF | Socket transport in Phase 1; HTTP only with equal protections (decision 6) |
-| Git history layer | Backups are encrypted snapshots; vault may be a repo | Additive Phase 3; never auto-commit external edits or push |
+| Git history layer | Backups are encrypted snapshots; vault may be a repo | Additive Phase 3 using the `git` CLI. Owner decisions (2026-10-20): working-tree changes, including edits made outside U2OS, are checked in; on conflict the current content wins and conflict text is never committed; Majordomo never pushes or touches a repository larger than the vault; removing material never rewrites history unless the owner explicitly asks to scrub it |
 | Rust daemon replaces Node routines | Routines claim `(routine, slot)` in `routine_runs` | Claim semantics preserved; ownership flipped only in Phase 7 |
 | Frozen areas (AGENTS.md) | Package workflow language, expression interpreter, automation runtime frozen | Not ported; retired per ADR 0009/0010 |
 

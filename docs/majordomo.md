@@ -76,6 +76,9 @@ Local API over `majordomo/run/majordomo.sock` (HTTP/1.1 over a Unix socket). Ver
 | `GET /api/v1/search?q=` | Same as above with `q` required |
 | `GET /api/v1/memories/{id}` | One record with its facts and per-fact classification |
 | `GET /api/v1/memories/{id}/links` | Outgoing links and backlinks (with the other record's name and path) |
+| `GET /api/v1/git` | Repository health (see Git below) |
+| `GET /api/v1/memories/{id}/history?limit=` | Commits that touched the record, newest first, across renames |
+| `GET /api/v1/memories/{id}/diff?since=&until=` | Unified diff of the record (and its earlier paths) from `since` to `until` or the working tree |
 
 Errors are `{"error":{"code","message"}}`: 400 bad query or id, 404 unknown id or route, 405 non-GET, 503 `vault_unavailable` (the message never contains paths).
 
@@ -87,7 +90,8 @@ CLI `u2` (separate from `npm run u2`, which is the Node package CLI and is uncha
 | `u2 doctor` | 1, implemented (read-only: home, directory and lock-file permissions, socket health, Node data present) |
 | `u2 vault check [--vault DIR] [--json]` | 2a, implemented (read-only, no daemon needed) |
 | `u2 memory list\|search\|show\|links` (`--json`, `--vault DIR`) | 2b, implemented (reads the vault directly, no daemon needed, same library code as the API) |
-| `u2 history`, `u2 diff`, `u2 rewind` | 3 |
+| `u2 git status`, `u2 history <id\|path>`, `u2 diff <id\|path> --since …`, `u2 rewind <date\|commit>` | 3a, implemented (read-only; no daemon needed) |
+| `u2 git checkin`, `u2 forget` | 3b, 3c |
 | `u2 actions list` | 4 |
 | `u2 daemon start`/`stop` | later (foreground `majordomo` first; units documented) |
 
@@ -119,7 +123,7 @@ Out of scope: a compromised owner account, a malicious root user, network attack
 | 0 | This page and ADR 0011 | Reviewed; no code |
 | 1 | Cargo crate, config, lock, lifecycle, logging, socket API, `u2 status`/`doctor` | Clean start/stop, second instance refused, peer checks, tests green |
 | 2 | Vault + memory read engine (2a [#607](https://github.com/chrisrobison/u2os/issues/607) scanner and `u2 vault check`: implemented; 2b [#608](https://github.com/chrisrobison/u2os/issues/608) queries, search and links: implemented; 2c [#609](https://github.com/chrisrobison/u2os/issues/609) watcher: implemented), watcher, search, backlinks, `u2 vault check` | Externally edited vault indexed and queryable; unrelated files untouched; parity fixtures vs Node indexer |
-| 3 | Git history | Rename-surviving history, read-only snapshots; no auto-publish |
+| 3 | Git history: 3a read-only health, history, diff, snapshots ([#613](https://github.com/chrisrobison/u2os/issues/613), implemented); 3b check-in of dirty trees ([#614](https://github.com/chrisrobison/u2os/issues/614)); 3c removal with optional history scrub ([#615](https://github.com/chrisrobison/u2os/issues/615)) | Rename-surviving history, read-only snapshots; never pushes |
 | 4 | Events, scheduler, action state machine, mock capabilities | Simulated crash never duplicates a consequential action |
 | 5 | Policy parity | Shared fixtures identical to Node; no bypass via routine/agent/event/API |
 | 6 | Capability registry, MCP adapter, agent proposal interface | End-to-end task with a replaceable agent and a mock capability |
@@ -170,3 +174,22 @@ Deliberate differences from Node (none affects a vault Node accepts, except wher
 - **Safety.** The watcher is read-only: it writes nothing into the vault (a test checks files, mtimes and the directory listing), stops and joins its thread when the daemon shuts down, and degrades to reconcile-only (with a warning) if the OS watcher cannot be created.
 
 Phase 2 (vault and memory engine) is complete. Merges/redirects and lifecycle metadata remain open ideas, not scheduled work.
+
+## Git history (Phase 3)
+
+Git is the vault's history layer. Majordomo uses the `git` command line rather than a library: no C dependency, the same behaviour as the owner's own git, and Phase 3 needs only plumbing commands. It never pushes, fetches or contacts a remote.
+
+### Owner decisions
+
+- **Dirty trees are checked in** (3b, not yet built): changes found in the working tree, including edits made in other editors, are pulled in and committed.
+- **Conflicts keep the current content** (3b): conflict markers or the repository's conflicted text are never committed; the current content wins.
+- **Removal never rewrites history by default** (3c): history is changed only when the owner explicitly asks to scrub it. Git history keeps deleted material, and Majordomo says so whenever it removes a record.
+
+### Read-only features (3a)
+
+- **Runner.** Every call is an argument array run as `git -C <vault>` with `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE` and similar variables removed, no prompts, `GIT_OPTIONAL_LOCKS=0` (so `status` does not rewrite the index), `core.fsmonitor` off, a 30 s timeout and a 16 MiB output cap. Diffs run with `--no-ext-diff --no-textconv`, so configured helper programs never execute. Paths, record ids and revisions are validated before use and follow `--`; dates are parsed by Majordomo, not by git.
+- **Health** (`u2 git status`, `GET /api/v1/git`, a `u2 doctor` line): repository present, whether the vault is its top level, branch/HEAD, commit count, staged/modified/untracked/unmerged counts, merge/rebase/cherry-pick/revert/bisect in progress, shallow clone, remote **names** (URLs can carry credentials and are never reported), whether `user.name`/`user.email` are set, and warnings. A vault inside a larger repository is flagged: Majordomo will read it but will not commit to it.
+- **History** (`u2 history`, `/memories/{id}/history`): `git log --follow` plus, for files that carry an `id:`, a search of history for that id so a record renamed and rewritten in one commit (which defeats similarity detection) is still followed. Paths are relative to the vault, also when the vault is nested in a bigger repository. Plain paths work too, including for deleted records. Without an `id:`, only similarity-based following is possible; a record's path-derived id changes when its file is renamed.
+- **Diff** (`u2 diff <id|path> --since DATE|COMMIT [--until …]`): the record, with all its earlier paths, from that point to another or to the working tree. Before the record existed the diff is against nothing. Output is capped at 1 MiB. Untracked files are not part of a diff until they are checked in.
+- **Rewind** (`u2 rewind DATE|COMMIT [--to DIR]`): extracts the vault as of a commit into a new private directory (default `<home>/majordomo/snapshots/<time>-at-<when>`, mode 0700) using `git archive`. The working tree, index and HEAD are never touched (a test compares HEAD, status, index bytes and file contents). The destination must be new or empty and outside the vault and its repository; symlinks and hard links in the archive are not extracted; a failed extraction removes only the directory it created. The snapshot is an ordinary vault: `u2 vault check --vault DIR` and `u2 memory … --vault DIR` read it. It holds private data; delete it when done.
+- **Dates.** `YYYY-MM-DD` means the end of that day in UTC, so `rewind 2025-06-01` shows the vault as it was at the close of June 1. A full RFC 3339 time (`2025-06-01T09:30:00-07:00`) is exact. Commit time and the real-world validity of a fact are different things: history answers "what did the vault say then", not "what was true then".

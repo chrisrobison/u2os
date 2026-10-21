@@ -1,6 +1,7 @@
 //! Routing for the local `/api/v1` API. Pure functions over method + path so
 //! the behaviour is unit-testable without a socket.
 
+use crate::git::{self, Git, Health, RevSpec};
 use crate::memory::{view, IndexHandle, Query};
 use crate::vault::Classification;
 use bytes::Bytes;
@@ -32,6 +33,7 @@ pub struct AppState {
     pub home: PathBuf,
     pub socket: PathBuf,
     pub memory: Arc<IndexHandle>,
+    pub git: Git,
     started: Instant,
     started_at_unix: u64,
 }
@@ -43,6 +45,7 @@ impl AppState {
             pid: std::process::id(),
             home,
             socket,
+            git: Git::new(vault_dir.clone()),
             memory: Arc::new(IndexHandle::new(vault_dir)),
             started: Instant::now(),
             started_at_unix: SystemTime::now()
@@ -63,9 +66,9 @@ pub fn route(state: &AppState, method: &Method, target: &str) -> Response<Full<B
         [
             "api",
             "v1",
-            "health" | "status" | "vault" | "memories" | "search"
+            "health" | "status" | "vault" | "memories" | "search" | "git"
         ] | ["api", "v1", "memories", _]
-            | ["api", "v1", "memories", _, "links"]
+            | ["api", "v1", "memories", _, "links" | "history" | "diff"]
     );
     if !known {
         return error(StatusCode::NOT_FOUND, "not_found", "unknown route");
@@ -100,8 +103,96 @@ pub fn route(state: &AppState, method: &Method, target: &str) -> Response<Full<B
             let record = lookup(index, id)?;
             Ok(view::links(index, record))
         }),
+        ["api", "v1", "git"] => match Health::inspect(&state.git) {
+            Ok(h) => json_response(
+                StatusCode::OK,
+                &serde_json::to_value(h).unwrap_or(Value::Null),
+            ),
+            Err(e) => git_error(&e),
+        },
+        ["api", "v1", "memories", id, "history"] => with_index(state, |index| {
+            let record = lookup(index, id)?;
+            let limit = single_param(query, "limit")?
+                .map(|v| {
+                    v.parse::<usize>()
+                        .map_err(|_| bad_query("limit must be a number"))
+                })
+                .transpose()?
+                .unwrap_or(100);
+            let h = git::record_history(
+                &state.git,
+                &record.path,
+                record.id_from_file.then_some(record.id.as_str()),
+                limit.min(500),
+            )
+            .map_err(git_api_error)?;
+            Ok(serde_json::to_value(h).unwrap_or(Value::Null))
+        }),
+        ["api", "v1", "memories", id, "diff"] => with_index(state, |index| {
+            let record = lookup(index, id)?;
+            let since =
+                single_param(query, "since")?.ok_or_else(|| bad_query("since is required"))?;
+            let since = RevSpec::parse(&since).map_err(git_api_error)?;
+            let until = single_param(query, "until")?
+                .map(|u| RevSpec::parse(&u))
+                .transpose()
+                .map_err(git_api_error)?;
+            let history = git::record_history(
+                &state.git,
+                &record.path,
+                record.id_from_file.then_some(record.id.as_str()),
+                0,
+            )
+            .map_err(git_api_error)?;
+            let d = git::diff_paths(&state.git, &history.paths, &since, until.as_ref())
+                .map_err(git_api_error)?;
+            Ok(serde_json::to_value(d).unwrap_or(Value::Null))
+        }),
         _ => error(StatusCode::NOT_FOUND, "not_found", "unknown route"),
     }
+}
+
+fn bad_query(message: &str) -> (StatusCode, &'static str, String) {
+    (StatusCode::BAD_REQUEST, "bad_query", message.to_string())
+}
+
+fn single_param(
+    query: &str,
+    name: &str,
+) -> Result<Option<String>, (StatusCode, &'static str, String)> {
+    let mut found = None;
+    for (k, v) in form_urlencoded::parse(query.as_bytes()) {
+        if k == name {
+            found = Some(v.into_owned());
+        } else if !matches!(k.as_ref(), "limit" | "since" | "until") {
+            return Err(bad_query(&format!("unknown parameter: {k}")));
+        }
+    }
+    Ok(found)
+}
+
+/// Our own validation messages are safe to show; git failures are not echoed.
+fn git_api_error(e: crate::error::Error) -> (StatusCode, &'static str, String) {
+    match e {
+        crate::error::Error::Invalid(m) => (StatusCode::BAD_REQUEST, "bad_query", m),
+        other => {
+            tracing::warn!(error = %other, "git request failed");
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "git_unavailable",
+                "git could not answer for this vault".into(),
+            )
+        }
+    }
+}
+
+fn git_error(e: &crate::error::Error) -> Response<Full<Bytes>> {
+    tracing::warn!(error = %e, "git request failed");
+    error(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "git_unavailable",
+        "git is not available",
+    )
 }
 
 type ApiResult = Result<Value, (StatusCode, &'static str, String)>;

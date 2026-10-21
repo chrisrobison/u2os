@@ -3,6 +3,7 @@
 //! Contains no business logic; it talks to the daemon's socket API (and, for
 //! `doctor`, inspects the home read-only).
 
+use majordomo::git::{self, Git, RevSpec};
 use majordomo::memory::{view, MemoryIndex, Query};
 use majordomo::vault;
 use majordomo::{client, config, doctor, Config, Error};
@@ -16,6 +17,14 @@ USAGE:
     u2 doctor            check the Majordomo footprint in the U2OS home
     u2 vault check [--vault DIR] [--json]
                          read-only check of the vault (no daemon needed)
+    u2 git status [--vault DIR] [--json]
+                         health of the vault's Git repository
+    u2 history <id|path> [--limit N]      commits that touched a record, across renames
+    u2 diff <id|path> --since DATE|COMMIT [--until DATE|COMMIT]
+                         what changed (default: until the working tree)
+    u2 rewind <DATE|COMMIT> [--to DIR]    extract a read-only snapshot of the vault
+                         at that time; a date alone means the end of that day (UTC).
+                         The vault itself is never touched. All accept --vault and --json
     u2 memory list   [--type T] [--classification C] [--limit N] [--offset N]
     u2 memory search <words...> [same filters]
     u2 memory show   <id|path>
@@ -53,6 +62,10 @@ async fn main() -> ExitCode {
         ["doctor"] => finish(run_doctor().await),
         ["vault", "check", rest @ ..] => finish(vault_check(rest)),
         ["memory", sub, rest @ ..] => finish(memory(sub, rest)),
+        ["git", "status", rest @ ..] => finish(git_status(rest)),
+        ["history", rest @ ..] => finish(history(rest)),
+        ["diff", rest @ ..] => finish(diff(rest)),
+        ["rewind", rest @ ..] => finish(rewind(rest)),
         other => {
             eprintln!("u2: unknown command: {}\n\n{USAGE}", other.join(" "));
             ExitCode::from(64)
@@ -185,6 +198,9 @@ struct Opts {
     json: bool,
     vault: Option<std::path::PathBuf>,
     query: Query,
+    since: Option<String>,
+    until: Option<String>,
+    to: Option<std::path::PathBuf>,
 }
 
 fn parse_opts(args: &[&str]) -> Result<Opts, Error> {
@@ -193,6 +209,9 @@ fn parse_opts(args: &[&str]) -> Result<Opts, Error> {
         json: false,
         vault: None,
         query: Query::default(),
+        since: None,
+        until: None,
+        to: None,
     };
     let mut it = args.iter();
     let bad = |m: String| Error::Config(m);
@@ -205,6 +224,9 @@ fn parse_opts(args: &[&str]) -> Result<Opts, Error> {
         match *arg {
             "--json" => o.json = true,
             "--vault" => o.vault = Some(value("--vault")?.into()),
+            "--since" => o.since = Some(value("--since")?),
+            "--until" => o.until = Some(value("--until")?),
+            "--to" => o.to = Some(value("--to")?.into()),
             "--type" => o.query.type_name = Some(value("--type")?),
             "--classification" => {
                 let v = value("--classification")?;
@@ -352,5 +374,196 @@ fn links(index: &MemoryIndex, r: &vault::Record, json: bool) -> Result<bool, Err
             .map_or(l.from.as_str(), |f| f.name.as_str());
         println!("    {from} {} this", l.predicate);
     }
+    Ok(true)
+}
+
+fn vault_root(opts: &mut Opts) -> Result<std::path::PathBuf, Error> {
+    Ok(match opts.vault.take() {
+        Some(d) => d,
+        None => vault::locate(&config::home_from_env()?, std::env::var_os("U2OS_VAULT")),
+    })
+}
+
+fn git_status(args: &[&str]) -> Result<bool, Error> {
+    let mut opts = parse_opts(args)?;
+    let root = vault_root(&mut opts)?;
+    if !root.is_dir() {
+        return Err(Error::Config(format!(
+            "vault directory not found: {}",
+            root.display()
+        )));
+    }
+    let h = git::Health::inspect(&Git::new(&root))?;
+    if opts.json {
+        return print_json(&serde_json::to_value(&h).unwrap_or(Value::Null));
+    }
+    println!("git {}", h.git_version);
+    if !h.present {
+        println!("  the vault is not in a git repository (history features are optional)");
+    } else {
+        println!(
+            "  repository: {}{}",
+            h.toplevel.as_deref().unwrap_or("?"),
+            if h.is_vault_root {
+                ""
+            } else {
+                "  (larger than the vault)"
+            }
+        );
+        println!(
+            "  branch:     {}",
+            h.branch
+                .as_deref()
+                .unwrap_or(if h.detached { "(detached)" } else { "(none)" })
+        );
+        println!(
+            "  commits:    {}",
+            h.commits
+                .map_or_else(|| "none".to_string(), |n| n.to_string())
+        );
+        println!(
+            "  changes:    {} staged, {} modified, {} untracked, {} unmerged",
+            h.staged, h.modified, h.untracked, h.unmerged
+        );
+        println!(
+            "  remotes:    {}",
+            if h.remotes.is_empty() {
+                "none".to_string()
+            } else {
+                h.remotes.join(", ")
+            }
+        );
+    }
+    for w in &h.warnings {
+        println!("  warning: {w}");
+    }
+    Ok(true)
+}
+
+/// A record id or path -> (path, bound id), using the vault index.
+fn history_target(root: &std::path::Path, key: &str) -> Result<(String, Option<String>), Error> {
+    let index = MemoryIndex::build(vault::scan(root)?);
+    git::target_for(&index, key)
+}
+
+fn history(args: &[&str]) -> Result<bool, Error> {
+    let mut opts = parse_opts(args)?;
+    let root = vault_root(&mut opts)?;
+    let [key] = opts.positional.as_slice() else {
+        return Err(Error::Config("history needs exactly one id or path".into()));
+    };
+    let (path, id) = history_target(&root, key)?;
+    let limit = if opts.query.limit == 0 {
+        100
+    } else {
+        opts.query.limit
+    };
+    let h = git::record_history(&Git::new(&root), &path, id.as_deref(), limit)?;
+    if opts.json {
+        return print_json(&serde_json::to_value(&h).unwrap_or(Value::Null));
+    }
+    for e in &h.entries {
+        println!(
+            "{}  {}  {}  {}",
+            &e.commit[..e.commit.len().min(10)],
+            e.date,
+            e.author,
+            e.subject
+        );
+        for c in &e.changes {
+            match &c.old_path {
+                Some(old) => println!("    {} {old} -> {}", c.status, c.path),
+                None => println!("    {} {}", c.status, c.path),
+            }
+        }
+    }
+    println!(
+        "{} commit(s); paths: {}",
+        h.entries.len(),
+        h.paths.join(", ")
+    );
+    Ok(true)
+}
+
+fn diff(args: &[&str]) -> Result<bool, Error> {
+    let mut opts = parse_opts(args)?;
+    let root = vault_root(&mut opts)?;
+    let [key] = opts.positional.as_slice() else {
+        return Err(Error::Config("diff needs exactly one id or path".into()));
+    };
+    let since = RevSpec::parse(
+        opts.since
+            .as_deref()
+            .ok_or_else(|| Error::Config("diff needs --since DATE|COMMIT".into()))?,
+    )?;
+    let until = opts.until.as_deref().map(RevSpec::parse).transpose()?;
+    let (path, id) = history_target(&root, key)?;
+    let g = Git::new(&root);
+    let h = git::record_history(&g, &path, id.as_deref(), 0)?;
+    let d = git::diff_paths(&g, &h.paths, &since, until.as_ref())?;
+    if opts.json {
+        return print_json(&serde_json::to_value(&d).unwrap_or(Value::Null));
+    }
+    if d.patch.is_empty() {
+        println!("no changes");
+    } else {
+        print!("{}", d.patch);
+        if d.truncated {
+            println!("\n... output truncated");
+        }
+    }
+    Ok(true)
+}
+
+fn rewind(args: &[&str]) -> Result<bool, Error> {
+    let mut opts = parse_opts(args)?;
+    let root = vault_root(&mut opts)?;
+    let [when] = opts.positional.as_slice() else {
+        return Err(Error::Config("rewind needs one DATE or COMMIT".into()));
+    };
+    let rev = RevSpec::parse(when)?;
+    let g = Git::new(&root);
+    let dest = match opts.to.take() {
+        Some(d) => d,
+        None => {
+            let home = config::home_from_env()?;
+            let data = home.join(config::DATA_DIR_NAME);
+            let uid = majordomo::fsutil::effective_uid();
+            majordomo::fsutil::ensure_private_dir(&data, uid)?;
+            let dir = data.join("snapshots");
+            majordomo::fsutil::ensure_private_dir(&dir, uid)?;
+            let stamp: String = majordomo::date::format_utc(majordomo::date::now_epoch())
+                .chars()
+                .filter(char::is_ascii_digit)
+                .collect();
+            let label: String = when
+                .chars()
+                .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+                .take(24)
+                .collect();
+            dir.join(format!("{stamp}-at-{label}"))
+        }
+    };
+    let info = git::snapshot(&g, &rev, &dest, &root)?;
+    if opts.json {
+        return print_json(&serde_json::to_value(&info).unwrap_or(Value::Null));
+    }
+    println!(
+        "snapshot of commit {} written to {}",
+        &info.commit[..info.commit.len().min(10)],
+        info.dest.display()
+    );
+    println!(
+        "  {} files, {} bytes; the vault and its repository were not touched",
+        info.files, info.bytes
+    );
+    if info.skipped_links > 0 {
+        println!("  {} symlink(s) were not extracted", info.skipped_links);
+    }
+    println!(
+        "  inspect it with: u2 vault check --vault {0}   or   u2 memory list --vault {0}",
+        info.dest.display()
+    );
+    println!("  it contains your private data; delete it when you are done");
     Ok(true)
 }

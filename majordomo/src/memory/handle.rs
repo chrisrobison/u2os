@@ -11,6 +11,7 @@ const CHANNEL_CAPACITY: usize = 64;
 
 /// A record that appeared, changed or disappeared between two scans.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ChangedRecord {
     pub id: String,
     pub path: String,
@@ -20,6 +21,7 @@ pub struct ChangedRecord {
 /// one removal and one addition; following identity across renames is the job
 /// of the history layer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IndexChange {
     /// Increases by one with every rescan, starting at 1 for the first scan.
     pub generation: u64,

@@ -28,6 +28,12 @@ pub enum Error {
 
     #[error("local API request failed: {0}")]
     Http(String),
+
+    #[error("git: {0}")]
+    Git(String),
+
+    #[error("{0}")]
+    Invalid(String),
 }
 
 impl Error {
