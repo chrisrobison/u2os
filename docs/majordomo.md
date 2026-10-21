@@ -71,7 +71,7 @@ Local API over `majordomo/run/majordomo.sock` (HTTP/1.1 over a Unix socket). Ver
 |---|---|
 | `GET /api/v1/health` | Liveness: `{status, version}` only. No dependency detail |
 | `GET /api/v1/status` | Home path, pid, uptime, version, per-responsibility ownership (Node owns all; Majordomo is `read-only` for `vault_index`, `disabled` elsewhere), socket path |
-| `GET /api/v1/vault` | Index report: files, valid, invalid (with reasons), notes, link and dangling-link counts, relationship warnings |
+| `GET /api/v1/vault` | Index report: files, valid, invalid (with reasons), notes, link and dangling-link counts, relationship warnings, `generation` (rescans so far) and `lastChange` (added / modified / removed records of the latest rescan that found a difference) |
 | `GET /api/v1/memories` | List with filters: `type`, `classification`, `fact=key:value` (repeatable), `q`, `limit` (default 50, max 500), `offset`. Returns `{total, offset, limit, items}` |
 | `GET /api/v1/search?q=` | Same as above with `q` required |
 | `GET /api/v1/memories/{id}` | One record with its facts and per-fact classification |
@@ -118,7 +118,7 @@ Out of scope: a compromised owner account, a malicious root user, network attack
 |---|---|---|
 | 0 | This page and ADR 0011 | Reviewed; no code |
 | 1 | Cargo crate, config, lock, lifecycle, logging, socket API, `u2 status`/`doctor` | Clean start/stop, second instance refused, peer checks, tests green |
-| 2 | Vault + memory read engine (2a [#607](https://github.com/chrisrobison/u2os/issues/607) scanner and `u2 vault check`: implemented; 2b [#608](https://github.com/chrisrobison/u2os/issues/608) queries, search and links: implemented; 2c [#609](https://github.com/chrisrobison/u2os/issues/609) watcher), watcher, search, backlinks, `u2 vault check` | Externally edited vault indexed and queryable; unrelated files untouched; parity fixtures vs Node indexer |
+| 2 | Vault + memory read engine (2a [#607](https://github.com/chrisrobison/u2os/issues/607) scanner and `u2 vault check`: implemented; 2b [#608](https://github.com/chrisrobison/u2os/issues/608) queries, search and links: implemented; 2c [#609](https://github.com/chrisrobison/u2os/issues/609) watcher: implemented), watcher, search, backlinks, `u2 vault check` | Externally edited vault indexed and queryable; unrelated files untouched; parity fixtures vs Node indexer |
 | 3 | Git history | Rename-surviving history, read-only snapshots; no auto-publish |
 | 4 | Events, scheduler, action state machine, mock capabilities | Simulated crash never duplicates a consequential action |
 | 5 | Policy parity | Shared fixtures identical to Node; no bypass via routine/agent/event/API |
@@ -155,6 +155,18 @@ Deliberate differences from Node (none affects a vault Node accepts, except wher
 
 - **Search** is case-insensitive substring matching, and every term must match somewhere. Weights: name 10, path and id 3, fact key or value 2, notes 1. Results report where terms matched (`name`, `id`, `path`, `fact:<key>`, `notes`) and a snippet for notes. Queries are limited to 256 characters and 8 terms. No embeddings.
 - **Relationships** come only from explicit declarations: a `relationships:` list in frontmatter (`- predicate: sister_of`, `target: ent_bob`; predicates are lowercase identifiers) and inline `[text](u2os:TARGET)` or `<u2os:TARGET>` links in the body (predicate `links_to`; fenced code blocks are ignored). A name that is merely mentioned in text creates no link. A target resolves by record id, then by vault-relative path; one that matches nothing is kept and reported as dangling. Malformed `relationships` entries are ignored with a warning in `/api/v1/vault`. Node still treats `relationships` as an ordinary fact, so existing vaults are unaffected.
-- **Freshness.** The daemon's index checks a fingerprint of the vault files (path, size, mtime, inode) at most every 500 ms and rescans only when it changed, so edits made in any editor appear without a restart. A watcher that pushes changes instead is #609.
+- **Freshness.** The daemon's index checks a fingerprint of the vault files (path, size, mtime, inode) at most every 500 ms and rescans only when it changed, so edits made in any editor appear without a restart. The daemon also runs the watcher described below, so changes are normally picked up within a fraction of a second even with no requests.
 - **Privacy.** These routes serve the owner over the owner-only socket and return every classification, each labelled. The data-processing policy that decides what a model may see applies when context is assembled for a model (Phases 5-6), not here.
 - **Not yet:** merges and redirect records, lifecycle/archival metadata, Node's implicit owner-to-commitment "promised" relationship.
+
+## Vault watcher (Phase 2c)
+
+`VaultWatcher` keeps the daemon's index current without waiting for a request.
+
+- **Events.** A `notify` watcher (FSEvents on macOS, inotify on Linux) watches the vault recursively, but only `me.md` and the `people/`, `projects/` and `commitments/` folders wake the index; journal writes, `.git`, the README and other files do not. Events are debounced (200 ms of quiet), so forty saves in a row cost one rescan.
+- **Reconcile.** Independently, every 30 seconds the index re-checks its fingerprint. This catches what events miss (overflow, network filesystems) and a vault that did not exist at start: the watcher keeps retrying, never creates the vault, and starts watching once it appears. The first refresh after a watch is established also covers anything that changed before it began.
+- **One path.** Events, reconcile and requests all end in `IndexHandle::refresh`/`current`, which rescans only when the fingerprint changed, diffs the old and new index, bumps `generation` and announces an `IndexChange` (added, modified and removed `{id, path}`, plus the count of invalid files) to `subscribe()`rs. A rename appears as one removal and one addition; following identity across renames belongs to the history layer (Phase 3). Later phases consume these announcements instead of polling. A subscriber more than 64 events behind gets `Lagged` and should re-read `current()`.
+- **Logging.** A change logs counts only (`vault changed added=1 modified=0 …`), never names or contents.
+- **Safety.** The watcher is read-only: it writes nothing into the vault (a test checks files, mtimes and the directory listing), stops and joins its thread when the daemon shuts down, and degrades to reconcile-only (with a warning) if the OS watcher cannot be created.
+
+Phase 2 (vault and memory engine) is complete. Merges/redirects and lifecycle metadata remain open ideas, not scheduled work.

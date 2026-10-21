@@ -7,8 +7,10 @@ mod index;
 mod links;
 mod search;
 pub mod view;
+mod watcher;
 
-pub use handle::IndexHandle;
+pub use handle::{ChangedRecord, IndexChange, IndexHandle};
 pub use index::{MemoryIndex, Warning};
 pub use links::{Link, LinkKind};
 pub use search::{Hit, Page, Query};
+pub use watcher::{VaultWatcher, WatchOptions};

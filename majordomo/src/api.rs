@@ -83,7 +83,13 @@ pub fn route(state: &AppState, method: &Method, target: &str) -> Response<Full<B
     match segments.as_slice() {
         ["api", "v1", "health"] => json_response(StatusCode::OK, &health(state)),
         ["api", "v1", "status"] => json_response(StatusCode::OK, &status(state)),
-        ["api", "v1", "vault"] => with_index(state, |index| Ok(view::vault_status(index))),
+        ["api", "v1", "vault"] => with_index(state, |index| {
+            let mut v = view::vault_status(index);
+            let (generation, last) = state.memory.generation();
+            v["generation"] = json!(generation);
+            v["lastChange"] = serde_json::to_value(last.as_deref()).unwrap_or(Value::Null);
+            Ok(v)
+        }),
         ["api", "v1", "memories"] => with_index(state, |index| list(index, query, false)),
         ["api", "v1", "search"] => with_index(state, |index| list(index, query, true)),
         ["api", "v1", "memories", id] => with_index(state, |index| {

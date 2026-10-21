@@ -5,6 +5,7 @@ use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::fsutil::{self, PathKind};
 use crate::lock::InstanceLock;
+use crate::memory::{VaultWatcher, WatchOptions};
 use crate::server;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -17,6 +18,7 @@ pub struct Daemon {
     config: Config,
     shutdown_tx: watch::Sender<bool>,
     server: JoinHandle<()>,
+    watcher: Option<VaultWatcher>,
     // Held for the daemon's lifetime; released last, on drop.
     _lock: InstanceLock,
 }
@@ -44,6 +46,13 @@ impl Daemon {
             config.socket_path.clone(),
             config.vault_dir.clone(),
         ));
+        let watcher = match VaultWatcher::spawn(state.memory.clone(), WatchOptions::default()) {
+            Ok(w) => Some(w),
+            Err(e) => {
+                tracing::warn!(error = %e, "vault watcher not started; the index still refreshes on request");
+                None
+            }
+        };
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let server = tokio::spawn(server::serve(listener, state, uid, shutdown_rx));
 
@@ -57,6 +66,7 @@ impl Daemon {
             config,
             shutdown_tx,
             server,
+            watcher,
             _lock: lock,
         })
     }
@@ -67,11 +77,13 @@ impl Daemon {
 
     /// Stop accepting, drain in-flight requests, remove the socket and release
     /// the lock. The lock file stays on disk by design.
-    pub async fn shutdown(self) -> Result<()> {
+    pub async fn shutdown(mut self) -> Result<()> {
         let _ = self.shutdown_tx.send(true);
         if let Err(e) = self.server.await {
             tracing::error!(error = %e, "server task failed during shutdown");
         }
+        // Dropping the watcher stops and joins its thread.
+        drop(self.watcher.take());
         match fs::remove_file(&self.config.socket_path) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
