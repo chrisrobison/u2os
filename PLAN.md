@@ -144,8 +144,8 @@ Tracking issue: [#397](https://github.com/chrisrobison/u2os/issues/397). Package
 
 Tracking issue: [#602](https://github.com/chrisrobison/u2os/issues/602). The owner directed an incremental migration of the deterministic core (vault engine, policy, durable queue, scheduler, events) to a lean Rust daemon, `majordomo`. This is a migration, not a rewrite: Node stays authoritative for each responsibility until an explicit, tested handoff, and connectors, voice, models and the UI stay in Node ([ADR 0011](docs/adr/0011-rust-majordomo-migration.md), [docs/majordomo.md](docs/majordomo.md)). It runs alongside Milestone B, which stays the priority.
 
-- [ ] [#603](https://github.com/chrisrobison/u2os/issues/603) Phase 0: audit, ADR 0011, migration plan
-- [ ] [#604](https://github.com/chrisrobison/u2os/issues/604) Phase 1: daemon foundation (lock, lifecycle, local socket, `u2 status`/`doctor`)
+- [x] [#603](https://github.com/chrisrobison/u2os/issues/603) Phase 0: audit, ADR 0011, migration plan
+- [x] [#604](https://github.com/chrisrobison/u2os/issues/604) Phase 1: daemon foundation (lock, lifecycle, local socket, `u2 status`/`doctor`)
 - Phases 2–8 (vault and memory engine, Git history, events/scheduler/actions, policy parity, add-ons and agent bridge, ownership handoffs, benchmarks and packaging) get issues when their predecessor merges.
 
 ## Later — deferred until the product is proven

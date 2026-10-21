@@ -1,0 +1,41 @@
+[package]
+name = "majordomo"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+description = "U2OS Majordomo: deterministic local daemon (foundation)"
+license = "MIT"
+publish = false
+
+[lib]
+name = "majordomo"
+path = "src/lib.rs"
+
+[[bin]]
+name = "majordomo"
+path = "src/main.rs"
+
+[[bin]]
+name = "u2"
+path = "src/bin/u2.rs"
+
+[dependencies]
+bytes = "1.12.1"
+http-body-util = "0.1.5"
+hyper = { version = "1.12.0", features = ["server", "client", "http1"] }
+hyper-util = { version = "0.1.21", features = ["tokio"] }
+rustix = { version = "1.1.5", features = ["process", "fs"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+thiserror = "2.0.21"
+tokio = { version = "1.54.0", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time", "io-util"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["fmt", "env-filter", "json"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

@@ -46,4 +46,4 @@ PLAN.md previously said a Rust core "is not planned" until the add-on contract w
 
 ## Implementation status
 
-Phase 0 (this ADR and [docs/majordomo.md](../majordomo.md)) and Phase 1 (daemon foundation) are tracked in [#603](https://github.com/chrisrobison/u2os/issues/603) and [#604](https://github.com/chrisrobison/u2os/issues/604).
+Phase 0 (this ADR and [docs/majordomo.md](../majordomo.md)) is done. Phase 1 (daemon foundation, [majordomo/README.md](../../majordomo/README.md)) is implemented. Both are tracked in [#603](https://github.com/chrisrobison/u2os/issues/603) and [#604](https://github.com/chrisrobison/u2os/issues/604).
