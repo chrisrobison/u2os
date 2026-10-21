@@ -24,6 +24,7 @@ Tests use temporary homes and never touch `~/.u2os`.
 ./target/release/majordomo          # foreground; SIGINT/SIGTERM stop it gracefully
 ./target/release/u2 status          # or: u2 status --json
 ./target/release/u2 doctor
+./target/release/u2 vault check    # read-only; no daemon needed; --vault DIR, --json
 ```
 
 | Variable | Meaning |
@@ -72,6 +73,10 @@ RestartPreventExitStatus=75
 
 launchd, `~/Library/LaunchAgents/io.u2os.majordomo.plist`: run `~/bin/majordomo` with `KeepAlive` set to `{SuccessfulExit = false}`.
 
+## Vault reader
+
+`u2 vault check` scans the vault (located like Node: `U2OS_VAULT`, then `config/config.json` `vaultDir`, then `<home>/vault`) and prints counts, notes and every invalid file with its reason. It exits 1 if any file is invalid or the vault is missing, and never writes or creates anything. Details and differences from Node: [docs/majordomo.md](../docs/majordomo.md#vault-reader-phase-2a).
+
 ## Not in this phase
 
-Vault and memory, Git history, policy, events, scheduler, action queue, capabilities, TCP/HTTP exposure, configuration reload, Windows. See the phase table in [docs/majordomo.md](../docs/majordomo.md).
+Memory queries and search, the watcher, Git history, policy, events, scheduler, action queue, capabilities, TCP/HTTP exposure, configuration reload, Windows. See the phase table in [docs/majordomo.md](../docs/majordomo.md).

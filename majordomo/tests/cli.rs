@@ -200,3 +200,72 @@ fn usage_and_config_errors() {
     assert_eq!(out.status.code(), Some(1));
     assert!(text(&out.stderr).contains("absolute"));
 }
+
+fn fixture_vault() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/vault")
+}
+
+#[test]
+fn vault_check_reports_valid_and_invalid_files() {
+    let dir = home();
+    let out = Command::new(U2)
+        .args(["vault", "check", "--vault"])
+        .arg(fixture_vault())
+        .env("U2OS_HOME", dir.path())
+        .output()
+        .unwrap();
+    let s = text(&out.stdout);
+    assert_eq!(out.status.code(), Some(1), "{s}");
+    assert!(s.contains("INVALID people/bad-yaml.md"), "{s}");
+    assert!(s.contains("Commitment"), "{s}");
+
+    let json = Command::new(U2)
+        .args(["vault", "check", "--json", "--vault"])
+        .arg(fixture_vault())
+        .env("U2OS_HOME", dir.path())
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(v["invalid"].as_array().unwrap().len(), 3);
+    assert!(
+        !dir.path().join("majordomo").exists(),
+        "vault check writes nothing"
+    );
+}
+
+#[test]
+fn vault_check_locates_the_vault_like_node_and_never_creates_it() {
+    let dir = home();
+    // Default location is missing: error, and it is not created.
+    let out = u2(dir.path(), &["vault", "check"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        text(&out.stderr).contains("not found"),
+        "{}",
+        text(&out.stderr)
+    );
+    assert!(!dir.path().join("vault").exists());
+
+    let vault = dir.path().join("vault/people");
+    fs::create_dir_all(&vault).unwrap();
+    fs::write(vault.join("a.md"), "---\nname: A\n---\n").unwrap();
+    let out = u2(dir.path(), &["vault", "check"]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(text(&out.stdout).contains("ok:"));
+
+    // config.json vaultDir, then U2OS_VAULT, take precedence in that order.
+    fs::create_dir_all(dir.path().join("config")).unwrap();
+    fs::write(
+        dir.path().join("config/config.json"),
+        r#"{"vaultDir":"elsewhere"}"#,
+    )
+    .unwrap();
+    assert_eq!(u2(dir.path(), &["vault", "check"]).status.code(), Some(1));
+    let out = Command::new(U2)
+        .args(["vault", "check"])
+        .env("U2OS_HOME", dir.path())
+        .env("U2OS_VAULT", dir.path().join("vault"))
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+}

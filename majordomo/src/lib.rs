@@ -14,6 +14,7 @@ pub mod fsutil;
 pub mod lock;
 pub mod logging;
 pub mod server;
+pub mod vault;
 
 pub use config::Config;
 pub use daemon::Daemon;

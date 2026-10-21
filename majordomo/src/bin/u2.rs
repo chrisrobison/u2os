@@ -3,7 +3,8 @@
 //! Contains no business logic; it talks to the daemon's socket API (and, for
 //! `doctor`, inspects the home read-only).
 
-use majordomo::{client, doctor, Config, Error};
+use majordomo::vault;
+use majordomo::{client, config, doctor, Config, Error};
 use serde_json::Value;
 use std::process::ExitCode;
 
@@ -12,6 +13,8 @@ const USAGE: &str = "u2 - talk to the local Majordomo daemon
 USAGE:
     u2 status [--json]   show daemon status
     u2 doctor            check the Majordomo footprint in the U2OS home
+    u2 vault check [--vault DIR] [--json]
+                         read-only check of the vault (no daemon needed)
     u2 --version | --help
 
 ENVIRONMENT:
@@ -41,6 +44,7 @@ async fn main() -> ExitCode {
         ["status"] => finish(status(false).await),
         ["status", "--json"] => finish(status(true).await),
         ["doctor"] => finish(run_doctor().await),
+        ["vault", "check", rest @ ..] => finish(vault_check(rest)),
         other => {
             eprintln!("u2: unknown command: {}\n\n{USAGE}", other.join(" "));
             ExitCode::from(64)
@@ -111,4 +115,59 @@ async fn run_doctor() -> Result<bool, Error> {
     let report = doctor::run(&config).await;
     print!("{report}");
     Ok(!report.failed())
+}
+
+fn vault_check(args: &[&str]) -> Result<bool, Error> {
+    let mut json = false;
+    let mut dir: Option<std::path::PathBuf> = None;
+    let mut it = args.iter();
+    while let Some(arg) = it.next() {
+        match *arg {
+            "--json" => json = true,
+            "--vault" => {
+                let value = it
+                    .next()
+                    .ok_or_else(|| Error::Config("--vault needs a directory".into()))?;
+                dir = Some(std::path::PathBuf::from(value));
+            }
+            other => {
+                return Err(Error::Config(format!(
+                    "unknown option for vault check: {other}"
+                )))
+            }
+        }
+    }
+    let root = match dir {
+        Some(d) => d,
+        None => vault::locate(&config::home_from_env()?, std::env::var_os("U2OS_VAULT")),
+    };
+    let index = vault::scan(&root)?;
+    if json {
+        let out = serde_json::to_string_pretty(&index).map_err(|e| Error::Http(e.to_string()))?;
+        println!("{out}");
+        return Ok(index.invalid.is_empty());
+    }
+    println!("vault: {}", index.root);
+    println!(
+        "  files:   {}  valid: {}  invalid: {}",
+        index.files,
+        index.records.len(),
+        index.invalid.len()
+    );
+    for type_name in ["Person", "Project", "Commitment"] {
+        let n = index.of_type(type_name).count();
+        if n > 0 {
+            println!("  {type_name:<11} {n}");
+        }
+    }
+    for note in &index.notes {
+        println!("  note: {note}");
+    }
+    for bad in &index.invalid {
+        println!("  INVALID {}: {}", bad.path, bad.error);
+    }
+    if index.invalid.is_empty() {
+        println!("ok: every vault file was read and understood");
+    }
+    Ok(index.invalid.is_empty())
 }
