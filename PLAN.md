@@ -140,6 +140,14 @@ Tracking issue: [#397](https://github.com/chrisrobison/u2os/issues/397). Package
 - [ ] [#401](https://github.com/chrisrobison/u2os/issues/401) Package permission grants and settings in the vault
 - [ ] [#402](https://github.com/chrisrobison/u2os/issues/402) Packages ship routines and skills; retire the workflow engine at parity
 
+## Owner-directed: Rust Majordomo
+
+Tracking issue: [#602](https://github.com/chrisrobison/u2os/issues/602). The owner directed an incremental migration of the deterministic core (vault engine, policy, durable queue, scheduler, events) to a lean Rust daemon, `majordomo`. This is a migration, not a rewrite: Node stays authoritative for each responsibility until an explicit, tested handoff, and connectors, voice, models and the UI stay in Node ([ADR 0011](docs/adr/0011-rust-majordomo-migration.md), [docs/majordomo.md](docs/majordomo.md)). It runs alongside Milestone B, which stays the priority.
+
+- [ ] [#603](https://github.com/chrisrobison/u2os/issues/603) Phase 0: audit, ADR 0011, migration plan
+- [ ] [#604](https://github.com/chrisrobison/u2os/issues/604) Phase 1: daemon foundation (lock, lifecycle, local socket, `u2 status`/`doctor`)
+- Phases 2–8 (vault and memory engine, Git history, events/scheduler/actions, policy parity, add-ons and agent bridge, ownership handoffs, benchmarks and packaging) get issues when their predecessor merges.
+
 ## Later — deferred until the product is proven
 
 These remain valid, but are scheduled after Milestones A–C unless real use makes one urgent.
@@ -147,10 +155,6 @@ These remain valid, but are scheduled after Milestones A–C unless real use mak
 ### Long-running limits
 
 [#441](https://github.com/chrisrobison/u2os/issues/441): measure per-routine duration, tokens, cost and context size; decide the overrun policy for a late tick (the scheduler lease already prevents concurrent runs, missed runs are not caught up); retention and rollup for events, journal and audit; spend caps; approval expiry. Measure first, then decide.
-
-### Core language
-
-A rewrite of the core (for example in Rust, for single-binary distribution and a smaller footprint) is not planned. Revisit only once the add-on contract of ADR 0010 has been stable through real use and a concrete distribution, stability or isolation problem exists. Out-of-process add-ons keep the choice open.
 
 ### Voice and satellites
 
