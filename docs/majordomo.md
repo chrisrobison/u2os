@@ -4,7 +4,7 @@ Majordomo is the planned Rust daemon for U2OS's deterministic orchestration. The
 
 > The filesystem is the storage. The vault is the digital self. The daemon is the majordomo. The AI is an advisor, not an authority.
 
-**Status:** Phase 0 (design) complete; Phase 1 (foundation) in progress. Until a phase says otherwise, **Node is authoritative for everything** and Majordomo changes no behaviour.
+**Status:** Phase 0 (design) complete; Phase 1 (foundation) implemented in [`majordomo/`](../majordomo/README.md) ([#604](https://github.com/chrisrobison/u2os/issues/604)). Until a phase says otherwise, **Node is authoritative for everything** and Majordomo changes no behaviour.
 
 ## What stays, what moves
 
@@ -76,8 +76,8 @@ CLI `u2` (separate from `npm run u2`, which is the Node package CLI and is uncha
 
 | Command | Phase |
 |---|---|
-| `u2 status` | 1 |
-| `u2 doctor` | 1 (home, permissions, lock, socket, Node coexistence, toolchain-independent checks) |
+| `u2 status` | 1, implemented |
+| `u2 doctor` | 1, implemented (read-only: home, directory and lock-file permissions, socket health, Node data present) |
 | `u2 vault check`, `u2 memory ...` | 2 |
 | `u2 history`, `u2 diff`, `u2 rewind` | 3 |
 | `u2 actions list` | 4 |

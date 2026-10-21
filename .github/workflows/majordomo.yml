@@ -1,0 +1,22 @@
+name: majordomo
+on:
+  push:
+    paths: ['majordomo/**', '.github/workflows/majordomo.yml']
+  pull_request:
+    paths: ['majordomo/**', '.github/workflows/majordomo.yml']
+jobs:
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: majordomo
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup update stable && rustup component add clippy rustfmt
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --locked
