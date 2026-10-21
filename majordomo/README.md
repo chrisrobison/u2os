@@ -80,6 +80,10 @@ launchd, `~/Library/LaunchAgents/io.u2os.majordomo.plist`: run `~/bin/majordomo`
 
 `u2 vault check` scans the vault (located like Node: `U2OS_VAULT`, then `config/config.json` `vaultDir`, then `<home>/vault`) and prints counts, notes and every invalid file with its reason. It exits 1 if any file is invalid or the vault is missing, and never writes or creates anything. Details and differences from Node: [docs/majordomo.md](../docs/majordomo.md#vault-reader-phase-2a).
 
+## Staying current
+
+The daemon watches the vault (debounced filesystem events plus a 30 s reconcile) and re-indexes when files change; see [docs/majordomo.md](../docs/majordomo.md#vault-watcher-phase-2c). `GET /api/v1/vault` shows `generation` and `lastChange`. It never writes to the vault.
+
 ## Not in this phase
 
-The watcher, Git history, policy, events, scheduler, action queue, capabilities, TCP/HTTP exposure, configuration reload, Windows. See the phase table in [docs/majordomo.md](../docs/majordomo.md).
+Git history, policy, events, scheduler, action queue, capabilities, TCP/HTTP exposure, configuration reload, Windows. See the phase table in [docs/majordomo.md](../docs/majordomo.md).
