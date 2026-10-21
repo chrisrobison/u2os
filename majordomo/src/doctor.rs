@@ -96,7 +96,57 @@ pub async fn run(config: &Config) -> Report {
     } else {
         r.push("node data", Level::Ok, "none found in this home");
     }
+    check_git(&mut r, config);
     r
+}
+
+fn check_git(r: &mut Report, config: &Config) {
+    if !config.vault_dir.is_dir() {
+        r.push("git", Level::Ok, "no vault directory yet; nothing to check");
+        return;
+    }
+    let git = crate::git::Git::new(&config.vault_dir);
+    match crate::git::Health::inspect(&git) {
+        Err(e) => r.push(
+            "git",
+            Level::Warn,
+            format!("{e}; history features are unavailable"),
+        ),
+        Ok(h) if !h.present => {
+            let level = if h.warnings.is_empty() {
+                Level::Ok
+            } else {
+                Level::Warn
+            };
+            let detail = h.warnings.first().cloned().unwrap_or_else(|| {
+                "the vault is not a git repository (history is optional)".into()
+            });
+            r.push("git", level, detail);
+        }
+        Ok(h) => {
+            let state = format!(
+                "git {}; {} on {}; {} modified, {} untracked",
+                h.git_version,
+                if h.is_vault_root {
+                    "vault repository"
+                } else {
+                    "vault inside a larger repository"
+                },
+                h.branch.as_deref().unwrap_or("no branch"),
+                h.modified + h.staged,
+                h.untracked
+            );
+            if h.warnings.is_empty() {
+                r.push("git", Level::Ok, state);
+            } else {
+                r.push(
+                    "git",
+                    Level::Warn,
+                    format!("{state}; {}", h.warnings.join("; ")),
+                );
+            }
+        }
+    }
 }
 
 fn check_private_dir(r: &mut Report, name: &'static str, path: &Path, uid: u32) {

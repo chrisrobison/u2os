@@ -381,3 +381,203 @@ fn memory_command_errors() {
     assert_eq!(none.status.code(), Some(1));
     assert!(!home_dir.path().join("vault").exists());
 }
+
+fn git_cmd(dir: &Path, date: &str, args: &[&str]) {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@e")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@e")
+        .env("GIT_AUTHOR_DATE", date)
+        .env("GIT_COMMITTER_DATE", date)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", text(&out.stderr));
+}
+
+fn git_vault() -> TempDir {
+    let dir = tempfile::Builder::new().prefix("mjv").tempdir().unwrap();
+    let r = dir.path();
+    fs::create_dir_all(r.join("people")).unwrap();
+    git_cmd(r, "2025-01-01T00:00:00Z", &["init", "-q", "-b", "main"]);
+    fs::write(r.join("people/alice.md"), "---\nid: ent_alice\nname: Alice\n---\nfirst version of the notes\nsecond line\nthird line\n").unwrap();
+    git_cmd(r, "2025-01-01T00:00:00Z", &["add", "-A"]);
+    git_cmd(
+        r,
+        "2025-01-01T00:00:00Z",
+        &["commit", "-q", "-m", "add alice"],
+    );
+    git_cmd(
+        r,
+        "2025-03-01T00:00:00Z",
+        &["mv", "people/alice.md", "people/alice-chen.md"],
+    );
+    git_cmd(
+        r,
+        "2025-03-01T00:00:00Z",
+        &["commit", "-q", "-m", "rename alice"],
+    );
+    fs::write(r.join("people/alice-chen.md"), "---\nid: ent_alice\nname: Alice\n---\nedited version of the notes\nsecond line\nthird line\n").unwrap();
+    git_cmd(
+        r,
+        "2025-06-01T00:00:00Z",
+        &["commit", "-q", "-am", "edit alice"],
+    );
+    dir
+}
+
+#[test]
+fn git_status_history_diff_rewind_commands() {
+    let home_dir = home();
+    let v = git_vault();
+    let run = |args: &[&str]| {
+        Command::new(U2)
+            .args(args)
+            .arg("--vault")
+            .arg(v.path())
+            .env("U2OS_HOME", home_dir.path())
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .output()
+            .unwrap()
+    };
+
+    let status = run(&["git", "status"]);
+    assert!(status.status.success());
+    let s = text(&status.stdout);
+    assert!(
+        s.contains("branch:     main") && s.contains("commits:    3"),
+        "{s}"
+    );
+
+    let history = run(&["history", "ent_alice"]);
+    let s = text(&history.stdout);
+    assert!(
+        s.contains("edit alice") && s.contains("rename alice") && s.contains("add alice"),
+        "{s}"
+    );
+    assert!(
+        s.contains("R people/alice.md -> people/alice-chen.md"),
+        "{s}"
+    );
+    assert!(run(&["history", "people/alice-chen.md", "--json"])
+        .status
+        .success());
+
+    let diff = run(&["diff", "ent_alice", "--since", "2025-04-01"]);
+    let s = text(&diff.stdout);
+    assert!(
+        s.contains("-first version") || s.contains("-edited") || s.contains("+edited version"),
+        "{s}"
+    );
+    assert_eq!(
+        run(&["diff", "ent_alice"]).status.code(),
+        Some(1),
+        "--since is required"
+    );
+    assert_eq!(
+        run(&["diff", "ent_alice", "--since", "--output=/tmp/x"])
+            .status
+            .code(),
+        Some(1)
+    );
+
+    let before = fs::read(v.path().join("people/alice-chen.md")).unwrap();
+    let to = home_dir.path().join("snap");
+    let rewind = run(&["rewind", "2025-02-01", "--to", to.to_str().unwrap()]);
+    assert!(rewind.status.success(), "{}", text(&rewind.stderr));
+    assert!(to.join("people/alice.md").is_file() && !to.join("people/alice-chen.md").exists());
+    assert_eq!(
+        fs::read(v.path().join("people/alice-chen.md")).unwrap(),
+        before
+    );
+    assert!(text(&rewind.stdout).contains("private data"));
+    assert!(
+        mem(home_dir.path(), &to, &["list"]).status.success(),
+        "snapshot is a readable vault"
+    );
+}
+
+#[test]
+fn rewind_defaults_to_a_private_directory_in_the_majordomo_home() {
+    let home_dir = home();
+    let v = git_vault();
+    let out = Command::new(U2)
+        .args(["rewind", "2025-02-01", "--vault"])
+        .arg(v.path())
+        .env("U2OS_HOME", home_dir.path())
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let snaps: Vec<_> = fs::read_dir(home_dir.path().join("majordomo/snapshots"))
+        .unwrap()
+        .collect();
+    assert_eq!(snaps.len(), 1);
+    use std::os::unix::fs::PermissionsExt;
+    let mode = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode(&home_dir.path().join("majordomo/snapshots")), 0o700);
+    assert_eq!(mode(&snaps[0].as_ref().unwrap().path()), 0o700);
+}
+
+#[test]
+fn git_commands_on_a_vault_without_git_and_inherited_git_dir() {
+    let home_dir = home();
+    let plain = memory_vault();
+    let out = Command::new(U2)
+        .args(["git", "status", "--vault"])
+        .arg(plain.path())
+        .env("U2OS_HOME", home_dir.path())
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert!(
+        text(&out.stdout).contains("not in a git repository"),
+        "{}",
+        text(&out.stdout)
+    );
+    let out = Command::new(U2)
+        .args(["history", "ent_alice", "--vault"])
+        .arg(plain.path())
+        .env("U2OS_HOME", home_dir.path())
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        text(&out.stderr).contains("not a git repository"),
+        "{}",
+        text(&out.stderr)
+    );
+
+    // A GIT_DIR inherited from the caller must not redirect us to another repo.
+    let other = git_vault();
+    let out = Command::new(U2)
+        .args(["git", "status", "--json", "--vault"])
+        .arg(plain.path())
+        .env("U2OS_HOME", home_dir.path())
+        .env("GIT_DIR", other.path().join(".git"))
+        .env("GIT_WORK_TREE", other.path())
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["present"], false, "scrubbed GIT_DIR: {v}");
+}
+
+#[test]
+fn doctor_reports_git_state_of_the_vault() {
+    let home_dir = home();
+    let v = git_vault();
+    let out = Command::new(U2)
+        .arg("doctor")
+        .env("U2OS_HOME", home_dir.path())
+        .env("U2OS_VAULT", v.path())
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .output()
+        .unwrap();
+    let s = text(&out.stdout);
+    assert!(s.contains("vault repository on main"), "{s}");
+}
