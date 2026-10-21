@@ -82,7 +82,7 @@ fn start_status_doctor_then_sigterm_stops_cleanly() {
     let status = u2(dir.path(), &["status"]);
     assert!(status.status.success());
     let out = text(&status.stdout);
-    assert!(out.contains("phase foundation"), "{out}");
+    assert!(out.contains("phase vault-read"), "{out}");
     assert!(out.contains("action_queue"), "{out}");
 
     let json = u2(dir.path(), &["status", "--json"]);
@@ -268,4 +268,116 @@ fn vault_check_locates_the_vault_like_node_and_never_creates_it() {
         .output()
         .unwrap();
     assert!(out.status.success());
+}
+
+fn memory_vault() -> TempDir {
+    let dir = tempfile::Builder::new().prefix("mjv").tempdir().unwrap();
+    let r = dir.path();
+    fs::create_dir_all(r.join("people")).unwrap();
+    fs::write(r.join("people/alice.md"), "---\nid: ent_alice\nname: Alice Chen\nemail: a@example.com\nrelationships:\n  - {predicate: sister_of, target: ent_bob}\n---\nLikes [Bob](u2os:ent_bob) and peanuts.\n").unwrap();
+    fs::write(
+        r.join("people/bob.md"),
+        "---\nid: ent_bob\nname: Bob Stone\n---\n",
+    )
+    .unwrap();
+    dir
+}
+
+fn mem(home: &Path, vault: &Path, args: &[&str]) -> Output {
+    Command::new(U2)
+        .arg("memory")
+        .args(args)
+        .arg("--vault")
+        .arg(vault)
+        .env("U2OS_HOME", home)
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn memory_commands_list_search_show_links() {
+    let home_dir = home();
+    let v = memory_vault();
+
+    let list = mem(home_dir.path(), v.path(), &["list"]);
+    assert!(list.status.success());
+    assert!(
+        text(&list.stdout).contains("2 of 2 shown"),
+        "{}",
+        text(&list.stdout)
+    );
+
+    let search = mem(home_dir.path(), v.path(), &["search", "PEANUTS"]);
+    let out = text(&search.stdout);
+    assert!(
+        out.contains("Alice Chen") && out.contains("peanuts"),
+        "{out}"
+    );
+    assert!(!out.contains("Bob Stone"));
+
+    let json = mem(home_dir.path(), v.path(), &["search", "bob", "--json"]);
+    let parsed: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(parsed["total"], 2);
+
+    let show = mem(home_dir.path(), v.path(), &["show", "ent_alice"]);
+    let out = text(&show.stdout);
+    assert!(
+        out.contains("email: a@example.com") && out.contains("ent_alice"),
+        "{out}"
+    );
+    assert!(
+        mem(home_dir.path(), v.path(), &["show", "people/alice.md"])
+            .status
+            .success(),
+        "path also resolves"
+    );
+
+    let links = mem(home_dir.path(), v.path(), &["links", "ent_bob"]);
+    assert!(
+        text(&links.stdout).contains("Alice Chen sister_of this"),
+        "{}",
+        text(&links.stdout)
+    );
+    let links = mem(home_dir.path(), v.path(), &["links", "ent_alice"]);
+    assert!(
+        text(&links.stdout).contains("sister_of -> Bob Stone"),
+        "{}",
+        text(&links.stdout)
+    );
+}
+
+#[test]
+fn memory_command_errors() {
+    let home_dir = home();
+    let v = memory_vault();
+    let unknown = mem(home_dir.path(), v.path(), &["show", "ent_nobody"]);
+    assert_eq!(unknown.status.code(), Some(1));
+    assert!(text(&unknown.stderr).contains("no memory"));
+    assert_eq!(
+        mem(home_dir.path(), v.path(), &["search"]).status.code(),
+        Some(1)
+    );
+    assert_eq!(
+        mem(
+            home_dir.path(),
+            v.path(),
+            &["list", "--classification", "x"]
+        )
+        .status
+        .code(),
+        Some(1)
+    );
+    assert_eq!(
+        mem(home_dir.path(), v.path(), &["frobnicate"])
+            .status
+            .code(),
+        Some(1)
+    );
+    let none = Command::new(U2)
+        .args(["memory", "list"])
+        .env("U2OS_HOME", home_dir.path())
+        .output()
+        .unwrap();
+    assert_eq!(none.status.code(), Some(1));
+    assert!(!home_dir.path().join("vault").exists());
 }

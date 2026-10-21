@@ -13,6 +13,7 @@ pub mod error;
 pub mod fsutil;
 pub mod lock;
 pub mod logging;
+pub mod memory;
 pub mod server;
 pub mod vault;
 

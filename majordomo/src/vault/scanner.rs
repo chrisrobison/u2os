@@ -183,3 +183,25 @@ fn read_vault_file(path: &Path) -> std::result::Result<String, VaultError> {
     }
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
+
+/// A cheap fingerprint of every file `scan` would read (path, size, mtime,
+/// inode). It changes when a source file is added, removed, replaced or
+/// edited, so callers can skip a rescan when it has not.
+pub fn signature(root: &Path) -> u64 {
+    use std::hash::{Hash, Hasher};
+    use std::os::unix::fs::MetadataExt;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    let mut sources = vec![ME_FILE.to_string()];
+    let mut ignored = Vec::new();
+    for (dir, _) in COLLECTIONS {
+        sources.extend(list_markdown_files(root, dir, &mut ignored));
+    }
+    for rel in sources {
+        rel.hash(&mut hasher);
+        match fs::symlink_metadata(root.join(&rel)) {
+            Ok(m) => (m.len(), m.mtime(), m.mtime_nsec(), m.ino(), m.is_file()).hash(&mut hasher),
+            Err(_) => 0u8.hash(&mut hasher),
+        }
+    }
+    hasher.finish()
+}

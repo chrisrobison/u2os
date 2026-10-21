@@ -42,6 +42,7 @@ impl Daemon {
         let state = Arc::new(AppState::new(
             config.home.clone(),
             config.socket_path.clone(),
+            config.vault_dir.clone(),
         ));
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let server = tokio::spawn(server::serve(listener, state, uid, shutdown_rx));
