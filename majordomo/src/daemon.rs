@@ -4,6 +4,7 @@ use crate::api::AppState;
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::fsutil::{self, PathKind};
+use crate::git::CheckinService;
 use crate::lock::InstanceLock;
 use crate::memory::{VaultWatcher, WatchOptions};
 use crate::server;
@@ -19,6 +20,7 @@ pub struct Daemon {
     shutdown_tx: watch::Sender<bool>,
     server: JoinHandle<()>,
     watcher: Option<VaultWatcher>,
+    checkin: Option<CheckinService>,
     // Held for the daemon's lifetime; released last, on drop.
     _lock: InstanceLock,
 }
@@ -53,6 +55,14 @@ impl Daemon {
                 None
             }
         };
+        let checkin = config.checkin.then(|| {
+            tracing::info!("background check-in of the vault is enabled");
+            CheckinService::spawn(
+                state.git.clone(),
+                state.memory.subscribe(),
+                config.checkin_quiet,
+            )
+        });
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let server = tokio::spawn(server::serve(listener, state, uid, shutdown_rx));
 
@@ -67,6 +77,7 @@ impl Daemon {
             shutdown_tx,
             server,
             watcher,
+            checkin,
             _lock: lock,
         })
     }
@@ -84,6 +95,9 @@ impl Daemon {
         }
         // Dropping the watcher stops and joins its thread.
         drop(self.watcher.take());
+        if let Some(service) = self.checkin.take() {
+            service.stop().await;
+        }
         match fs::remove_file(&self.config.socket_path) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}

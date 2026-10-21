@@ -6,14 +6,18 @@
 //! bounded in time and output size. Paths and revisions are validated before
 //! they reach git, and always follow `--`.
 
+mod checkin;
 mod diff;
 mod history;
 mod repo;
+mod service;
 mod snapshot;
 
+pub use checkin::{checkin, CheckinResult, CheckinStatus};
 pub use diff::{diff_paths, resolve_rev, DiffResult, RevSpec};
 pub use history::{record_history, target_for, Change, Entry, History};
 pub use repo::Health;
+pub use service::{CheckinService, DEFAULT_QUIET};
 pub use snapshot::{snapshot, SnapshotInfo};
 
 use crate::error::{Error, Result};

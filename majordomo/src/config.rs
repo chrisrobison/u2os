@@ -28,6 +28,12 @@ pub struct Config {
     pub socket_path: PathBuf,
     /// Where the owner's vault lives (read-only for Majordomo).
     pub vault_dir: PathBuf,
+    /// Check the vault's working tree in to its own Git repository in the
+    /// background. Off unless `MAJORDOMO_CHECKIN` is `1`/`true`/`on`; the
+    /// explicit `u2 git checkin` always works.
+    pub checkin: bool,
+    /// How long the vault must be quiet before a background check-in.
+    pub checkin_quiet: std::time::Duration,
 }
 
 impl Config {
@@ -35,6 +41,14 @@ impl Config {
     pub fn from_env() -> Result<Self> {
         let mut config = Self::for_home(home_from_env()?)?;
         config.vault_dir = crate::vault::locate(&config.home, std::env::var_os("U2OS_VAULT"));
+        config.checkin = std::env::var("MAJORDOMO_CHECKIN")
+            .is_ok_and(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "on" | "yes"));
+        if let Some(secs) = std::env::var("MAJORDOMO_CHECKIN_QUIET_SECS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+        {
+            config.checkin_quiet = std::time::Duration::from_secs(secs.clamp(1, 3600));
+        }
         Ok(config)
     }
 
@@ -70,6 +84,8 @@ impl Config {
         let vault_dir = crate::vault::locate(&home, None);
         Ok(Config {
             vault_dir,
+            checkin: false,
+            checkin_quiet: crate::git::DEFAULT_QUIET,
             home,
             data_dir,
             run_dir,

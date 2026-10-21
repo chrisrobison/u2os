@@ -19,6 +19,10 @@ USAGE:
                          read-only check of the vault (no daemon needed)
     u2 git status [--vault DIR] [--json]
                          health of the vault's Git repository
+    u2 git checkin [--vault DIR] [--json]
+                         commit the vault's dirty working tree now. Edits made outside
+                         U2OS are included; on a conflict the current content is kept
+                         and marker text is never committed. Never pushes.
     u2 history <id|path> [--limit N]      commits that touched a record, across renames
     u2 diff <id|path> --since DATE|COMMIT [--until DATE|COMMIT]
                          what changed (default: until the working tree)
@@ -35,6 +39,8 @@ USAGE:
 
 ENVIRONMENT:
     U2OS_HOME            data home (default ~/.u2os)
+    MAJORDOMO_CHECKIN    1 = the daemon checks in vault changes in the background
+                         (default off); MAJORDOMO_CHECKIN_QUIET_SECS sets the quiet period
 
 EXIT CODES:
     0 ok   1 failure or daemon not running   64 usage error
@@ -63,6 +69,7 @@ async fn main() -> ExitCode {
         ["vault", "check", rest @ ..] => finish(vault_check(rest)),
         ["memory", sub, rest @ ..] => finish(memory(sub, rest)),
         ["git", "status", rest @ ..] => finish(git_status(rest)),
+        ["git", "checkin", rest @ ..] => finish(git_checkin(rest)),
         ["history", rest @ ..] => finish(history(rest)),
         ["diff", rest @ ..] => finish(diff(rest)),
         ["rewind", rest @ ..] => finish(rewind(rest)),
@@ -438,6 +445,42 @@ fn git_status(args: &[&str]) -> Result<bool, Error> {
         println!("  warning: {w}");
     }
     Ok(true)
+}
+
+fn git_checkin(args: &[&str]) -> Result<bool, Error> {
+    let mut opts = parse_opts(args)?;
+    let root = vault_root(&mut opts)?;
+    if !root.is_dir() {
+        return Err(Error::Config(format!(
+            "vault directory not found: {}",
+            root.display()
+        )));
+    }
+    let r = git::checkin(&Git::new(&root))?;
+    if opts.json {
+        print_json(&serde_json::to_value(&r).unwrap_or(Value::Null))?;
+    } else {
+        match r.status {
+            git::CheckinStatus::Committed => {
+                println!(
+                    "checked in {} file(s) as {}",
+                    r.files,
+                    r.commit.as_deref().map_or("?", |c| &c[..c.len().min(12)])
+                );
+                for p in &r.resolved_conflicts {
+                    println!("  conflict resolved, current content kept: {p}");
+                }
+            }
+            git::CheckinStatus::Clean => println!("nothing to check in"),
+            git::CheckinStatus::Skipped | git::CheckinStatus::Busy => {
+                println!("not checked in: {}", r.reason.as_deref().unwrap_or("?"));
+            }
+        }
+    }
+    Ok(matches!(
+        r.status,
+        git::CheckinStatus::Committed | git::CheckinStatus::Clean
+    ))
 }
 
 /// A record id or path -> (path, bound id), using the vault index.
