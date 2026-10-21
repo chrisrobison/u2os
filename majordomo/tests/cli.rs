@@ -581,3 +581,41 @@ fn doctor_reports_git_state_of_the_vault() {
     let s = text(&out.stdout);
     assert!(s.contains("vault repository on main"), "{s}");
 }
+
+#[test]
+fn git_checkin_command_commits_dirty_changes_and_reports() {
+    let home_dir = home();
+    let v = git_vault();
+    let run = |args: &[&str]| {
+        Command::new(U2)
+            .args(args)
+            .arg("--vault")
+            .arg(v.path())
+            .env("U2OS_HOME", home_dir.path())
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .output()
+            .unwrap()
+    };
+    let clean = run(&["git", "checkin"]);
+    assert!(clean.status.success());
+    assert!(text(&clean.stdout).contains("nothing to check in"));
+
+    fs::write(
+        v.path().join("people/new.md"),
+        "---\nid: ent_new\n---\nhi\n",
+    )
+    .unwrap();
+    let done = run(&["git", "checkin", "--json"]);
+    assert!(done.status.success(), "{}", text(&done.stderr));
+    let j: serde_json::Value = serde_json::from_slice(&done.stdout).unwrap();
+    assert_eq!(j["status"], "committed");
+    assert_eq!(j["files"], 1);
+
+    // A refusal is a failing exit code with the reason on stdout.
+    fs::create_dir(v.path().join(".git/rebase-merge")).unwrap();
+    fs::write(v.path().join("people/more.md"), "x\n").unwrap();
+    let refused = run(&["git", "checkin"]);
+    assert_eq!(refused.status.code(), Some(1));
+    assert!(text(&refused.stdout).contains("rebase"));
+}
