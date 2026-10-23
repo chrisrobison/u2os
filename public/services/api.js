@@ -354,8 +354,20 @@ export function updateRecommendation(id, status) {
   });
 }
 
-export function approveAction(id) {
+export function approveAction(id, { remember = false } = {}) {
   return request(`/api/actions/${encodeURIComponent(id)}/approve`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(remember ? { remember: true } : {}),
+  });
+}
+
+export function getRememberPreview(id) {
+  return request(`/api/actions/${encodeURIComponent(id)}/remember`);
+}
+
+export function reproposeAction(id) {
+  return request(`/api/actions/${encodeURIComponent(id)}/repropose`, {
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify({}),

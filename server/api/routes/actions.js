@@ -30,11 +30,30 @@ export function registerActionRoutes(router, { agent, eventBus } = {}) {
     sendJson(res, 200, explanation);
   });
 
+  // What "Approve and always allow" would remember (or why it can't).
+  router.get('/api/actions/:id/remember', async (req, res) => {
+    try {
+      const plan = agent.previewRememberApproval(req.params.id);
+      sendJson(res, 200, plan.ok ? { rememberable: true, description: plan.description } : { rememberable: false, reason: plan.reason });
+    } catch (err) {
+      sendJson(res, err.message.startsWith('No such action') ? 404 : 400, { error: err.message });
+    }
+  });
+
+  // "Review again" for an action that stopped as stale: a fresh pending approval.
+  router.post('/api/actions/:id/repropose', async (req, res) => {
+    try {
+      sendJson(res, 200, agent.reproposeAction(req.params.id, req.owner.id));
+    } catch (err) {
+      sendJson(res, err.message.startsWith('No such action') ? 404 : 400, { error: err.message });
+    }
+  });
+
   router.post('/api/actions/:id/approve', async (req, res) => {
     const approvedBy = req.owner.id;
     const actionBefore = getAgentAction(req.params.id);
     try {
-      const result = await agent.approveAction(req.params.id, approvedBy);
+      const result = await agent.approveAction(req.params.id, approvedBy, { remember: req.body?.remember === true });
       // Phase 7 / docs/feedback.md: additive-only -- record the user's
       // approval as feedback for later prioritization. Never changes the
       // response shape above, and never runs if approveAction() itself

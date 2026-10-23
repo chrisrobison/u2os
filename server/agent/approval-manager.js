@@ -2,6 +2,9 @@ import { recordAudit, updateAgentAction, getAgentAction } from '../policy/policy
 import { enqueueAction, getQueuedActionByActionId, requeueAction } from './action-queue-store.js';
 import { getProviderForBinding } from '../integrations/provider-registry.js';
 import { accountDomainForAction, assertCalendarTarget, assertSmtpIdentity } from './account-binding.js';
+import { planRemember, applyRememberedRule } from '../policy/remember-approval.js';
+
+export const STALE_ACTION_ERROR = 'Action is stale and requires owner review';
 
 /**
  * ApprovalManager: owns the pending-approval lifecycle -- create (audit row
@@ -143,6 +146,78 @@ export class ApprovalManager {
       });
     }
     return this.actionQueueWorker.processAction(id);
+  }
+
+  /**
+   * What "Approve and always allow" would store for a pending action, or why
+   * it can't. Evaluated against the policy in force right now, like approve().
+   */
+  previewRemember(id) {
+    const action = getAgentAction(id);
+    if (!action) throw new Error(`No such action: ${id}`);
+    if (action.status !== 'pending') return planRemember({ action });
+    let evaluation;
+    try {
+      const tool = this.actionEvaluator.resolve(action.tool);
+      evaluation = this.actionEvaluator.evaluate({ tool, arguments: action.arguments });
+    } catch { return planRemember({ action }); }
+    return planRemember({ action, evaluation, policies: this.actionEvaluator.policyEngine.policies });
+  }
+
+  /** Writes a previously previewed rule. Never throws: the approval already happened. */
+  rememberApproval(id, plan, approvedBy) {
+    try {
+      const policyEngine = this.actionEvaluator.policyEngine;
+      const written = applyRememberedRule(plan, { effective: policyEngine.policies });
+      // The engine notices the changed file on its next evaluation.
+      this.eventBus.publish({
+        type: 'policy.rule.remembered',
+        source: 'user',
+        actor: { type: 'user', id: approvedBy },
+        subject: { type: 'agent_action', id },
+        data: { domain: plan.domain, operation: plan.operation, subCategory: plan.subCategory, level: plan.level },
+        metadata: { provenance: 'user:approve-and-remember' },
+      });
+      return { remembered: true, description: plan.description, created: written.created };
+    } catch (error) {
+      return { remembered: false, note: `Approved, but the rule was not saved: ${error.message}` };
+    }
+  }
+
+  /**
+   * "Review again" for an action that stopped as stale: records a fresh
+   * pending approval from the same proposal, after re-checking current
+   * policy. Executes nothing; the owner still approves the new action.
+   * Idempotent: a second call returns the action the first one created.
+   */
+  repropose(id, requestedBy) {
+    const action = getAgentAction(id);
+    if (!action) throw new Error(`No such action: ${id}`);
+    if (action.status !== 'failed' || action.result?.error !== STALE_ACTION_ERROR) throw new Error('Only an action that stopped as stale can be reviewed again');
+    if (action.packageContext) throw new Error('Package actions cannot be re-proposed here');
+    if (action.result?.reproposedAs) {
+      const existing = getAgentAction(action.result.reproposedAs);
+      if (existing) return { id: existing.id, status: existing.status, tool: existing.tool, arguments: existing.arguments, reason: existing.reasoning_summary || '', accountBinding: existing.accountBinding, reproposedFrom: id };
+    }
+
+    const tool = this.actionEvaluator.resolve(action.tool);
+    const evaluation = this.actionEvaluator.evaluate({ tool, arguments: action.arguments });
+    if (evaluation.blocked) throw new Error(evaluation.reason);
+    if (!evaluation.requiresApproval) throw new Error('Current policy no longer asks for approval for this action; ask again to run it');
+    const accountDomain = accountDomainForAction(action.tool);
+    if (accountDomain) {
+      getProviderForBinding(accountDomain, action.accountBinding);
+      if (action.tool === 'email.send') assertSmtpIdentity(action.accountBinding);
+      if (action.tool === 'calendar.reschedule') assertCalendarTarget(action.accountBinding, action.arguments.eventId);
+    }
+
+    const row = this.recordDecision({
+      tool, arguments: action.arguments, requestedBy: action.requested_by, requestText: action.request_text,
+      model: action.model, reasoningSummary: action.reasoning_summary, evaluation, correlationId: action.correlation_id,
+      actor: { type: 'user', id: requestedBy }, contextProvenance: action.contextProvenance, accountBinding: action.accountBinding,
+    });
+    updateAgentAction(id, { result: { ...action.result, reproposedAs: row.id } });
+    return { id: row.id, status: row.status, tool: row.tool, arguments: row.arguments, reason: evaluation.reason, accountBinding: row.accountBinding, reproposedFrom: id };
   }
 
   async reject(id, rejectedBy) {
