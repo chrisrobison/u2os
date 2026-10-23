@@ -1,5 +1,5 @@
 import { escapeHtml, formatDateTime, humanizeKey } from './util.js';
-import { approveAction, rejectAction } from '../services/api.js';
+import { approveAction, rejectAction, reproposeAction, getRememberPreview } from '../services/api.js';
 import { isUncertainOutcome, approvalOutcomeLabel, approvalOutcomeGuidance } from './action-outcome.js';
 import './u2-why.js';
 
@@ -95,6 +95,8 @@ function renderArgs(tool, args) {
   return html;
 }
 
+const STALE_ACTION_ERROR = 'Action is stale and requires owner review';
+
 export class U2Approval extends HTMLElement {
   set action(raw) {
     this._raw = raw;
@@ -117,6 +119,7 @@ export class U2Approval extends HTMLElement {
     this.classList.add('u2-approval');
     this.dataset.status = a.status;
 
+    const stale = a.status === 'failed' && a.result?.error === STALE_ACTION_ERROR && !a.result?.reproposedAs;
     const resolved = isUncertainOutcome(a) || !['pending', undefined, null].includes(a.status);
     const guidance = approvalOutcomeGuidance(a);
     const policyLine = a.policyDomain || a.policyRule
@@ -135,29 +138,71 @@ export class U2Approval extends HTMLElement {
       <div class="u2-approval__actions">
         ${
           resolved
-            ? `<span class="u2-approval__status" data-status="${escapeHtml(a.status)}">${escapeHtml(approvalOutcomeLabel(a))}</span>`
+            ? `<span class="u2-approval__status" data-status="${escapeHtml(a.status)}">${escapeHtml(approvalOutcomeLabel(a))}</span>
+               ${stale && a.id ? '<button type="button" class="btn btn-primary" data-action="repropose">Review again</button>' : ''}`
             : `<button type="button" class="btn btn-ghost" data-action="reject">Cancel</button>
-               <button type="button" class="btn btn-primary" data-action="approve">Approve</button>`
+               <button type="button" class="btn btn-primary" data-action="approve">Approve</button>
+               <button type="button" class="btn btn-ghost" data-action="remember" hidden>Approve &amp; always allow</button>`
         }
       </div>
+      <div class="u2-approval__policy u2-approval__note" data-role="note" hidden></div>
     `;
 
+    if (stale && a.id) this.querySelector('[data-action="repropose"]').addEventListener('click', () => this._repropose());
     if (!resolved) {
+      this._loadRememberPreview(a.id);
+      this.querySelector('[data-action="remember"]').addEventListener('click', () => this._resolve('approve', { remember: true }));
       this.querySelector('[data-action="approve"]').addEventListener('click', () => this._resolve('approve'));
       this.querySelector('[data-action="reject"]').addEventListener('click', () => this._resolve('reject'));
     }
   }
 
-  async _resolve(kind) {
+  // Shows "Approve & always allow" only when the server can remember this
+  // exact rule, and says what it would store. Failure just leaves it hidden.
+  async _loadRememberPreview(id) {
+    if (!id) return;
+    try {
+      const preview = await getRememberPreview(id);
+      const button = this.querySelector('[data-action="remember"]');
+      if (!preview?.rememberable || !button || this._normalized.id !== id) return;
+      button.hidden = false;
+      button.title = preview.description;
+      const note = this.querySelector('[data-role="note"]');
+      note.textContent = preview.description;
+      note.hidden = false;
+    } catch { /* optional affordance */ }
+  }
+
+  async _repropose() {
+    const button = this.querySelector('[data-action="repropose"]');
+    button.disabled = true;
+    try {
+      const next = await reproposeAction(this._normalized.id);
+      this.action = next;
+    } catch (error) {
+      button.disabled = false;
+      const note = this.querySelector('[data-role="note"]');
+      note.textContent = `Couldn't review again: ${error?.message || 'try again from Operations'}`;
+      note.hidden = false;
+    }
+  }
+
+  async _resolve(kind, { remember = false } = {}) {
     const buttons = this.querySelectorAll('button');
     buttons.forEach((b) => (b.disabled = true));
 
     try {
-      const result = kind === 'approve' ? await approveAction(this._normalized.id) : await rejectAction(this._normalized.id);
+      const result = kind === 'approve' ? await approveAction(this._normalized.id, { remember }) : await rejectAction(this._normalized.id);
       const status = result?.status || (kind === 'approve' ? 'approved' : 'rejected');
       this._normalized = { ...this._normalized, status, result: result?.result ?? null,
         errorClass: result?.errorClass === 'outcome_uncertain' ? 'outcome_uncertain' : null };
       this._render();
+      const message = result?.remembered ? result.description : result?.note;
+      if (message) {
+        const note = this.querySelector('[data-role="note"]');
+        note.textContent = message;
+        note.hidden = false;
+      }
       this.dispatchEvent(
         new CustomEvent('u2-action-resolved', {
           bubbles: true,

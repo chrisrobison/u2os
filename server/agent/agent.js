@@ -458,7 +458,7 @@ export class Agent {
     return this.modelProvider?.id || this.modelProvider?.name || 'unknown-model-provider';
   }
 
-  async approveAction(id, approvedBy) {
+  async _approveAction(id, approvedBy) {
     const linked = this.runStore.findRunByAction(id);
     if (linked && this.runStore.isCancellationRequested(linked)) throw new Error('Run was cancelled; approval is no longer valid');
     if (linked && getAgentAction(id)?.status === 'pending' && this.runStore.isRunDeadlineExpired(linked)) {
@@ -469,6 +469,20 @@ export class Agent {
     const result = await this.approvalManager.approve(id, approvedBy);
     await this._wakeLinkedRun(id);
     return result;
+  }
+
+  previewRememberApproval(id) { return this.approvalManager.previewRemember(id); }
+
+  reproposeAction(id, requestedBy) { return this.approvalManager.repropose(id, requestedBy); }
+
+  async approveAction(id, approvedBy, { remember = false } = {}) {
+    // Plan before approving: approval changes the status the plan checks.
+    const plan = remember ? this.approvalManager.previewRemember(id) : null;
+    const result = await this._approveAction(id, approvedBy);
+    if (!remember) return result;
+    if (!plan.ok) return { ...result, remembered: false, note: plan.reason };
+    if (result?.status === 'blocked') return { ...result, remembered: false, note: 'The action was blocked, so nothing was remembered.' };
+    return { ...result, ...this.approvalManager.rememberApproval(id, plan, approvedBy) };
   }
 
   async rejectAction(id, rejectedBy) {
