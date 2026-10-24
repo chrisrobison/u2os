@@ -15,7 +15,7 @@ import { driverNames } from '../applications/form/driver.js';
 //     applications_per_day: 8      # form submissions in any 24 hours
 //     emails_per_day: 10
 //     per_company_days: 30         # no second application to the same company for this long
-//   sources: [hn, hn-jobs, remote, boards]
+//   sources: [hn, hn-jobs, remote, boards, search]
 //   boards_every_minutes: 60       # boards are large; read them less often
 //   file_names: playful            # memorable file names for what goes out; "plain" for Name_Resume.pdf
 //   mail_sender: ""                # Mail account to send from, as Mail shows it; empty = Mail's default
@@ -41,7 +41,7 @@ export const autopilotPath = (vaultDir) => path.join(vaultDir, JOB_HUNT_DIR, 'au
 export const DEFAULTS = Object.freeze({
   enabled: false, mode: 'dry_run', interval_seconds: 300,
   limits: { applications_per_day: 8, emails_per_day: 10, per_company_days: 30 },
-  sources: ['hn', 'hn-jobs', 'remote', 'boards'], boards_every_minutes: 60,
+  sources: ['hn', 'hn-jobs', 'remote', 'boards', 'search'], boards_every_minutes: 60,
   allow: { relocation: false, below_salary_minimum: false, equity_only: false, part_time: false },
   blocklist: { companies: [], domains: [], keywords: [] },
   per_cycle: { score: 6, score_fast: 6, confirm: 2, prepare: 3, revise: 2, act: 3 }, mail_sender: '', routes: { email: true, form: false }, browser: { headed: false, keep_open: true, driver: 'playwright' }, file_names: 'playful',

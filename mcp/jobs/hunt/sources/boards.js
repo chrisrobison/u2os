@@ -33,19 +33,30 @@ export function loadBoardConfig(vaultDir) {
 
 const PATTERNS = [
   [/(?:^|\/\/)(?:job-)?boards(?:-api)?\.greenhouse\.io\/(?:embed\/job_app\?for=)?([A-Za-z0-9_.-]+)\/jobs\//i, 'greenhouse'],
-  [/\/\/jobs(?:\.eu)?\.lever\.co\/([A-Za-z0-9_.-]+)\//i, 'lever'],
-  [/\/\/jobs\.ashbyhq\.com\/([A-Za-z0-9_.%-]+)\//i, 'ashby'],
+  [/\/\/jobs(?:\.eu)?\.lever\.co\/([A-Za-z0-9_.-]+)(?:[/?#]|$)/i, 'lever'],
+  [/\/\/jobs\.ashbyhq\.com\/([A-Za-z0-9_.%-]+)(?:[/?#]|$)/i, 'ashby'],
 ];
+
+/** The board (`kind:slug`) an application or posting URL belongs to, or null. */
+export function boardFromUrl(url) {
+  for (const [pattern, kind] of PATTERNS) {
+    const slug = String(url).match(pattern)?.[1];
+    if (!slug || slug === 'embed') continue;
+    let decoded;
+    try { decoded = decodeURIComponent(slug); } catch { continue; }
+    const name = `${kind}:${decoded}`;
+    if (BOARD.test(name)) return name;
+  }
+  return null;
+}
 
 /** Boards named by application links already in the store. */
 export function deriveBoards(store) {
   const found = new Set();
   for (const job of store.listJobs({ limit: 5000 })) {
     for (const url of job.applicationUrls) {
-      for (const [pattern, kind] of PATTERNS) {
-        const slug = url.match(pattern)?.[1];
-        if (slug && slug !== 'embed') { const name = `${kind}:${decodeURIComponent(slug)}`; if (BOARD.test(name)) found.add(name); }
-      }
+      const name = boardFromUrl(url);
+      if (name) found.add(name);
     }
   }
   return [...found].sort();

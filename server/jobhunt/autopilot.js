@@ -9,6 +9,7 @@ import { loadAutopilotConfig } from '../../mcp/jobs/hunt/autopilot/config.js';
 import { loadCandidate } from '../../mcp/jobs/hunt/candidate/load.js';
 import { discoverSources } from '../../mcp/jobs/hunt/discover-sources.js';
 import { resolveBoards } from '../../mcp/jobs/hunt/sources/boards.js';
+import { loadSearchConfig } from '../../mcp/jobs/hunt/sources/search.js';
 import { scoreJobs } from '../../mcp/jobs/hunt/score-run.js';
 import { generateMaterials } from '../../mcp/jobs/hunt/applications/materials.js';
 import { contactEmailsFor } from '../../mcp/jobs/hunt/applications/strategy.js';
@@ -38,7 +39,7 @@ import { getDataDir } from '../db/connection.js';
 // never stops the others), and every step is bounded per cycle.
 
 const MIN = 60_000;
-const SOURCE_EVERY = { hn: 0, 'hn-jobs': 30 * MIN, remote: 30 * MIN };
+const SOURCE_EVERY = { hn: 0, 'hn-jobs': 30 * MIN, remote: 30 * MIN, search: 24 * 60 * MIN };
 const ACTIVE = new Set(['contacted', 'applied', 'interview', 'rejected', 'withdrawn', 'closed', 'skipped', 'uncertain', 'error']);
 
 export const MAX_REVISIONS = 2;
@@ -141,8 +142,9 @@ export class Autopilot {
     const result = {};
     const sources = config.sources.filter((name) => (name === 'boards' ? due('boards', config.boards_every_minutes * MIN) : due(name, SOURCE_EVERY[name] ?? 0)));
     for (const source of sources) {
-      const boards = source === 'boards' ? resolveBoards({ vaultDir: this.vaultDir, store }) : [];
-      const summaries = await (this.deps.discoverSources ?? discoverSources)({ store, source, preferences: candidate.preferences, boards, now });
+      const boards = ['boards', 'search'].includes(source) ? resolveBoards({ vaultDir: this.vaultDir, store }) : [];
+      const searches = source === 'search' ? loadSearchConfig(this.vaultDir) : undefined;
+      const summaries = await (this.deps.discoverSources ?? discoverSources)({ store, source, preferences: candidate.preferences, boards, searches, vaultDir: this.vaultDir, now });
       state.lastRun[source] = now.toISOString();
       result[source] = summaries.map((summary) => ({ source: summary.source, created: summary.created ?? 0, errors: (summary.errors ?? []).length }));
     }

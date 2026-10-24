@@ -301,6 +301,7 @@ Contacts live in the hunt store (`hunt.sqlite`, schema v8, additive: table `job_
 npm run u2 -- job discover boards [--board greenhouse:acme,lever:globex] [--all] [--dry-run]
 npm run u2 -- job discover hn-jobs      # HN's own jobs feed (YC companies)
 npm run u2 -- job discover remote       # RemoteOK and We Work Remotely
+npm run u2 -- job discover search       # new boards found with site: queries (see below)
 npm run u2 -- job discover all          # the HN thread plus all of the above
 ```
 
@@ -319,6 +320,21 @@ derive: true      # also read boards named by application links already in your 
 With `derive: true` (the default) every board linked from a listing you have already seen is added, so the HN threads seed the list. Pass `--board` to read only specific boards.
 
 **Relevance filter.** A large board lists hundreds of jobs, most of them irrelevant, so discovery stores only listings that look like engineering roles at your level (no sales, support, design, recruiting, junior or intern titles), and whose location is workable (not on-site in another country, not remote-only outside the US). Hardware, mechanical, optical and similar titles are skipped unless the title also says software (firmware, embedded, autonomy software and so on), and GTM, growth and community titles unless they name engineering work. The CLI reports how many were skipped and why; `--all` keeps everything. `npm run u2 -- job refilter [--dry-run]` applies the current filter to jobs already stored: unscored jobs that came only from boards or aggregators and fail it are marked skipped (with the reason in their history); HN-thread jobs, scored jobs and anything acted on are never touched. The filter only decides what is worth scoring; it never decides what to apply to.
+
+**Finding boards by search.** `npm run u2 -- job discover search [--dry-run]` finds companies you have never listed. It runs `site:` queries such as `site:jobs.ashbyhq.com "engineering manager" "San Francisco"` against DuckDuckGo's HTML results page, reads the board out of each result URL (`ashby:flux`, `greenhouse:acme`, `lever:palantir`; any other site is ignored), and then reads the boards it had not seen through the normal board reader, relevance filter and scoring. Because the listings it stores carry their application links, a found board is derived on later runs and stays in the hourly board crawl. Result text is never used, only the URL.
+
+`job-hunt/searches.yaml` (every key optional) sets what it asks:
+
+```yaml
+titles: [engineering manager, director of engineering, staff engineer]
+locations: [San Francisco, remote]
+sites: [ashby, greenhouse, lever]   # jobs.ashbyhq.com, boards.greenhouse.io, jobs.lever.co
+max_queries: 6       # asked per run; every site/title/location combination is one query, and the next run resumes where this one stopped
+max_boards: 30       # new boards read per run
+delay_seconds: 8     # pause between queries
+```
+
+DuckDuckGo has no supported search API, so this is small and polite: a plain User-Agent and a pause between queries. If it answers with anything but results (a bot check, a rate limit), the run stops there, keeps the boards already found, reports it, and does not retry; U2OS never tries to get past a challenge. Google is not used because it blocks automated queries. It is in `discover all` and in the autopilot (`search` in `sources`, at most once a day); drop it from `sources` to turn it off.
 
 **Attribution.** RemoteOK's terms require crediting and linking back to the listing; every RemoteOK record keeps its credit and its link. LinkedIn and Indeed are not sources: their terms forbid automated applications.
 
@@ -402,7 +418,7 @@ The autopilot is a loop inside the U2OS server. Every cycle (default five minute
 enabled: true
 mode: dry_run              # live to act
 interval_seconds: 300
-sources: [hn, hn-jobs, remote, boards]
+sources: [hn, hn-jobs, remote, boards, search]
 boards_every_minutes: 60
 limits: { applications_per_day: 8, emails_per_day: 10, per_company_days: 30 }
 per_cycle: { score: 6, prepare: 3, act: 3 }

@@ -35,6 +35,7 @@ import { fetchBoard, PORTFOLIO_BOARD } from '../../mcp/jobs/hunt/sources/ats.js'
 import { refilterStored } from '../../mcp/jobs/hunt/jobs/relevance.js';
 import { discoverSources, SOURCES } from '../../mcp/jobs/hunt/discover-sources.js';
 import { resolveBoards } from '../../mcp/jobs/hunt/sources/boards.js';
+import { loadSearchConfig } from '../../mcp/jobs/hunt/sources/search.js';
 import { CONTACT_SOURCES } from '../../mcp/jobs/hunt/sources/common.js';
 import { extractEmails } from '../../mcp/jobs/hunt/jobs/parser.js';
 import { proposeApplicationEmail, reconcileEmails, recordManualSend } from '../../mcp/jobs/hunt/applications/send.js';
@@ -44,6 +45,7 @@ export const USAGE = `Usage: npm run u2 -- job <command>
 
   discover hn [--month "October 2026"] [--limit <n>] [--dry-run]
   discover boards [--board greenhouse:acme ...] [--all] [--dry-run]   company boards (job-hunt/boards.yaml and boards seen in links)
+  discover search [--dry-run]                                    find new boards with site: queries on DuckDuckGo (job-hunt/searches.yaml)
   discover hn-jobs | remote | all [--all] [--dry-run]            HN's jobs feed, RemoteOK + We Work Remotely, everything
   profile import <resume.json> | show
   github refresh [<username>]
@@ -82,7 +84,7 @@ function parseFlags(args, valueFlags = []) {
   return { flags, positional };
 }
 
-export async function main(argv, out = console, { vaultDir = getVaultDir(), fetch: fetchImpl = fetch, now = new Date(), llm: llmOverride, send: sendOverride, reconcile: reconcileOverride, dataDir = null } = {}) {
+export async function main(argv, out = console, { vaultDir = getVaultDir(), fetch: fetchImpl = fetch, now = new Date(), llm: llmOverride, send: sendOverride, reconcile: reconcileOverride, dataDir = null, sleep: sleepOverride = null } = {}) {
   const [verb, ...rest] = argv;
   if (!verb || verb === 'help' || verb === '--help') { out.log(USAGE); return 0; }
   if (verb === 'extension') return extensionCommand(rest, out, dataDir ?? getDataDir());
@@ -99,13 +101,16 @@ export async function main(argv, out = console, { vaultDir = getVaultDir(), fetc
           const summaries = await discoverSources({
             store, source, preferences, all: flags.all === true, dryRun: flags['dry-run'] === true, fetch: fetchImpl, now,
             month: flags.month ?? null, limit: flags.limit ? Number.parseInt(flags.limit, 10) : null,
-            boards: ['all', 'boards'].includes(source) ? resolveBoards({ vaultDir, store, only }) : [],
+            boards: ['all', 'boards', 'search'].includes(source) ? resolveBoards({ vaultDir, store, only }) : [],
+            searches: ['all', 'search'].includes(source) ? loadSearchConfig(vaultDir) : undefined,
+            vaultDir, sleep: sleepOverride ?? null,
           });
           let failed = false;
           for (const summary of summaries) {
             if (summary.source === 'hn') { out.log(`hn: ${summary.thread?.title}: ${summary.listings} records; new ${summary.created}, merged ${summary.merged}, already seen ${summary.alreadyKnown}`); continue; }
             const skipped = Object.entries(summary.skipped ?? {}).map(([reason, n]) => `${n} ${reason}`).join('; ');
             out.log(`${summary.source}${summary.boards !== undefined ? ` (${summary.boards} boards)` : ''}: fetched ${summary.fetched}, kept ${summary.kept}${skipped ? ` [skipped: ${skipped}]` : ''}${summary.dryRun ? ' (dry run: nothing stored)' : `; new ${summary.created}, merged ${summary.merged}, already seen ${summary.alreadyKnown}`}`);
+            if (summary.source === 'search') out.log(`    ${summary.queries} queries; ${summary.boardsFound} boards found, ${summary.newBoards.length} new${summary.newBoards.length ? `: ${summary.newBoards.slice(0, 8).join(', ')}` : ''}`);
             for (const entry of (summary.perBoard ?? []).slice(0, 8)) out.log(`    ${entry.board}: ${entry.kept} of ${entry.fetched}`);
             for (const failure of summary.errors ?? []) { failed = true; out.log(`    error: ${failure.source}: ${failure.error}`); }
           }
