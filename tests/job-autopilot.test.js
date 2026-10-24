@@ -375,3 +375,18 @@ test('review pauses when only the writing tier has a model: the judge tier never
   assert.equal(report.steps.review.skipped, 'no model');
   assert.equal(proposals.length, 0, 'nothing was approved or sent without a judge model');
 });
+
+test('the search source runs at most once a day, with the owner\'s searches and the known boards', async () => {
+  const w = world({ extraConfig: 'sources: [search]\n' });
+  const calls = [];
+  const { autopilot } = pilot(w, { deps: { discoverSources: async (options) => { calls.push(options); return [{ source: 'search', created: 1, errors: [] }]; } } });
+  await autopilot.runCycle({ now: NOW });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].source, 'search');
+  assert.equal(calls[0].searches.titles.length > 0, true, 'the search settings are passed');
+  assert.ok(Array.isArray(calls[0].boards), 'known boards are passed so they are not read twice');
+  await autopilot.runCycle({ now: new Date(NOW.getTime() + 23 * 60 * 60_000) });
+  assert.equal(calls.length, 1, 'not again within a day');
+  await autopilot.runCycle({ now: new Date(NOW.getTime() + 25 * 60 * 60_000) });
+  assert.equal(calls.length, 2);
+});
