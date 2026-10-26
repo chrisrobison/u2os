@@ -623,4 +623,5 @@ export function getStarterRoutines() { return request('/api/vault/starter-routin
 export function installStarterRoutines(ids) { return request('/api/vault/starter-routines', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ ids }) }); }
 // The job page's action bar (docs/job-hunt.md): email routes and the form plan.
 export function emailJobHuntJob(id, mode) { return jobHuntWrite(`/api/job-hunt/jobs/${encodeURIComponent(id)}/email`, 'POST', { mode }); }
+export function prefillJobHuntForm(id) { return jobHuntWrite(`/api/job-hunt/jobs/${encodeURIComponent(id)}/prefill`, 'POST', {}); }
 export function planJobHuntForm(id) { return jobHuntWrite(`/api/job-hunt/jobs/${encodeURIComponent(id)}/plan`, 'POST', {}); }

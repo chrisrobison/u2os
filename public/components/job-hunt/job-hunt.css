@@ -332,3 +332,29 @@
 /* The job page's action bar. */
 .jh-page__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-3) 0; }
 .jh-page__actions .btn[disabled] { opacity: 0.55; cursor: not-allowed; }
+
+/* Per-listing actions: icon buttons and a "..." menu (u2-job-menu) on Job Leads and pipeline cards */
+.jh-rowmenu { display: inline-flex; align-items: center; gap: var(--space-1); flex-wrap: wrap; margin-left: auto; }
+.jh-rowmenu__btn { display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; padding: 0; color: var(--text-secondary); background: var(--bg-card); border: var(--border-width) solid var(--border-color); border-radius: var(--radius-sm); cursor: pointer; }
+.jh-rowmenu__btn:hover:not(:disabled) { color: var(--text-primary); border-color: var(--accent-active); background: var(--accent-active-soft); }
+.jh-rowmenu__btn--danger:hover:not(:disabled) { color: var(--accent-danger); border-color: var(--accent-danger); background: var(--bg-raised); }
+.jh-rowmenu__btn:focus-visible, .jh-rowmenu__item:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.jh-rowmenu__btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.jh-rowmenu__btn[aria-busy="true"] { cursor: progress; border-color: var(--accent-active); }
+.jh-rowmenu__status { flex-basis: 100%; font-size: var(--text-xs); color: var(--text-secondary); text-align: right; overflow-wrap: anywhere; }
+.jh-rowmenu__status--error { color: var(--accent-danger); }
+.jh-rowmenu__popover { position: fixed; inset: auto; margin: 0; padding: var(--space-1); min-width: 15rem; max-width: calc(100vw - 1rem); color: var(--text-primary); background: var(--bg-card); border: var(--border-width) solid var(--border-color); border-radius: var(--radius-md); box-shadow: 0 8px 24px rgb(0 0 0 / 0.25); }
+.jh-rowmenu__item { display: block; width: 100%; padding: var(--space-2) var(--space-3); font: inherit; font-size: var(--text-sm); text-align: left; color: inherit; text-decoration: none; background: none; border: 0; border-radius: var(--radius-sm); cursor: pointer; }
+.jh-rowmenu__item:hover:not(:disabled), .jh-rowmenu__item:focus-visible { background: var(--bg-raised); }
+.jh-rowmenu__item:disabled { opacity: 0.5; cursor: not-allowed; }
+.jh-rowmenu__item--danger { color: var(--accent-danger); }
+.jh-rowmenu__sep { margin: var(--space-1) 0; border: 0; border-top: var(--border-width) solid var(--border-color); }
+/* On the board the menu floats over the card's top-right corner. */
+.jh-board__item { position: relative; }
+.jh-board__item > .jh-rowmenu { position: absolute; top: var(--space-1); right: var(--space-1); margin: 0; }
+.jh-board__item > .jh-rowmenu .jh-rowmenu__status { position: absolute; top: 100%; right: 0; z-index: 1; width: max-content; max-width: 14rem; padding: var(--space-1) var(--space-2); background: var(--bg-card); border: var(--border-width) solid var(--border-color); border-radius: var(--radius-sm); }
+.jh-board__item > .jh-rowmenu .jh-rowmenu__btn { width: 1.75rem; height: 1.75rem; }
+.jh-board__item > .jh-rowmenu .jh-rowmenu__btn:not(:focus-visible) { opacity: 0; }
+.jh-board__item:hover > .jh-rowmenu .jh-rowmenu__btn:not(:disabled), .jh-board__item:focus-within > .jh-rowmenu .jh-rowmenu__btn:not(:disabled), .jh-board__item > .jh-rowmenu:has([aria-expanded="true"]) .jh-rowmenu__btn { opacity: 1; }
+@media (hover: none) { .jh-board__item > .jh-rowmenu .jh-rowmenu__btn:not(:disabled) { opacity: 1; } }
+.jh-board__item .jh-card__who { padding-right: 6rem; }
