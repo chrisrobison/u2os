@@ -215,7 +215,7 @@ export async function executePlan(options) {
   return state.window ? { ...result, window: state.window } : result;
 }
 
-async function runPlan({ plan, files = {}, submit = true, headed = false, keepOpen = false, beforeSubmit = async () => {}, screenshotDir = null, env = process.env, outcomeTimeoutMs = Number(env.JOBS_SUBMIT_TIMEOUT_MS) || 20_000 }, state) {
+async function runPlan({ plan, files = {}, submit = true, prefill = false, headed = false, keepOpen = false, beforeSubmit = async () => {}, screenshotDir = null, env = process.env, outcomeTimeoutMs = Number(env.JOBS_SUBMIT_TIMEOUT_MS) || 20_000 }, state) {
   for (const [kind, expected] of Object.entries(plan.files ?? {})) {
     if (!files[kind] || !fs.existsSync(files[kind].path) || sha256(files[kind].path) !== expected.sha256) return { status: 'files_changed', reason: `${kind} is not the file the plan was made with` };
   }
@@ -246,7 +246,8 @@ async function runPlan({ plan, files = {}, submit = true, headed = false, keepOp
     const missing = after.fields.filter((field) => field.required && !field.filled).map((field) => field.label || field.key);
     const formShot = await shot(page, 'form');
     if (failed.length || missing.length) return { status: 'fill_incomplete', failed, missing, screenshots: [formShot].filter(Boolean) };
-    if (!submit) { keep = false; return { status: 'dry_run', screenshots: [formShot].filter(Boolean) }; }
+    // A pre-fill is a dry run whose window stays open: the owner reviews the filled form and submits it by hand.
+    if (!submit) { keep = kept && prefill; return { status: prefill ? 'prefilled' : 'dry_run', screenshots: [formShot].filter(Boolean) }; }
 
     const button = await findSubmit(scope);
     if (!button) return { status: 'manual_required', reason: 'no_submit_button', screenshots: [formShot].filter(Boolean) };

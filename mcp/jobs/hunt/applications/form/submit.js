@@ -86,7 +86,7 @@ export function recoverInterrupted({ store, now = new Date(), staleMs = STALE_SU
  * Submits a planned application. `files` resolve plan.files; `driver` (a FormDriver or
  * registered name) does the browser work; `execute` still overrides it. Refuses anything not in a submittable state.
  */
-export async function submitApplication({ store, job, files, submit = true, headed = false, keepOpen = false, driver = null, execute = null, screenshotDir = null, now = new Date(), applicationId = null }) {
+export async function submitApplication({ store, job, files, submit = true, prefill = false, headed = false, keepOpen = false, driver = null, execute = null, screenshotDir = null, now = new Date(), applicationId = null }) {
   recoverInterrupted({ store, now });
   const application = store.listApplications(job.id).filter((entry) => !applicationId || entry.id === applicationId).at(-1);
   if (!application) throw new Error('No application plan for this job: run "job plan" first');
@@ -95,7 +95,7 @@ export async function submitApplication({ store, job, files, submit = true, head
   if (['applied', 'contacted', 'rejected', 'withdrawn', 'closed', 'skipped', 'interview'].includes(job.status)) throw Object.assign(new Error(`Not submitting: the job is already ${job.status}`), { code: 'BLOCKED' });
 
   const result = await (execute ?? resolveDriver(driver).execute)({
-    plan: application.plan, files, submit, headed, keepOpen,
+    plan: application.plan, files, submit, prefill, headed, keepOpen,
     screenshotDir: screenshotDir ? path.join(screenshotDir, `application-${application.id}`, crypto.randomUUID()) : null,
     beforeSubmit: async () => {
       // Intent first: from here a crash means "uncertain", never "try again".
@@ -104,6 +104,11 @@ export async function submitApplication({ store, job, files, submit = true, head
     },
   });
   const done = new Date();
+  if (prefill) {
+    // Nothing was sent and the owner is looking at the page: record it, but leave the plan and the job's stage alone.
+    store.recordEvent(job.id, 'application_prefilled', { detail: { applicationId: application.id, outcome: result.status, ...(result.reason ? { reason: result.reason } : {}) } }, done);
+    return { application, result };
+  }
   const map = { submitted: 'submitted', unconfirmed: 'unconfirmed', failed: 'planned', dry_run: 'planned', manual_required: 'manual_required', schema_changed: 'needs_input', files_changed: 'needs_input', fill_incomplete: 'needs_input' };
   const status = map[result.status] ?? 'uncertain';
   store.updateApplication(application.id, { status, result: { outcome: result.status, ...(result.reason ? { reason: result.reason } : {}), ...(result.errors ? { errors: result.errors } : {}), ...(result.missing?.length ? { missing: result.missing } : {}), ...(result.failed?.length ? { failedFields: result.failed } : {}), screenshots: result.screenshots ?? [], at: done.toISOString() } }, done);

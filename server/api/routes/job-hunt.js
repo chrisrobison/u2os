@@ -10,7 +10,7 @@ import { addInterview, updateInterview, deleteInterview, addTask, completeTask, 
 import { addContact, updateContact, deleteContact, markContacted } from '../../../mcp/jobs/hunt/contacts.js';
 import { jobView, listJobViews } from '../../../mcp/jobs/hunt/view.js';
 import { addCustomAnswers } from '../../../mcp/jobs/hunt/candidate/answers.js';
-import { ownerApproveAndSubmit, withLock } from '../../../mcp/jobs/hunt/act.js';
+import { ownerApproveAndSubmit, prefillApplicationForm, withLock } from '../../../mcp/jobs/hunt/act.js';
 import { planJob } from '../../jobhunt/replan.js';
 import { ensureMaterials } from '../../jobhunt/ensure-materials.js';
 import { chooseApplyUrl } from '../../../mcp/jobs/hunt/applications/form/submit.js';
@@ -231,6 +231,37 @@ export function registerJobHuntRoutes(router, { agent, toolRegistry, autopilot =
       sendJson(res, 200, body);
     } catch (error) {
       const status = { UNKNOWN_JOB: 404, CONFLICT: 409, IN_PROGRESS: 409, NO_MODEL: 409 }[error.code];
+      sendJson(res, status ?? 500, { error: String(error.message).slice(0, 400) });
+    }
+  });
+
+  // "Open and pre-fill": plans the form if it is not already planned, then opens it in a visible browser window, fills the
+  // planned answers and leaves the window open. Submits nothing; the owner reads it over and sends it themselves.
+  router.post('/api/job-hunt/jobs/:id/prefill', async (req, res) => {
+    if (!JOB_ID.test(req.params.id)) return sendJson(res, 400, { error: 'Invalid job id' });
+    const vaultDir = getVaultDir();
+    const view = (store) => ({ ...jobView(store, store.getJob(req.params.id), { minimumScore: preferences().minimum_score, detail: true, screensDir: screensDir() }), sendRoutes: availableRoutes(toolRegistry) });
+    try {
+      const planned = await withLock(vaultDir, req.params.id, async () => {
+        const store = openStore(huntDbPath(vaultDir));
+        try {
+          const job = store.getJob(req.params.id);
+          if (!job) throw Object.assign(new Error('No such job'), { code: 'UNKNOWN_JOB' });
+          if (['applied', 'contacted', 'rejected', 'withdrawn', 'closed', 'skipped', 'interview', 'offer'].includes(job.status)) throw Object.assign(new Error(`This job is ${job.status.replace(/_/g, ' ')}.`), { code: 'CONFLICT' });
+          const url = chooseApplyUrl(job);
+          if (!url) throw Object.assign(new Error('This listing has no application link.'), { code: 'CONFLICT' });
+          const latest = store.listApplications(job.id).filter((entry) => entry.kind === 'form').at(-1);
+          if (latest?.status === 'planned' && latest.plan?.ready === true && latest.url === url) return { ready: true };
+          await ensureMaterials({ vaultDir, store, job, need: 'form', llm: jobLlm });
+          const application = await planJob({ vaultDir, store, job: store.getJob(job.id), llm: jobLlm, url });
+          return { ready: application.plan?.ready === true, status: application.status, unresolved: application.plan?.unresolved?.length ?? 0, job: view(store) };
+        } finally { store.close(); }
+      });
+      if (!planned.ready) return sendJson(res, 200, { status: 'needs_input', unresolved: planned.unresolved, job: planned.job ?? withStore(view) });
+      const outcome = await prefillApplicationForm({ vaultDir, jobId: req.params.id });
+      sendJson(res, 200, { ...outcome, job: withStore(view) });
+    } catch (error) {
+      const status = { UNKNOWN_JOB: 404, CONFLICT: 409, IN_PROGRESS: 409, NO_MODEL: 409, NOT_READY: 409, BLOCKED: 409 }[error.code];
       sendJson(res, status ?? 500, { error: String(error.message).slice(0, 400) });
     }
   });

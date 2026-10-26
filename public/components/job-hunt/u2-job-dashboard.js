@@ -92,6 +92,7 @@ export class U2JobDashboard extends HTMLElement {
     this.addEventListener('jh-select', (event) => this._select(event.detail.id));
     this.addEventListener('jh-approve', (event) => this._approve(event.detail.id, event.target));
     this.addEventListener('jh-changed', () => this._load());
+    this.addEventListener('jh-job-updated', () => this._load());
     this.addEventListener('jh-window', (event) => { this._days = event.detail.days; this._load(); });
 
     this.textContent = '';

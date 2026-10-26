@@ -124,3 +124,25 @@ export async function ownerApproveAndSubmit({ vaultDir, jobId, planHash, execute
   });
   return submitApplicationForm({ vaultDir, jobId, execute, driver, owner: true, now });
 }
+
+/**
+ * Opens the job's application form in a visible browser, fills the planned answers and leaves the window open.
+ * Nothing is submitted and no approval is involved: the owner looks at the filled form and sends it themselves
+ * (then marks the job applied). A form the plan could not answer is not filled with guesses; callers plan first.
+ */
+export function prefillApplicationForm({ vaultDir, jobId, execute = null, driver = null, now = new Date() }) {
+  return withLock(vaultDir, jobId, async () => {
+    const store = openStore(huntDbPath(vaultDir));
+    try {
+      const job = store.getJob(jobId);
+      if (!job) throw new Refused(`Unknown job ${jobId}`, 'UNKNOWN_JOB');
+      const application = store.listApplications(job.id).filter((entry) => entry.kind === 'form').at(-1);
+      if (!application || application.status !== 'planned' || application.plan?.ready !== true) throw new Refused('There is no ready application plan to fill in', 'NOT_READY');
+      const config = loadAutopilotConfig(vaultDir);
+      const artifacts = store.getArtifacts(job.id);
+      const files = { ...(artifacts.resume_pdf ? { resume: { path: artifacts.resume_pdf.path } } : {}), ...(artifacts.cover_letter_pdf ? { cover_letter: { path: artifacts.cover_letter_pdf.path } } : {}), ...(artifacts.combined_pdf ? { resume_with_letter: { path: artifacts.combined_pdf.path } } : {}) };
+      const { result } = await submitApplication({ store, job, files, submit: false, prefill: true, headed: true, keepOpen: true, driver: driver ?? config.browser.driver, execute, screenshotDir: path.join(vaultDir, JOB_HUNT_DIR, 'state', 'screens', job.id), now });
+      return { status: result.status, company: job.company, role: job.role, url: application.url, ...(result.reason ? { reason: result.reason } : {}), ...(result.missing?.length ? { missing: result.missing } : {}) };
+    } finally { store.close(); }
+  });
+}

@@ -1,6 +1,7 @@
 import { escapeHtml, formatDateTime } from './util.js';
 import * as api from '../services/api.js';
 import { mergeJobs, needsOwner } from './job-hunt/leads-filter.js';
+import './job-hunt/u2-job-menu.js';
 
 // The job hunt pipeline (docs/job-hunt.md): jobs discovered on Hacker News,
 // ranked against the owner, with the tailored materials and outreach email
@@ -32,9 +33,11 @@ export class U2JobHunt extends HTMLElement {
 
   connectedCallback() {
     this.addEventListener('click', this._onClick);
+    // A listing's menu changed the job (rejected, pre-filled, ...): show what happened and reload the list.
+    this.addEventListener('jh-job-updated', (event) => { if (event.detail?.notice) this._notice = event.detail.notice.text; this._load(); });
     window.addEventListener('u2-event', this._onEvent);
     // The autopilot works in the background, so keep the page current.
-    this._poll = setInterval(() => { if (!this._busy) this._load(); }, 20_000);
+    this._poll = setInterval(() => { if (!this._busy && !this._menuActive()) this._load(); }, 20_000);
     this._load();
   }
 
@@ -43,6 +46,8 @@ export class U2JobHunt extends HTMLElement {
     window.removeEventListener('u2-event', this._onEvent);
     clearInterval(this._poll);
   }
+
+  _menuActive() { return [...this.querySelectorAll('u2-job-menu')].some((menu) => menu.active); }
 
   async _load() {
     if (!this._data) this.innerHTML = '<div class="empty-state">Loading jobs...</div>';
@@ -85,6 +90,13 @@ export class U2JobHunt extends HTMLElement {
       ${this._notice ? `<div class="load-error" role="status">${escapeHtml(this._notice)}</div>` : ''}
       <div class="folder-toggle" role="group" aria-label="Filter">${FILTERS.map(([value, label]) => `<button type="button" data-filter="${value}" class="${value === this._filter ? 'is-active' : ''}" aria-pressed="${value === this._filter}">${escapeHtml(label)}</button>`).join('')}</div>
       ${shown.length ? `<div class="trigger-list">${shown.map((job) => this._card(job)).join('')}</div>` : `<div class="empty-state">${jobs.length ? 'Nothing here.' : 'No scored jobs yet. Run: npm run u2 -- job discover hn, then job score.'}</div>`}`;
+    // Each listing gets its action menu (the cards are plain HTML, so the menus are attached afterwards).
+    const byId = new Map(shown.map((job) => [job.id, job]));
+    for (const card of this.querySelectorAll('article[data-job]')) {
+      const menu = document.createElement('u2-job-menu');
+      menu.job = byId.get(card.dataset.job);
+      card.querySelector('.trigger-row__heading')?.append(menu);
+    }
   }
 
   _autopilotPanel() {

@@ -1,4 +1,5 @@
 import { el, monogram, fitChip, fitBand, FIT_BANDS, relTime } from './jh-util.js';
+import './u2-job-menu.js';
 
 // The application pipeline: one column per stage (or per fit band), a card per
 // job. Selecting a card dispatches `jh-select` with the job id; a card with a
@@ -84,7 +85,9 @@ export class U2JobPipeline extends HTMLElement {
     // A planned, ready application can be approved from the board; the dashboard asks again before anything is sent.
     const approve = job.ready ? el('button', { type: 'button', class: 'jh-card__approve', 'data-approve': job.id, 'aria-label': `Approve ${job.role || 'this role'} at ${job.company}`, text: 'Approve' }) : null;
     approve?.addEventListener('click', () => this.dispatchEvent(new CustomEvent('jh-approve', { bubbles: true, detail: { id: job.id } })));
-    return el('li', { class: 'jh-board__item' }, button, approve);
+    const menu = el('u2-job-menu');
+    menu.job = job;
+    return el('li', { class: 'jh-board__item' }, button, approve, menu);
   }
 
   _render() {
