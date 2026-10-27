@@ -85,6 +85,25 @@ export class U2JobPage extends HTMLElement {
       this._materials(job),
       this._people(job),
       this._history(job));
+    this._focusQuestion();
+  }
+
+  /**
+   * #/job-hunt/jobs/<id>?question=<key> (the Overview's Review link) scrolls to and focuses that outstanding question, once
+   * per load. An unknown key, or a question already answered, leaves the page as it is.
+   */
+  _focusQuestion() {
+    if (this._focusedFor === this._id) return;
+    let key = null;
+    try { key = new URLSearchParams((window.location.hash.split('?')[1]) ?? '').get('question'); } catch { /* no query */ }
+    if (!key) return;
+    const row = [...this.querySelectorAll('[data-answer-form] [data-key]')].find((node) => node.getAttribute('data-key') === key);
+    const input = row?.querySelector('input, select, textarea');
+    if (!input) return;
+    this._focusedFor = this._id;
+    row.setAttribute('data-focused-question', '');
+    input.scrollIntoView?.({ block: 'center' });
+    input.focus?.({ preventScroll: true });
   }
 
   _actionsSlot(job) {

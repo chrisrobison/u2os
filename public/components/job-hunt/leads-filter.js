@@ -41,3 +41,27 @@ export function sortJobs(jobs, sort = 'score', direction = null) {
     return order ? order * sign : a.index - b.index;
   }).map((entry2) => entry2.job);
 }
+
+/** The quick filters Job Leads offers, and the ones a link may preselect with ?filter=. */
+export const LEADS_FILTER_IDS = ['ready', 'needs_input', 'contacted', 'strong', 'all'];
+
+/**
+ * The filter a link asks for: #/job-hunt/leads?filter=strong, or ?statuses=applied,contacted to keep only jobs in those
+ * statuses (the Overview's metric and stage links). Unknown filters and malformed status names are dropped.
+ */
+export function parseLeadsQuery(hash) {
+  const query = String(hash ?? '').split('?')[1] ?? '';
+  const params = new URLSearchParams(query);
+  const filter = LEADS_FILTER_IDS.includes(params.get('filter')) ? params.get('filter') : null;
+  const statuses = (params.get('statuses') ?? '').split(',').filter((status) => /^[a-z_]{1,32}$/.test(status)).slice(0, 20);
+  return { filter, statuses: statuses.length ? statuses : null };
+}
+
+/** The Job Leads link for a filter and/or status list (the inverse of parseLeadsQuery). */
+export function leadsHref({ filter = null, statuses = null } = {}) {
+  const params = new URLSearchParams();
+  if (statuses?.length) params.set('statuses', statuses.join(','));
+  else if (filter) params.set('filter', filter);
+  const query = params.toString();
+  return `#/job-hunt/leads${query ? `?${query.replace(/%2C/g, ',')}` : ''}`;
+}

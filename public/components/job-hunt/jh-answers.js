@@ -21,7 +21,7 @@ export function buildAnswerInputs(questions, idPrefix = 'jh-answer') {
     else if (question.type === 'textarea' || String(question.label).length > 120) input = el('textarea', { id, class: 'jh-input', rows: '3', maxlength: '2000' });
     else input = el('input', { id, class: 'jh-input', type: 'text', maxlength: '2000' });
     inputs.set(question.key, input);
-    return el('div', { class: 'jh-page__answer' }, el('label', { for: id, text: `${question.label}${question.required ? ' *' : ''}` }), input);
+    return el('div', { class: 'jh-page__answer', 'data-key': question.key }, el('label', { for: id, text: `${question.label}${question.required ? ' *' : ''}` }), input);
   });
   const read = () => [...inputs].map(([key, input]) => ({ key, value: input.value.trim() })).filter((answer) => answer.value);
   return { rows, read };

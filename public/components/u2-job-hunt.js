@@ -1,6 +1,6 @@
 import { escapeHtml, formatDateTime } from './util.js';
 import * as api from '../services/api.js';
-import { mergeJobs, needsOwner, sortJobs, SORTS } from './job-hunt/leads-filter.js';
+import { mergeJobs, needsOwner, parseLeadsQuery, sortJobs, SORTS } from './job-hunt/leads-filter.js';
 import './job-hunt/u2-job-menu.js';
 
 // The job hunt pipeline (docs/job-hunt.md): jobs discovered on Hacker News,
@@ -23,6 +23,10 @@ export class U2JobHunt extends HTMLElement {
     super();
     this._data = null;
     this._filter = 'ready';
+    this._statuses = null; // from ?statuses= (the Overview's stage and metric links)
+    const asked = parseLeadsQuery(typeof window === 'undefined' ? '' : window.location.hash);
+    if (asked.filter) this._filter = asked.filter;
+    if (asked.statuses) { this._statuses = new Set(asked.statuses); this._filter = 'all'; }
     this._sort = 'score';
     this._dir = null;
     try { const saved = JSON.parse(localStorage.getItem('u2.jobLeads.sort') || 'null'); if (SORTS.some(([id]) => id === saved?.sort)) { this._sort = saved.sort; this._dir = saved.dir === 'asc' || saved.dir === 'desc' ? saved.dir : null; } } catch { /* no saved choice */ }
@@ -78,7 +82,7 @@ export class U2JobHunt extends HTMLElement {
   }
 
   _filtered() {
-    const jobs = this._data.jobs;
+    const jobs = this._statuses ? this._data.jobs.filter((job) => this._statuses.has(job.status)) : this._data.jobs;
     switch (this._filter) {
       case 'ready': return jobs.filter((job) => job.draft && !job.draft.needsInput.length && !active(job) && !['contacted', 'applied', 'interview', 'rejected'].includes(job.status));
       case 'needs_input': return jobs.filter(needsOwner);
@@ -102,6 +106,7 @@ export class U2JobHunt extends HTMLElement {
       </div>
       ${this._autopilotPanel()}
       ${this._notice ? `<div class="load-error" role="status">${escapeHtml(this._notice)}</div>` : ''}
+      ${this._statuses ? `<div class="trigger-row__meta" data-status-filter>Showing jobs whose status is ${[...this._statuses].map((status) => escapeHtml(status.replace(/_/g, ' '))).join(', ')} (among the scored leads listed here). <button type="button" class="btn" data-clear-statuses>Show all</button></div>` : ''}
       <div class="folder-toggle" role="group" aria-label="Filter">${FILTERS.map(([value, label]) => `<button type="button" data-filter="${value}" class="${value === this._filter ? 'is-active' : ''}" aria-pressed="${value === this._filter}">${escapeHtml(label)}</button>`).join('')}</div>
       <div class="jh-leads-sort" role="group" aria-label="Sort">
         <label for="jh-leads-sort">Sort by</label>
@@ -187,7 +192,8 @@ export class U2JobHunt extends HTMLElement {
   async _onClick(event) {
     if (event.target.closest('[data-sort-dir]')) { this._dir = this._direction() === 'asc' ? 'desc' : 'asc'; this._saveSort(); this._render(); this.querySelector('[data-sort-dir]')?.focus(); return; }
     const filter = event.target.closest('[data-filter]');
-    if (filter) { this._filter = filter.dataset.filter; this._notice = null; this._render(); return; }
+    if (event.target.closest('[data-clear-statuses]')) { this._statuses = null; this._render(); return; }
+    if (filter) { this._filter = filter.dataset.filter; this._statuses = null; this._notice = null; this._render(); return; }
     if (this._busy) return;
     const ap = event.target.closest('[data-ap]');
     if (ap) {

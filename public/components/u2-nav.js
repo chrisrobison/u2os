@@ -26,7 +26,7 @@ export const NAV_GROUPS = [
     ['#/activity', 'Activity', 'clock-rotate-left'],
   ] },
   { id: 'jobs', label: 'Job hunt', open: true, routes: [
-    ['#/job-hunt', 'Dashboard', 'table-columns'],
+    ['#/job-hunt', 'Overview', 'table-columns'],
     ['#/job-hunt/leads', 'Job Leads', 'user-tie'],
     ['#/applications', 'Applications', 'briefcase'],
   ] },
@@ -50,7 +50,7 @@ export const NAV_GROUPS = [
 
 // Icons an enabled add-on's navigation entry may use (the self-hosted subset in icons.css).
 const KNOWN_ICONS = new Set(NAV_GROUPS.flatMap((group) => group.routes.map(([, , icon]) => icon)));
-// #/job-hunt is the dashboard; #/job-hunt/leads is its own entry.
+// #/job-hunt is the Overview; #/job-hunt/leads is its own entry.
 const EXACT_ROUTES = new Set([
   '#/addons',
   '#/job-hunt',

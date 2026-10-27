@@ -71,11 +71,54 @@ Every attempt is a Markdown file in your vault. It records the company, title, f
 
 To re-open a job, edit its status or delete its file.
 
+## The Overview
+
+`#/job-hunt` opens the **Overview** ([#629](https://github.com/chrisrobison/u2/issues/629), part of #626). It answers "what needs me, and how is the search going?" and keeps the pipeline board below it, so nothing was removed. Every number comes from one call, `GET /api/job-hunt/overview` (owner only, no parameters). The code is `mcp/jobs/hunt/overview.js` (view model) and `public/components/job-hunt/u2-job-overview.js` with `jh-overview-parts.js` and `jh-overview-model.js` (page).
+
+- **Summary bar**: jobs discovered (every job; "+N this week" is jobs first seen in the last 7 days), strong matches, need your attention, applications submitted, employer responses and interviewing. Each card links to the filtered Job Leads list. A value the server cannot give is shown as "—", never as zero.
+- **Autopilot**: *mode* (Paused, Dry run, Live, from `autopilot.yaml`) is shown apart from *status* (Idle, Running cycle, Degraded when the last cycle reported errors, Blocked when the settings file is invalid), with the last cycle time and a link to the existing autopilot controls on Job Leads. Switching mode stays there; the Overview changes nothing.
+- **Application Pipeline**: Discovered, Qualified, Preparing, Needs Input, Submitted, Responded, Interviewing, Offer. Clicking a stage opens the Job Leads list filtered to it.
+- **Needs Your Attention**: one row per job (company, role, why, fit score, age or interview deadline) with a **Review** button that opens the job page; for an unanswered application question it opens that question (`#/job-hunt/jobs/<id>?question=<answer key>`, which scrolls to and focuses its input in the answers form).
+- **Recent Activity**: the newest meaningful events, each linking to its job. "Application ledger" opens `#/applications`. There is no cross-job event history page, so the per-job history on the job page is the full history.
+- **Pipeline board and details**: the previous dashboard, unchanged, below the Overview.
+
+### Status to stage
+
+A job is counted once, in the stage its **current** status belongs to. The stages are therefore not an overlapping funnel: they add up to the jobs on the pipeline, and a job that was submitted and is now interviewing appears only under Interviewing. The one exception is **Needs Input**, which is a flag, not a state: it counts the jobs in the attention queue, whatever stage they are in, and overlaps the other stages. The function is `overviewStageOf()` and every one of the 19 `JOB_STATUSES` is covered by a test.
+
+| Stage | Statuses |
+|---|---|
+| Discovered | `discovered`, `scored`, `researching` |
+| Qualified | `qualified` |
+| Preparing | `materials_generated`, `applying`, `needs_input` |
+| Needs Input (flag) | none: jobs in the attention queue |
+| Submitted | `applied`, `contacted`, `followup_due` |
+| Responded | `screening` |
+| Interviewing | `interview` |
+| Offer | `offer` |
+| on no stage | `rejected`, `withdrawn`, `closed`, `skipped`, `error`, `uncertain` |
+
+`rejected` is a response but ends the job, so it is not a stage; `uncertain` may or may not have been sent, so it is not counted as submitted and shows under Needs Your Attention. Both summary cards for *applications submitted* and *employer responses* count jobs **ever** sent or answered (from `application_events`, as in the analytics below), so they stay accurate after a job moves on; their sub-lines count the last 7 days.
+
+**Strong match** means a latest score of at least **80**: the line where `scoreLabel()` (`jobs/scorer.js`) starts calling a score "strong", and the number in the Job Leads "Strong (80+)" filter. It is not the autonomous threshold (`minimum_score`, default 82), which only decides what the autopilot may act on.
+
+### Needs Your Attention
+
+Built from `jobAttention()` (`attention.js`) for jobs waiting on input, unconfirmed, with a stuck application attempt or a rejecting review, one item per job showing its most severe reason. The queue is sorted by **urgency** (a job with an interview in the next 7 days first; this is the only deadline U2OS stores), then **opportunity value** (the fit score; unscored last), then **blocking severity** (3: a possibly sent application nobody has confirmed, 2: U2OS cannot go on and you must act yourself or change settings, 1: you can unblock it with an answer), then the item waiting longest. The payload carries the top 20 and the full `count`. `question` (`{ key, label }`) is set only for unanswered application questions. Other reasons, such as a CAPTCHA, link to the job page, which shows the reason.
+
+### Links into Job Leads
+
+Job Leads reads `#/job-hunt/leads?filter=<ready|needs_input|contacted|strong|all>` and `?statuses=a,b,c` (keep only jobs in those statuses; shown with a "Show all" button). The Overview uses them for its cards and stages. Limit: Job Leads lists the 150 best jobs scored 60 or more plus every job that needs you, so a status filter there can show fewer jobs than the Overview counts (for example unscored discovered jobs). The Opportunities table (Phase 3) is meant to replace that list.
+
+### Refresh
+
+The server publishes no `jobs.*` events (the only `jobs.` names are MCP tool names; the bus carries `agent.action.*` for approvals and sends). The Overview therefore refreshes on `agent.action.*` events (debounced) and polls every 30 seconds. Responses that arrive out of order are ignored, and a failed refresh keeps the last data under a "Showing the last data we loaded" notice with a Refresh button.
+
 ## The dashboard
 
 ![The job-hunt dashboard](job-hunt-dashboard.png)
 
-`#/job-hunt` is the job-hunt dashboard; the ranked list that used to live there is **Job Leads** at `#/job-hunt/leads`, and the ledger stays at `#/applications`.
+The pipeline board below the Overview (it used to be all of `#/job-hunt`); the ranked list is **Job Leads** at `#/job-hunt/leads`, and the ledger stays at `#/applications`.
 
 - **Application Pipeline**: six columns (Saved, Applied, Recruiter Screen, Interviewing, Offer, Rejected) of job cards with fit, location and the last status change. Search filters the cards as you type; *Group by* switches between stage and fit band. Selecting a card fills Job Details.
 - **Job Details**: fit ring, salary and location, tabs for Overview, Fit & Skills, Notes and Activity (the job's recorded status history and emails), and the owner's moves: *Move to Recruiter Screen*, *Move to Offer*, *Mark rejected* (the server decides which moves are allowed) and a link to the application. Per-job notes are not stored yet, so the Notes tab says so.
@@ -85,7 +128,7 @@ To re-open a job, edit its status or delete its file.
 - **Tasks & Follow-ups**: a checklist of open tasks (soonest due first, undated last) and those completed in the last week, with *N due this week*. Overdue and due-today labels carry state tones. Tick a task to complete it (untick to undo), *Snooze* pushes it a day, and the company name selects its job. Add your own with *Add task* in Job Details.
 - **Networking & Contacts**: people per job, most recently contacted first, each with a monogram, name, title and company, a role chip (Recruiter, Referral, Hiring Manager, or Contact) and *Last contact 3d ago*. The envelope opens a `mailto:` draft in your own mail client; *Contacted* stamps today, *Edit* changes name, role and title, *Remove* deletes. With no contacts the panel says so and *Add contact* is still there. There is no LinkedIn icon: U2OS makes no external lookups.
 
-The page reads `GET /api/job-hunt/dashboard?days=30` and records moves with `POST /api/job-hunt/jobs/:id/status`. It refreshes on `jobs.*` and `agent.action.*` events. Interview and task changes use the endpoints under *Interviews and tasks* below, and contact changes those under *Networking contacts*. The code is in `public/components/job-hunt/` and depends only on `services/api.js`.
+The page reads `GET /api/job-hunt/dashboard?days=30` and records moves with `POST /api/job-hunt/jobs/:id/status`. It refreshes on `agent.action.*` events (no `jobs.*` event is published; see Refresh above). Interview and task changes use the endpoints under *Interviews and tasks* below, and contact changes those under *Networking contacts*. The code is in `public/components/job-hunt/` and depends only on `services/api.js`.
 
 ## Safety and privacy
 
@@ -220,6 +263,8 @@ The rest of the page is read-only; stage moves stay where they are.
 `POST /api/job-hunt/jobs/:id/answers` with `{ answers: [{ key, value }] }` saves answers and re-plans (it returns the refreshed job). `POST /api/job-hunt/jobs/:id/approve-and-submit` with `{ planHash, confirm: true }` records the owner's approval and submits (409 with a `code` when refused: `STALE_PLAN`, `NOT_READY`, `CHECKS_FAILED`, `IN_PROGRESS`). `GET /api/job-hunt/jobs/:id` carries all of this (`applications`, `reviews`, `contacts`, `tasks`, `interviews`, `attention`), and `GET /api/job-hunt/jobs/:id/screenshot?path=<file>` serves one attempt screenshot: a PNG inside `job-hunt/state/screens/<job-id>/`, a regular file, owner only.
 
 ## The dashboard API
+
+(The Overview has its own endpoint, `GET /api/job-hunt/overview`, described above; this one feeds the board.)
 
 `GET /api/job-hunt/dashboard[?days=30]` (owner only; `days` is a whole number from 1 to 365) returns the whole dashboard in one call. The code is `mcp/jobs/hunt/dashboard.js`; the route only calls it.
 
@@ -606,11 +651,11 @@ It stops, fills nothing, and says why when it meets a **CAPTCHA**, a **login wal
 
 ## UI primitives
 
-`public/components/job-hunt/jh-all.js` (one file per element beside it, shared helpers in `jh-primitives.js`) registers four light-DOM building blocks for the Job Hunt redesign ([#627](https://github.com/chrisrobison/u2/issues/627)). They are not yet used by any screen. Styles live in `job-hunt.css` (`.jh-*`, theme tokens only), and every string is set with `textContent` or an attribute, never as HTML.
+`public/components/job-hunt/jh-all.js` (one file per element beside it, shared helpers in `jh-primitives.js`) registers four light-DOM building blocks for the Job Hunt redesign ([#627](https://github.com/chrisrobison/u2/issues/627)). The Overview ([#629](https://github.com/chrisrobison/u2/issues/629)) is the first screen to use them. Styles live in `job-hunt.css` (`.jh-*`, theme tokens only), and every string is set with `textContent` or an attribute, never as HTML.
 
 - `<jh-workspace>`: main plus a collapsible detail region. Mark children `data-region="main"` and `data-region="detail"`. The `detail-collapsed` attribute hides the detail; `toggleDetail()`, `openDetail()` and `collapseDetail()` change it and fire `jh-detail-toggle` (`{ collapsed }`). Below 900px the detail is a drawer over the main region, starts closed, and closes on Escape.
 - `<jh-summary-card label value sublabel>`: a metric. A safe `href` (in-app `#`/`/` route or http(s)) makes the body a real link; `interactive` without `href` makes it a button firing `jh-card-activate`. Optional `tone`.
 - `<jh-status-label tone label>`: `tone` is `success`, `active`, `attention`, `danger`, `agent` or `neutral` (unknown means neutral). The text is always shown, with a distinct glyph, so meaning never rests on color alone.
 - `<jh-state kind title message>`: `kind` is `empty`, `loading` (polite `status`, `aria-busy`) or `error` (`alert`). On an error, `retry` shows a button (`retry-label`, default "Try again") that fires `jh-retry`.
 
-`themes.css` gains `--accent-success` (green) and `--accent-agent` (purple), each with a `-soft` surface, in all four theme blocks. The base colors meet WCAG AA as text on the card, page and panel surfaces and on their `-soft` fills in both themes. Interactive parts show a `:focus-visible` ring, spinners and drawer motion stop under `prefers-reduced-motion`, and touch targets are at least 44px on coarse pointers. Tests: `tests/job-hunt-primitives.test.js`.
+`themes.css` gains `--accent-success` (green) and `--accent-agent` (purple), each with a `-soft` surface, in all four theme blocks. The base colors meet WCAG AA as text on the card, page and panel surfaces and on their `-soft` fills in both themes. Interactive parts show a `:focus-visible` ring, spinners and drawer motion stop under `prefers-reduced-motion`, and touch targets are at least 44px on coarse pointers. Tests: `tests/job-hunt-primitives.test.js`, and for the Overview `tests/job-hunt-overview.test.js` (stage mapping, view model, API), `tests/job-hunt-overview-ui.test.js` (components) and `tests/e2e/job-hunt-overview.spec.js`.

@@ -5,6 +5,7 @@ import { getVaultDir } from '../../vault/vault-dir.js';
 import { newId } from '../../db/ids.js';
 import { getAgentAction } from '../../policy/policy-engine.js';
 import { openStore, huntDbPath } from '../../../mcp/jobs/hunt/storage/store.js';
+import { buildOverview } from '../../../mcp/jobs/hunt/overview.js';
 import { buildDashboard, moveJob, DEFAULT_WINDOW_DAYS } from '../../../mcp/jobs/hunt/dashboard.js';
 import { addInterview, updateInterview, deleteInterview, addTask, completeTask, uncompleteTask, snoozeTask } from '../../../mcp/jobs/hunt/schedule.js';
 import { addContact, updateContact, deleteContact, markContacted } from '../../../mcp/jobs/hunt/contacts.js';
@@ -78,6 +79,14 @@ export function registerJobHuntRoutes(router, { agent, toolRegistry, autopilot =
     const days = raw == null || raw === '' ? DEFAULT_WINDOW_DAYS : Number(raw);
     if (!Number.isInteger(days) || days < 1 || days > 365) return sendJson(res, 400, { error: 'days must be a whole number from 1 to 365' });
     sendJson(res, 200, withStore((store) => buildDashboard(store, { days })));
+  });
+
+  // The Overview view model (#629): summary metrics, pipeline stage counts, the attention queue, recent activity and the
+  // autopilot indicator. Additive: the dashboard endpoint above is unchanged.
+  router.get('/api/job-hunt/overview', async (req, res) => {
+    reconcileOutcomes();
+    const minimumScore = preferences().minimum_score;
+    sendJson(res, 200, withStore((store) => buildOverview(store, { autopilot: autopilot ? autopilot.status() : null, minimumScore })));
   });
 
   // The owner records the company's answer: screening, offer or rejected. Idempotent.

@@ -309,6 +309,36 @@ class Store {
       .map((row) => ({ id: row.id, jobId: row.job_id, at: row.at, fromStatus: row.from_status, toStatus: row.to_status }));
   }
 
+  /** Jobs first seen at or after `iso` (an exact count, not limited like listJobs). */
+  countFirstSeenSince(iso) {
+    return Number(this.db.prepare('SELECT COUNT(*) AS n FROM jobs WHERE first_seen_at >= ?').get(iso).n);
+  }
+
+  /** Jobs whose latest score is at least `min`. */
+  countScoredAtLeast(min) {
+    return Number(this.db.prepare('SELECT COUNT(*) AS n FROM job_scores WHERE score >= ?').get(min).n);
+  }
+
+  /**
+   * Ids of jobs that might need the owner: waiting on input or unconfirmed, or having an application attempt in one of
+   * `applicationStatuses` or a rejecting review. A superset: the caller decides with jobAttention().
+   */
+  listAttentionCandidateIds({ applicationStatuses, limit = 2000 }) {
+    const marks = (list) => list.map(() => '?').join(',');
+    return this.db.prepare(`SELECT id FROM jobs WHERE status IN ('needs_input', 'uncertain')
+        OR id IN (SELECT job_id FROM applications WHERE status IN (${marks(applicationStatuses)}))
+        OR id IN (SELECT job_id FROM reviews WHERE decision = 'reject')
+      ORDER BY updated_at DESC LIMIT ?`).all(...applicationStatuses, limit).map((row) => row.id);
+  }
+
+  /** Newest first: status events into one of `statuses`, or events of one of `types`, with the job's company and role. */
+  listRecentActivity({ statuses, types, limit = 20 }) {
+    const marks = (list) => list.map(() => '?').join(',');
+    return this.db.prepare(`SELECT e.id, e.job_id, e.at, e.type, e.from_status, e.to_status, j.company, j.role FROM application_events e JOIN jobs j ON j.id = e.job_id
+      WHERE (e.type = 'status' AND e.to_status IN (${marks(statuses)})) OR e.type IN (${marks(types)}) ORDER BY e.id DESC LIMIT ?`).all(...statuses, ...types, limit)
+      .map((row) => ({ id: row.id, jobId: row.job_id, at: row.at, type: row.type, fromStatus: row.from_status, toStatus: row.to_status, company: row.company, role: row.role }));
+  }
+
   /** All artifacts of the given kinds, newest first, with their job. */
   listArtifactsByKind(kinds) {
     const marks = kinds.map(() => '?').join(',');
