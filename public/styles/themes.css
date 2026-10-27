@@ -64,6 +64,10 @@
   --accent-pending-soft: #F5E7CC;
   --accent-danger: #A8402F;
   --accent-danger-soft: #F5DED9;
+  --accent-success: #166A3C;
+  --accent-success-soft: #DDF1E4;
+  --accent-agent: #6A45C2;
+  --accent-agent-soft: #ECE5F8;
   /* --accent-strong: accent for fills and for text on surfaces; --on-accent:
      the text that sits on an accent fill. --accent-active is a mid tone for
      borders and dots and does not reach WCAG AA as text or as a white-text
@@ -96,6 +100,10 @@
     --accent-pending-soft: #423619;
     --accent-danger: #D97C6B;
     --accent-danger-soft: #3F241F;
+    --accent-success: #5FCB8A;
+    --accent-success-soft: #1B3A2A;
+    --accent-agent: #B39AF5;
+    --accent-agent-soft: #33284F;
     --accent-strong: #7BA4F7;
     --on-accent: #141828;
     color-scheme: dark;
@@ -125,6 +133,10 @@
   --accent-pending-soft: #F5E7CC;
   --accent-danger: #A8402F;
   --accent-danger-soft: #F5DED9;
+  --accent-success: #166A3C;
+  --accent-success-soft: #DDF1E4;
+  --accent-agent: #6A45C2;
+  --accent-agent-soft: #ECE5F8;
   --accent-strong: #2457C5;
   --on-accent: #FFFFFF;
   color-scheme: light;
@@ -152,6 +164,10 @@
   --accent-pending-soft: #423619;
   --accent-danger: #D97C6B;
   --accent-danger-soft: #3F241F;
+  --accent-success: #5FCB8A;
+  --accent-success-soft: #1B3A2A;
+  --accent-agent: #B39AF5;
+  --accent-agent-soft: #33284F;
   --accent-strong: #7BA4F7;
   --on-accent: #141828;
   color-scheme: dark;

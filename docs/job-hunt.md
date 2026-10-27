@@ -603,3 +603,14 @@ It stops, fills nothing, and says why when it meets a **CAPTCHA**, a **login wal
 **Localhost only.** The channel is served only to this machine (see above and [SECURITY.md](../SECURITY.md)), and the extension refuses any other server address. It cannot reach U2OS on another computer, and it does not need to. Revoke a browser with `job extension revoke <id>`; "Forget this pairing" in the side panel only forgets the token on the browser side.
 
 **Tests.** `tests/extension.test.js` covers the pure logic and asserts that the extension reads every fixture form exactly as the Playwright driver does (same schema, same hash). `tests/e2e/chrome-extension.spec.js` loads the unpacked extension into Chromium against the `tests/fixtures/apply-forms.js` forms and a real server (it skips where the browser cannot load extensions).
+
+## UI primitives
+
+`public/components/job-hunt/jh-all.js` (one file per element beside it, shared helpers in `jh-primitives.js`) registers four light-DOM building blocks for the Job Hunt redesign ([#627](https://github.com/chrisrobison/u2/issues/627)). They are not yet used by any screen. Styles live in `job-hunt.css` (`.jh-*`, theme tokens only), and every string is set with `textContent` or an attribute, never as HTML.
+
+- `<jh-workspace>`: main plus a collapsible detail region. Mark children `data-region="main"` and `data-region="detail"`. The `detail-collapsed` attribute hides the detail; `toggleDetail()`, `openDetail()` and `collapseDetail()` change it and fire `jh-detail-toggle` (`{ collapsed }`). Below 900px the detail is a drawer over the main region, starts closed, and closes on Escape.
+- `<jh-summary-card label value sublabel>`: a metric. A safe `href` (in-app `#`/`/` route or http(s)) makes the body a real link; `interactive` without `href` makes it a button firing `jh-card-activate`. Optional `tone`.
+- `<jh-status-label tone label>`: `tone` is `success`, `active`, `attention`, `danger`, `agent` or `neutral` (unknown means neutral). The text is always shown, with a distinct glyph, so meaning never rests on color alone.
+- `<jh-state kind title message>`: `kind` is `empty`, `loading` (polite `status`, `aria-busy`) or `error` (`alert`). On an error, `retry` shows a button (`retry-label`, default "Try again") that fires `jh-retry`.
+
+`themes.css` gains `--accent-success` (green) and `--accent-agent` (purple), each with a `-soft` surface, in all four theme blocks. The base colors meet WCAG AA as text on the card, page and panel surfaces and on their `-soft` fills in both themes. Interactive parts show a `:focus-visible` ring, spinners and drawer motion stop under `prefers-reduced-motion`, and touch targets are at least 44px on coarse pointers. Tests: `tests/job-hunt-primitives.test.js`.
