@@ -70,7 +70,7 @@ function card(store, job, at, ready = false) {
  * interview-stage status after that, and the first offer. Event-derived, so
  * it works for any job whose transitions were recorded.
  */
-function milestones(events) {
+export function milestones(events) {
   const byJob = new Map();
   for (const event of events) {
     const m = byJob.get(event.jobId) ?? { sentId: null, sentAt: null, replyAt: null, interviewAt: null, offerAt: null, lastAt: null };
