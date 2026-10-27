@@ -358,3 +358,7 @@
 .jh-board__item:hover > .jh-rowmenu .jh-rowmenu__btn:not(:disabled), .jh-board__item:focus-within > .jh-rowmenu .jh-rowmenu__btn:not(:disabled), .jh-board__item > .jh-rowmenu:has([aria-expanded="true"]) .jh-rowmenu__btn { opacity: 1; }
 @media (hover: none) { .jh-board__item > .jh-rowmenu .jh-rowmenu__btn:not(:disabled) { opacity: 1; } }
 .jh-board__item .jh-card__who { padding-right: 6rem; }
+
+/* Job Leads sort control */
+.jh-leads-sort { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-3) 0; }
+.jh-leads-sort label { font-size: var(--text-sm); font-weight: 600; color: var(--text-secondary); }

@@ -1,6 +1,6 @@
 import { escapeHtml, formatDateTime } from './util.js';
 import * as api from '../services/api.js';
-import { mergeJobs, needsOwner } from './job-hunt/leads-filter.js';
+import { mergeJobs, needsOwner, sortJobs, SORTS } from './job-hunt/leads-filter.js';
 import './job-hunt/u2-job-menu.js';
 
 // The job hunt pipeline (docs/job-hunt.md): jobs discovered on Hacker News,
@@ -23,16 +23,21 @@ export class U2JobHunt extends HTMLElement {
     super();
     this._data = null;
     this._filter = 'ready';
+    this._sort = 'score';
+    this._dir = null;
+    try { const saved = JSON.parse(localStorage.getItem('u2.jobLeads.sort') || 'null'); if (SORTS.some(([id]) => id === saved?.sort)) { this._sort = saved.sort; this._dir = saved.dir === 'asc' || saved.dir === 'desc' ? saved.dir : null; } } catch { /* no saved choice */ }
     this._notice = null;
     this._busy = false;
     this._autopilot = null;
     this._confirmLive = false;
     this._onClick = this._onClick.bind(this);
+    this._onChange = this._onChange.bind(this);
     this._onEvent = (event) => { if (/^agent\.action\./.test(event.detail?.type || '')) this._load(); };
   }
 
   connectedCallback() {
     this.addEventListener('click', this._onClick);
+    this.addEventListener('change', this._onChange);
     // A listing's menu changed the job (rejected, pre-filled, ...): show what happened and reload the list.
     this.addEventListener('jh-job-updated', (event) => { if (event.detail?.notice) this._notice = event.detail.notice.text; this._load(); });
     window.addEventListener('u2-event', this._onEvent);
@@ -43,9 +48,14 @@ export class U2JobHunt extends HTMLElement {
 
   disconnectedCallback() {
     this.removeEventListener('click', this._onClick);
+    this.removeEventListener('change', this._onChange);
     window.removeEventListener('u2-event', this._onEvent);
     clearInterval(this._poll);
   }
+
+  _direction() { return this._dir ?? SORTS.find(([id]) => id === this._sort)[2]; }
+
+  _saveSort() { try { localStorage.setItem('u2.jobLeads.sort', JSON.stringify({ sort: this._sort, dir: this._dir })); } catch { /* not saved */ } }
 
   _menuActive() { return [...this.querySelectorAll('u2-job-menu')].some((menu) => menu.active); }
 
@@ -64,6 +74,10 @@ export class U2JobHunt extends HTMLElement {
   }
 
   _visible() {
+    return sortJobs(this._filtered(), this._sort, this._dir);
+  }
+
+  _filtered() {
     const jobs = this._data.jobs;
     switch (this._filter) {
       case 'ready': return jobs.filter((job) => job.draft && !job.draft.needsInput.length && !active(job) && !['contacted', 'applied', 'interview', 'rejected'].includes(job.status));
@@ -89,6 +103,12 @@ export class U2JobHunt extends HTMLElement {
       ${this._autopilotPanel()}
       ${this._notice ? `<div class="load-error" role="status">${escapeHtml(this._notice)}</div>` : ''}
       <div class="folder-toggle" role="group" aria-label="Filter">${FILTERS.map(([value, label]) => `<button type="button" data-filter="${value}" class="${value === this._filter ? 'is-active' : ''}" aria-pressed="${value === this._filter}">${escapeHtml(label)}</button>`).join('')}</div>
+      <div class="jh-leads-sort" role="group" aria-label="Sort">
+        <label for="jh-leads-sort">Sort by</label>
+        <select id="jh-leads-sort" class="jh-select" data-sort>${SORTS.map(([id, label]) => `<option value="${id}" ${id === this._sort ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}</select>
+        <button type="button" class="btn" data-sort-dir aria-label="Sort direction: ${this._direction() === 'asc' ? 'ascending' : 'descending'}. Click to reverse." title="Reverse the order">${this._direction() === 'asc' ? '↑ Ascending' : '↓ Descending'}</button>
+        <span class="trigger-row__meta">${shown.length} shown</span>
+      </div>
       ${shown.length ? `<div class="trigger-list">${shown.map((job) => this._card(job)).join('')}</div>` : `<div class="empty-state">${jobs.length ? 'Nothing here.' : 'No scored jobs yet. Run: npm run u2 -- job discover hn, then job score.'}</div>`}`;
     // Each listing gets its action menu (the cards are plain HTML, so the menus are attached afterwards).
     const byId = new Map(shown.map((job) => [job.id, job]));
@@ -157,7 +177,15 @@ export class U2JobHunt extends HTMLElement {
       </div></article>`;
   }
 
+  _onChange(event) {
+    const select = event.target.closest('[data-sort]');
+    if (!select) return;
+    this._sort = select.value; this._dir = null; this._saveSort(); this._render();
+    this.querySelector('[data-sort]')?.focus();
+  }
+
   async _onClick(event) {
+    if (event.target.closest('[data-sort-dir]')) { this._dir = this._direction() === 'asc' ? 'desc' : 'asc'; this._saveSort(); this._render(); this.querySelector('[data-sort-dir]')?.focus(); return; }
     const filter = event.target.closest('[data-filter]');
     if (filter) { this._filter = filter.dataset.filter; this._notice = null; this._render(); return; }
     if (this._busy) return;
