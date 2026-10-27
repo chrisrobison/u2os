@@ -188,6 +188,8 @@ A route whose tool is not available is disabled, and the API says why; there is 
 
 Outcomes are reconciled as soon as an action completes, fails or is rejected, and again whenever the page loads, so approved sends move jobs to `contacted` (with a follow-up date) without stopping the server. The same is available over the owner API: `GET /api/job-hunt/jobs[/<id>]`, `POST /api/job-hunt/jobs/<id>/send` with `{ "via": "gmail" | "apple_mail" | "apple_mail_draft", "force": false }`, and `POST /api/job-hunt/reconcile`. `job send` and `job reconcile` on the command line remain for the Gmail route when the server is stopped.
 
+**Sorting.** *Sort by* above the list orders every tab by Score (default), Newest (when it was first seen), Company, Role or Status; the arrow button reverses it. Jobs with no value for the key go last either way, ties keep best-score-first order, and the choice is remembered in this browser.
+
 ## The job details page
 
 Click any job in Job Leads, the autopilot's *Needs you* and activity lists, the applications ledger, or *Open full page* in the dashboard's details panel to open `#/job-hunt/jobs/<job-id>`. The URL can be bookmarked and reloaded. The page shows everything U2OS has stored for the job: the posting text and links, the score and why, every application attempt (the planned answers, what was left unanswered, the outcome and its screenshots), every review (failed checks, blocking and minor concerns, notes), the materials and email, contacts, tasks, interviews and the history.
