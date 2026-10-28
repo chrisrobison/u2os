@@ -75,9 +75,9 @@ To re-open a job, edit its status or delete its file.
 
 `#/job-hunt` opens the **Overview** ([#629](https://github.com/chrisrobison/u2/issues/629), part of #626). It answers "what needs me, and how is the search going?" and keeps the pipeline board below it, so nothing was removed. Every number comes from one call, `GET /api/job-hunt/overview` (owner only, no parameters). The code is `mcp/jobs/hunt/overview.js` (view model) and `public/components/job-hunt/u2-job-overview.js` with `jh-overview-parts.js` and `jh-overview-model.js` (page).
 
-- **Summary bar**: jobs discovered (every job; "+N this week" is jobs first seen in the last 7 days), strong matches, need your attention, applications submitted, employer responses and interviewing. Each card links to the filtered Job Leads list. A value the server cannot give is shown as "—", never as zero.
+- **Summary bar**: jobs discovered (every job; "+N this week" is jobs first seen in the last 7 days), strong matches, need your attention, applications submitted, employer responses and interviewing. Each card links to the matching Opportunities table (see below), so the table total equals the number on the card. A value the server cannot give is shown as "—", never as zero.
 - **Autopilot**: *mode* (Paused, Dry run, Live, from `autopilot.yaml`) is shown apart from *status* (Idle, Running cycle, Degraded when the last cycle reported errors, Blocked when the settings file is invalid), with the last cycle time and a link to the existing autopilot controls on Job Leads. Switching mode stays there; the Overview changes nothing.
-- **Application Pipeline**: Discovered, Qualified, Preparing, Needs Input, Submitted, Responded, Interviewing, Offer. Clicking a stage opens the Job Leads list filtered to it.
+- **Application Pipeline**: Discovered, Qualified, Preparing, Needs Input, Submitted, Responded, Interviewing, Offer. Clicking a stage opens the Opportunities table filtered to that stage; its total equals the stage count (Needs Input opens the Needs Input tab).
 - **Needs Your Attention**: one row per job (company, role, why, fit score, age or interview deadline) with a **Review** button that opens the job page; for an unanswered application question it opens that question (`#/job-hunt/jobs/<id>?question=<answer key>`, which scrolls to and focuses its input in the answers form).
 - **Recent Activity**: the newest meaningful events, each linking to its job. "Application ledger" opens `#/applications`. There is no cross-job event history page, so the per-job history on the job page is the full history.
 - **Pipeline board and details**: the previous dashboard, unchanged, below the Overview.
@@ -106,13 +106,46 @@ A job is counted once, in the stage its **current** status belongs to. The stage
 
 Built from `jobAttention()` (`attention.js`) for jobs waiting on input, unconfirmed, with a stuck application attempt or a rejecting review, one item per job showing its most severe reason. The queue is sorted by **urgency** (a job with an interview in the next 7 days first; this is the only deadline U2OS stores), then **opportunity value** (the fit score; unscored last), then **blocking severity** (3: a possibly sent application nobody has confirmed, 2: U2OS cannot go on and you must act yourself or change settings, 1: you can unblock it with an answer), then the item waiting longest. The payload carries the top 20 and the full `count`. `question` (`{ key, label }`) is set only for unanswered application questions. Other reasons, such as a CAPTCHA, link to the job page, which shows the reason.
 
-### Links into Job Leads
+### Links into the Opportunities table and Job Leads
 
-Job Leads reads `#/job-hunt/leads?filter=<ready|needs_input|contacted|strong|all>` and `?statuses=a,b,c` (keep only jobs in those statuses; shown with a "Show all" button). The Overview uses them for its cards and stages. Limit: Job Leads lists the 150 best jobs scored 60 or more plus every job that needs you, so a status filter there can show fewer jobs than the Overview counts (for example unscored discovered jobs). The Opportunities table (Phase 3) is meant to replace that list.
+The Overview's cards and stages open `#/job-hunt/opportunities` with a query that reproduces the number: *Jobs discovered* the whole table, *Strong matches* `?min_score=80`, *Need your attention* `?filter=needs_input`, *Submitted*, *Responded* and *Interviewing* an explicit `?statuses=` list, and each stage `?stage=<id>`. Two caveats. *Applications submitted* and *Employer responses* are event-derived (jobs ever sent or answered), while the table can only filter on a job's current status, so a job that has since been withdrawn or closed counts on the card but not in the table. Everything else matches exactly (a test compares them on seeded data).
+
+Job Leads still reads `#/job-hunt/leads?filter=<ready|needs_input|contacted|strong|all>` and `?statuses=a,b,c` (keep only jobs in those statuses; shown with a "Show all" button), so old links and bookmarks keep working. Job Leads lists the 150 best jobs scored 60 or more plus every job that needs you, so it can show fewer jobs than the Overview counts; the Opportunities table has no such limit.
 
 ### Refresh
 
 The server publishes no `jobs.*` events (the only `jobs.` names are MCP tool names; the bus carries `agent.action.*` for approvals and sends). The Overview therefore refreshes on `agent.action.*` events (debounced) and polls every 30 seconds. Responses that arrive out of order are ignored, and a failed refresh keeps the last data under a "Showing the last data we loaded" notice with a Refresh button.
+
+## Opportunities
+
+`#/job-hunt/opportunities` ([#631](https://github.com/chrisrobison/u2/issues/631), part of #626) is a compact, searchable table of every job in the store. The server does the work: `GET /api/job-hunt/opportunities` (owner only, additive; `/jobs` is unchanged) filters, searches, sorts and pages in SQL, so the browser only ever holds one page. The code is `mcp/jobs/hunt/opportunities.js` (query), `public/components/job-hunt/u2-job-opportunities.js` (page) with `jh-opportunities-parts.js` and `jh-opportunities-model.js`.
+
+**Columns.** Select checkbox, company, role (a link to the job page), location (stored locations, plus "Remote" when the listing says so), compensation (the listing's own text, for example `$180K - $220K`), fit score, status, posted date and the same per-listing action menu as Job Leads. A value U2OS does not have is shown as "—" and is never made up: a job with no score shows "—" (no "0"), a job whose source gave no posted date shows "—". *Fit score* is the job's latest overall score as stored; there is no breakdown column. *Posted* is the latest `posted_at` of any source that saw the job (Hacker News and ATS sources record one; some do not).
+
+**Quick filters (tabs), each with a count.** The counts apply the current search, fit floor, remote switch and stage/status scope but not the tab itself, so the selected tab's count always equals the table total.
+
+| Tab | Jobs |
+| --- | --- |
+| All | every job |
+| Needs Input | the same set as the Overview's Needs Your Attention queue (`attentionItems()` in `overview.js`, which `buildAttention()` also uses): waiting on an answer, an unconfirmed or uncertain application, a rejecting review |
+| Ready to Apply | Job Leads' "Ready to send" (a prepared `email.json` draft with nothing left to ask you and no application email in flight), kept to jobs still before submission (stages Discovered, Qualified, Preparing) and not waiting on you |
+| Applied | the Overview's Submitted stage: `applied`, `contacted`, `followup_due` |
+| Responded | the employer has answered: the Responded, Interviewing and Offer stages (`screening`, `interview`, `offer`) |
+| Archived | left the pipeline on purpose: `rejected`, `withdrawn`, `closed`, `skipped` (`error` and `uncertain` appear under All; `uncertain` is also in Needs Input) |
+
+Other query parameters: `stage=<discovered|qualified|preparing|needs_input|submitted|responded|interviewing|offer>` (the Overview stage mapping, `overviewStageOf()`), `statuses=a,b` (current status in the list), `min_score=0-100` (latest score at least this; unscored jobs are excluded), `remote=1`, `q=<search>`, `sort=<fit|company|role|status|posted|seen>` with `dir=asc|desc` (fit, posted and seen default to newest/best first, the rest A-Z; status sorts alphabetically by its name), `page` (from 1) and `limit` (default 25, at most 100). Jobs with no value for the sort key go last in either direction and ties break by job id, so pages never repeat or skip a job. An unknown value is `400`; numbers are clamped.
+
+**Search** matches every word (AND) as a case-insensitive substring of the company, the role, any stored location or any stored skill/technology. It does not search the posting text, salary, contact details or notes: those columns are not indexed and are not what a table row is about. `%`, `_` and `\` are literal characters (LIKE wildcards are escaped) and all values are bound parameters. At several thousand jobs a search is a scan of the jobs table, which `tests/job-hunt-opportunities.test.js` measures; no new index was added, because no existing index could serve a substring match and the schema is left unchanged for existing installs.
+
+**Response.** `{ items, total, page, limit, counts, query, strongMatchScore }`. `items` carry `id, company, role, locations, remote, compensation, skills, status, stage, needsInput, fit, fitLabel, postedAt, firstSeenAt`, with `null`/`[]` for anything missing; they do not include posting text or contact data. A page is at most 100 rows.
+
+**Status labels** (friendly text and tone for the real statuses): discovered *Discovered*, scored *Scored*, researching *Researching*, qualified *Qualified*, materials_generated *Ready to apply*, applying *Applying*, needs_input *Needs input*, applied *Applied*, contacted *Emailed*, followup_due *Follow-up due*, screening *Recruiter screen*, interview *Interviewing*, offer *Offer*, rejected *Rejected*, withdrawn *Withdrawn*, closed *Closed*, skipped *Skipped*, error *Error*, uncertain *Outcome unknown*. A job in the Needs Input set whose status does not itself say so shows *Needs input*.
+
+**In the page.** The tab, sort, search, fit floor, remote switch, stage/status scope and page number live in the URL hash (`?filter=…&sort=…&dir=…&q=…&page=…`), so a view can be bookmarked and the back button works (search replaces rather than adds history entries). Search is debounced; an answer that arrives after a newer request is ignored; loading, empty and error states use `jh-state`, and a failed refresh keeps the last rows.
+
+**Keyboard and selection.** The table is an ARIA grid with one tab stop (roving tabindex over rows): Up/Down/Home/End move between rows, Space toggles the row's checkbox, Enter opens the job page (`#/job-hunt/jobs/<id>`, as do double-click and the role link). The header checkbox selects every row on the page. Clicking elsewhere on a row marks it as the current row (kept across refreshes, paging and, for the session, reloads) and fires a bubbling `jh-opportunity-select` event (`detail: { jobId, job }`) for the detail panel planned in Phase 4. Selection is cleared when the tab, search or filters change, and kept when only the sort or page changes.
+
+**Bulk actions.** Only *Reject selected*, which asks for confirmation and then calls the existing `POST /api/job-hunt/jobs/<id>/status` with `rejected` once per job (the call a row's Reject uses, so the server's rules decide: a job that is at `offer`, say, is refused and stays selected with the reason shown). No bulk endpoint was added and there is no bulk "skip": no existing endpoint marks a job skipped.
 
 ## The dashboard
 

@@ -155,6 +155,14 @@ test.describe.serial('navigation shell (#15)', () => {
       },
     },
     {
+      hash: '#/job-hunt/opportunities',
+      async assert() {
+        await expect(page.locator('u2-job-opportunities h1')).toHaveText('Opportunities');
+        await expect(page.locator('u2-job-dashboard')).toHaveCount(0);
+        await expect(page.locator('u2-job-hunt')).toHaveCount(0);
+      },
+    },
+    {
       hash: '#/job-hunt/leads',
       async assert() {
         await expect(workspaceTitle('Job Leads')).toBeVisible();
@@ -269,7 +277,7 @@ test.describe.serial('navigation shell (#15)', () => {
     const checkOnly = async (activeHash) => {
       for (const [hash] of [
         ['#/home'], ['#/briefing'], ['#/memory'], ['#/mail'], ['#/calendar'], ['#/tasks'],
-        ['#/projects'], ['#/dashboards'], ['#/activity'], ['#/operations'], ['#/routines'], ['#/applications'], ['#/job-hunt'], ['#/job-hunt/leads'], ['#/automation'], ['#/vault'], ['#/diagnostics'],
+        ['#/projects'], ['#/dashboards'], ['#/activity'], ['#/operations'], ['#/routines'], ['#/applications'], ['#/job-hunt'], ['#/job-hunt/opportunities'], ['#/job-hunt/leads'], ['#/automation'], ['#/vault'], ['#/diagnostics'],
         ['#/connectors'], ['#/devices'], ['#/voice'],
       ]) {
         const link = navLink(hash);
@@ -303,7 +311,7 @@ test.describe.serial('navigation shell (#15)', () => {
     for (const id of ['addons', 'settings', 'system']) await expect(groupToggle(id)).toHaveAttribute('aria-expanded', 'false');
 
     // Every route stays reachable from exactly one group.
-    await expect(page.locator('u2-nav a[data-route]')).toHaveCount(26);
+    await expect(page.locator('u2-nav a[data-route]')).toHaveCount(27);
     await expect(navLink('#/model')).toBeHidden();
     await expect(navLink('#/mail')).toBeVisible();
   });
@@ -346,8 +354,8 @@ test.describe.serial('navigation shell (#15)', () => {
     await page.evaluate(() => localStorage.setItem('u2-nav-groups', JSON.stringify({ addons: true, settings: true, system: true })));
     await page.reload();
     const links = page.locator('u2-nav a[data-route]');
-    await expect(links).toHaveCount(26);
-    await expect(page.locator('u2-nav a[data-route] .u2-icon[aria-hidden="true"]')).toHaveCount(26);
+    await expect(links).toHaveCount(27);
+    await expect(page.locator('u2-nav a[data-route] .u2-icon[aria-hidden="true"]')).toHaveCount(27);
     // The accessible name is the label alone, not the glyph.
     await expect(page.getByRole('link', { name: 'Mail', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Setup wizard', exact: true })).toBeVisible();

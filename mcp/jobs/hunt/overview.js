@@ -89,6 +89,12 @@ function draftNeedsInput(store, jobId) {
  * `question` names the outstanding application question the Review link opens.
  */
 export function buildAttention(store, { now = new Date() } = {}) {
+  const items = attentionItems(store, { now });
+  return { count: items.length, items: items.slice(0, ATTENTION_LIMIT) };
+}
+
+/** Every job that needs the owner, most urgent first (not limited to the top 20). The one definition of "Needs Input". */
+export function attentionItems(store, { now = new Date() } = {}) {
   const nowMs = now.getTime();
   const soonest = new Map();
   for (const interview of store.listInterviews({ from: new Date(nowMs - 4 * 3_600_000).toISOString(), to: new Date(nowMs + INTERVIEW_URGENT_DAYS * DAY).toISOString() })) {
@@ -119,7 +125,7 @@ export function buildAttention(store, { now = new Date() } = {}) {
     });
   }
   items.sort((a, b) => b.urgency - a.urgency || (b.score ?? -1) - (a.score ?? -1) || b.severity - a.severity || (a.since < b.since ? -1 : a.since > b.since ? 1 : 0) || (a.jobId < b.jobId ? -1 : 1));
-  return { count: items.length, items: items.slice(0, ATTENTION_LIMIT) };
+  return items;
 }
 
 // ---- recent activity ----------------------------------------------------------

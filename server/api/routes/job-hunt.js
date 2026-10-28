@@ -6,6 +6,7 @@ import { newId } from '../../db/ids.js';
 import { getAgentAction } from '../../policy/policy-engine.js';
 import { openStore, huntDbPath } from '../../../mcp/jobs/hunt/storage/store.js';
 import { buildOverview } from '../../../mcp/jobs/hunt/overview.js';
+import { queryOpportunities } from '../../../mcp/jobs/hunt/opportunities.js';
 import { buildDashboard, moveJob, DEFAULT_WINDOW_DAYS } from '../../../mcp/jobs/hunt/dashboard.js';
 import { addInterview, updateInterview, deleteInterview, addTask, completeTask, uncompleteTask, snoozeTask } from '../../../mcp/jobs/hunt/schedule.js';
 import { addContact, updateContact, deleteContact, markContacted } from '../../../mcp/jobs/hunt/contacts.js';
@@ -87,6 +88,17 @@ export function registerJobHuntRoutes(router, { agent, toolRegistry, autopilot =
     reconcileOutcomes();
     const minimumScore = preferences().minimum_score;
     sendJson(res, 200, withStore((store) => buildOverview(store, { autopilot: autopilot ? autopilot.status() : null, minimumScore })));
+  });
+
+  // The Opportunities table (#631): one filtered, searched, sorted and paged list with a count per quick filter. Additive.
+  router.get('/api/job-hunt/opportunities', async (req, res) => {
+    reconcileOutcomes();
+    try {
+      sendJson(res, 200, withStore((store) => queryOpportunities(store, req.query ?? {})));
+    } catch (error) {
+      if (error.code !== 'BAD_INPUT') throw error;
+      sendJson(res, 400, { error: error.message });
+    }
   });
 
   // The owner records the company's answer: screening, offer or rejected. Idempotent.

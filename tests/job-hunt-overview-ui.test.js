@@ -97,7 +97,7 @@ function payload(over = {}) {
 const NOW = Date.parse('2026-10-27T12:00:00.000Z');
 
 test('the model helpers format counts, links and deadlines without inventing values', async () => {
-  const { formatCount, jobHref, filterHref, until } = await import('../public/components/job-hunt/jh-overview-model.js');
+  const { formatCount, jobHref, filterHref, stageHref, until } = await import('../public/components/job-hunt/jh-overview-model.js');
   assert.equal(formatCount(4059), '4,059');
   assert.equal(formatCount(0), '0');
   assert.equal(formatCount(null), '—');
@@ -106,9 +106,13 @@ test('the model helpers format counts, links and deadlines without inventing val
   assert.equal(jobHref(JOB, { key: 'custom:why' }), `#/job-hunt/jobs/${JOB}?question=custom%3Awhy`);
   assert.equal(jobHref('javascript:alert(1)'), null);
   assert.equal(jobHref(null), null);
-  assert.equal(filterHref({ filter: 'strong', statuses: null }), '#/job-hunt/leads?filter=strong');
-  assert.equal(filterHref({ filter: null, statuses: ['applied', 'contacted'] }), '#/job-hunt/leads?statuses=applied,contacted');
-  assert.equal(filterHref({ flag: true, statuses: [] }), '#/job-hunt/leads?filter=needs_input');
+  assert.equal(filterHref({ filter: 'strong', statuses: null }), '#/job-hunt/opportunities?min_score=80');
+  assert.equal(filterHref({ filter: 'strong', statuses: null }, 85), '#/job-hunt/opportunities?min_score=85');
+  assert.equal(filterHref({ filter: null, statuses: ['applied', 'contacted'] }), '#/job-hunt/opportunities?statuses=applied,contacted');
+  assert.equal(filterHref({ flag: true, statuses: [] }), '#/job-hunt/opportunities?filter=needs_input');
+  assert.equal(filterHref({ filter: 'all', statuses: null }), '#/job-hunt/opportunities');
+  assert.equal(stageHref({ id: 'submitted', flag: false }), '#/job-hunt/opportunities?stage=submitted');
+  assert.equal(stageHref({ id: 'needs_input', flag: true }), '#/job-hunt/opportunities?filter=needs_input');
   assert.equal(until('2026-10-29T12:00:00.000Z', NOW), 'in 2d');
   assert.equal(until('2026-10-27T15:00:00.000Z', NOW), 'in 3h');
   assert.equal(until('2026-10-27T11:00:00.000Z', NOW), 'now');
@@ -129,7 +133,7 @@ test('the summary bar shows every metric as a link to its filtered list', async 
   const cards = byTag(bar, 'jh-summary-card');
   assert.deepEqual(cards.map((c) => c.getAttribute('label')), ['Jobs discovered', 'Strong matches', 'Need your attention', 'Applications submitted', 'Employer responses', 'Interviewing']);
   assert.deepEqual(cards.map((c) => c.getAttribute('value')), ['4,059', '186', '2', '8', '0', '1']);
-  assert.deepEqual(cards.map((c) => c.getAttribute('href')), ['#/job-hunt/leads?filter=all', '#/job-hunt/leads?filter=strong', '#/job-hunt/leads?filter=needs_input', '#/job-hunt/leads?statuses=applied,contacted', '#/job-hunt/leads?statuses=screening,interview', '#/job-hunt/leads?statuses=interview']);
+  assert.deepEqual(cards.map((c) => c.getAttribute('href')), ['#/job-hunt/opportunities', '#/job-hunt/opportunities?min_score=80', '#/job-hunt/opportunities?filter=needs_input', '#/job-hunt/opportunities?statuses=applied,contacted', '#/job-hunt/opportunities?statuses=screening,interview', '#/job-hunt/opportunities?statuses=interview']);
   assert.equal(cards[0].getAttribute('sublabel'), '+312 this week');
   const unknown = summaryBar(payload({ metrics: [{ id: 'strong', label: 'Strong matches', value: null, sub: '', filter: 'strong', statuses: null }] }));
   assert.equal(byTag(unknown, 'jh-summary-card')[0].getAttribute('value'), '—');
@@ -142,8 +146,7 @@ test('the pipeline lists the eight stages in order, links each to a filtered lis
   assert.deepEqual(stages.map((s) => s.getAttribute('data-stage')), ['discovered', 'qualified', 'preparing', 'needs_input', 'submitted', 'responded', 'interviewing', 'offer']);
   assert.deepEqual(stages.map((s) => textOf(s.children[0].children[0])), ['4,000', '40', '12', '2', '8', '2', '1', '0']);
   const hrefs = stages.map((s) => s.children[0].getAttribute('href'));
-  assert.equal(hrefs[3], '#/job-hunt/leads?filter=needs_input');
-  assert.equal(hrefs[4], '#/job-hunt/leads?statuses=applied');
+  assert.deepEqual(hrefs, ['discovered', 'qualified', 'preparing'].map((id) => `#/job-hunt/opportunities?stage=${id}`).concat(['#/job-hunt/opportunities?filter=needs_input'], ['submitted', 'responded', 'interviewing', 'offer'].map((id) => `#/job-hunt/opportunities?stage=${id}`)));
   assert.ok(stages[3].hasAttribute('data-flag'), 'Needs Input is marked as a flag');
   assert.ok(!stages[0].hasAttribute('data-flag'));
   const text = textOf(node);
