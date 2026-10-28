@@ -589,6 +589,7 @@ export function getJobHuntJobs(params = {}) { return request(`/api/job-hunt/jobs
 export function getJobHuntJob(id) { return request(`/api/job-hunt/jobs/${encodeURIComponent(id)}`); }
 // The job-hunt dashboard (docs/job-hunt.md): pipeline stages, analytics and resume versions in one call.
 export function getJobHuntOverview() { return request('/api/job-hunt/overview'); }
+export function getJobHuntOpportunities(params = {}) { return request(`/api/job-hunt/opportunities${qs(params)}`); }
 export function getJobHuntDashboard(params = {}) { return request(`/api/job-hunt/dashboard${qs(params)}`); }
 // The owner records the company's answer: screening, offer or rejected.
 export function moveJobHuntJob(id, status) { return request(`/api/job-hunt/jobs/${encodeURIComponent(id)}/status`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }); }

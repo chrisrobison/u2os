@@ -1,5 +1,5 @@
 import { el, monogram, relTime } from './jh-util.js';
-import { EXECUTION_LABELS, METRIC_TONES, MODE_LABELS, STAGE_NOTE, STAGE_TONES, filterHref, formatCount, jobHref, until } from './jh-overview-model.js';
+import { EXECUTION_LABELS, METRIC_TONES, MODE_LABELS, STAGE_NOTE, STAGE_TONES, filterHref, formatCount, jobHref, stageHref, until } from './jh-overview-model.js';
 import './jh-all.js';
 
 // The sections of the Job Hunt Overview (#629), each a function from the
@@ -11,7 +11,7 @@ const card = (title, ...children) => el('section', { class: 'jh-panel jh-ov__pan
 
 export function summaryBar(overview) {
   return el('div', { class: 'jh-ov__summary', role: 'group', 'aria-label': 'Job hunt summary' }, overview.metrics.map((metric) => {
-    const node = el('jh-summary-card', { label: metric.label, value: formatCount(metric.value), sublabel: metric.sub ?? '', href: filterHref(metric), tone: METRIC_TONES[metric.id] ?? 'neutral', 'data-metric': metric.id });
+    const node = el('jh-summary-card', { label: metric.label, value: formatCount(metric.value), sublabel: metric.sub ?? '', href: filterHref(metric, overview.strongMatchScore), tone: METRIC_TONES[metric.id] ?? 'neutral', 'data-metric': metric.id });
     return node;
   }));
 }
@@ -38,7 +38,7 @@ export function pipeline(overview) {
   return card('Application pipeline',
     el('div', { class: 'jh-panel__head' }, el('h2', { class: 'jh-panel__title', text: 'Application Pipeline' }), el('span', { class: 'jh-panel__meta', text: `${formatCount(total)} in pipeline` })),
     el('ol', { class: 'jh-ov__stages' }, overview.stages.map((stage) => el('li', { class: 'jh-ov__stage', 'data-stage': stage.id, 'data-tone': STAGE_TONES[stage.id] ?? 'neutral', 'data-flag': stage.flag ? '' : null },
-      el('a', { class: 'jh-ov__stage-link', href: filterHref(stage), 'aria-label': `${stage.label}: ${formatCount(stage.count)}${stage.flag ? ' (flag, overlaps the other stages)' : ''}` },
+      el('a', { class: 'jh-ov__stage-link', href: stageHref(stage), 'aria-label': `${stage.label}: ${formatCount(stage.count)}${stage.flag ? ' (flag, overlaps the other stages)' : ''}` },
         el('span', { class: 'jh-ov__stage-count', text: formatCount(stage.count) }), el('span', { class: 'jh-ov__stage-label', text: stage.label }))))),
     el('p', { class: 'jh-note', text: overview.offPipeline ? `${STAGE_NOTE} ${formatCount(overview.offPipeline)} more are rejected, withdrawn, closed, skipped, errored or of unknown outcome.` : STAGE_NOTE }));
 }

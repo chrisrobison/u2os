@@ -1,4 +1,4 @@
-import { leadsHref } from './leads-filter.js';
+import { opportunitiesHref } from './jh-opportunities-model.js';
 
 // Pure helpers for the Job Hunt Overview (#629): links, labels and number formats. DOM-free so they can be tested.
 
@@ -15,10 +15,20 @@ export function jobHref(jobId, question = null) {
   return `#/job-hunt/jobs/${jobId}${question?.key ? `?question=${encodeURIComponent(question.key)}` : ''}`;
 }
 
-/** The filtered Job Leads list for a metric or a stage from the overview payload. */
-export function filterHref(entry) {
-  if (entry.statuses?.length) return leadsHref({ statuses: entry.statuses });
-  return leadsHref({ filter: entry.filter ?? (entry.flag ? 'needs_input' : 'all') });
+/**
+ * The Opportunities table filtered for a summary metric, so the table total equals the number on the card: an explicit
+ * status list, the strong-match score floor, Needs Input, or everything. `strongScore` is the payload's strongMatchScore.
+ */
+export function filterHref(entry, strongScore = 80) {
+  if (entry.statuses?.length) return opportunitiesHref({ statuses: entry.statuses });
+  if (entry.filter === 'strong') return opportunitiesHref({ minScore: strongScore });
+  if (entry.filter === 'needs_input' || entry.flag) return opportunitiesHref({ filter: 'needs_input' });
+  return opportunitiesHref();
+}
+
+/** The Opportunities table for a pipeline stage: the same status mapping the stage count uses (Needs Input is the flag). */
+export function stageHref(stage) {
+  return stage.flag || stage.id === 'needs_input' ? opportunitiesHref({ filter: 'needs_input' }) : opportunitiesHref({ stage: stage.id });
 }
 
 /** "in 2d", "in 5h", "now" for a deadline; empty for a missing time. */

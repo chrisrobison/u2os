@@ -113,26 +113,31 @@ test.describe.serial('job hunt overview (#629)', () => {
     } finally { await context.close(); }
   });
 
-  test('metrics and stages open the filtered Job Leads list', async ({ browser }) => {
+  test('metrics and stages open the Opportunities table with the matching query', async ({ browser }) => {
     const { context, page } = await signIn(browser, dedicated.baseURL, '#/job-hunt');
     try {
-      const mk = (id, status, score) => ({ id, company: `Co ${id.slice(-2)}`, role: 'Engineer', status, locations: [], remote: null, salary: null, technologies: [], contactEmails: [], applicationUrls: [], score: { score, label: 'strong', confidence: 0.9, degraded: false, narrative: null, reasons: [], concerns: [], projects: [], flags: [] }, strategy: { name: 'DIRECT_EMAIL', reason: 'x' }, draft: null, materials: [], emails: [] });
+      const asked = [];
+      const row = (id, status, fit) => ({ id, company: `Co ${id.slice(-2)}`, role: 'Engineer', locations: [], remote: null, compensation: null, skills: [], status, stage: null, needsInput: false, fit, fitLabel: null, postedAt: null, firstSeenAt: '2026-10-01T00:00:00.000Z' });
       await page.route('**/api/job-hunt/overview', (route) => route.fulfill({ json: OVERVIEW }));
-      await page.route('**/api/job-hunt/jobs?**', (route) => route.fulfill({ json: { minimumScore: 82, counts: {}, sendRoutes: {}, jobs: [mk('job_00000000000000b1', 'applied', 85), mk('job_00000000000000b2', 'scored', 92), mk('job_00000000000000b3', 'interview', 70)] } }));
+      await page.route('**/api/job-hunt/opportunities?**', (route) => {
+        const params = new URL(route.request().url()).searchParams;
+        asked.push(Object.fromEntries(params.entries()));
+        const items = params.get('min_score') ? [row('job_00000000000000b2', 'scored', 92)] : [row('job_00000000000000b1', 'applied', 85)];
+        route.fulfill({ json: { items, total: items.length, page: 1, limit: 25, counts: { all: 3, needs_input: 0, ready: 0, applied: 1, responded: 0, archived: 0 } } });
+      });
       await page.reload();
 
       await page.locator('jh-summary-card[data-metric="strong"] a').click();
-      await expect(page).toHaveURL(/#\/job-hunt\/leads\?filter=strong$/);
-      await expect(page.getByRole('button', { name: 'Strong (80+)' })).toHaveAttribute('aria-pressed', 'true');
-      await expect(page.locator('u2-job-hunt article[data-job]')).toHaveCount(2);
+      await expect(page).toHaveURL(/#\/job-hunt\/opportunities\?min_score=80$/);
+      await expect(page.locator('tr[data-job]')).toHaveCount(1);
+      expect(asked.at(-1)).toMatchObject({ min_score: '80' });
 
       await page.goto(`${dedicated.baseURL}/#/job-hunt`);
       await page.locator('.jh-ov__stage[data-stage="submitted"] a').click();
-      await expect(page).toHaveURL(/#\/job-hunt\/leads\?statuses=applied,contacted,followup_due$/);
-      await expect(page.locator('[data-status-filter]')).toContainText('applied, contacted, followup due');
-      await expect(page.locator('u2-job-hunt article[data-job]')).toHaveCount(1);
-      await page.locator('[data-clear-statuses]').click();
-      await expect(page.locator('u2-job-hunt article[data-job]')).toHaveCount(3);
+      await expect(page).toHaveURL(/#\/job-hunt\/opportunities\?stage=submitted$/);
+      await expect(page.locator('.jh-opp__chip[data-scope="stage"]')).toContainText('Submitted');
+      await expect(page.locator('tr[data-job]')).toHaveCount(1);
+      expect(asked.at(-1)).toMatchObject({ stage: 'submitted' });
     } finally { await context.close(); }
   });
 
