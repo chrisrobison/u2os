@@ -137,7 +137,8 @@ export class U2JobPage extends HTMLElement {
     form.append(...rows);
     const save = el('button', { type: 'submit', class: 'btn', text: 'Save answers and re-plan' });
     save.disabled = this._busy;
-    form.append(save, this._notice ? el('p', { class: this._notice.error ? 'load-error' : 'jh-page__ok', role: this._notice.error ? 'alert' : 'status', text: this._notice.text }) : null);
+    form.append(save);
+    if (this._notice) form.append(el('p', { class: this._notice.error ? 'load-error' : 'jh-page__ok', role: this._notice.error ? 'alert' : 'status', text: this._notice.text })); // append(null) would add the text "null"
     form.addEventListener('submit', (event) => { event.preventDefault(); this._saveAnswers(job, read()); });
     return form;
   }

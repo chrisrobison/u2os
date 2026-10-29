@@ -22,7 +22,7 @@ async function request(path, options = {}) {
 
   if (!res.ok) {
     const message = (body && body.error) || `${res.status} ${res.statusText}`;
-    throw new Error(message);
+    throw Object.assign(new Error(message), { status: res.status, code: body?.code, body });
   }
 
   return body;
@@ -588,6 +588,8 @@ export function getJobApplications(params = {}) { return request(`/api/job-appli
 export function getJobHuntJobs(params = {}) { return request(`/api/job-hunt/jobs${qs(params)}`); }
 export function getJobHuntJob(id) { return request(`/api/job-hunt/jobs/${encodeURIComponent(id)}`); }
 // The job-hunt dashboard (docs/job-hunt.md): pipeline stages, analytics and resume versions in one call.
+export function getJobHuntNotes(id) { return request(`/api/job-hunt/jobs/${encodeURIComponent(id)}/notes`); }
+export function saveJobHuntNotes(id, body, revision) { return request(`/api/job-hunt/jobs/${encodeURIComponent(id)}/notes`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body, revision }) }); }
 export function getJobHuntOverview() { return request('/api/job-hunt/overview'); }
 export function getJobHuntOpportunities(params = {}) { return request(`/api/job-hunt/opportunities${qs(params)}`); }
 export function getJobHuntDashboard(params = {}) { return request(`/api/job-hunt/dashboard${qs(params)}`); }

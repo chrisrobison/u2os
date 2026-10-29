@@ -143,9 +143,79 @@ Other query parameters: `stage=<discovered|qualified|preparing|needs_input|submi
 
 **In the page.** The tab, sort, search, fit floor, remote switch, stage/status scope and page number live in the URL hash (`?filter=…&sort=…&dir=…&q=…&page=…`), so a view can be bookmarked and the back button works (search replaces rather than adds history entries). Search is debounced; an answer that arrives after a newer request is ignored; loading, empty and error states use `jh-state`, and a failed refresh keeps the last rows.
 
-**Keyboard and selection.** The table is an ARIA grid with one tab stop (roving tabindex over rows): Up/Down/Home/End move between rows, Space toggles the row's checkbox, Enter opens the job page (`#/job-hunt/jobs/<id>`, as do double-click and the role link). The header checkbox selects every row on the page. Clicking elsewhere on a row marks it as the current row (kept across refreshes, paging and, for the session, reloads) and fires a bubbling `jh-opportunity-select` event (`detail: { jobId, job }`) for the detail panel planned in Phase 4. Selection is cleared when the tab, search or filters change, and kept when only the sort or page changes.
+**Keyboard and selection.** The table is an ARIA grid with one tab stop (roving tabindex over rows): Up/Down/Home/End move between rows, Space toggles the row's checkbox, Enter selects the row and opens the [detail panel](#the-job-detail-panel) beside the table. Double-click and the role link open the full job page (`#/job-hunt/jobs/<id>`). Clicking elsewhere on a row selects it too: it is marked as the current row (kept across refreshes, paging and, for the session, reloads) and a bubbling `jh-opportunity-select` event (`detail: { jobId, job }`) fires. The header checkbox selects every row on the page. Selection (the checkboxes) is cleared when the tab, search or filters change, and kept when only the sort or page changes.
 
 **Bulk actions.** Only *Reject selected*, which asks for confirmation and then calls the existing `POST /api/job-hunt/jobs/<id>/status` with `rejected` once per job (the call a row's Reject uses, so the server's rules decide: a job that is at `offer`, say, is refused and stays selected with the reason shown). No bulk endpoint was added and there is no bulk "skip": no existing endpoint marks a job skipped.
+
+## The job detail panel
+
+`#/job-hunt/opportunities` is a [`<jh-workspace>`](#ui-primitives): the table is the main region and the selected job's panel the detail region ([#634](https://github.com/chrisrobison/u2/issues/634), part of #626). Choosing a row (click or Enter) opens it beside the table without leaving the page. Below 900px it is a drawer over the table; Escape or the Close button closes it. The code is `u2-job-detail-panel.js` (the element), `jh-detail-parts.js` (the tabs), `jh-detail-model.js` (URL, primary action and Match Analysis classification as pure functions) and `u2-job-notes.js` (the Notes tab). The full page `#/job-hunt/jobs/<id>` is unchanged and linked from the panel ("Open full page").
+
+**URL and focus.** The selected job is the `job` parameter of the hash, beside the table state: `#/job-hunt/opportunities?filter=ready&sort=company&job=job_0123456789abcdef`. It survives a reload and can be shared; a value that is not a job id is ignored. Each selection is a history entry, so Back steps back through them and finally closes the panel; closing clears `job` and keeps every other parameter. Opening moves focus to the panel heading (a deep link on load does not take focus); closing returns it to the job's row. The selected row stays marked.
+
+**Header.** Company, role, fit score, application status label, location (with Remote), compensation, the latest posted date of any source and a link to the original posting. Only `http(s)` links are ever shown; a value U2OS does not have is left out, never invented ("Not scored" for an unscored job).
+
+**Primary action.** One button, chosen from the job's real state, the rest in **More** (each item shows why it is unavailable, with the same rules as the job page and the row menu):
+
+| State | Primary action |
+| --- | --- |
+| a settled job (applied, rejected, offer ...) | none (only the posting link) |
+| unanswered form questions | *Answer questions (n)*: the existing dialog |
+| application planned and ready | *Review and approve*: opens the Application tab on the approval box and does nothing else |
+| last attempt failed, or the job is in error | *Retry planning* (`POST .../plan`) |
+| nothing prepared yet | *Prepare application* (`POST .../plan`, which sends nothing) |
+| otherwise | *Open posting* (a link) |
+
+*Mark not interested* is the existing **Reject** (`POST /api/job-hunt/jobs/:id/status` with `rejected`, after the same confirmation): the status endpoint has no "skipped" target, so the two are one action. Every other action is one of the shared tasks of `u2-job-actions.js` (prefill, plan, email, draft, mark applied). The panel adds **no endpoint and no way to submit or send**: an application is submitted only by the shared *Ready to submit* box, which still needs *Approve and submit...* and then *Yes, submit this application* and sends `planHash` with `confirm: true` to `POST .../approve-and-submit` (see [approve and submit](#the-job-details-page)). `tests/job-hunt-detail-panel-ui.test.js` checks that the review action makes no request, that the final call needs both clicks, and that every request the panel makes is one of the existing job-hunt endpoints.
+
+**Tabs** (an ARIA tablist; Left/Right/Home/End move between them):
+
+- *Overview*: summary (score, approach, technologies), *Why this is a strong match* (the scorer's stored reasons; "Why it fits" under a score of 80), *Gaps to address* (confirmed gaps and the scorer's concerns), *Uncertainties* (the unverified items that are missing information) and *Blockers* (the same "Needs you" reasons as the job page).
+- *Match Analysis*: see below.
+- *Application*: status and outcome, the unanswered questions (with the Answer questions button), the approval box, the latest review, materials, the email draft and sent emails, the planned answers and the history from `application_events` (newest first, at most 25).
+- *Company*: the company site, the sources that saw the job (with links), the job's contacts and the research section.
+- *Notes*: see [Job notes](#job-notes).
+
+**Match Analysis.** The panel states what the stored data supports, in three groups, and shows the overall score, the scorer's stored confidence (only when stored), the model and the date. It shows no per-requirement or per-skill number and no bar.
+
+| Group | What goes in it |
+| --- | --- |
+| *Verified match* | something backed by a stored source: the location and compensation rules (the posting compared with your preferences), a project of yours the scorer matched (with its link), and a passing review check that your facts support the form answers or the resume and letter (with the review's date) |
+| *Unverified or insufficient evidence* | the scorer's model-judged dimensions (experience, seniority, technical, company, interest: a judgement with no source stored), concerns nobody confirmed, a failed "supported by your facts" check, form questions with no answer on file, and anything the posting leaves out ("Location not stated") |
+| *Confirmed gap* | only what a rule proves: relocation required, pay below your minimum |
+
+Missing evidence is never reported as a missing skill: a failed facts check says "your facts do not cover this yet", and a posting that omits something is not a gap. A rules-only score (no model) says so.
+
+**Limitations (the data model cannot support more yet).** The posting is not split into individual requirements, so the analysis lists the scorer's reasons and the review checks rather than a line-by-line comparison. No snippet of your facts is stored beside a model judgement, so a model-judged match stays *unverified* until evidence resolution exists (Phase 5 of #626 adds those inputs). U2OS keeps no research about a company, so the Company tab's research section is an honest empty state (research run from Goals is not attached to jobs). The Overview tab does not use the scorer's `narrative` field: it is a strategy id, not prose.
+
+**States.** Loading, a failed load (with *Try again*), a job that no longer exists ("This job no longer exists", nothing to retry) and an unexpected payload each have their own message. A response that arrives after the owner chose another job is ignored. The panel loads the job itself, so it keeps working when the table's page no longer lists that row.
+
+## Job notes
+
+The Notes tab keeps the owner's notes for a job as one Markdown file in the [vault](vault.md): `job-hunt/notes/<job-id>.md`.
+
+```markdown
+---
+job: job_0123456789abcdef
+company: Acme
+role: Staff Engineer
+updated: 2026-10-29T12:00:00.000Z
+---
+Anything you write, as Markdown. Edit it here or in any text editor.
+```
+
+`GET /api/job-hunt/jobs/:id/notes` returns `{ jobId, path, exists, body, revision, updatedAt, maxBytes }` and `PUT` with `{ body, revision }` saves (owner only, with the usual CSRF check). The code is `mcp/jobs/hunt/notes.js`.
+
+- **Path-safe.** The file name comes only from a job id that matches `job_` and 16 lowercase hex digits and that exists in the store; the id never reaches the file system otherwise. A link (symlink) as `job-hunt`, `job-hunt/notes` or the note itself is refused (`409`).
+- **Size.** At most 64 KB of text (`413` over that); a NUL character is refused.
+- **Revision and conflicts.** `revision` is the SHA-256 of the file's exact text (`null` when there is no file). `PUT` must send the revision it was based on; any other value is `409` with `code: "CONFLICT"` and the current note, and nothing is written. The UI keeps your text, shows an alert, and offers *Reload from file* or *Keep editing*. A `PUT` without `revision` is `400`. The file is also re-checked just before the atomic rename, so a change made during the write is refused too.
+- **Atomic write, nothing extra.** The file is written to a temporary name and renamed over the note (the vault's `editVaultFile`, mode `0600`); an unchanged body does not touch the file. Only `job`, `company`, `role` and `updated` are set; every other front matter key and comment you added in an editor is kept. A note that was never edited creates no file and no folder (saving an empty note is a no-op); clearing a saved note keeps the file with an empty body.
+- **External edits converge.** The file is read fresh on every `GET`, and the tab re-reads it each time it opens (unless you have unsaved text). A file with broken front matter is reported (`422`) and left alone.
+- **Unsaved text.** Moving to another job saves unsaved text first. If that save conflicts, the text is kept in `sessionStorage` and offered back (*Restore it* / *Discard it*) the next time that job's notes open in the same browser tab.
+- **Text, never HTML.** The body is shown in a plain `<textarea>` and stored as text; Markdown is not rendered.
+- **Vault conventions.** The indexer reads only `people/`, `projects/` and `commitments/`, so notes are not indexed as memory facts and no job-hunt code reads them back into a prompt. The journal never holds note text, so a save is not journaled; `job-hunt/notes/` is not one of the watched configuration files. Back it up and sync it like the rest of the vault ([backups](vault.md#backups)).
+
+Tests: `tests/job-hunt-notes.test.js` (module and API: path traversal, symlinks, oversize, conflicts, round trip with an externally edited file), `tests/job-hunt-detail-panel-ui.test.js` (components) and `tests/e2e/job-hunt-detail-panel.spec.js`.
 
 ## The dashboard
 

@@ -3,14 +3,18 @@ import { el } from './jh-util.js';
 import { FILTER_TABS, FIT_FLOORS, PAGE_SIZE, SORTS, apiParams, hasNarrowing, jobPageHref, naturalDir, nextSort, opportunitiesHref, pageCount, parseOpportunitiesHash } from './jh-opportunities-model.js';
 import { applyTabStops, bulkBar, filterTabs, opportunityGrid, pager, scopeChips } from './jh-opportunities-parts.js';
 import { confirmDialog } from './u2-job-actions.js';
+import { JOB_ID, jobFromHash, withJobInHash } from './jh-detail-model.js';
+import './u2-job-detail-panel.js';
 import './u2-job-menu.js';
 import './jh-all.js';
 
 // #/job-hunt/opportunities: the searchable, server-queried opportunities table (#631). The server filters, searches,
 // sorts and pages (GET /api/job-hunt/opportunities); this host keeps the state in the URL hash, ignores responses that
 // arrive out of order, and offers keyboard navigation (roving tabindex over rows: arrows move, Space toggles the
-// checkbox, Enter opens the job). Choosing a row fires `jh-opportunity-select` for the Phase 4 detail panel; until that
-// exists, Enter, double-click and the role link open the job page. Bulk actions use the existing status endpoint only.
+// checkbox, Enter selects the row). Choosing a row (click or Enter) fires `jh-opportunity-select` and opens the detail panel
+// (#634, <u2-job-detail-panel>) beside the table inside a <jh-workspace>; the selected job id is the `job` parameter of the
+// hash, kept next to the table state, so it survives a reload and can be shared. Closing the panel removes it. Double-click
+// and the role link open the full job page. Bulk actions use the existing status endpoint only.
 
 const SEARCH_DELAY_MS = 250;
 const REFRESH_EVENT = /^agent\.action\./;
@@ -33,7 +37,8 @@ export class U2JobOpportunities extends HTMLElement {
     this._loading = false;
     this._state = parseOpportunitiesHash(typeof window === 'undefined' ? '' : window.location.hash);
     this._checked = new Set();
-    this._currentId = readCurrent();
+    this._jobId = jobFromHash(typeof window === 'undefined' ? '' : window.location.hash);
+    this._currentId = this._jobId ?? readCurrent();
     this._activeId = null;
     this._filtersOpen = false;
     this._busy = false;
@@ -56,13 +61,16 @@ export class U2JobOpportunities extends HTMLElement {
     this.addEventListener('input', (event) => this._onInput(event));
     this.addEventListener('keydown', (event) => this._onKeydown(event));
     this.addEventListener('focusin', (event) => this._onFocusin(event));
-    this.addEventListener('jh-retry', () => this._load());
+    this.addEventListener('jh-retry', (event) => { if (!this._panel?.contains?.(event.target)) this._load(); });
+    this.addEventListener('jh-detail-close', () => this._closeJob());
+    this.addEventListener('jh-detail-toggle', (event) => { if (event.detail?.collapsed) this._closeJob(); });
     // A row's menu changed the job (rejected, pre-filled, ...): show what happened and reload.
     this.addEventListener('jh-job-updated', (event) => { this._notice = event.detail?.notice ?? null; this._load(); });
     window.addEventListener('u2-event', this._onEvent);
     this._syncControls();
     this._render();
     this._load();
+    if (this._jobId) { this._ws.openDetail(); this._panel.show(this._jobId); }
   }
 
   disconnectedCallback() {
@@ -93,10 +101,11 @@ export class U2JobOpportunities extends HTMLElement {
     this._noticeEl = el('div', { class: 'jh-opp__notice', role: 'status', 'aria-live': 'polite' });
     this._body = el('div', { class: 'jh-opp__body' });
     this._foot = el('div', { class: 'jh-opp__foot' });
-    this.replaceChildren(
+    this._panel = el('u2-job-detail-panel');
+    const main = el('div', { 'data-region': 'main' },
       el('div', { class: 'jh-head' }, el('div', { class: 'jh-head__text' },
         el('h1', { class: 'jh-ov__title', text: 'Opportunities' }),
-        el('p', { class: 'jh-ov__sub', text: 'Every job U2OS has found, searchable and sortable. Select a row to open it.' }))),
+        el('p', { class: 'jh-ov__sub', text: 'Every job U2OS has found, searchable and sortable. Select a row to see it beside the table.' }))),
       el('section', { class: 'jh-panel jh-opp__panel', 'aria-label': 'Opportunities' },
         this._tabs,
         el('div', { class: 'jh-opp__toolbar' },
@@ -104,6 +113,8 @@ export class U2JobOpportunities extends HTMLElement {
           this._filtersButton,
           el('div', { class: 'jh-opp__sortbox' }, el('span', { class: 'jh-ov__muted', text: 'Sort' }), this._sortSelect, this._dirButton)),
         this._filtersPanel, this._chips, this._bulk, this._noticeEl, this._body, this._foot));
+    this._ws = el('jh-workspace', this._jobId ? {} : { 'detail-collapsed': '' }, main, el('div', { 'data-region': 'detail' }, this._panel));
+    this.replaceChildren(this._ws);
   }
 
   /** Puts the controls in step with the state (after a navigation, or on first render). */
@@ -167,7 +178,7 @@ export class U2JobOpportunities extends HTMLElement {
   }
 
   _writeUrl(replace) {
-    const hash = opportunitiesHref(this._state);
+    const hash = withJobInHash(opportunitiesHref(this._state), this._jobId);
     try {
       if (window.location.hash === hash) return;
       if (typeof history !== 'undefined' && history.pushState) history[replace ? 'replaceState' : 'pushState'](null, '', hash);
@@ -323,7 +334,7 @@ export class U2JobOpportunities extends HTMLElement {
   }
 
   /** The row the owner is working on: it stays marked across refreshes and pages, and tells the detail panel to open. */
-  _setCurrent(id) {
+  _setCurrent(id, { show = true, focus = true } = {}) {
     this._currentId = id;
     saveCurrent(id);
     for (const row of this._rows()) {
@@ -332,10 +343,32 @@ export class U2JobOpportunities extends HTMLElement {
     }
     const job = (this._data?.items ?? []).find((item) => item.id === id) ?? null;
     this.dispatchEvent(new CustomEvent('jh-opportunity-select', { bubbles: true, detail: { jobId: id, job } }));
+    if (show) this._showJob(id, { focus });
+  }
+
+  /** Opens the detail panel for a job and puts it in the URL (a new history entry, so Back closes it). */
+  _showJob(id, { focus = false } = {}) {
+    if (!JOB_ID.test(String(id))) return;
+    this._jobId = id;
+    this._ws.openDetail();
+    this._writeUrl(false);
+    this._panel.show(id, { focus });
+  }
+
+  /** Closes the panel: the job leaves the URL and focus returns to its row. */
+  _closeJob() {
+    const id = this._jobId;
+    if (!id) return;
+    this._jobId = null;
+    this._ws.collapseDetail();
+    this._writeUrl(false);
+    this._panel.clear();
+    const row = this._rows().find((node) => node.getAttribute('data-job') === id) ?? this.querySelector('tr[data-job][tabindex="0"]');
+    row?.focus?.();
   }
 
   _open(id) {
-    this._setCurrent(id);
+    this._setCurrent(id, { show: false });
     const href = jobPageHref(id);
     if (href) window.location.hash = href;
   }
@@ -360,7 +393,7 @@ export class U2JobOpportunities extends HTMLElement {
       this._toggleChecked(id, !this._checked.has(id));
     } else if (event.key === 'Enter') {
       event.preventDefault();
-      this._open(id);
+      this._setCurrent(id);
     }
   }
 

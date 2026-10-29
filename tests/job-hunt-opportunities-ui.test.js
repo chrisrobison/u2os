@@ -181,7 +181,7 @@ test('missing optional values show a dash and hostile text stays text', async ()
   assert.ok(node.querySelectorAll('tr[data-job]').every((r) => /^job_[0-9a-f]{16}$/.test(r.getAttribute('data-job'))));
 });
 
-test('arrow keys move between rows, Home and End jump, Space toggles selection and Enter opens', async () => {
+test('arrow keys move between rows, Home and End jump, Space toggles selection and Enter selects the row (opening the detail panel)', async () => {
   const node = await mount();
   const [a, b, c] = rowsOf(node);
   a.focus();
@@ -202,7 +202,7 @@ test('arrow keys move between rows, Home and End jump, Space toggles selection a
   assert.equal(node.querySelector('.jh-opp__bulk'), null, 'no bulk bar without a selection');
   b.focus();
   press(b, 'Enter');
-  assert.equal(window.location.hash, `#/job-hunt/jobs/${J(2)}`);
+  assert.equal(window.location.hash, `#/job-hunt/opportunities?job=${J(2)}`, 'Enter opens the panel in place (see tests/job-hunt-detail-panel-ui.test.js), not the job page');
   window.location.hash = '';
   // Enter on a link inside a row belongs to the link, not to the row.
   const link = part(a, 'role');
