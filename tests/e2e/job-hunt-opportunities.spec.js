@@ -123,7 +123,7 @@ test.describe.serial('job hunt opportunities table (#631)', () => {
     } finally { await context.close(); }
   });
 
-  test('keyboard: arrows move between rows, Space selects, Enter opens, select-all covers the page', async ({ browser }) => {
+  test('keyboard: arrows move between rows, Space selects, Enter selects, select-all covers the page', async ({ browser }) => {
     const { context, page } = await signIn(browser, dedicated.baseURL, '#/job-hunt/opportunities');
     try {
       await stub(page);
@@ -157,7 +157,8 @@ test.describe.serial('job hunt opportunities table (#631)', () => {
 
       await rows.nth(2).focus();
       await page.keyboard.press('Enter');
-      await expect(page).toHaveURL(new RegExp(`#/job-hunt/jobs/${id(3)}$`));
+      await expect(page).toHaveURL(new RegExp(`#/job-hunt/opportunities\\?job=${id(3)}$`));
+      await expect(page.locator('u2-job-detail-panel')).toBeVisible();
     } finally { await context.close(); }
   });
 

@@ -38,9 +38,10 @@ export class U2JobSubmit extends HTMLElement {
     const attempt = job.applications?.[0];
     if (!isReadyToSubmit(job)) {
       // The box goes away once the application is sent; its result stays visible.
-      this.append(this._notice
+      const message = this._notice
         ? el('p', { class: this._notice.error ? 'load-error' : 'jh-page__ok', role: this._notice.error ? 'alert' : 'status', 'data-submit-notice': '', text: this._notice.text })
-        : this.hasAttribute('standalone') ? el('p', { class: 'jh-page__ok', text: 'This application is not ready to submit any more. Open the job to see why.' }) : null);
+        : this.hasAttribute('standalone') ? el('p', { class: 'jh-page__ok', text: 'This application is not ready to submit any more. Open the job to see why.' }) : null;
+      if (message) this.append(message); // append(null) would add the text "null"
       return;
     }
     const rejected = job.reviews?.[0]?.decision === 'reject' ? job.reviews[0] : null;

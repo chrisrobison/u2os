@@ -26,6 +26,7 @@ vault/
   policies.yaml    # optional: what U2OS may do without asking
   mcp.yaml         # optional: tool servers U2OS may start (see mcp.md)
   coding-agents.yaml  # optional: which coding CLIs U2OS may launch (see coding-agents.md)
+  job-hunt/        # job-hunt settings, profile and your per-job notes (job-hunt/notes/<job-id>.md; see job-hunt.md)
   journal/         # written by U2OS: what it did on your behalf
 ```
 
@@ -161,6 +162,7 @@ The report lists written and skipped files and how many facts were left out.
 
 ## Safety
 
+- `job-hunt/notes/<job-id>.md` (your notes for a job, see [job hunt](job-hunt.md#job-notes)) are plain Markdown you can edit anywhere. They are outside the folders above, so they are not indexed as memory, and saving one is not journaled.
 - Only regular `.md` files directly inside the known folders are read. Hidden files and symlinks are ignored, so a link cannot pull content from outside the vault.
 - Files over 256 KiB, invalid YAML, and invalid classifications are reported in the index report and skipped. The rest of the vault still indexes, and the invalid file's previously indexed records stay as they were.
 - The vault holds personal data in plain text. Keep it on an encrypted disk, and treat any git remote or sync service as a destination for everything in it.

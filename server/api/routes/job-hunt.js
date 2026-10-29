@@ -11,6 +11,7 @@ import { buildDashboard, moveJob, DEFAULT_WINDOW_DAYS } from '../../../mcp/jobs/
 import { addInterview, updateInterview, deleteInterview, addTask, completeTask, uncompleteTask, snoozeTask } from '../../../mcp/jobs/hunt/schedule.js';
 import { addContact, updateContact, deleteContact, markContacted } from '../../../mcp/jobs/hunt/contacts.js';
 import { jobView, listJobViews } from '../../../mcp/jobs/hunt/view.js';
+import { readNote, writeNote } from '../../../mcp/jobs/hunt/notes.js';
 import { addCustomAnswers } from '../../../mcp/jobs/hunt/candidate/answers.js';
 import { ownerApproveAndSubmit, prefillApplicationForm, withLock } from '../../../mcp/jobs/hunt/act.js';
 import { planJob } from '../../jobhunt/replan.js';
@@ -152,6 +153,27 @@ export function registerJobHuntRoutes(router, { agent, toolRegistry, autopilot =
     if (!view) return sendJson(res, 404, { error: 'No such job' });
     sendJson(res, 200, { ...view, sendRoutes: availableRoutes(toolRegistry) });
   });
+
+  // The owner's notes for one job: a Markdown file in the vault (mcp/jobs/hunt/notes.js, docs/job-hunt.md "Job notes").
+  // The file is read fresh on every GET; a PUT must carry the revision it was based on (409 with the current note otherwise).
+  const NOTE_ERRORS = { BAD_INPUT: 400, TOO_LARGE: 413, CONFLICT: 409, UNSAFE_PATH: 409, NOTE_INVALID: 422, VAULT_WRITEBACK: null };
+  const noteRoute = (run) => async (req, res) => {
+    if (!JOB_ID.test(req.params.id)) return sendJson(res, 400, { error: 'Invalid job id' });
+    try {
+      const job = withStore((store) => store.getJob(req.params.id));
+      if (!job) return sendJson(res, 404, { error: 'No such job' });
+      sendJson(res, 200, run(job, req.body ?? {}));
+    } catch (error) {
+      const status = error.code === 'VAULT_WRITEBACK' ? error.status : NOTE_ERRORS[error.code];
+      if (!status) throw error;
+      sendJson(res, status, { error: error.message, code: error.code === 'VAULT_WRITEBACK' ? 'CONFLICT' : error.code, ...(error.note ? { note: error.note } : {}) });
+    }
+  };
+  router.get('/api/job-hunt/jobs/:id/notes', noteRoute((job) => readNote(getVaultDir(), job.id)));
+  router.put('/api/job-hunt/jobs/:id/notes', noteRoute((job, body) => {
+    if (!('revision' in body)) throw Object.assign(new Error('revision is required (null when there was no note)'), { code: 'BAD_INPUT' });
+    return writeNote(getVaultDir(), job, body.body, body.revision);
+  }));
 
   // The owner answers questions the planner could not. The questions come from the job's latest plan (a client cannot invent
   // one or change its label), the answers are saved under `custom:` in answers.yaml, and the form is planned again.
