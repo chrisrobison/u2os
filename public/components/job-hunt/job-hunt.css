@@ -544,6 +544,14 @@ a.jh-summary-card__body:hover, button.jh-summary-card__body:hover { background: 
 .jh-match[data-match="gaps"] .jh-match__glyph { color: var(--accent-danger); }
 .jh-match[data-match="unverified"] .jh-match__glyph { color: var(--jh-pending-text, var(--accent-pending)); }
 .jh-match__text { font-size: var(--text-sm); overflow-wrap: anywhere; }
+.jh-evidence__box { margin-top: var(--space-2); }
+.jh-evidence__box > summary { cursor: pointer; font-size: var(--text-xs); color: var(--text-link, var(--text-primary)); }
+.jh-evidence { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-2); }
+.jh-evidence__set { margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.jh-evidence__set legend { padding: 0; margin-bottom: var(--space-1); font-size: var(--text-sm); font-weight: 600; }
+.jh-evidence__choice { font-size: var(--text-sm); }
+.jh-evidence label[for$="-detail"] { font-size: var(--text-sm); }
+[data-part="rescore"] { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--accent-pending-soft); }
 .jh-detail__limits { font-size: var(--text-sm); color: var(--text-secondary); }
 .jh-notes__area { min-height: 12rem; resize: vertical; font-family: var(--font-mono, monospace); }
 .jh-notes__label { display: block; margin-bottom: var(--space-1); font-size: var(--text-sm); font-weight: 600; }

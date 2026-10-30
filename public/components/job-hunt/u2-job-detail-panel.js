@@ -27,6 +27,8 @@ export class U2JobDetailPanel extends HTMLElement {
     this._busy = null;
     this._notice = null;
     this._focusNext = false;
+    this._rescore = null; // the last evidence save or rescore result (shown on the Match Analysis tab)
+    this._focusRescore = false;
     // Kept across renders so a submit's progress, the open Ready-to-submit box and unsaved notes survive a redraw.
     this._submitEl = document.createElement('u2-job-submit');
     this._submitEl.addEventListener('jh-job-updated', (event) => { if (event.detail?.job) this._adopt(event.detail.job, { notify: false }); });
@@ -52,6 +54,7 @@ export class U2JobDetailPanel extends HTMLElement {
     this._id = jobId;
     this._tab = 'overview';
     this._notice = null;
+    this._rescore = null;
     this._busy = null;
     this._focusNext = focus;
     await this._load();
@@ -108,7 +111,7 @@ export class U2JobDetailPanel extends HTMLElement {
   _focusKey() {
     const active = typeof document === 'undefined' ? null : document.activeElement;
     if (!active?.closest || !this.contains?.(active)) return null;
-    for (const attribute of ['data-detail-action', 'data-tab']) {
+    for (const attribute of ['data-detail-action', 'data-tab', 'data-evidence-action']) {
       const holder = active.closest(`[${attribute}]`);
       if (holder) return [attribute, holder.getAttribute(attribute)];
     }
@@ -159,7 +162,8 @@ export class U2JobDetailPanel extends HTMLElement {
       el('div', { class: 'jh-detail__panel', role: 'tabpanel', id: 'jh-detail-tabpanel', 'aria-labelledby': `jh-detail-tab-${this._tab}`, tabindex: '0' }, this._tabBody(job))].filter(Boolean));
     this.setAttribute('aria-labelledby', 'jh-detail-title');
     this.removeAttribute('aria-label');
-    if (this._focusNext && this._focusHeading()) this._focusNext = false;
+    if (this._focusRescore) { this._focusRescore = false; this.querySelector('[data-part="rescore"]')?.focus?.(); }
+    else if (this._focusNext && this._focusHeading()) this._focusNext = false;
     else this._restoreFocus(key);
   }
 
@@ -171,7 +175,7 @@ export class U2JobDetailPanel extends HTMLElement {
 
   _tabBody(job) {
     switch (this._tab) {
-      case 'match': return matchTab(job);
+      case 'match': return matchTab(job, { rescore: this._rescore, onEvidence: (payload) => this._saveEvidence(payload), onRescore: () => this._rescoreNow() });
       case 'application': return applicationTab(job, { submitEl: this._submitEl, onAnswers: (opener) => this._answers(opener) });
       case 'company': return companyTab(job);
       case 'notes': return this._notesBody();
@@ -212,6 +216,7 @@ export class U2JobDetailPanel extends HTMLElement {
     if (tab) { this._selectTab(tab.getAttribute('data-tab')); return; }
     const goto = target.closest('[data-goto-tab]');
     if (goto) { this._selectTab(goto.getAttribute('data-goto-tab')); return; }
+    if (target.closest('[data-evidence-action="rescore"]')) { this._rescoreNow(); return; }
     const action = target.closest('[data-detail-action]');
     if (!action) return;
     const key = action.getAttribute('data-detail-action');
@@ -268,6 +273,44 @@ export class U2JobDetailPanel extends HTMLElement {
       this._selectTab('application');
       (this.querySelector('[data-approve-submit]') ?? this.querySelector('[data-submit-box]'))?.focus?.();
     } else if (primary.type === 'task') this._start(primary.key, node);
+  }
+
+  /** Saves the owner's answer to one evidence question; the server rescores the job. Resolves { ok } or { error } for the form. */
+  async _saveEvidence(payload) {
+    const job = this._job;
+    if (!job) return { error: 'No job is open.' };
+    try {
+      const result = await api.saveJobHuntEvidence(job.id, payload);
+      if (job.id !== this._id) return { ok: true }; // the owner moved to another job meanwhile
+      this._rescore = result.changed === false ? { status: 'unchanged' } : (result.rescore ?? null);
+      this._focusRescore = true;
+      this._adopt(result.job);
+      return { ok: true };
+    } catch (error) {
+      return { error: error.message };
+    }
+  }
+
+  /** Retries the rescore of the job's stored evidence (after a pending or failed one). */
+  async _rescoreNow() {
+    const job = this._job;
+    if (!job || this._rescore?.status === 'running') return;
+    this._rescore = { status: 'running' };
+    this._focusRescore = true;
+    this._render();
+    let next;
+    let fresh = null;
+    try {
+      const result = await api.rescoreJobHuntJob(job.id);
+      next = result.rescore;
+      fresh = result.job;
+    } catch (error) {
+      next = { status: 'failed', reason: error.message, previous: null };
+    }
+    if (job.id !== this._id) return;
+    this._rescore = next;
+    this._focusRescore = true;
+    if (fresh) this._adopt(fresh); else this._render();
   }
 
   _answers(opener) {

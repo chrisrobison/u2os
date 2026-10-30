@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { jobAttention } from './attention.js';
 import { chooseStrategy } from './applications/strategy.js';
+import { evidenceView } from './evidence.js';
 
 // What the Job hunt page and API show for one job: the facts, the score and
 // why, the approach, the draft email and what has happened to it. No secrets,
@@ -15,7 +16,7 @@ function readDraft(artifact) {
   } catch { return null; }
 }
 
-export function jobView(store, job, { minimumScore = 82, detail = false, screensDir = null } = {}) {
+export function jobView(store, job, { minimumScore = 82, detail = false, screensDir = null, vaultDir = null } = {}) {
   const score = store.getScore(job.id);
   const artifacts = store.getArtifacts(job.id);
   const strategy = chooseStrategy(job, { score, minimumScore });
@@ -39,6 +40,8 @@ export function jobView(store, job, { minimumScore = 82, detail = false, screens
     view.contacts = store.listContacts({ jobId: job.id });
     view.tasks = store.listTasks({ jobId: job.id });
     view.interviews = store.listInterviews({ jobId: job.id });
+    // What the owner has stated about the unverified items (#636). Without a vault there is nothing to read.
+    if (vaultDir) view.evidence = evidenceView({ vaultDir, store, job });
     view.attention = jobAttention({ job, applications, reviews, needsInput: view.draft?.needsInput ?? [] });
   }
   return view;
