@@ -1,7 +1,8 @@
 import { el, fitBand, formatDay, formatStamp, monogram, safeUrl, titleCase } from './jh-util.js';
 import { answersTable } from './u2-job-submit.js';
 import { answerableQuestions, sensitiveQuestions } from './jh-answers.js';
-import { MATCH_LIMITATIONS, STRONG_MATCH, headerFacts, matchAnalysis, overviewModel } from './jh-detail-model.js';
+import { MATCH_LIMITATIONS, STRONG_MATCH, headerFacts, matchAnalysis, overviewModel, rescoreNotice } from './jh-detail-model.js';
+import { evidenceForm, provenanceLine } from './jh-evidence-form.js';
 import './jh-all.js';
 
 // The tabs of the job detail panel (#634), each a function from the job detail (GET /api/job-hunt/jobs/:id) to DOM. Every
@@ -57,18 +58,31 @@ export function overviewTab(job) {
 
 // ---- Match Analysis --------------------------------------------------------------------
 
-function matchGroup(id, title, items, emptyText) {
+function matchGroup(id, title, items, emptyText, ctx) {
   return el('section', { class: 'jh-detail__section jh-match', 'data-match': id, 'aria-labelledby': `jh-match-${id}` },
     el('h3', { class: 'jh-detail__h', id: `jh-match-${id}` }, title, el('span', { class: 'jh-opp__count', 'data-count': id, text: String(items.length) })),
-    items.length ? el('ul', { class: 'jh-match__list' }, items.map((item) => el('li', { class: 'jh-match__item', 'data-kind': item.kind },
+    items.length ? el('ul', { class: 'jh-match__list' }, items.map((item) => el('li', { class: 'jh-match__item', 'data-kind': item.kind, 'data-key': item.question?.key ?? null },
       el('span', { class: 'jh-match__glyph', 'aria-hidden': 'true', text: id === 'verified' ? '✓' : id === 'gaps' ? '✕' : '?' }),
       el('div', {},
         el('div', { class: 'jh-match__text', text: item.text }),
         item.note ? el('div', { class: 'jh-detail__muted', text: item.note }) : null,
-        item.source ? el('div', { class: 'jh-detail__muted', 'data-part': 'source' }, 'Source: ', item.sourceUrl ? el('a', { class: 'jh-link', href: item.sourceUrl, target: '_blank', rel: 'noopener noreferrer', text: `${item.source} ↗` }) : item.source) : null)))) : empty(emptyText));
+        item.source ? el('div', { class: 'jh-detail__muted', 'data-part': 'source' }, 'Source: ', item.sourceUrl ? el('a', { class: 'jh-link', href: item.sourceUrl, target: '_blank', rel: 'noopener noreferrer', text: `${item.source} ↗` }) : item.source) : null,
+        item.stated ? el('div', { class: 'jh-detail__muted', 'data-part': 'provenance', text: provenanceLine(item.stated) }) : null,
+        item.stated?.detail ? el('div', { class: 'jh-detail__muted', 'data-part': 'stated-detail', text: `Your detail: ${item.stated.detail}` }) : null,
+        item.question && ctx?.onEvidence ? el('details', { class: 'jh-evidence__box' },
+          el('summary', { text: item.stated ? 'Change your answer' : 'Can you back this up?' }),
+          evidenceForm(item.question, { stated: item.stated, onSave: ctx.onEvidence })) : null)))) : empty(emptyText));
 }
 
-export function matchTab(job) {
+/** The result of the last save or rescore. It takes focus after a save, and offers a retry when the score is out of date. */
+function rescoreBanner(job, ctx) {
+  const notice = rescoreNotice(ctx?.rescore, job);
+  if (!notice) return null;
+  const retry = notice.retry && ctx?.onRescore ? el('button', { type: 'button', class: 'btn', 'data-evidence-action': 'rescore', text: 'Retry rescore' }) : null;
+  return el('div', { class: notice.tone === 'alert' ? 'jh-note load-error' : 'jh-note', role: notice.tone, tabindex: '-1', 'data-part': 'rescore' }, el('span', { text: notice.text }), retry ? ' ' : null, retry);
+}
+
+export function matchTab(job, ctx = {}) {
   const match = matchAnalysis(job);
   if (!match.scored) {
     return el('div', { class: 'jh-detail__tab', 'data-tab-body': 'match' }, el('jh-state', { kind: 'empty', title: 'Not scored yet', message: 'The match analysis is built from the job\'s score, which has not been stored. Nothing is guessed in its place.' }));
@@ -82,10 +96,12 @@ export function matchTab(job) {
   ].filter(Boolean);
   return el('div', { class: 'jh-detail__tab', 'data-tab-body': 'match' },
     el('p', { class: 'jh-detail__line', 'data-part': 'overall', text: facts.join(' · ') }),
+    rescoreBanner(job, ctx),
+    match.evidence.error ? el('p', { class: 'jh-note load-error', role: 'alert', 'data-part': 'evidence-error', text: `Your stated evidence could not be read: ${match.evidence.error}` }) : null,
     ...match.caveats.map((text) => el('p', { class: 'jh-note', text })),
-    matchGroup('verified', 'Verified match', match.verified, 'Nothing is verified from a stored source yet.'),
-    matchGroup('unverified', 'Unverified or insufficient evidence', match.unverified, 'Nothing is flagged as unverified.'),
-    matchGroup('gaps', 'Confirmed gap', match.gaps, 'No gap is confirmed by a rule.'),
+    matchGroup('verified', 'Verified match', match.verified, 'Nothing is verified from a stored source yet.', ctx),
+    matchGroup('unverified', 'Unverified or insufficient evidence', match.unverified, 'Nothing is flagged as unverified.', ctx),
+    matchGroup('gaps', 'Confirmed gap', match.gaps, 'No gap is confirmed by a rule or by you.', ctx),
     el('details', { class: 'jh-detail__limits' }, el('summary', { text: 'What this analysis cannot do yet' }), list(MATCH_LIMITATIONS)));
 }
 

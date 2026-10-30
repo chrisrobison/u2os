@@ -94,9 +94,10 @@ const DETERMINISTIC_CONCERN = { location: /relocat|on-site|remote|location/i, co
 
 export const MATCH_LIMITATIONS = [
   'The posting is not split into individual requirements yet, so this lists the scorer\'s stored reasons and the review checks rather than a line-by-line comparison.',
-  'No evidence from your facts is stored next to a model judgement, so a match the scorer judged stays unverified until evidence resolution exists (planned for Phase 5 of the redesign, #626).',
+  'The scorer\'s judgements have no source of their own, so each stays unverified until you state evidence for it here. What you state is your own word: it is labelled "Stated by you" and is not checked against anything else.',
 ];
 
+const squash = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
 const dateText = (iso) => (iso ? String(iso).slice(0, 10) : '');
 
 /**
@@ -110,8 +111,14 @@ const dateText = (iso) => (iso ? String(iso).slice(0, 10) : '');
  */
 export function matchAnalysis(job) {
   const score = job?.score ?? null;
-  const result = { scored: Boolean(score), overall: null, verified: [], unverified: [], gaps: [], caveats: [] };
+  const result = { scored: Boolean(score), overall: null, verified: [], unverified: [], gaps: [], caveats: [], evidence: { rescorePending: false, lastAnsweredAt: null, error: null } };
   if (!score) return result;
+  // Questions and answers come from the server (mcp/jobs/hunt/evidence.js); this only pairs them with the items below.
+  const evidence = job.evidence ?? {};
+  const questionsByKey = new Map((evidence.questions ?? []).map((question) => [question.key, question]));
+  const questionsByText = new Map((evidence.questions ?? []).filter((question) => question.kind === 'concern').map((question) => [squash(question.statement).toLowerCase(), question]));
+  const answersByKey = new Map((evidence.answers ?? []).map((entry) => [entry.key, entry]));
+  result.evidence = { rescorePending: evidence.rescorePending === true, lastAnsweredAt: evidence.lastAnsweredAt ?? null, error: evidence.error ?? null };
   result.overall = {
     score: score.score, label: score.label ?? null, degraded: Boolean(score.degraded), model: score.model ?? null, scoredAt: score.scoredAt ?? null,
     confidence: typeof score.confidence === 'number' && Number.isFinite(score.confidence) ? Math.round(score.confidence * 100) : null,
@@ -138,7 +145,7 @@ export function matchAnalysis(job) {
   for (const [key, dim] of dimEntries.sort((a, b) => b[1].points / b[1].max - a[1].points / a[1].max)) {
     const ratio = dim.points / dim.max;
     const note = ratio >= 0.6 ? modelNote : ratio >= 0.3 ? `Partial match per the scorer. ${modelNote}` : `The scorer judged this weak. That is a judgement, not a confirmed gap, because it was not checked against your facts.`;
-    result.unverified.push({ kind: 'judged', text: `${titleCase(key)}: ${dim.reason}`, note });
+    result.unverified.push({ kind: 'judged', text: `${titleCase(key)}: ${dim.reason}`, note, question: questionsByKey.get(`dim:${key}`) ?? null });
   }
 
   for (const project of (score.projects ?? []).filter((entry) => entry?.name)) {
@@ -149,7 +156,7 @@ export function matchAnalysis(job) {
     const text = String(concern ?? '').trim();
     if (!text || CAVEAT_CONCERN.test(text)) continue;
     if ([...handled].some((key) => DETERMINISTIC_CONCERN[key].test(text))) continue; // shown from its rule above
-    result.unverified.push({ kind: 'concern', text, note: 'Raised by the scorer. Nothing in your facts confirms it.' });
+    result.unverified.push({ kind: 'concern', text, note: 'Raised by the scorer. Nothing in your facts confirms it.', question: questionsByText.get(squash(text).toLowerCase()) ?? null });
   }
 
   const review = job.reviews?.[0] ?? null;
@@ -167,7 +174,7 @@ export function matchAnalysis(job) {
       if (check && !check.pass && !check.informational && !result.gaps.some((gap) => gap.text.toLowerCase().includes(name === 'no_relocation_unless_allowed' ? 'relocat' : 'range'))) result.gaps.push({ kind: 'gap', text: `${text}${check.detail ? ` (${check.detail})` : ''}`, source: via });
     }
     for (const concern of (review.concerns ?? []).filter((entry) => entry?.text && entry.severity !== 'blocking')) {
-      result.unverified.push({ kind: 'concern', text: String(concern.text), source: via, note: `${titleCase(concern.severity || 'minor')} concern from the review agent.` });
+      result.unverified.push({ kind: 'concern', text: String(concern.text), source: via, note: `${titleCase(concern.severity || 'minor')} concern from the review agent.`, question: questionsByText.get(squash(concern.text).toLowerCase()) ?? null });
     }
   }
 
@@ -175,7 +182,44 @@ export function matchAnalysis(job) {
   for (const question of (attempt?.plan?.unresolved ?? []).slice(0, 8)) {
     result.unverified.push({ kind: 'missing', text: `No answer on file: ${question.label ?? question.key ?? 'a form question'}`, source: 'Latest application plan', note: 'Answering it adds the missing information. This is not a gap.' });
   }
+
+  // Resolve what the owner stated. Their word moves an item, labelled "Stated by you": Yes to verified, No to a confirmed
+  // gap (only because they said so), Partly stays unverified with their words shown. No points or per-skill number change.
+  const unresolved = [];
+  for (const item of result.unverified) {
+    const entry = item.question ? answersByKey.get(item.question.key) : null;
+    if (!entry) { unresolved.push(item); continue; }
+    const stated = { answer: entry.answer, detail: entry.detail || '', at: entry.at, job: entry.job, key: entry.key, path: `job-hunt/evidence/${entry.job}.md` };
+    if (entry.answer === 'yes') result.verified.push({ ...item, kind: 'stated', stated, source: 'Stated by you', note: 'Your own statement. U2OS has not checked it against anything else.' });
+    else if (entry.answer === 'no') result.gaps.push({ ...item, kind: 'stated-gap', stated, source: 'Stated by you', note: 'A gap because you said so.' });
+    else unresolved.push({ ...item, stated, source: 'Stated by you', note: 'You said this is only partly true, so it stays unverified.' });
+  }
+  result.unverified = unresolved;
   return result;
+}
+
+// ---- rescore banner ------------------------------------------------------------------
+
+const percent = (value) => (typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value)}%` : '—');
+const confidence = (value) => (typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value * 100)}%` : '—');
+
+/**
+ * What to tell the owner after an evidence answer or a rescore: { tone: 'status' | 'alert', text, retry }. `rescore` is the
+ * server's { status, reason, previous, current } (or { status: 'running' | 'unchanged' } set by the panel); without one,
+ * a saved answer the score does not reflect yet (evidence.rescorePending) is reported as pending. A value the server did
+ * not send is shown as "—", never as a guess. Returns null when there is nothing to say.
+ */
+export function rescoreNotice(rescore, job) {
+  const stored = job?.score ?? null;
+  if (rescore?.status === 'running') return { tone: 'status', text: 'Saved. Rescoring with your answer...', retry: false };
+  if (rescore?.status === 'unchanged') return { tone: 'status', text: 'You had already said this, so nothing changed.', retry: false };
+  if (rescore?.status === 'done') return { tone: 'status', text: `Rescored. Fit ${percent(rescore.previous?.score)} → ${percent(rescore.current?.score)}; scorer confidence ${confidence(rescore.previous?.confidence)} → ${confidence(rescore.current?.confidence)}.`, retry: false };
+  if (rescore?.status === 'skipped') return { tone: 'status', text: `Saved. ${rescore.reason ?? 'The score was not recalculated.'}`, retry: false };
+  if (rescore?.status === 'pending' || rescore?.status === 'failed') {
+    return { tone: 'alert', text: `Saved, but not rescored yet: ${String(rescore.reason ?? 'the rescore did not run').replace(/[.\s]*$/, '.')} Fit stays ${percent(rescore.previous?.score ?? stored?.score)}, scorer confidence ${confidence(rescore.previous?.confidence ?? stored?.confidence)}.`, retry: true };
+  }
+  if (job?.evidence?.rescorePending) return { tone: 'alert', text: `Your latest answer is not reflected in the score yet. Fit is ${percent(stored?.score)}, scorer confidence ${confidence(stored?.confidence)}.`, retry: true };
+  return null;
 }
 
 // ---- Overview tab ------------------------------------------------------------------

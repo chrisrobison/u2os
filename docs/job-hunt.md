@@ -181,14 +181,74 @@ Other query parameters: `stage=<discovered|qualified|preparing|needs_input|submi
 | Group | What goes in it |
 | --- | --- |
 | *Verified match* | something backed by a stored source: the location and compensation rules (the posting compared with your preferences), a project of yours the scorer matched (with its link), and a passing review check that your facts support the form answers or the resume and letter (with the review's date) |
-| *Unverified or insufficient evidence* | the scorer's model-judged dimensions (experience, seniority, technical, company, interest: a judgement with no source stored), concerns nobody confirmed, a failed "supported by your facts" check, form questions with no answer on file, and anything the posting leaves out ("Location not stated") |
-| *Confirmed gap* | only what a rule proves: relocation required, pay below your minimum |
+| *Unverified or insufficient evidence* | (each judged dimension and concern has a question, see [Evidence resolution](#evidence-resolution)) the scorer's model-judged dimensions (experience, seniority, technical, company, interest: a judgement with no source stored), concerns nobody confirmed, a failed "supported by your facts" check, form questions with no answer on file, and anything the posting leaves out ("Location not stated") |
+| *Confirmed gap* | what a rule proves (relocation required, pay below your minimum) and what you answered No to, labelled **Stated by you** |
 
 Missing evidence is never reported as a missing skill: a failed facts check says "your facts do not cover this yet", and a posting that omits something is not a gap. A rules-only score (no model) says so.
 
-**Limitations (the data model cannot support more yet).** The posting is not split into individual requirements, so the analysis lists the scorer's reasons and the review checks rather than a line-by-line comparison. No snippet of your facts is stored beside a model judgement, so a model-judged match stays *unverified* until evidence resolution exists (Phase 5 of #626 adds those inputs). U2OS keeps no research about a company, so the Company tab's research section is an honest empty state (research run from Goals is not attached to jobs). The Overview tab does not use the scorer's `narrative` field: it is a strategy id, not prose.
+**Limitations (the data model cannot support more yet).** The posting is not split into individual requirements, so the analysis lists the scorer's reasons and the review checks rather than a line-by-line comparison. A model-judged match stays *unverified* until you state evidence for it ([Evidence resolution](#evidence-resolution)). U2OS keeps no research about a company, so the Company tab's research section is an honest empty state (research run from Goals is not attached to jobs). The Overview tab does not use the scorer's `narrative` field: it is a strategy id, not prose.
 
 **States.** Loading, a failed load (with *Try again*), a job that no longer exists ("This job no longer exists", nothing to retry) and an unexpected payload each have their own message. A response that arrives after the owner chose another job is ignored. The panel loads the job itself, so it keeps working when the table's page no longer lists that row.
+
+## Evidence resolution
+
+Phase 5 of the redesign ([#636](https://github.com/chrisrobison/u2/issues/636), part of #626). In the Match Analysis tab, each *Unverified* item that the scorer judged has a question under it: **Can you back this up?** The owner answers **Yes, I can back this up**, **No, this is a gap** or **Partly**, with an optional detail (at most 1,000 characters), and presses *Save and rescore*. The code is `mcp/jobs/hunt/evidence.js` (questions, storage, rescoring), `jh-evidence-form.js` (the form) and two routes.
+
+**Which items have a question.** Only what a model judged or raised: the dimensions *experience*, *seniority*, *technical*, *company* and *interest*, and concerns (the scorer's and the latest review's, except the rules-only caveat and the concerns that the location and pay rules produced). Rule results, projects, failed "supported by your facts" checks and unanswered form questions (use *Answer questions*) have none. The questions are derived on the server from the job's stored score and review and arrive in `GET /api/job-hunt/jobs/:id` as `evidence.questions` (`key`, `kind`, `statement`, `prompt`, `source`). A client cannot invent a question or change its wording: a key that is not one of the job's current questions is refused (`400`). Keys are stable: `dim:<dimension>`, or `concern:` and 12 hex digits of the SHA-256 of the concern's text (a concern the scorer words differently after a rescore is a new question; the earlier answer stays on file but is no longer shown).
+
+**What a saved answer does.**
+
+| Answer | Match Analysis | `facts.md` |
+| --- | --- | --- |
+| Yes | moves to *Verified match*, source **Stated by you** | a marked line is added, so the claim guard and the materials generator may use it |
+| Partly | stays *Unverified*, with your words shown | a marked line is added ("can partly back up") |
+| No | moves to *Confirmed gap*, "A gap because you said so" | nothing: a gap is not a claim anything may make |
+
+Owner-stated evidence is never presented as system-verified: it carries the source **Stated by you**, the note "Your own statement. U2OS has not checked it against anything else.", and a provenance line ("Yes, stated by you on Oct 30, 2026. Recorded in job-hunt/evidence/<job-id>.md as dim:technical."). No dimension's points and no per-skill number is changed or invented by an answer; only the scorer's rescore can change the score.
+
+**Where it is stored.** `job-hunt/evidence/<job-id>.md`, one file per job, written with the vault's atomic editor (see [vault](vault.md)):
+
+```markdown
+---
+job: job_0123456789abcdef
+company: Acme
+role: Staff Engineer
+updated: 2026-10-30T12:00:00.000Z
+answers:
+  - key: dim:technical
+    answer: yes
+    detail: Four years of Go services
+    label: "Technical: Partial overlap with the stack"
+    source: owner
+    job: job_0123456789abcdef
+    at: 2026-10-30T12:00:00.000Z
+---
+# Evidence you stated for Acme - Staff Engineer
+- 2026-10-30 Yes: Technical: Partial overlap with the stack (Four years of Go services)
+```
+
+Every entry carries its provenance: `source: owner`, the job id, the question key, the question's text at the time and the timestamp. The front matter is the record (the body is regenerated); entries for another job or with an unknown key, answer or source are ignored when read, and a damaged file is reported on the panel without hiding the rest of the job. Yes and Partly answers are also added to `job-hunt/facts.md` under `## Owner-stated evidence`, one line each, starting with `<!-- u2-evidence <job id> <key> -->`; changing the answer replaces its line and a No removes it, and your own text in the file is never touched. (This is the existing store of owner-approved facts; `answers.yaml` holds form-question answers and is not used here, and nothing is written to memory.) The paths are derived only from a validated job id and a fixed key; a link (symlink) as `job-hunt`, `job-hunt/evidence`, an evidence file or `facts.md` is refused (`409`); files are written `0600` through a temporary file and a rename, and refused if they changed meanwhile; the detail must be plain text (no control characters) and a job holds at most 100 answers. Saving the same answer again changes nothing, keeps the first timestamp and repairs a missing `facts.md` line. Answer text is never logged.
+
+**Rescoring.** After a changed answer the job is scored again by the existing scorer (`scoreJob`, then `store.saveScore`, exactly as `job score --rescore` does); no new algorithm. The one difference is the model's input: the candidate digest gets an `OWNER-STATED EVIDENCE FOR THIS JOB` block with each statement and your answer (Yes, Partly, or No with "the candidate says this is a real gap"), and nothing is added when you stated nothing. The scorer's weights, clamps and thresholds are unchanged, so the model cannot raise a dimension past its maximum on your say-so alone. The response and the panel show the previous and the new fit and scorer confidence ("Rescored. Fit 74% → 81%; scorer confidence 62% → 85%."), with "—" for anything not stored.
+
+A rescore that cannot run never loses the answer and never replaces a model score with a rules-only estimate:
+
+| Situation | Result |
+| --- | --- |
+| no model available | `pending`: "Saved, but not rescored yet: No model is available right now. Fit stays 74%..." |
+| the model failed or fell back to rules (which ignore your answer) | `failed`, the old score is kept |
+| no resume, or any error | `failed` with the message |
+| the job is applying, applied, contacted, in follow-up, screening, interview, offer, rejected, withdrawn, closed, skipped or uncertain | `skipped`: the score is left as it was |
+
+The panel states this in an alert with a **Retry rescore** button. The score is known to be out of date whenever the newest answer is newer than the score (`evidence.rescorePending`), so the alert and the button come back after a reload. `job score` run in bulk does not include your statements; only the rescore here does.
+
+**API** (owner only, CSRF-protected like the other writes; each holds the job's lock, so another action in progress is a `409`):
+
+- `POST /api/job-hunt/jobs/:id/evidence` with `{ key, answer: 'yes' | 'no' | 'partly', detail? }` returns `{ saved, changed, rescore, job }`. `rescore` is `{ status: 'done' | 'pending' | 'failed' | 'skipped', reason?, previous, current }`, or `null` when the answer was identical to the one on file. Errors: `400` (invalid id, key not a current question, bad answer or detail), `404`, `413` (detail over the limit), `409`, `422` (damaged evidence file).
+- `POST /api/job-hunt/jobs/:id/rescore` rescores without a new answer (the retry) and returns `{ rescore, job }`.
+- `GET /api/job-hunt/jobs/:id` carries `evidence: { questions, answers, lastAnsweredAt, rescorePending, error? }`.
+
+**Safety.** Neither route approves, plans, sends or submits anything and neither changes a job's status, application, review or email. The autonomous policy is unchanged: a higher score after rescoring still has to pass the same checks, review and two-step approval as any other job. `tests/job-hunt-evidence.test.js` checks that the only new routes are these two, that no application, email, review or status changed, and that `approve-and-submit` still needs `confirm: true` and a plan hash.
 
 ## Job notes
 

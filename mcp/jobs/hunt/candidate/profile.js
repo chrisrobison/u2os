@@ -71,7 +71,7 @@ const stripHtml = (html) => String(html ?? '')
  * email and references: scoring does not need them, and less personal data
  * leaves the machine.
  */
-export function candidateDigest(resume, preferences = DEFAULT_PREFERENCES, { narratives = NARRATIVES } = {}) {
+export function candidateDigest(resume, preferences = DEFAULT_PREFERENCES, { narratives = NARRATIVES, ownerEvidence = [] } = {}) {
   const lines = [];
   lines.push(`Name: ${resume.basics.name}`);
   if (resume.basics.summary) lines.push(`Summary: ${stripHtml(resume.basics.summary)}`);
@@ -94,5 +94,10 @@ export function candidateDigest(resume, preferences = DEFAULT_PREFERENCES, { nar
   lines.push(`Interests: ${preferences.interests.join(', ')}`);
   lines.push('\nPROFESSIONAL NARRATIVES (choose the one that fits the role):');
   for (const [id, narrative] of Object.entries(narratives)) lines.push(`* ${id}: ${narrative.label}; emphasize ${narrative.emphasize.join('; ')}`);
+  // What the owner stated about this one job (mcp/jobs/hunt/evidence.js). Nothing is added when they stated nothing.
+  if (ownerEvidence.length) {
+    lines.push('\nOWNER-STATED EVIDENCE FOR THIS JOB (the candidate said this directly; treat it as the candidate\'s own statement, not as the listing):');
+    lines.push(...ownerEvidence);
+  }
   return lines.join('\n');
 }

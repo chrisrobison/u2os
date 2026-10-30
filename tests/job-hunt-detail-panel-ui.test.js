@@ -364,7 +364,7 @@ test('an answer that arrives after the owner moved on is ignored; a missing job 
 
 const ALLOWED = [
   ['GET', /^\/api\/job-hunt\/jobs\/job_\d{16}$/], ['GET', /^\/api\/job-hunt\/jobs\/job_\d{16}\/notes$/], ['PUT', /^\/api\/job-hunt\/jobs\/job_\d{16}\/notes$/],
-  ['POST', /^\/api\/job-hunt\/jobs\/job_\d{16}\/(status|plan|prefill|answers|email|approve-and-submit)$/],
+  ['POST', /^\/api\/job-hunt\/jobs\/job_\d{16}\/(status|plan|prefill|answers|email|approve-and-submit|evidence|rescore)$/],
 ];
 
 test('Mark not interested goes through the status endpoint after a confirmation, and nothing else is called', async () => {
@@ -672,4 +672,246 @@ test('an open job that the table no longer lists stays in the panel; a deleted o
   await panel.show(J(8));
   await flush();
   assert.equal(textOf(part(node, 'heading')), 'Job not found');
+});
+
+// ---- evidence resolution (#636) ---------------------------------------------------------
+
+const EVIDENCE_QUESTIONS = [
+  { key: 'dim:experience', kind: 'dimension', statement: 'Experience: Ten years of backend work', prompt: 'Can you back up the experience part of this match with your own experience?', source: 'Scorer' },
+  { key: 'dim:technical', kind: 'dimension', statement: 'Technical: Node and SQLite match', prompt: 'Can you back up the technical part of this match with your own experience?', source: 'Scorer' },
+  { key: 'dim:seniority', kind: 'dimension', statement: 'Seniority: Level unclear', prompt: 'Can you back up the seniority part of this match with your own experience?', source: 'Scorer' },
+  { key: 'concern:0123456789ab', kind: 'concern', statement: 'Team size unclear', prompt: 'Do you have experience or evidence that addresses this concern?', source: 'Scorer' },
+];
+const stated = (key, answer, detail = '') => ({ key, answer, detail, label: 'x', source: 'owner', job: J(1), at: '2026-10-30T12:00:00.000Z' });
+const withEvidence = (over = {}, evidence = {}) => jobFixture(1, { evidence: { questions: EVIDENCE_QUESTIONS, answers: [], lastAnsweredAt: null, rescorePending: false, ...evidence }, ...over });
+const li = (root, key) => root.querySelector(`li[data-key="${key}"]`);
+const choose = (form, value) => { for (const input of form.querySelectorAll('input')) input.checked = input.getAttribute('value') === value; };
+const submit = (form) => form.dispatchEvent(new Ev('submit', { bubbles: true }));
+
+async function openMatch(job) {
+  respond = answerFor({ '/api/job-hunt/jobs/': job });
+  const panel = await mountPanel();
+  await panel.show(J(1));
+  await flush();
+  panel.querySelector('[data-tab="match"]').click();
+  return panel;
+}
+
+test('evidence: the owner\'s answers move items by their word only, labelled "Stated by you", with provenance', async () => {
+  const { matchAnalysis } = await import('../public/components/job-hunt/jh-detail-model.js');
+  const none = matchAnalysis(withEvidence());
+  assert.deepEqual(none.unverified.filter((item) => item.question).map((item) => item.question.key).sort(), ['concern:0123456789ab', 'dim:experience', 'dim:seniority', 'dim:technical'], 'every judged item and concern is paired with the server\'s question');
+  assert.equal(none.verified.some((item) => item.kind === 'stated'), false);
+
+  const answered = matchAnalysis(withEvidence({}, { answers: [stated('dim:technical', 'yes', 'Four years of Go'), stated('concern:0123456789ab', 'no'), stated('dim:seniority', 'partly', 'Led two people')] }));
+  const yes = answered.verified.find((item) => item.kind === 'stated');
+  assert.equal(yes.text, 'Technical: Node and SQLite match');
+  assert.equal(yes.source, 'Stated by you');
+  assert.deepEqual(yes.stated, { answer: 'yes', detail: 'Four years of Go', at: '2026-10-30T12:00:00.000Z', job: J(1), key: 'dim:technical', path: `job-hunt/evidence/${J(1)}.md` });
+  assert.match(yes.note, /has not checked it against anything else/);
+  assert.deepEqual(answered.gaps.map((gap) => [gap.kind, gap.text, gap.source]), [['stated-gap', 'Team size unclear', 'Stated by you']], 'a No is a gap because the owner said so');
+  const partly = answered.unverified.find((item) => item.stated);
+  assert.equal(partly.text, 'Seniority: Level unclear');
+  assert.match(partly.note, /only partly true/);
+  assert.equal(answered.verified.some((item) => item.kind === 'rule'), true, 'system-verified items are still there, labelled by their own sources');
+  assert.equal(answered.verified.find((item) => item.kind === 'rule').source !== 'Stated by you', true);
+  assert.equal(matchAnalysis(jobFixture(1)).unverified.every((item) => !item.question), true, 'a job without evidence data shows no questions');
+});
+
+test('evidence: the rescore notice shows previous and new honestly, with a dash for anything missing', async () => {
+  const { rescoreNotice } = await import('../public/components/job-hunt/jh-detail-model.js');
+  const job = withEvidence();
+  assert.equal(rescoreNotice(null, job), null);
+  assert.deepEqual(rescoreNotice({ status: 'done', previous: { score: 74, confidence: 0.62 }, current: { score: 81, confidence: 0.85 } }, job), { tone: 'status', text: 'Rescored. Fit 74% → 81%; scorer confidence 62% → 85%.', retry: false });
+  assert.equal(rescoreNotice({ status: 'done', previous: { score: 74, confidence: null }, current: { score: 70 } }, job).text, 'Rescored. Fit 74% → 70%; scorer confidence — → —.');
+  assert.equal(rescoreNotice({ status: 'done', previous: null, current: null }, job).text, 'Rescored. Fit — → —; scorer confidence — → —.');
+  const pending = rescoreNotice({ status: 'pending', reason: 'No model is available right now.', previous: { score: 74, confidence: 0.62 }, current: null }, job);
+  assert.equal(pending.tone, 'alert');
+  assert.equal(pending.retry, true);
+  assert.equal(pending.text, 'Saved, but not rescored yet: No model is available right now. Fit stays 74%, scorer confidence 62%.');
+  assert.equal(rescoreNotice({ status: 'failed', reason: 'boom', previous: null }, jobFixture(1, { score: { ...jobFixture(1).score, confidence: null } })).text, 'Saved, but not rescored yet: boom. Fit stays 88%, scorer confidence —.');
+  assert.match(rescoreNotice(null, withEvidence({}, { rescorePending: true })).text, /not reflected in the score yet/);
+  assert.equal(rescoreNotice({ status: 'skipped', reason: 'This job is applied, so its score is left as it was.' }, job).retry, false);
+  assert.equal(rescoreNotice({ status: 'unchanged' }, job).text, 'You had already said this, so nothing changed.');
+});
+
+test('evidence: each unverified item has a labelled question from the server; nothing the server did not send can be answered', async () => {
+  const job = withEvidence({}, {});
+  job.evidence.questions = EVIDENCE_QUESTIONS.filter((question) => question.key !== 'dim:seniority');
+  const panel = await openMatch(job);
+  const body = tabBody(panel);
+  const technical = li(body, 'dim:technical');
+  const form = technical.querySelector('form');
+  assert.equal(form.getAttribute('data-evidence-form'), 'dim:technical');
+  assert.equal(textOf(form.querySelector('legend')), EVIDENCE_QUESTIONS[1].prompt, 'the wording is the server\'s');
+  assert.equal(form.querySelector('fieldset') !== null, true);
+  const radios = form.querySelectorAll('input');
+  assert.deepEqual(radios.map((input) => input.getAttribute('value')), ['yes', 'no', 'partly']);
+  assert.equal(new Set(radios.map((input) => input.getAttribute('name'))).size, 1, 'one radio group');
+  for (const input of radios) assert.ok(form.querySelector(`label[for="${input.getAttribute('id')}"]`), 'every radio has a label');
+  const area = form.querySelector('textarea');
+  assert.equal(area.getAttribute('maxlength'), '1000');
+  assert.ok(form.querySelector(`label[for="${area.getAttribute('id')}"]`), 'the detail has a label');
+  assert.equal(form.querySelector('[role="status"]') !== null, true);
+  assert.equal(li(body, 'dim:seniority'), null, 'level unclear has no question from the server, so it has no form');
+  assert.equal(body.querySelectorAll('form').length, 3);
+  assert.equal(body.querySelector('[data-match="verified"]').querySelectorAll('form').length + body.querySelector('[data-match="gaps"]').querySelectorAll('form').length, 0, 'nothing verified or confirmed offers a question');
+});
+
+test('evidence: saving sends only key, answer and detail, shows the rescored result, moves the item and puts focus on the result', async () => {
+  const job = withEvidence();
+  const after = withEvidence({ score: { ...job.score, score: 91, confidence: 0.82, scoredAt: '2026-10-30T12:00:00.000Z' } }, { answers: [stated('dim:technical', 'yes', 'Four years of Go')], lastAnsweredAt: '2026-10-30T12:00:00.000Z' });
+  respond = async (url, options) => (url.endsWith('/evidence') && options.method === 'POST'
+    ? { saved: stated('dim:technical', 'yes', 'Four years of Go'), changed: true, rescore: { status: 'done', previous: { score: 88, confidence: 0.8 }, current: { score: 91, confidence: 0.82 } }, job: after }
+    : job);
+  const panel = await mountPanel();
+  await panel.show(J(1));
+  await flush();
+  const updated = [];
+  panel.addEventListener('jh-job-updated', (event) => updated.push(event.detail.job.score.score));
+  panel.querySelector('[data-tab="match"]').click();
+  const form = li(tabBody(panel), 'dim:technical').querySelector('form');
+
+  fetchCalls = [];
+  submit(form);
+  await flush();
+  assert.equal(fetchCalls.length, 0, 'no choice: nothing is sent');
+  assert.equal(textOf(form.querySelector('[data-evidence-part="status"]')), 'Choose Yes, No or Partly.');
+  assert.equal(form.querySelector('[data-evidence-part="status"]').getAttribute('role'), 'alert');
+
+  choose(form, 'yes');
+  form.querySelector('textarea').value = '  Four years of Go  ';
+  submit(form);
+  await flush();
+  assert.deepEqual(fetchCalls.map((call) => [call.method, call.url, call.body]), [['POST', `/api/job-hunt/jobs/${J(1)}/evidence`, { key: 'dim:technical', answer: 'yes', detail: 'Four years of Go' }]]);
+  const body = tabBody(panel);
+  const banner = part(body, 'rescore');
+  assert.equal(textOf(banner), 'Rescored. Fit 88% → 91%; scorer confidence 80% → 82%.');
+  assert.equal(banner.getAttribute('role'), 'status');
+  assert.equal(document.activeElement, banner, 'focus moves to the result');
+  assert.equal(textOf(part(panel, 'fit')), '91% fit');
+  assert.deepEqual(updated, [91], 'the table is told the job changed');
+  assert.equal(li(body.querySelector('[data-match="verified"]'), 'dim:technical') !== null, true, 'it is now in Verified match');
+  assert.equal(li(body.querySelector('[data-match="unverified"]'), 'dim:technical'), null);
+  const item = li(body, 'dim:technical');
+  assert.equal(textOf(part(item, 'source')), 'Source: Stated by you');
+  assert.match(textOf(part(item, 'provenance')), /Yes, stated by you on Oct 30, 2026\. Recorded in job-hunt\/evidence\/job_0+1\.md as dim:technical\./);
+  assert.equal(textOf(part(item, 'stated-detail')), 'Your detail: Four years of Go');
+  assert.equal(textOf(item.querySelector('summary')), 'Change your answer');
+  assert.equal(item.querySelector('input[value="yes"]').checked, true, 'the saved answer is preselected for a change');
+});
+
+test('evidence: a No becomes a confirmed gap because the owner said so, and "gap" is not claimed for anything else', async () => {
+  const job = withEvidence();
+  const after = withEvidence({}, { answers: [stated('concern:0123456789ab', 'no')], lastAnsweredAt: '2026-10-30T12:00:00.000Z', rescorePending: true });
+  respond = async (url, options) => (url.endsWith('/evidence') && options.method === 'POST' ? { saved: stated('concern:0123456789ab', 'no'), changed: true, rescore: { status: 'skipped', reason: 'This job is applied, so its score is left as it was.', previous: null, current: null }, job: after } : job);
+  const panel = await mountPanel();
+  await panel.show(J(1));
+  await flush();
+  panel.querySelector('[data-tab="match"]').click();
+  const form = li(tabBody(panel), 'concern:0123456789ab').querySelector('form');
+  choose(form, 'no');
+  submit(form);
+  await flush();
+  const gaps = tabBody(panel).querySelector('[data-match="gaps"]');
+  assert.match(textOf(gaps), /Team size unclear/);
+  assert.match(textOf(gaps), /A gap because you said so/);
+  assert.match(textOf(part(tabBody(panel), 'rescore')), /^Saved\. This job is applied/);
+  assert.equal(tabBody(panel).querySelector('[data-match="verified"]').querySelectorAll('li').some((node) => /Team size/.test(textOf(node))), false);
+});
+
+test('evidence: when the rescore cannot run the answer stays, an alert explains and a retry calls the rescore endpoint', async () => {
+  const job = withEvidence();
+  const saved = withEvidence({}, { answers: [stated('dim:technical', 'partly')], lastAnsweredAt: '2026-10-30T12:00:00.000Z', rescorePending: true });
+  const rescored = withEvidence({ score: { ...job.score, score: 90 } }, { answers: [stated('dim:technical', 'partly')], lastAnsweredAt: '2026-10-30T12:00:00.000Z' });
+  respond = async (url, options) => {
+    if (url.endsWith('/evidence')) return { saved: stated('dim:technical', 'partly'), changed: true, rescore: { status: 'pending', reason: 'No model is available right now.', previous: { score: 88, confidence: 0.8 }, current: null }, job: saved };
+    if (url.endsWith('/rescore')) return { rescore: { status: 'done', previous: { score: 88, confidence: 0.8 }, current: { score: 90, confidence: 0.81 } }, job: rescored };
+    return options.method === 'POST' ? {} : job;
+  };
+  const panel = await mountPanel();
+  await panel.show(J(1));
+  await flush();
+  panel.querySelector('[data-tab="match"]').click();
+  const form = li(tabBody(panel), 'dim:technical').querySelector('form');
+  choose(form, 'partly');
+  submit(form);
+  await flush();
+  let banner = part(tabBody(panel), 'rescore');
+  assert.equal(banner.getAttribute('role'), 'alert');
+  assert.equal(textOf(banner.querySelector('span')), 'Saved, but not rescored yet: No model is available right now. Fit stays 88%, scorer confidence 80%.');
+  assert.match(textOf(li(tabBody(panel), 'dim:technical')), /Partly, stated by you/);
+  assert.equal(li(tabBody(panel).querySelector('[data-match="unverified"]'), 'dim:technical') !== null, true, 'Partly stays unverified');
+
+  fetchCalls = [];
+  panel.querySelector('[data-evidence-action="rescore"]').click();
+  await flush();
+  assert.deepEqual(fetchCalls.map((call) => [call.method, call.url, call.body]), [['POST', `/api/job-hunt/jobs/${J(1)}/rescore`, {}]]);
+  banner = part(tabBody(panel), 'rescore');
+  assert.equal(textOf(banner), 'Rescored. Fit 88% → 90%; scorer confidence 80% → 81%.');
+  assert.equal(panel.querySelector('[data-evidence-action="rescore"]'), null);
+  assert.equal(textOf(part(panel, 'fit')), '90% fit');
+});
+
+test('evidence: a score that is out of date after a reload offers the retry, and a failed retry says so', async () => {
+  const job = withEvidence({}, { answers: [stated('dim:technical', 'yes')], lastAnsweredAt: '2026-10-30T12:00:00.000Z', rescorePending: true });
+  respond = async (url, options) => (url.endsWith('/rescore') ? { __status: 500, error: 'The answer could not be saved' } : (options.method === 'POST' ? {} : job));
+  const panel = await mountPanel();
+  await panel.show(J(1));
+  await flush();
+  panel.querySelector('[data-tab="match"]').click();
+  assert.match(textOf(part(tabBody(panel), 'rescore')), /not reflected in the score yet\. Fit is 88%, scorer confidence 80%\./);
+  panel.querySelector('[data-evidence-action="rescore"]').click();
+  await flush();
+  const banner = part(tabBody(panel), 'rescore');
+  assert.equal(banner.getAttribute('role'), 'alert');
+  assert.match(textOf(banner), /Saved, but not rescored yet: The answer could not be saved\./);
+  assert.ok(panel.querySelector('[data-evidence-action="rescore"]'), 'the retry is still offered');
+});
+
+test('evidence: a failed save keeps what the owner typed and says why in an alert', async () => {
+  const job = withEvidence();
+  respond = async (url, options) => (url.endsWith('/evidence') ? { __status: 409, error: 'Another action for this job is in progress' } : (options.method === 'POST' ? {} : job));
+  const panel = await mountPanel();
+  await panel.show(J(1));
+  await flush();
+  panel.querySelector('[data-tab="match"]').click();
+  const form = li(tabBody(panel), 'dim:experience').querySelector('form');
+  choose(form, 'yes');
+  form.querySelector('textarea').value = 'my long explanation';
+  submit(form);
+  await flush();
+  const status = form.querySelector('[data-evidence-part="status"]');
+  assert.equal(status.getAttribute('role'), 'alert');
+  assert.equal(textOf(status), 'Could not save: Another action for this job is in progress');
+  assert.equal(form.querySelector('textarea').value, 'my long explanation');
+  assert.equal(form.querySelector('[data-evidence-save]').disabled, false, 'the owner can try again');
+  assert.equal(part(tabBody(panel), 'rescore'), null);
+});
+
+test('evidence: hostile statements and details are text, and an unreadable evidence file is reported without hiding the analysis', async () => {
+  const job = withEvidence({}, { answers: [stated('dim:technical', 'yes', HOSTILE)], error: HOSTILE });
+  job.evidence.questions = EVIDENCE_QUESTIONS.map((question) => (question.key === 'concern:0123456789ab' ? { ...question, statement: HOSTILE } : question));
+  job.score = { ...job.score, concerns: [HOSTILE] };
+  const panel = await openMatch(job);
+  assert.equal(panel.descendants().filter((node) => ['IMG', 'SCRIPT'].includes(node.tagName)).length, 0);
+  assert.ok(textOf(tabBody(panel)).includes(HOSTILE));
+  assert.equal(part(tabBody(panel), 'evidence-error').getAttribute('role'), 'alert');
+  assert.ok(li(tabBody(panel), 'concern:0123456789ab'), 'the hostile concern still pairs with its question');
+});
+
+test('evidence: the panel makes no other request than the two evidence endpoints, and never an approval or send', async () => {
+  const job = withEvidence();
+  respond = async (url, options) => (url.endsWith('/evidence') ? { saved: stated('dim:technical', 'yes'), changed: true, rescore: { status: 'done', previous: null, current: null }, job } : (options.method === 'POST' ? {} : job));
+  const panel = await mountPanel();
+  await panel.show(J(1));
+  await flush();
+  panel.querySelector('[data-tab="match"]').click();
+  fetchCalls = [];
+  const form = li(tabBody(panel), 'dim:technical').querySelector('form');
+  choose(form, 'yes');
+  submit(form);
+  await flush();
+  assert.deepEqual(fetchCalls.map((call) => `${call.method} ${call.url.replace(J(1), ':id')}`), ['POST /api/job-hunt/jobs/:id/evidence']);
+  assert.equal(textOf(part(tabBody(panel), 'rescore')), 'Rescored. Fit — → —; scorer confidence — → —.', 'missing values are dashes, not zeros');
 });

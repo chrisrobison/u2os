@@ -15,6 +15,8 @@ import { readNote, writeNote } from '../../../mcp/jobs/hunt/notes.js';
 import { addCustomAnswers } from '../../../mcp/jobs/hunt/candidate/answers.js';
 import { ownerApproveAndSubmit, prefillApplicationForm, withLock } from '../../../mcp/jobs/hunt/act.js';
 import { planJob } from '../../jobhunt/replan.js';
+import { createJobLlm } from '../../jobhunt/llm.js';
+import { evidenceQuestions, rescoreJob, saveEvidenceAnswer } from '../../../mcp/jobs/hunt/evidence.js';
 import { ensureMaterials } from '../../jobhunt/ensure-materials.js';
 import { chooseApplyUrl } from '../../../mcp/jobs/hunt/applications/form/submit.js';
 import { JOB_HUNT_DIR } from '../../../mcp/jobs/profile.js';
@@ -149,7 +151,7 @@ export function registerJobHuntRoutes(router, { agent, toolRegistry, autopilot =
   router.get('/api/job-hunt/jobs/:id', async (req, res) => {
     if (!JOB_ID.test(req.params.id)) return sendJson(res, 400, { error: 'Invalid job id' });
     reconcileOutcomes();
-    const view = withStore((store) => { const job = store.getJob(req.params.id); return job ? jobView(store, job, { minimumScore: preferences().minimum_score, detail: true, screensDir: screensDir() }) : null; });
+    const view = withStore((store) => { const job = store.getJob(req.params.id); return job ? jobView(store, job, { minimumScore: preferences().minimum_score, detail: true, screensDir: screensDir(), vaultDir: getVaultDir() }) : null; });
     if (!view) return sendJson(res, 404, { error: 'No such job' });
     sendJson(res, 200, { ...view, sendRoutes: availableRoutes(toolRegistry) });
   });
@@ -206,7 +208,7 @@ export function registerJobHuntRoutes(router, { agent, toolRegistry, autopilot =
           let replanned = null; let replanError = null;
           try { replanned = await planJob({ vaultDir, store, job }); } catch (error) { replanError = String(error.message).slice(0, 300); }
           const fresh = store.getJob(job.id);
-          return { saved, status: replanned?.status ?? application.status, unresolved: (replanned?.plan ?? application.plan).unresolved.length, ...(replanError ? { replanError } : {}), job: { ...jobView(store, fresh, { minimumScore: preferences().minimum_score, detail: true, screensDir: screensDir() }), sendRoutes: availableRoutes(toolRegistry) } };
+          return { saved, status: replanned?.status ?? application.status, unresolved: (replanned?.plan ?? application.plan).unresolved.length, ...(replanError ? { replanError } : {}), job: { ...jobView(store, fresh, { minimumScore: preferences().minimum_score, detail: true, screensDir: screensDir(), vaultDir: getVaultDir() }), sendRoutes: availableRoutes(toolRegistry) } };
         } finally { store.close(); }
       });
       sendJson(res, 200, body);
@@ -215,6 +217,56 @@ export function registerJobHuntRoutes(router, { agent, toolRegistry, autopilot =
       if (!status) return sendJson(res, 500, { error: String(error.message).slice(0, 300) });
       sendJson(res, status, { error: error.message });
     }
+  });
+
+  // Evidence resolution (#636): the owner says whether they can back up one unverified item of the match analysis. The
+  // question comes from the job's stored score and review (a client cannot invent one or change its wording). The answer is
+  // saved with its provenance (mcp/jobs/hunt/evidence.js), then the job is scored again by the existing scorer. A rescore
+  // that cannot run (no model, model failure) never loses the answer: the response says `pending` or `failed` and the
+  // owner retries with POST .../rescore. Nothing here approves, plans or submits anything.
+  const evidenceStatus = { BAD_INPUT: 400, UNKNOWN_JOB: 404, TOO_LARGE: 413, CONFLICT: 409, IN_PROGRESS: 409, UNSAFE_PATH: 409, EVIDENCE_INVALID: 422 };
+  const evidenceError = (res, error) => {
+    const status = error.code === 'VAULT_WRITEBACK' ? error.status : evidenceStatus[error.code];
+    if (!status) return sendJson(res, 500, { error: 'The answer could not be saved' });
+    return sendJson(res, status, { error: String(error.message).slice(0, 300), code: error.code === 'VAULT_WRITEBACK' ? 'CONFLICT' : error.code });
+  };
+  const evidenceJob = (store, id) => ({ ...jobView(store, store.getJob(id), { minimumScore: preferences().minimum_score, detail: true, screensDir: screensDir(), vaultDir: getVaultDir() }), sendRoutes: availableRoutes(toolRegistry) });
+  router.post('/api/job-hunt/jobs/:id/evidence', async (req, res) => {
+    if (!JOB_ID.test(req.params.id)) return sendJson(res, 400, { error: 'Invalid job id' });
+    const { key, answer, detail } = req.body ?? {};
+    const vaultDir = getVaultDir();
+    try {
+      const body = await withLock(vaultDir, req.params.id, async () => {
+        const store = openStore(huntDbPath(vaultDir));
+        try {
+          const job = store.getJob(req.params.id);
+          if (!job) throw Object.assign(new Error('No such job'), { code: 'UNKNOWN_JOB' });
+          const now = new Date();
+          const questions = evidenceQuestions({ score: store.getScore(job.id), review: store.listReviews(job.id)[0] ?? null });
+          const { entry, changed } = saveEvidenceAnswer({ vaultDir, job, questions, key, answer, detail, now });
+          const rescore = changed ? await rescoreJob({ vaultDir, store, job: store.getJob(job.id), llm: jobLlm ?? createJobLlm(), now }) : null;
+          return { saved: entry, changed, rescore, job: evidenceJob(store, job.id) };
+        } finally { store.close(); }
+      });
+      sendJson(res, 200, body);
+    } catch (error) { evidenceError(res, error); }
+  });
+  // Rescore without a new answer: the retry after a pending or failed rescore.
+  router.post('/api/job-hunt/jobs/:id/rescore', async (req, res) => {
+    if (!JOB_ID.test(req.params.id)) return sendJson(res, 400, { error: 'Invalid job id' });
+    const vaultDir = getVaultDir();
+    try {
+      const body = await withLock(vaultDir, req.params.id, async () => {
+        const store = openStore(huntDbPath(vaultDir));
+        try {
+          const job = store.getJob(req.params.id);
+          if (!job) throw Object.assign(new Error('No such job'), { code: 'UNKNOWN_JOB' });
+          const rescore = await rescoreJob({ vaultDir, store, job, llm: jobLlm ?? createJobLlm(), now: new Date() });
+          return { rescore, job: evidenceJob(store, job.id) };
+        } finally { store.close(); }
+      });
+      sendJson(res, 200, body);
+    } catch (error) { evidenceError(res, error); }
   });
 
   // The owner pressed "Prepare Email" (mode draft: a draft in Mail's Drafts, nothing sent) or "Apply via Email" (mode send).
@@ -244,7 +296,7 @@ export function registerJobHuntRoutes(router, { agent, toolRegistry, autopilot =
             propose: (proposal) => agent.evaluateAndMaybeExecute({ tool: proposal.tool, arguments: proposal.arguments, requestedBy: 'owner', requestText: proposal.requestText, reasoningSummary: proposal.reasoning, correlationId: newId('corr'), actor: { type: 'user', id: 'user' } }),
           });
           const fresh = store.getJob(job.id);
-          return { mode, via, status: result.outcome.status, actionId: result.outcome.id, reason: result.outcome.reason ?? null, email: { id: result.email.id, to: result.email.to, status: result.email.status }, job: { ...jobView(store, fresh, { minimumScore: preferences().minimum_score, detail: true, screensDir: screensDir() }), sendRoutes: routes } };
+          return { mode, via, status: result.outcome.status, actionId: result.outcome.id, reason: result.outcome.reason ?? null, email: { id: result.email.id, to: result.email.to, status: result.email.status }, job: { ...jobView(store, fresh, { minimumScore: preferences().minimum_score, detail: true, screensDir: screensDir(), vaultDir: getVaultDir() }), sendRoutes: routes } };
         } finally { store.close(); }
       });
       sendJson(res, 200, body);
@@ -268,7 +320,7 @@ export function registerJobHuntRoutes(router, { agent, toolRegistry, autopilot =
           if (!url) throw Object.assign(new Error('This listing has no application link. Use Apply via Email.'), { code: 'CONFLICT' });
           await ensureMaterials({ vaultDir, store, job, need: 'form', llm: jobLlm });
           const application = await planJob({ vaultDir, store, job: store.getJob(job.id), llm: jobLlm, url });
-          return { status: application.status, ready: application.plan?.ready === true, unresolved: application.plan?.unresolved?.length ?? 0, job: { ...jobView(store, store.getJob(job.id), { minimumScore: preferences().minimum_score, detail: true, screensDir: screensDir() }), sendRoutes: availableRoutes(toolRegistry) } };
+          return { status: application.status, ready: application.plan?.ready === true, unresolved: application.plan?.unresolved?.length ?? 0, job: { ...jobView(store, store.getJob(job.id), { minimumScore: preferences().minimum_score, detail: true, screensDir: screensDir(), vaultDir: getVaultDir() }), sendRoutes: availableRoutes(toolRegistry) } };
         } finally { store.close(); }
       });
       sendJson(res, 200, body);
@@ -283,7 +335,7 @@ export function registerJobHuntRoutes(router, { agent, toolRegistry, autopilot =
   router.post('/api/job-hunt/jobs/:id/prefill', async (req, res) => {
     if (!JOB_ID.test(req.params.id)) return sendJson(res, 400, { error: 'Invalid job id' });
     const vaultDir = getVaultDir();
-    const view = (store) => ({ ...jobView(store, store.getJob(req.params.id), { minimumScore: preferences().minimum_score, detail: true, screensDir: screensDir() }), sendRoutes: availableRoutes(toolRegistry) });
+    const view = (store) => ({ ...jobView(store, store.getJob(req.params.id), { minimumScore: preferences().minimum_score, detail: true, screensDir: screensDir(), vaultDir: getVaultDir() }), sendRoutes: availableRoutes(toolRegistry) });
     try {
       const planned = await withLock(vaultDir, req.params.id, async () => {
         const store = openStore(huntDbPath(vaultDir));
@@ -318,7 +370,7 @@ export function registerJobHuntRoutes(router, { agent, toolRegistry, autopilot =
     const vaultDir = getVaultDir();
     try {
       const outcome = await ownerApproveAndSubmit({ vaultDir, jobId: req.params.id, planHash: req.body.planHash });
-      const job = withStore((store) => { const found = store.getJob(req.params.id); return found ? { ...jobView(store, found, { minimumScore: preferences().minimum_score, detail: true, screensDir: screensDir() }), sendRoutes: availableRoutes(toolRegistry) } : null; });
+      const job = withStore((store) => { const found = store.getJob(req.params.id); return found ? { ...jobView(store, found, { minimumScore: preferences().minimum_score, detail: true, screensDir: screensDir(), vaultDir: getVaultDir() }), sendRoutes: availableRoutes(toolRegistry) } : null; });
       sendJson(res, 200, { ...outcome, job });
     } catch (error) {
       const status = { UNKNOWN_JOB: 404, NOT_READY: 409, STALE_PLAN: 409, CHECKS_FAILED: 409, IN_PROGRESS: 409, NOT_APPROVED: 409, REFUSED: 409, BLOCKED: 409 }[error.code];
