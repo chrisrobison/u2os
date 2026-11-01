@@ -1,5 +1,5 @@
 import * as api from '../../services/api.js';
-import { el } from './jh-util.js';
+import { el, keepFocus } from './jh-util.js';
 import { liveSummary } from './jh-operations-model.js';
 import { activityPanel, approvalsPanel, autopilotPanel, failuresPanel, recentPanel, runningPanel } from './jh-operations-parts.js';
 import './jh-all.js';
@@ -37,7 +37,7 @@ export class U2JobOperations extends HTMLElement {
     this.addEventListener('jh-retry', () => this._load());
     window.addEventListener('u2-event', this._onEvent);
     this._poll = setInterval(() => { if (typeof document === 'undefined' || !document.hidden) this._load(); }, POLL_MS);
-    this._tick = setInterval(() => this._render(), TICK_MS);
+    this._tick = setInterval(() => { if (!this._error) this._render(); }, TICK_MS); // an error banner is not re-created (and re-announced) by the clock
     this._render();
     this._load();
   }
@@ -58,7 +58,9 @@ export class U2JobOperations extends HTMLElement {
       data = await api.getJobHuntOperations();
     } catch (err) {
       if (seq !== this._seq) return;
-      this._error = err?.message || 'The request failed';
+      const message = err?.message || 'The request failed';
+      if (message === this._error) return; // the same failure again: do not re-create (and re-announce) the alert
+      this._error = message;
       this._render();
       return;
     }
@@ -90,7 +92,7 @@ export class U2JobOperations extends HTMLElement {
         el('div', { class: 'jh-ov__columns' }, failuresPanel(data, now), activityPanel(data, now)),
         recentPanel(data, now));
     }
-    this._body.replaceChildren(...parts);
+    keepFocus(this._body, () => this._body.replaceChildren(...parts));
   }
 }
 

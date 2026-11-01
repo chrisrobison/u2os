@@ -1,6 +1,6 @@
 import * as api from '../../services/api.js';
 import { el } from './jh-util.js';
-import { FILTER_TABS, FIT_FLOORS, PAGE_SIZE, SORTS, apiParams, hasNarrowing, jobPageHref, naturalDir, nextSort, opportunitiesHref, pageCount, parseOpportunitiesHash } from './jh-opportunities-model.js';
+import { FILTER_TABS, FIT_FLOORS, PAGE_SIZE, SORTS, apiParams, hasNarrowing, jobPageHref, naturalDir, nextSort, opportunitiesHref, pageCount, parseOpportunitiesHash, rangeText } from './jh-opportunities-model.js';
 import { applyTabStops, bulkBar, filterTabs, opportunityGrid, pager, scopeChips } from './jh-opportunities-parts.js';
 import { confirmDialog } from './u2-job-actions.js';
 import { JOB_ID, jobFromHash, withJobInHash } from './jh-detail-model.js';
@@ -99,6 +99,7 @@ export class U2JobOpportunities extends HTMLElement {
     this._chips = el('div', { class: 'jh-opp__chips-slot' });
     this._bulk = el('div', { class: 'jh-opp__bulk-slot' });
     this._noticeEl = el('div', { class: 'jh-opp__notice', role: 'status', 'aria-live': 'polite' });
+    this._announce = el('div', { class: 'sr-only', role: 'status', 'aria-live': 'polite', 'data-part': 'announce' });
     this._body = el('div', { class: 'jh-opp__body' });
     this._foot = el('div', { class: 'jh-opp__foot' });
     this._panel = el('u2-job-detail-panel');
@@ -112,7 +113,7 @@ export class U2JobOpportunities extends HTMLElement {
           el('div', { class: 'jh-search jh-opp__search' }, this._search),
           this._filtersButton,
           el('div', { class: 'jh-opp__sortbox' }, el('span', { class: 'jh-ov__muted', text: 'Sort' }), this._sortSelect, this._dirButton)),
-        this._filtersPanel, this._chips, this._bulk, this._noticeEl, this._body, this._foot));
+        this._filtersPanel, this._chips, this._bulk, this._noticeEl, this._announce, this._body, this._foot));
     this._ws = el('jh-workspace', this._jobId ? {} : { 'detail-collapsed': '' }, main, el('div', { 'data-region': 'detail' }, this._panel));
     this.replaceChildren(this._ws);
   }
@@ -149,6 +150,7 @@ export class U2JobOpportunities extends HTMLElement {
       this._loading = false;
       this._error = err?.message || 'The request failed';
       this._render();
+      this._announce.textContent = `Could not load opportunities: ${this._error}`;
       return;
     }
     if (seq !== this._seq) return; // an older answer arriving late must not replace a newer one
@@ -163,6 +165,8 @@ export class U2JobOpportunities extends HTMLElement {
     }
     // Selections that no longer exist anywhere cannot be acted on; ones on another page stay.
     this._render();
+    // Said in a live region that outlives the render, so a screen reader hears what a search, filter or page change found.
+    this._announce.textContent = data.items.length ? `Showing ${rangeText(this._state.page, data.limit || PAGE_SIZE, data.total, data.items.length)} opportunities.` : 'No opportunities match.';
   }
 
   /** Changes the query state, mirrors it into the URL and reloads. Any change but the page returns to page 1. */
