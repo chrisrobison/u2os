@@ -3,6 +3,7 @@ import { filterPersonalContextForDestination } from './context-privacy-filter.js
 import { filterObservationsForDestination, classifyObservation } from './observation-filter.js';
 import { filterConversationHistoryForDestination, summarizeEarlierTurnsForDestination } from './conversation-history-filter.js';
 import { filterPriorArtifactsForDestination } from './prior-artifacts-filter.js';
+import { filterViewContextForDestination } from './view-context-filter.js';
 import { classifyModelFailure } from './model-failure.js';
 import { log } from '../logging/logger.js';
 
@@ -113,6 +114,7 @@ export class Planner {
     const { history, omitted: omittedHistory } = filterConversationHistoryForDestination(context.conversationHistory, destination, this.dataProcessingPolicy);
     const { summary: conversationSummary, omitted: omittedSummary } = summarizeEarlierTurnsForDestination(context.conversationSummarySources, destination, this.dataProcessingPolicy);
     const { artifacts: priorReadArtifacts, omitted: omittedPriorArtifacts } = filterPriorArtifactsForDestination(context.priorReadArtifacts, destination, this.dataProcessingPolicy);
+    const { context: attachedContext, omitted: omittedView } = filterViewContextForDestination(context.viewContext, destination, this.dataProcessingPolicy);
     this.lastOmittedObservations = omittedObservations;
     this.lastAllowedObservations = observations;
     this.lastAllowedHistory = history;
@@ -161,15 +163,23 @@ export class Planner {
       });
     }
 
+    if (omittedView.length && context.eventBus) {
+      context.eventBus.publish({
+        type: 'agent.view_context_restricted', source: 'agent', actor: context.actor,
+        data: { destination, providerId, omitted: omittedView },
+        metadata: { correlationId: context.correlationId, provenance: 'planner:view-context-policy' },
+      });
+    }
+
     context.onModelCall?.();
     // Snapshot before invoking the provider; later calls or provider mutation
     // cannot change the classification authority for this exact output.
     const outputClassification = classifyObservation('model.context', {
-      personalContext: filteredPersonalContext, observations, history, conversationSummary, priorReadArtifacts,
+      personalContext: filteredPersonalContext, observations, history, conversationSummary, priorReadArtifacts, attachedContext,
     });
     const { onModelCall, conversationHistory, conversationSummarySources: _summarySources,
-      conversationSummary: _untrustedSummary, priorReadArtifacts: _priorReadArtifacts, ...providerContext } = context;
-    const proposed = await provider.plan({ ...providerContext, personalContext: filteredPersonalContext, observations, conversationHistory: history, conversationSummary, priorReadArtifacts }, objective);
+      conversationSummary: _untrustedSummary, priorReadArtifacts: _priorReadArtifacts, viewContext: _viewContext, ...providerContext } = context;
+    const proposed = await provider.plan({ ...providerContext, personalContext: filteredPersonalContext, observations, conversationHistory: history, conversationSummary, priorReadArtifacts, ...(attachedContext ? { attachedContext } : {}) }, objective);
     // Allocate a distinct object even if a fixture/provider reuses its JSON
     // plan object. Malformed primitive/array results still reach validation.
     if (!proposed || typeof proposed !== 'object' || Array.isArray(proposed)) return proposed;

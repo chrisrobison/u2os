@@ -915,3 +915,24 @@ test('evidence: the panel makes no other request than the two evidence endpoints
   assert.deepEqual(fetchCalls.map((call) => `${call.method} ${call.url.replace(J(1), ':id')}`), ['POST /api/job-hunt/jobs/:id/evidence']);
   assert.equal(textOf(part(tabBody(panel), 'rescore')), 'Rescored. Fit — → —; scorer confidence — → —.', 'missing values are dashes, not zeros');
 });
+
+test('Ask about this job offers only the job id and a label to the chat; it makes no request and changes nothing', async () => {
+  respond = answerFor({ '/api/job-hunt/jobs/': jobFixture(1, { company: HOSTILE }) });
+  const panel = await mountPanel();
+  await panel.show(J(1));
+  await flush();
+  const offered = [];
+  window.dispatchEvent = (event) => { offered.push(event); };
+  const ask = panel.querySelector('[data-detail-action="ask"]');
+  assert.equal(textOf(ask), 'Ask about this job');
+  assert.equal(ask.getAttribute('type'), 'button');
+  const requests = fetchCalls.length;
+  ask.click();
+  assert.equal(offered.length, 1);
+  assert.equal(offered[0].type, 'u2-agent-context');
+  assert.deepEqual(Object.keys(offered[0].detail).sort(), ['jobId', 'kind', 'label']);
+  assert.deepEqual([offered[0].detail.kind, offered[0].detail.jobId], ['job', J(1)]);
+  assert.ok(offered[0].detail.label.includes('Engineer 1'));
+  assert.equal(fetchCalls.length, requests, 'asking sends no request');
+  delete window.dispatchEvent;
+});

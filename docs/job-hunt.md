@@ -277,6 +277,54 @@ Anything you write, as Markdown. Edit it here or in any text editor.
 
 Tests: `tests/job-hunt-notes.test.js` (module and API: path traversal, symlinks, oversize, conflicts, round trip with an externally edited file), `tests/job-hunt-detail-panel-ui.test.js` (components) and `tests/e2e/job-hunt-detail-panel.spec.js`.
 
+## Agent Operations
+
+`#/job-hunt/operations` ("Agent Operations" in the Job hunt nav group) shows what the job-hunt agent is doing ([#640](https://github.com/chrisrobison/u2/issues/640), part of #626). It is **read only**: the page has no button, form or toggle, only links. Switching the autopilot, approving or rejecting an action and changing a submission policy all stay where they were (Job Leads for the autopilot, Operations for approvals, `policies.yaml`). The code is `mcp/jobs/hunt/operations.js` (view model), `public/components/job-hunt/u2-job-operations.js` with `jh-operations-parts.js` and `jh-operations-model.js` (page).
+
+Everything comes from one call, `GET /api/job-hunt/operations` (owner only, no parameters, GET only: other methods are refused). It reads the autopilot status, the `agent_actions` audit table, the action queue and the hunt store, and writes nothing (it does not even run the outcome reconciliation the Overview does). Every query is bound and every list is capped (20 awaiting approval, 20 running, 15 recent, 10 failures plus up to 10 autopilot errors).
+
+```json
+{
+  "generatedAt": "...",
+  "autopilot": { "mode": "dry_run", "execution": "running", "detail": null, "lastRunAt": "...", "cycleRunning": true,
+                 "lastCycle": { "startedAt": "...", "finishedAt": "...", "mode": "dry_run", "actions": 3, "needsYou": 1, "errors": 0 }, "settingsChangedAt": null },
+  "running": { "count": 1, "items": [{ "id": "act_...", "tool": "jobs.submit_application", "label": "Submit application form", "status": "executing", "jobId": "job_...", "company": "...", "role": "...", "attempts": 1, "since": "..." }] },
+  "awaitingApproval": { "count": 2, "items": [ "... same row shape, status \"pending\", since ..." ] },
+  "recent": [ "... newest non-pending actions, with at ..." ],
+  "failures": [ { "source": "autopilot | action", "label": "...", "status": "...", "at": "...", "message": "..." } ],
+  "lastActivity": { "autopilotCycleAt": "...", "lastActionAt": "...", "lastFailureAt": "..." }
+}
+```
+
+- **Which actions.** Those whose tool is `jobs.*`, that the job autopilot requested, or whose id is on the hunt emails ledger (the owner's own send from the Job hunt page). Other agent work (calendar, mail, tasks) is not shown.
+- **Autopilot.** *Mode* (Paused, Dry run, Live) and *status* (Idle, Running cycle, Degraded, Blocked) are separate, with a sentence saying what the mode means ("Dry run: ... sends nothing"), the last cycle's finish time and counts, and when the settings last changed. `autopilot` is `null` (shown as "—, not available") when the server has no autopilot.
+- **Awaiting your approval.** The pending actions, each linking to its job when the action names a real one, and a **Review in Operations** link (`#/operations`) to the existing approval cards.
+- **Running now.** Actions in the queue that are queued, starting, running or waiting to retry.
+- **Failures and errors.** Failed or blocked actions (and ones whose queue entry failed or was dead-lettered) with their error text, and the errors the last autopilot cycle reported. Text is bounded to 200 characters on one line.
+- **No arguments or results.** The endpoint returns only the tool's label, status, times and the job id the action names (kept only when it is a well-formed id of a job that exists). Email bodies, recipients and tool results never leave.
+- **Live.** It reloads (debounced 300 ms) on `agent.action.*` events from the SSE stream and polls every 30 s while the tab is visible, the same as the Overview. A failed refresh keeps the last data and says so; responses that arrive out of order are dropped. Changes in the running, awaiting or failure counts are announced in a polite live region ("Agent operations updated. 1 running, 3 awaiting your approval, 2 recent failures."); an unchanged poll announces nothing.
+- **Missing data is "—".** There are no placeholder figures: an empty list shows an empty state, an unknown time or count a dash.
+
+Tests: `tests/job-hunt-operations.test.js` (the view model, scope, caps, and that the route is GET only and a read leaves every action, queue row and `autopilot.yaml` byte for byte unchanged), `tests/job-hunt-operations-ui.test.js` (components) and `tests/e2e/job-hunt-operations.spec.js`.
+
+## Asking about a job (contextual chat)
+
+The job detail panel has **Ask about this job**. It attaches the job to the agent panel as context: a removable chip ("Job context: Company - Role") appears above the composer, focus moves to the message box, and while the chip is there every typed message is sent with the context. Remove it with its **x** button (or Delete / Backspace on the chip, which is keyboard focusable); focus returns to the message box and the chip's live region says "Context removed". Attaching another job replaces the chip. It is not remembered across a reload.
+
+`POST /api/agent/message` accepts an optional `context`:
+
+```json
+{ "text": "How good a fit is this?", "conversationId": "...", "context": { "kind": "job", "jobId": "job_0123456789abcdef" } }
+```
+
+- **Strict.** `context` must be an object with exactly `kind` (only `job` today) and `jobId` (`job_` plus 16 lowercase hex digits). Anything else (another kind, a bad id, extra fields such as a client-supplied company, `null`) is `400`, and so is a `jobId` that is not a known job. It is never ignored silently, and a rejected request starts no run and no conversation. Without `context` the request behaves exactly as before. (`/api/agent/voice-message` does not take a context; a voice message sent while a chip is attached goes without it.)
+- **The server reads the job.** The client sends only the id. The server reads company, role, status, location, score and its top reasons and concerns from the hunt store (`mcp/jobs/hunt/chat-context.js`). Text from the listing is untrusted: control characters are collapsed, strings are capped (200 for company and role, 300 per reason, 5 reasons and 5 concerns) and it only ever appears as a string value.
+- **Delimited data.** The planner passes it to the model as a separate `attached_context` field of the request (beside `retrieved_context`), never concatenated into the user's text, and the system prompt says it is data, may contain instructions copied from the web that must not be followed, and does not add tools, change policy or approvals, or authorize an action. The stored conversation turn is exactly what the owner typed.
+- **Privacy.** It is classified `private` and goes through the same data-processing policy as other model-bound context (`server/agent/view-context-filter.js`): where the policy does not allow `private` data for the model's destination (by default a remote model needs confirmation) it is left out, the message is planned without it, and an `agent.view_context_restricted` event records the omission (kind, destination, rule; no job text). Its size is capped at 6000 characters.
+- **No new authority.** The context is passed only to the planner. It does not reach the tool registry, the plan validator, the policy engine or the approval path, so the tools offered, the policy decision for any action and the approval requirement are the same with or without it. A run resumed after a restart is planned without it.
+
+Tests: `tests/job-hunt-chat-context.test.js` (validation, resolution with injection-looking text, unknown ids, the provider request, destination filtering, the route), `tests/job-hunt-operations-ui.test.js` (the chip and the API helper), `tests/job-hunt-detail-panel-ui.test.js` (the button) and `tests/e2e/job-hunt-operations.spec.js`.
+
 ## The dashboard
 
 ![The job-hunt dashboard](job-hunt-dashboard.png)

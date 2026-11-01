@@ -92,7 +92,7 @@ export class Agent {
   // the same authorization behavior. Only POST /api/agent/voice-message
   // ever passes it. See server/voice/authorize.js for the one place it
   // actually changes anything.
-  async handleMessage({ text, actorId = 'user', voice, conversationId = null, goalId = null, goalWakeId = null } = {}) {
+  async handleMessage({ text, actorId = 'user', voice, conversationId = null, goalId = null, goalWakeId = null, viewContext = null } = {}) {
     if (conversationId) requireConversation(conversationId, actorId);
     const correlationId = newId('corr');
     const actor = { type: 'user', id: actorId };
@@ -100,7 +100,7 @@ export class Agent {
     let result;
     try {
       if (conversationId) appendTurn({ conversationId, ownerId: actorId, role: 'user', content: text, correlationId, runId });
-      result = await this._handleRunMessage({ text, actorId, voice, correlationId, actor, runId, conversationId });
+      result = await this._handleRunMessage({ text, actorId, voice, correlationId, actor, runId, conversationId, viewContext });
     } catch (error) {
       this.runStore.failRun(runId);
       if (conversationId) {
@@ -121,7 +121,7 @@ export class Agent {
     }
   }
 
-  async _handleRunMessage({ text, actorId, voice, correlationId, actor, runId, conversationId = null, resume = false, previousObservations = [], previousResults = [], previousAttempted = new Set() }) {
+  async _handleRunMessage({ text, actorId, voice, correlationId, actor, runId, conversationId = null, viewContext = null, resume = false, previousObservations = [], previousResults = [], previousAttempted = new Set() }) {
     const linkedGoal = getGoalForRun(runId);
     const goalRun = Boolean(linkedGoal);
     const planContext = await this.contextAssembler.assemble({ correlationId, actor, objective: text, allowEmbeddings: !goalRun });
@@ -163,7 +163,7 @@ export class Agent {
       }
       let proposedPlan;
       try {
-        proposedPlan = await this.planner.plan({ ...planContext, observations, conversationHistory, conversationSummarySources, priorReadArtifacts,
+        proposedPlan = await this.planner.plan({ ...planContext, viewContext, observations, conversationHistory, conversationSummarySources, priorReadArtifacts,
           onModelCall: () => this.runStore.beginModelCall(runId, MAX_MODEL_CALLS_PER_MESSAGE),
           onUsage: (usage) => this.runStore.recordModelUsage(runId, usage),
         }, text);

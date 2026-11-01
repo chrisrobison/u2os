@@ -558,3 +558,13 @@ a.jh-summary-card__body:hover, button.jh-summary-card__body:hover { background: 
 .jh-notes__conflict, .jh-notes__draft { margin-top: var(--space-3); padding: var(--space-3); background: var(--accent-pending-soft); border-radius: var(--radius-md); }
 .jh-detail__primary:focus-visible, .jh-detail__item:focus-visible, .jh-detail__tab-btn:focus-visible, .jh-detail__panel:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 @media (pointer: coarse) { .jh-detail__tab-btn, .jh-detail__item { min-height: 44px; } }
+
+/* Agent Operations (#640) and "Ask about this job" */
+.jh-ops__row { align-items: baseline; }
+.jh-ops__what { font-weight: 600; font-size: var(--text-sm); }
+.jh-ops__note { font-size: var(--text-xs); color: var(--text-secondary); }
+.jh-ops__facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: var(--space-3); margin: 0; }
+.jh-ops__facts dt { font-size: var(--text-xs); color: var(--text-secondary); }
+.jh-ops__facts dd { margin: 0; font-size: var(--text-md); font-weight: 600; }
+.jh-ops h1:focus { outline: none; }
+.jh-detail__ask:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }

@@ -414,6 +414,12 @@ class Store {
       .run(status ?? row.status, actionId ?? row.action_id, json({ ...parse(row.detail, {}), ...(detail ?? {}) }), now.toISOString(), id);
   }
 
+  /** The newest `limit` emails that have an agent action: [{ actionId, jobId }]. For the operations view. */
+  listRecentEmailActions(limit = 200) {
+    return this.db.prepare('SELECT action_id, job_id FROM emails WHERE action_id IS NOT NULL ORDER BY id DESC LIMIT ?').all(Math.min(Math.max(1, limit), 500))
+      .map((row) => ({ actionId: row.action_id, jobId: row.job_id }));
+  }
+
   findEmailByKey(key) { return this.listEmails().find((entry) => entry.idempotencyKey === key) ?? null; }
 
   listEmails(jobId = null) {

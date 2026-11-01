@@ -280,11 +280,13 @@ export function getConversationTurns(id) {
   return request(`/api/agent/conversations/${encodeURIComponent(id)}/turns`);
 }
 
-export function sendAgentMessage(text, conversationId) {
+// `context` (optional) names the page the owner has attached, e.g. { kind: 'job', jobId }. The server validates it
+// and reads the data itself; it is sent explicitly with each message and omitted when nothing is attached.
+export function sendAgentMessage(text, conversationId, context) {
   return request('/api/agent/message', {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ text, conversationId }),
+    body: JSON.stringify(context ? { text, conversationId, context } : { text, conversationId }),
   });
 }
 
@@ -591,6 +593,7 @@ export function getJobHuntJob(id) { return request(`/api/job-hunt/jobs/${encodeU
 export function getJobHuntNotes(id) { return request(`/api/job-hunt/jobs/${encodeURIComponent(id)}/notes`); }
 export function saveJobHuntNotes(id, body, revision) { return request(`/api/job-hunt/jobs/${encodeURIComponent(id)}/notes`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body, revision }) }); }
 export function getJobHuntOverview() { return request('/api/job-hunt/overview'); }
+export function getJobHuntOperations() { return request('/api/job-hunt/operations'); }
 export function getJobHuntOpportunities(params = {}) { return request(`/api/job-hunt/opportunities${qs(params)}`); }
 export function getJobHuntDashboard(params = {}) { return request(`/api/job-hunt/dashboard${qs(params)}`); }
 // The owner records the company's answer: screening, offer or rejected.

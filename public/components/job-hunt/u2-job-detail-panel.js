@@ -204,7 +204,8 @@ export class U2JobDetailPanel extends HTMLElement {
         button.disabled = Boolean(item.why) || busy;
         return button;
       })));
-    return el('div', { class: 'jh-detail__actions', role: 'group', 'aria-label': 'Job actions' }, main, menu);
+    const ask = el('button', { type: 'button', class: 'btn jh-detail__ask', 'data-detail-action': 'ask', title: 'Attach this job to the chat so you can ask about it', text: 'Ask about this job' });
+    return el('div', { class: 'jh-detail__actions', role: 'group', 'aria-label': 'Job actions' }, main, ask, menu);
   }
 
   // ---- interaction -----------------------------------------------------------------
@@ -222,6 +223,7 @@ export class U2JobDetailPanel extends HTMLElement {
     const key = action.getAttribute('data-detail-action');
     if (key === 'close') { this.dispatchEvent(new CustomEvent('jh-detail-close', { bubbles: true })); return; }
     if (key === 'retry') { this._load(); return; }
+    if (key === 'ask') { this._ask(); return; }
     const more = this.querySelector('details[data-part="more"]');
     if (key === 'primary') {
       this._runPrimary(action);
@@ -230,6 +232,14 @@ export class U2JobDetailPanel extends HTMLElement {
     if (more && more.contains(action)) more.open = false;
     if (key === 'answers') this._answers(action.closest('details') ? this.querySelector('summary') : action);
     else if (jobTasks[key]) this._start(key, action.closest('details') ? this.querySelector('summary') : action);
+  }
+
+  /** Offers this job to the chat as context. Only its id travels; the server reads the job itself. */
+  _ask() {
+    const job = this._job;
+    if (!job || !JOB_ID.test(String(job.id))) return;
+    const label = [job.company, job.role].filter(Boolean).join(' — ');
+    window.dispatchEvent(new CustomEvent('u2-agent-context', { detail: { kind: 'job', jobId: job.id, label } }));
   }
 
   _onKeydown(event) {

@@ -28,6 +28,7 @@ export const NAV_GROUPS = [
   { id: 'jobs', label: 'Job hunt', open: true, routes: [
     ['#/job-hunt', 'Overview', 'table-columns'],
     ['#/job-hunt/opportunities', 'Opportunities', 'magnifying-glass'],
+    ['#/job-hunt/operations', 'Agent Operations', 'robot'],
     ['#/job-hunt/leads', 'Job Leads', 'user-tie'],
     ['#/applications', 'Applications', 'briefcase'],
   ] },
