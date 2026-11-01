@@ -1,7 +1,23 @@
 import { sendJson } from '../router.js';
 import { verifyVoiceObservation } from '../../voice/enrollment-store.js';
 import { getRun, getRunResult, listRuns } from '../../agent/run-store.js';
+import { getVaultDir } from '../../vault/vault-dir.js';
+import { openStore, huntDbPath } from '../../../mcp/jobs/hunt/storage/store.js';
+import { parseChatContext, resolveChatContext } from '../../../mcp/jobs/hunt/chat-context.js';
 import { createConversation, getConversationTurns, listConversations } from '../../agent/conversation-store.js';
+
+// Validates and resolves the optional chat `context` (#640). Returns { viewContext } (null when absent) or { error }.
+function chatContext(body) {
+  try {
+    const parsed = parseChatContext(body?.context);
+    if (!parsed) return { viewContext: null };
+    const store = openStore(huntDbPath(getVaultDir()));
+    try { return { viewContext: resolveChatContext(store, parsed) }; } finally { store.close(); }
+  } catch (error) {
+    if (error.code === 'BAD_CONTEXT' || error.code === 'UNKNOWN_JOB') return { error: error.message };
+    throw error;
+  }
+}
 
 // Agent conversation entry point. Approve/reject live in routes/actions.js
 // (kept in one place rather than duplicated here) since they operate on
@@ -54,9 +70,12 @@ export function registerAgentRoutes(router, { agent }) {
     const text = req.body?.text;
     if (!text || typeof text !== 'string' || text.length > 20_000) return sendJson(res, 400, { error: 'text must be 1–20000 characters' });
     if (req.body?.conversationId !== undefined && typeof req.body.conversationId !== 'string') return sendJson(res, 400, { error: 'conversationId must be a string' });
+    // Strict: an invalid or unknown context is a 400, never silently dropped. Absent context changes nothing.
+    const { viewContext, error } = chatContext(req.body);
+    if (error) return sendJson(res, 400, { error });
     const actorId = req.owner.id;
     const conversationId = req.body?.conversationId || createConversation(actorId);
-    const result = await agent.handleMessage({ text, actorId, conversationId });
+    const result = await agent.handleMessage({ text, actorId, conversationId, ...(viewContext ? { viewContext } : {}) });
     sendJson(res, 200, result);
   });
 

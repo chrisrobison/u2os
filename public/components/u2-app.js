@@ -27,6 +27,7 @@ import './u2-applications.js';
 import './u2-job-hunt.js';
 import './job-hunt/u2-job-overview.js';
 import './job-hunt/u2-job-opportunities.js';
+import './job-hunt/u2-job-operations.js';
 import './job-hunt/u2-job-page.js';
 import './u2-goals.js';
 import './u2-triggers.js';
@@ -332,6 +333,7 @@ export class U2App extends HTMLElement {
         // #/job-hunt is the Overview (which embeds the pipeline board); the ranked list is "Job Leads".
         if (!sub) this._setWorkspace('', document.createElement('u2-job-overview'));
         else if (sub === 'opportunities' && parts.length === 2) this._setWorkspace('', document.createElement('u2-job-opportunities'));
+        else if (sub === 'operations' && parts.length === 2) this._setWorkspace('', document.createElement('u2-job-operations'));
         else if (sub === 'leads') this._setWorkspace('', document.createElement('u2-job-hunt'));
         else if (sub === 'jobs' && third && parts.length === 3) {
           const page = document.createElement('u2-job-page');

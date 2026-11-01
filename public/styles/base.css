@@ -1012,6 +1012,15 @@ u2-agent { display: flex; flex-direction: column; min-height: 0; }
   font-size: var(--text-xs);
 }
 
+.agent-context { display: block; padding: var(--space-2) var(--space-3) 0; }
+.agent-context[hidden] { display: none; }
+.agent-context__chip { display: inline-flex; align-items: center; gap: var(--space-2); max-width: 100%; padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3); font-size: var(--text-xs); color: var(--text-primary); background: var(--bg-raised); border: var(--border-width) solid var(--border-color); border-radius: var(--radius-full); }
+.agent-context__text { min-width: 0; overflow-wrap: anywhere; }
+.agent-context__remove { flex: none; min-width: 1.5rem; min-height: 1.5rem; padding: 0; line-height: 1; color: inherit; background: transparent; border: 0; border-radius: var(--radius-full); cursor: pointer; }
+.agent-context__remove:hover { background: var(--bg-card); }
+.agent-context__remove:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+@media (pointer: coarse) { .agent-context__remove { min-width: 44px; min-height: 44px; } }
+
 .agent-panel__composer {
   display: flex;
   gap: var(--space-2);

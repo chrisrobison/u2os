@@ -6,6 +6,8 @@ import { newId } from '../../db/ids.js';
 import { getAgentAction } from '../../policy/policy-engine.js';
 import { openStore, huntDbPath } from '../../../mcp/jobs/hunt/storage/store.js';
 import { buildOverview } from '../../../mcp/jobs/hunt/overview.js';
+import { buildOperations } from '../../../mcp/jobs/hunt/operations.js';
+import { getDb } from '../../db/connection.js';
 import { queryOpportunities } from '../../../mcp/jobs/hunt/opportunities.js';
 import { buildDashboard, moveJob, DEFAULT_WINDOW_DAYS } from '../../../mcp/jobs/hunt/dashboard.js';
 import { addInterview, updateInterview, deleteInterview, addTask, completeTask, uncompleteTask, snoozeTask } from '../../../mcp/jobs/hunt/schedule.js';
@@ -91,6 +93,12 @@ export function registerJobHuntRoutes(router, { agent, toolRegistry, autopilot =
     reconcileOutcomes();
     const minimumScore = preferences().minimum_score;
     sendJson(res, 200, withStore((store) => buildOverview(store, { autopilot: autopilot ? autopilot.status() : null, minimumScore })));
+  });
+
+  // Agent Operations (#640): READ ONLY. What the agent is doing, what waits for approval, what failed. It reads the
+  // autopilot status, the audit table and the action queue; it changes none of them (the controls stay where they were).
+  router.get('/api/job-hunt/operations', async (req, res) => {
+    sendJson(res, 200, withStore((store) => buildOperations({ db: getDb(), store, autopilot: autopilot ? autopilot.status() : null })));
   });
 
   // The Opportunities table (#631): one filtered, searched, sorted and paged list with a count per quick filter. Additive.

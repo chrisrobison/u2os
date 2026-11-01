@@ -4,6 +4,7 @@ import { VoiceprintService } from '../services/voiceprint.js';
 import { actionOutcomeSentence, isUncertainOutcome } from './action-outcome.js';
 import './u2-approval.js';
 import './u2-agent-status.js';
+import './u2-agent-context.js';
 
 const CONVERSATION_KEY = 'u2os.conversationId';
 
@@ -32,6 +33,9 @@ export class U2Agent extends HTMLElement {
   connectedCallback() {
     if (!this._onModelSaved) this._onModelSaved = () => { this._disablePlanner(); this._loadPlannerStatus(); };
     window.addEventListener('u2-model-configuration-saved', this._onModelSaved);
+    // A page (the job detail panel) offers context to attach to the next messages: { kind, jobId, label }.
+    if (!this._onContext) this._onContext = (event) => this.attachContext(event.detail);
+    window.addEventListener('u2-agent-context', this._onContext);
     if (this._built) return;
     this._built = true;
     this._render();
@@ -39,7 +43,20 @@ export class U2Agent extends HTMLElement {
     this._loadPlannerStatus();
   }
 
-  disconnectedCallback() { window.removeEventListener('u2-model-configuration-saved', this._onModelSaved); }
+  disconnectedCallback() {
+    window.removeEventListener('u2-model-configuration-saved', this._onModelSaved);
+    window.removeEventListener('u2-agent-context', this._onContext);
+  }
+
+  // Shows the context chip and moves focus to the composer so the owner can type the question. The chip stays until
+  // the owner removes it; the context is then sent explicitly with every typed message.
+  attachContext(context) {
+    if (!this._contextEl || !this._contextEl.attach(context)) return false;
+    const app = this.closest?.('u2-app');
+    if (app?.dataset) app.dataset.agentOpen = 'true';
+    if (!this._input.disabled) this._input.focus();
+    return true;
+  }
 
   _disablePlanner() {
     this._plannerUnavailable = true;
@@ -110,6 +127,7 @@ export class U2Agent extends HTMLElement {
         </div>
         <div class="agent-panel__transcript"></div>
         <p class="agent-panel__notice" hidden></p>
+        <u2-agent-context hidden></u2-agent-context>
         <form class="agent-panel__composer">
           <textarea class="agent-panel__input" rows="1" placeholder="Ask U2OS..."></textarea>
           <button type="button" class="icon-btn agent-panel__mic" data-action="mic-toggle" title="Voice input">&#127908;</button>
@@ -127,6 +145,8 @@ export class U2Agent extends HTMLElement {
     this._newChatBtn = this.querySelector('.agent-panel__new-chat');
     this._conversationPicker = this.querySelector('.agent-panel__conversations');
     this._form = this.querySelector('.agent-panel__composer');
+    this._contextEl = this.querySelector('u2-agent-context');
+    this._contextEl.addEventListener('u2-agent-context-removed', () => { if (!this._input.disabled) this._input.focus(); });
 
     this._setupMicSupport();
 
@@ -197,7 +217,7 @@ export class U2Agent extends HTMLElement {
 
     try {
       const conversationId = await this._ensureConversation(generation);
-      const res = await sendAgentMessage(text, conversationId);
+      const res = await sendAgentMessage(text, conversationId, this._contextEl?.value ?? undefined);
       if (generation !== (this._restoreGeneration || 0)) return;
       this._renderAgentResponse(res);
       this._loadConversations();
