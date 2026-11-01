@@ -15,6 +15,14 @@ import './jh-all.js';
 // status endpoint): nothing here can submit or send by itself. Fires `jh-detail-close` (bubbles) from the close button and
 // `jh-job-updated` ({ job }) after an action changed the job. Responses that arrive after the owner moved on are ignored.
 
+const TAB_KEY = 'u2.jobDetail.tab';
+function savedTab(id) {
+  try { const [job, tab] = (sessionStorage.getItem(TAB_KEY) || '').split('|'); return job === id && TABS.some(([name]) => name === tab) ? tab : null; } catch { return null; }
+}
+function saveTab(id, tab) {
+  try { sessionStorage.setItem(TAB_KEY, `${id}|${tab}`); } catch { /* not remembered */ }
+}
+
 export class U2JobDetailPanel extends HTMLElement {
   constructor() {
     super();
@@ -52,7 +60,7 @@ export class U2JobDetailPanel extends HTMLElement {
     if (jobId === this._id && (this._job || this._error === null)) { if (focus) this._focusHeading(); return; }
     await this._leave();
     this._id = jobId;
-    this._tab = 'overview';
+    this._tab = savedTab(jobId) ?? 'overview'; // the tab the owner had open on this job survives a reload or a visit to another view
     this._notice = null;
     this._rescore = null;
     this._busy = null;
@@ -90,6 +98,7 @@ export class U2JobDetailPanel extends HTMLElement {
       if (!job || job.id !== id) throw new Error('The server sent an unexpected answer.');
       this._job = job;
       this._submitEl.job = job;
+      if (this._tab === 'notes') this._notesEl.jobId = id;
     } catch (error) {
       if (seq !== this._seq) return;
       this._missing = /No such job/i.test(error.message);
@@ -247,7 +256,10 @@ export class U2JobDetailPanel extends HTMLElement {
     if (!target?.closest) return;
     if (event.key === 'Escape') {
       const more = target.closest('details[data-part="more"]');
-      if (more?.open) { more.open = false; more.querySelector('summary')?.focus?.(); event.stopPropagation?.(); }
+      if (more?.open) { more.open = false; more.querySelector('summary')?.focus?.(); event.stopPropagation?.(); return; }
+      // Escape closes the panel (focus returns to the table row), except while typing: a text field keeps its own Escape.
+      if (event.defaultPrevented || target.closest('input, textarea, select, [contenteditable], dialog')) return;
+      this.dispatchEvent(new CustomEvent('jh-detail-close', { bubbles: true }));
       return;
     }
     const tab = target.closest('[role="tab"]');
@@ -264,6 +276,7 @@ export class U2JobDetailPanel extends HTMLElement {
     if (!TABS.some(([name]) => name === id)) return;
     const changed = id !== this._tab;
     this._tab = id;
+    if (this._id) saveTab(this._id, id);
     if (id === 'notes' && this._job) {
       if (this._notesEl.jobId !== this._id) this._notesEl.jobId = this._id;
       else if (!this._notesEl.dirty) this._notesEl.load(); // an edit made in a text editor shows up when the tab opens

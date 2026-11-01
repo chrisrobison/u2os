@@ -27,6 +27,21 @@ export function svg(tag, props, ...children) {
   return apply(document.createElementNS(SVG_NS, tag), props, children);
 }
 
+/**
+ * Runs `render` (which rebuilds `root`'s children) and puts keyboard focus back on the same link or button afterwards,
+ * so a background refresh does not drop a keyboard user to the top of the page. Matches by link href, else by the
+ * control's tag and text. A no-op when focus is outside `root`.
+ */
+export function keepFocus(root, render) {
+  const active = typeof document === 'undefined' ? null : document.activeElement;
+  const inside = active && active !== root && root.contains?.(active) && active.matches?.('a[href], button');
+  const key = inside ? { tag: active.tagName, href: active.getAttribute('href'), text: active.textContent } : null;
+  render();
+  if (!key) return;
+  const match = [...root.querySelectorAll(key.tag.toLowerCase())].find((node) => (key.href ? node.getAttribute('href') === key.href : node.textContent === key.text));
+  match?.focus?.();
+}
+
 /** http(s) URLs only: a posting can carry any string, including javascript: URLs. */
 export function safeUrl(value) {
   try {
