@@ -117,6 +117,7 @@ Open:
 - Real-model quality evaluation: a small fixed set of owner tasks scored for usefulness, not just schema validity, against at least one local and one hosted model.
 - Confirm Google OAuth behaviour for owner-created clients in "Testing" status (refresh-token lifetime), and document the setup that keeps a personal install connected.
 - The [personal acceptance walkthrough and two-week dogfooding](docs/personal-acceptance.md), extended to vault and routine workflows, with results recorded honestly.
+- The [dogfooding record, learning-loop measures and triage process](docs/dogfooding.md) (#646): defined; no owner use is recorded yet, so live validation is pending.
 
 ### Acceptance criteria
 

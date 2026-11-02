@@ -218,7 +218,9 @@ and-investigate failure. File focused issues using redacted reproduction steps.
 Report unperformed workflows and unavailable sources alongside passes.
 
 Live Google read/sync validation remains [#150](https://github.com/chrisrobison/u2os/issues/150).
-No two-week dogfooding or live checks are claimed by this document. Delegating
+The owner has begun daily use, but nothing is recorded or claimed here: no
+two-week dogfooding or live checks are asserted by this document. How use is
+recorded, measured and triaged is in [dogfooding](dogfooding.md). Delegating
 software tasks to the Codex or Claude Code CLIs now exists as the
 `coding.agent` capability ([coding agents](coding-agents.md), #428). It is not
 part of this personal-agent acceptance loop, which has no coding workspace
