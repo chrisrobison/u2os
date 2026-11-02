@@ -28,6 +28,7 @@ Tests use temporary homes and never touch `~/.u2os`.
 ./target/release/u2 memory search peanut
 ./target/release/u2 git status       # health of the vault's Git repository (read-only)
 ./target/release/u2 history ent_abc123   # across renames; also: diff --since DATE, rewind DATE
+./target/release/u2 forget ent_abc123  # removes + checks in; history still holds it. Scrub: --scrub-history --confirm-scrub <path> (see docs)
 ./target/release/u2 memory show ent_abc123   # or a vault path; also: list, links
 ```
 
@@ -88,4 +89,4 @@ The daemon watches the vault (debounced filesystem events plus a 30 s reconcile)
 
 ## Not in this phase
 
-Writing to Git (check-in, removal), policy, events, scheduler, action queue, capabilities, TCP/HTTP exposure, configuration reload, Windows. See the phase table in [docs/majordomo.md](../docs/majordomo.md).
+Policy, events, scheduler, action queue, capabilities, TCP/HTTP exposure, configuration reload, Windows. See the phase table in [docs/majordomo.md](../docs/majordomo.md).

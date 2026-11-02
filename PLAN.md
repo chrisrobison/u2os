@@ -178,7 +178,7 @@ Tracking issue: [#602](https://github.com/chrisrobison/u2os/issues/602). The own
 - [x] [#609](https://github.com/chrisrobison/u2os/issues/609) Phase 2c: vault watcher and reconcile
 - [x] [#613](https://github.com/chrisrobison/u2os/issues/613) Phase 3a: read-only Git health, history across renames, diff, snapshots
 - [x] [#614](https://github.com/chrisrobison/u2os/issues/614) Phase 3b: check in dirty vault trees; conflicts keep current content
-- [ ] [#615](https://github.com/chrisrobison/u2os/issues/615) Phase 3c (next; Node remains authoritative for everything): removal with optional, explicit history scrub
+- [x] [#615](https://github.com/chrisrobison/u2os/issues/615) Phase 3c: `u2 forget` removal with optional, explicit history scrub (implemented, fixture-tested; Node remains authoritative for everything; no scrub has been performed on a real vault)
 - Phases 4–8 (events/scheduler/actions, policy parity, add-ons and agent bridge, ownership handoffs, benchmarks and packaging) get issues when their predecessor merges.
 
 ## Later — deferred until the product is proven

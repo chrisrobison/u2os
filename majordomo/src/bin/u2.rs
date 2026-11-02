@@ -23,6 +23,18 @@ USAGE:
                          commit the vault's dirty working tree now. Edits made outside
                          U2OS are included; on a conflict the current content is kept
                          and marker text is never committed. Never pushes.
+    u2 forget <id|path> [--vault DIR] [--json]
+                         remove a record and check the removal in. Git history STILL holds
+                         the material, and remote/backup copies are unaffected; history
+                         is never rewritten by default.
+    u2 forget <id|path> --scrub-history --confirm-scrub <exact vault path>
+                         [--acknowledge-remotes]
+                         also erase the record (and its rename trail) from this repository's
+                         history. Backs up every ref first; refuses with a dirty tree or
+                         when the vault is not its own repository. With remotes it needs
+                         --acknowledge-remotes; remote copies are NOT erased and Majordomo
+                         never pushes. Without --confirm-scrub it only shows what it would do.
+    u2 forget --restore-scrub <backup-id>   undo a scrub from its backup
     u2 history <id|path> [--limit N]      commits that touched a record, across renames
     u2 diff <id|path> --since DATE|COMMIT [--until DATE|COMMIT]
                          what changed (default: until the working tree)
@@ -70,6 +82,7 @@ async fn main() -> ExitCode {
         ["memory", sub, rest @ ..] => finish(memory(sub, rest)),
         ["git", "status", rest @ ..] => finish(git_status(rest)),
         ["git", "checkin", rest @ ..] => finish(git_checkin(rest)),
+        ["forget", rest @ ..] => finish(forget(rest)),
         ["history", rest @ ..] => finish(history(rest)),
         ["diff", rest @ ..] => finish(diff(rest)),
         ["rewind", rest @ ..] => finish(rewind(rest)),
@@ -208,6 +221,10 @@ struct Opts {
     since: Option<String>,
     until: Option<String>,
     to: Option<std::path::PathBuf>,
+    scrub_history: bool,
+    confirm_scrub: Option<String>,
+    acknowledge_remotes: bool,
+    restore_scrub: Option<String>,
 }
 
 fn parse_opts(args: &[&str]) -> Result<Opts, Error> {
@@ -219,6 +236,10 @@ fn parse_opts(args: &[&str]) -> Result<Opts, Error> {
         since: None,
         until: None,
         to: None,
+        scrub_history: false,
+        confirm_scrub: None,
+        acknowledge_remotes: false,
+        restore_scrub: None,
     };
     let mut it = args.iter();
     let bad = |m: String| Error::Config(m);
@@ -234,6 +255,10 @@ fn parse_opts(args: &[&str]) -> Result<Opts, Error> {
             "--since" => o.since = Some(value("--since")?),
             "--until" => o.until = Some(value("--until")?),
             "--to" => o.to = Some(value("--to")?.into()),
+            "--scrub-history" => o.scrub_history = true,
+            "--confirm-scrub" => o.confirm_scrub = Some(value("--confirm-scrub")?),
+            "--acknowledge-remotes" => o.acknowledge_remotes = true,
+            "--restore-scrub" => o.restore_scrub = Some(value("--restore-scrub")?),
             "--type" => o.query.type_name = Some(value("--type")?),
             "--classification" => {
                 let v = value("--classification")?;
@@ -487,6 +512,60 @@ fn git_checkin(args: &[&str]) -> Result<bool, Error> {
 fn history_target(root: &std::path::Path, key: &str) -> Result<(String, Option<String>), Error> {
     let index = MemoryIndex::build(vault::scan(root)?);
     git::target_for(&index, key)
+}
+
+fn forget(args: &[&str]) -> Result<bool, Error> {
+    let mut opts = parse_opts(args)?;
+    let root = vault_root(&mut opts)?;
+    if !root.is_dir() {
+        return Err(Error::Config(format!(
+            "vault directory not found: {}",
+            root.display()
+        )));
+    }
+    let g = Git::new(&root);
+    if let Some(id) = opts.restore_scrub.take() {
+        if !opts.positional.is_empty() || opts.scrub_history {
+            return Err(Error::Config(
+                "--restore-scrub takes only a backup id".into(),
+            ));
+        }
+        let n = git::restore_scrub_backup(&g, &id)?;
+        println!("restored {n} ref(s) from backup {id}; the scrubbed material is in history again");
+        return Ok(true);
+    }
+    let [key] = opts.positional.as_slice() else {
+        return Err(Error::Config("forget needs exactly one id or path".into()));
+    };
+    if !opts.scrub_history && (opts.confirm_scrub.is_some() || opts.acknowledge_remotes) {
+        return Err(Error::Config(
+            "--confirm-scrub and --acknowledge-remotes only apply with --scrub-history".into(),
+        ));
+    }
+    let request = opts.scrub_history.then(|| git::ScrubRequest {
+        confirm: opts.confirm_scrub.clone(),
+        acknowledge_remotes: opts.acknowledge_remotes,
+    });
+    let r = git::forget(&g, key, request.as_ref())?;
+    if opts.json {
+        return print_json(&serde_json::to_value(&r).unwrap_or(Value::Null));
+    }
+    if r.removed {
+        println!(
+            "removed {} and checked the removal in as {}",
+            r.path,
+            r.commit.as_deref().map_or("?", |c| &c[..c.len().min(12)])
+        );
+    } else {
+        println!("{} was already removed", r.path);
+    }
+    for n in &r.notices {
+        println!("{n}");
+    }
+    if let Some(s) = &r.scrub {
+        println!("  scrubbed paths: {}", s.paths.join(", "));
+    }
+    Ok(true)
 }
 
 fn history(args: &[&str]) -> Result<bool, Error> {

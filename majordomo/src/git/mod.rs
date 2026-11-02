@@ -8,6 +8,7 @@
 
 mod checkin;
 mod diff;
+mod forget;
 mod history;
 mod repo;
 mod service;
@@ -15,6 +16,7 @@ mod snapshot;
 
 pub use checkin::{checkin, CheckinResult, CheckinStatus};
 pub use diff::{diff_paths, resolve_rev, DiffResult, RevSpec};
+pub use forget::{forget, restore_scrub_backup, ForgetReport, ScrubReport, ScrubRequest};
 pub use history::{record_history, target_for, Change, Entry, History};
 pub use repo::Health;
 pub use service::{CheckinService, DEFAULT_QUIET};
