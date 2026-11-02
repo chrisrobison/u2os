@@ -5,7 +5,7 @@ const deferred = () => { let resolve; const promise = new Promise((done) => { re
 async function login(page, server) {
   await createOwner(server.baseURL, 'fixture-only late view owner'); await page.goto(server.baseURL);
   await page.getByLabel('Passphrase').fill('fixture-only late view owner'); await page.locator('form button[type="submit"]').click();
-  await expect(page.locator('#workspace u2-dashboard')).toBeVisible();
+  await expect(page.locator('#workspace u2-home')).toBeVisible();
   return page.evaluate(async () => (await (await fetch('/api/memory/entities?type=Person&query=Sarah')).json()).entities[0].id);
 }
 async function operations(page) {

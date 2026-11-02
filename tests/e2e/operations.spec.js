@@ -33,7 +33,7 @@ test.describe('original account and uncertain delivery metadata', () => {
     await createOwner(dedicated.baseURL, PASSPHRASE);
     await page.goto(dedicated.baseURL); await page.getByLabel('Passphrase').fill(PASSPHRASE);
     await page.locator('form button[type="submit"]').click();
-    await expect(page.locator('#workspace u2-dashboard')).toBeVisible();
+    await expect(page.locator('#workspace u2-home')).toBeVisible();
   });
   test.afterEach(async ({ page }) => { await stopDedicatedServer(page, dedicated); });
 

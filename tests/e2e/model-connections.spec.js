@@ -12,7 +12,7 @@ test('owner builds an ordered list of CLI and API connections, reorders, saves a
     fs.writeFileSync(script, "process.stdin.resume();process.stdin.on('data',()=>{});process.stdin.on('end',()=>console.log(JSON.stringify({reasoning_summary:'ok',actions:[]})));");
     await createOwner(dedicated.baseURL, passphrase); await page.goto(dedicated.baseURL);
     await page.getByLabel('Passphrase').fill(passphrase); await page.locator('form button[type="submit"]').click();
-    await expect(page.locator('#workspace u2-dashboard')).toBeVisible();
+    await expect(page.locator('#workspace u2-home')).toBeVisible();
     await gotoNav(page, '#/model');
     const panel = page.locator('u2-model-connections');
     await expect(panel).toContainText('No connections yet');

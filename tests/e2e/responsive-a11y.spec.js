@@ -167,7 +167,7 @@ test.describe.serial('responsive layout & accessibility baseline (#19)', () => {
     await expect(page.locator('.shell__scrim')).toHaveCSS('display', 'none');
 
     // Core content is still reachable (main pane isn't hidden, just full-width).
-    await expect(page.locator('.workspace__title', { hasText: 'Morning Briefing' })).toBeVisible();
+    await expect(page.locator('u2-home .workspace__title')).toBeVisible();
   });
 
   test('phone viewport (390x844): nav/agent drawers open via their toggle buttons and close via the scrim', async () => {

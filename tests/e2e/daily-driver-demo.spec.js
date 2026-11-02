@@ -10,7 +10,7 @@ test('daily-driver story runs through the real browser, approval, explanation, a
   const context = await browser.newContext();
   const page = await context.newPage();
   try {
-    await page.goto(dedicated.baseURL);
+    await page.goto(`${dedicated.baseURL}/#/briefing`);
     await page.locator('input[name="passphrase"]').fill(PASSPHRASE);
     await page.locator('form button[type="submit"]').click();
     await expect(page.locator('u2-nav')).toBeVisible();

@@ -87,7 +87,7 @@ Tracking issue: [#626](https://github.com/chrisrobison/u2os/issues/626) (closed)
 - [x] [#636](https://github.com/chrisrobison/u2os/issues/636) Evidence resolution with provenance and rescoring
 - [x] [#640](https://github.com/chrisrobison/u2os/issues/640) Agent Operations and contextual chat
 - [x] [#642](https://github.com/chrisrobison/u2os/issues/642) Responsive, accessibility and regression pass
-- [ ] [#495](https://github.com/chrisrobison/u2os/issues/495) Home overview per mockup (next)
+- [x] [#495](https://github.com/chrisrobison/u2os/issues/495) Home overview: stat tiles, day timeline, active routines, decision rail, system trust ([docs/dashboards.md](docs/dashboards.md#home-overview)). CI-validated with node and Playwright tests; not yet used live by the owner. The top-bar search, knowledge graph and a second chat are not part of it
 
 ### Add-on system
 

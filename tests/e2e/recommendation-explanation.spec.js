@@ -15,7 +15,7 @@ test('a recommendation-derived dashboard explains its relevance from stored prov
       subject: { type: 'calendar_event', id: calendarEvent.id },
     });
 
-    await page.goto(dedicated.baseURL);
+    await page.goto(`${dedicated.baseURL}/#/briefing`);
     await page.getByLabel('Passphrase').fill(PASSPHRASE);
     await page.locator('form button[type="submit"]').click();
 

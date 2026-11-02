@@ -8,7 +8,7 @@ for (const outcome of ['success', 'failure']) {
     try {
       await createOwner(dedicated.baseURL, 'fixture-only navigation owner'); await page.goto(dedicated.baseURL);
       await page.getByLabel('Passphrase').fill('fixture-only navigation owner'); await page.locator('form button[type="submit"]').click();
-      await expect(page.locator('#workspace u2-dashboard')).toBeVisible();
+      await expect(page.locator('#workspace u2-home')).toBeVisible();
       await page.locator('u2-app').evaluate((app) => {
         const render = app._renderDashboard.bind(app);
         app._renderDashboard = (...args) => render(...args).finally(() => { window.fixtureLateDashboardSettled = true; });

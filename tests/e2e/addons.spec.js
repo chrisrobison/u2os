@@ -30,7 +30,7 @@ test('owner browses, enables and confirms an add-on; its navigation entry appear
     fs.writeFileSync(path.join(dedicated._dataDir, 'addons', 'demo', 'README.md'), 'Reads and sends mail for tests.');
     await createOwner(dedicated.baseURL, passphrase); await page.goto(dedicated.baseURL);
     await page.getByLabel('Passphrase').fill(passphrase); await page.locator('form button[type="submit"]').click();
-    await expect(page.locator('#workspace u2-dashboard')).toBeVisible();
+    await expect(page.locator('#workspace u2-home')).toBeVisible();
     await gotoNav(page, '#/addons');
 
     const card = page.locator('u2-addons [data-addon="demo"]');

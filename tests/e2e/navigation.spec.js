@@ -80,18 +80,18 @@ test.describe.serial('navigation shell (#15)', () => {
 
   const ROUTE_CASES = [
     {
+      // #495: Home is the overview; the Morning Briefing moved to #/briefing.
       hash: '#/home',
       async assert() {
-        await expect(workspaceTitle('Morning Briefing')).toBeVisible();
-        await expect(page.locator('u2-card[title="Schedule"] .u2-schedule__title', { hasText: 'Sync with Sarah' })).toBeVisible();
-        await expect(page.locator('u2-card[title="Tasks"] .u2-task__title', { hasText: 'Send proposal draft to Sarah' })).toBeVisible();
-        await expect(page.locator('u2-card[title="Tasks"] .u2-task__title', { hasText: 'Prepare for recruiter call' })).toBeVisible();
-        await expect(page.locator('u2-card[title="Tasks"] .u2-task__title', { hasText: 'Review U2OS architecture doc' })).toBeVisible();
+        await expect(page.locator('u2-home .workspace__title')).toBeVisible();
+        await expect(page.locator('u2-home h2', { hasText: 'Needs your decision' })).toBeVisible();
+        await expect(page.locator('u2-home h2', { hasText: 'Your day, handled' })).toBeVisible();
+        await expect(page.getByRole('link', { name: 'Open morning briefing' })).toHaveAttribute('href', '#/briefing');
       },
     },
     {
-      // #12/#15: #/briefing maps to the exact same dashboard render as
-      // #/home -- same assertions confirm that, not just a status code.
+      // #12/#15: #/briefing renders the Morning Briefing dashboard (it shared
+      // Home's route until #495).
       hash: '#/briefing',
       async assert() {
         await expect(workspaceTitle('Morning Briefing')).toBeVisible();
@@ -107,7 +107,7 @@ test.describe.serial('navigation shell (#15)', () => {
         await expect(page.locator('.folder-toggle button', { hasText: 'Before a meeting' })).toBeVisible();
         await expect(page.locator('.folder-toggle button', { hasText: 'Project' })).toBeVisible();
         // Default context is 'morning' -- same generated dashboard as
-        // #/home, rendered inside this page's own body.
+        // #/briefing, rendered inside this page's own body.
         await expect(page.locator('.workspace__title', { hasText: 'Morning Briefing' })).toBeVisible();
         await expect(page.locator('u2-card[title="Schedule"] .u2-schedule__title', { hasText: 'Sync with Sarah' })).toBeVisible();
 
@@ -404,7 +404,7 @@ test.describe.serial('navigation shell (#15)', () => {
 
     await page.goBack();
     await expect(page).toHaveURL(/#\/home$/);
-    await expect(workspaceTitle('Morning Briefing')).toBeVisible();
+    await expect(page.locator('u2-home .workspace__title')).toBeVisible();
     await expect(navLink('#/home')).toHaveClass(/is-active/);
 
     // Forward: #/home -> #/mail -> #/calendar, landing correctly again.

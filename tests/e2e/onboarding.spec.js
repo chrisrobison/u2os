@@ -107,7 +107,7 @@ test.describe('onboarding wizard (#413)', () => {
 
       await page.locator('u2-onboarding [data-goto-step="6"]').click();
       await page.locator('u2-onboarding button', { hasText: 'Go to my dashboard' }).click();
-      await expect(page.locator('#workspace u2-dashboard')).toBeVisible();
+      await expect(page.locator('#workspace u2-home')).toBeVisible();
     });
   });
 });

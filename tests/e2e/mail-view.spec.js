@@ -61,7 +61,7 @@ test.describe.serial('mail view and reply (#436)', () => {
   });
 
   test('dashboard mail summaries stay read-only', async () => {
-    await page.goto(`${dedicated.baseURL}/#/home`);
+    await page.goto(`${dedicated.baseURL}/#/briefing`);
     await expect(page.locator('u2-card u2-email-summary').first()).toBeVisible();
     await expect(page.locator('button.u2-email--select')).toHaveCount(0);
   });
