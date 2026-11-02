@@ -11,6 +11,19 @@ Work is ordered by product value:
 
 The foundations built so far (security boundary, policy, durable actions, privacy, explainability) are complete enough to serve that product. Further hardening happens when real use exposes a need, not speculatively.
 
+## Evidence vocabulary
+
+Every status in this plan and in the [progress record](docs/personal-agent-progress.md) means one of these. A checked box means **implemented and CI-validated** unless it says otherwise; it never implies live validation.
+
+| Level | Meaning |
+|---|---|
+| Planned | Not started |
+| Implemented | Code merged |
+| Fixture-tested | Automated tests against fixtures or fake providers pass |
+| CI-validated | The full suite passes in CI on `main` |
+| Live-validated | The owner used it on real accounts and recorded the result ([dogfooding record](docs/personal-acceptance.md)); absent a record, assume **not** live-validated |
+| Incomplete | Partly done; the open part is listed |
+
 ## Guiding constraints
 
 - The owner's digital self is a vault of plain files they own. SQLite is an index of the vault plus operational runtime state.
@@ -62,6 +75,19 @@ Tracking issue: [#433](https://github.com/chrisrobison/u2os/issues/433). Use on 
 - [x] [#439](https://github.com/chrisrobison/u2os/issues/439) People: contacts section and relationship management
 - [x] [#450](https://github.com/chrisrobison/u2os/issues/450) Navigation icons (Font Awesome Free shipped with the app, not a CDN)
 - [ ] [#448](https://github.com/chrisrobison/u2os/issues/448) People: person-to-person relationships in vault files (follow-up)
+
+### Job Hunt UI/UX redesign
+
+Tracking issue: [#626](https://github.com/chrisrobison/u2os/issues/626) (closed). Decision-centred Job Hunt: agents work, the owner supervises, resolves exceptions and approves. CI-validated with fixture and Playwright tests; live use by the owner is not yet recorded.
+
+- [x] [#627](https://github.com/chrisrobison/u2os/issues/627) Design tokens and layout primitives
+- [x] [#629](https://github.com/chrisrobison/u2os/issues/629) Overview: pipeline, attention queue, activity
+- [x] [#631](https://github.com/chrisrobison/u2os/issues/631) Opportunities table with server-side search, filter, pagination
+- [x] [#634](https://github.com/chrisrobison/u2os/issues/634) Detail panel with tabs and per-job vault notes (closes [#540](https://github.com/chrisrobison/u2os/issues/540))
+- [x] [#636](https://github.com/chrisrobison/u2os/issues/636) Evidence resolution with provenance and rescoring
+- [x] [#640](https://github.com/chrisrobison/u2os/issues/640) Agent Operations and contextual chat
+- [x] [#642](https://github.com/chrisrobison/u2os/issues/642) Responsive, accessibility and regression pass
+- [ ] [#495](https://github.com/chrisrobison/u2os/issues/495) Home overview per mockup (next)
 
 ### Add-on system
 
@@ -151,7 +177,7 @@ Tracking issue: [#602](https://github.com/chrisrobison/u2os/issues/602). The own
 - [x] [#609](https://github.com/chrisrobison/u2os/issues/609) Phase 2c: vault watcher and reconcile
 - [x] [#613](https://github.com/chrisrobison/u2os/issues/613) Phase 3a: read-only Git health, history across renames, diff, snapshots
 - [x] [#614](https://github.com/chrisrobison/u2os/issues/614) Phase 3b: check in dirty vault trees; conflicts keep current content
-- [ ] [#615](https://github.com/chrisrobison/u2os/issues/615) Phase 3c: removal with optional, explicit history scrub
+- [ ] [#615](https://github.com/chrisrobison/u2os/issues/615) Phase 3c (next; Node remains authoritative for everything): removal with optional, explicit history scrub
 - Phases 4–8 (events/scheduler/actions, policy parity, add-ons and agent bridge, ownership handoffs, benchmarks and packaging) get issues when their predecessor merges.
 
 ## Later — deferred until the product is proven
