@@ -48,6 +48,7 @@ Only inside `<U2OS_HOME>/majordomo/` (mode `0700`):
 majordomo/
   majordomo.lock     flock single-instance guard (mode 0600); the file stays after stop, never delete it to bypass the lock
   run/majordomo.sock owner-only API socket (mode 0600), removed on clean shutdown
+  majordomo.sqlite   Phase 4a operational store (mode 0600, WAL); created only by code that uses it, never by the daemon or the read-only CLI
 ```
 
 A crash (`SIGKILL`) leaves the socket file behind. The next start, which holds the lock, replaces it. `u2 doctor` reports it as a stale socket. A symlink, regular file or foreign-owned socket at that path is refused and never deleted.
@@ -87,6 +88,10 @@ launchd, `~/Library/LaunchAgents/io.u2os.majordomo.plist`: run `~/bin/majordomo`
 
 The daemon watches the vault (debounced filesystem events plus a 30 s reconcile) and re-indexes when files change; see [docs/majordomo.md](../docs/majordomo.md#vault-watcher-phase-2c). `GET /api/v1/vault` shows `generation` and `lastChange`. It never writes to the vault.
 
+## Events and actions (Phase 4a, isolated)
+
+`majordomo::events` and `majordomo::actions` implement a durable event log and an action state machine in `majordomo/majordomo.sqlite`, with mock capabilities only. **Node stays authoritative**; the daemon does not run them and nothing is handed off. The store refuses any path other than `<home>/majordomo/majordomo.sqlite` and never opens Node's SQLite files. An action that was executing when its owner died becomes `outcome_uncertain` and waits for the owner; it is never retried automatically. Read-only inspection: `u2 actions list|show`, `u2 events tail` (also `GET /api/v1/actions`, `/actions/{id}`, `/events`). State table, crash semantics and Node differences: [docs/majordomo.md](../docs/majordomo.md#events-and-action-state-machine-phase-4a). Shared fixture: `tests/fixtures/actions-parity.json` with `node --test tests/majordomo-parity-actions.test.js` from the repository root.
+
 ## Not in this phase
 
-Policy, events, scheduler, action queue, capabilities, TCP/HTTP exposure, configuration reload, Windows. See the phase table in [docs/majordomo.md](../docs/majordomo.md).
+Policy, the scheduler (Phase 4b), real capabilities, TCP/HTTP exposure, configuration reload, Windows. See the phase table in [docs/majordomo.md](../docs/majordomo.md).

@@ -2,6 +2,7 @@
 //! the behaviour is unit-testable without a socket.
 
 use crate::git::{self, Git, Health, RevSpec};
+use crate::inspect;
 use crate::memory::{view, IndexHandle, Query};
 use crate::vault::Classification;
 use bytes::Bytes;
@@ -32,6 +33,8 @@ pub struct AppState {
     pub pid: u32,
     pub home: PathBuf,
     pub socket: PathBuf,
+    /// `<home>/majordomo/majordomo.sqlite`; opened read-only per request.
+    pub store_path: PathBuf,
     pub memory: Arc<IndexHandle>,
     pub git: Git,
     started: Instant,
@@ -43,6 +46,7 @@ impl AppState {
         AppState {
             version: env!("CARGO_PKG_VERSION"),
             pid: std::process::id(),
+            store_path: crate::store::store_path(&home.join(crate::config::DATA_DIR_NAME)),
             home,
             socket,
             git: Git::new(vault_dir.clone()),
@@ -66,8 +70,9 @@ pub fn route(state: &AppState, method: &Method, target: &str) -> Response<Full<B
         [
             "api",
             "v1",
-            "health" | "status" | "vault" | "memories" | "search" | "git"
+            "health" | "status" | "vault" | "memories" | "search" | "git" | "actions" | "events"
         ] | ["api", "v1", "memories", _]
+            | ["api", "v1", "actions", _]
             | ["api", "v1", "memories", _, "links" | "history" | "diff"]
     );
     if !known {
@@ -103,6 +108,9 @@ pub fn route(state: &AppState, method: &Method, target: &str) -> Response<Full<B
             let record = lookup(index, id)?;
             Ok(view::links(index, record))
         }),
+        ["api", "v1", "actions"] => inspect::actions_list(state, query),
+        ["api", "v1", "actions", id] => inspect::action_show(state, id),
+        ["api", "v1", "events"] => inspect::events(state, query),
         ["api", "v1", "git"] => match Health::inspect(&state.git) {
             Ok(h) => json_response(
                 StatusCode::OK,
@@ -152,7 +160,7 @@ pub fn route(state: &AppState, method: &Method, target: &str) -> Response<Full<B
     }
 }
 
-fn bad_query(message: &str) -> (StatusCode, &'static str, String) {
+pub(crate) fn bad_query(message: &str) -> (StatusCode, &'static str, String) {
     (StatusCode::BAD_REQUEST, "bad_query", message.to_string())
 }
 
@@ -330,14 +338,14 @@ pub fn internal_error() -> Response<Full<Bytes>> {
     )
 }
 
-fn error(status: StatusCode, code: &str, message: &str) -> Response<Full<Bytes>> {
+pub(crate) fn error(status: StatusCode, code: &str, message: &str) -> Response<Full<Bytes>> {
     json_response(
         status,
         &json!({ "error": { "code": code, "message": message } }),
     )
 }
 
-fn json_response(status: StatusCode, body: &Value) -> Response<Full<Bytes>> {
+pub(crate) fn json_response(status: StatusCode, body: &Value) -> Response<Full<Bytes>> {
     // Serialising a `serde_json::Value` cannot fail; fall back to an empty
     // object rather than panic in a daemon path.
     let text = serde_json::to_string(body).unwrap_or_else(|_| "{}".to_string());
