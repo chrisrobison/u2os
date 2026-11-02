@@ -50,9 +50,11 @@ USAGE:
     u2 actions list [--status S] [--limit N] [--json]
     u2 actions show <id> [--json]
     u2 events tail  [--after SEQ] [--limit N] [--json]
-                         read-only views of the isolated Phase 4a operational store
+    u2 scheduler runs [--limit N] [--json]
+                         read-only views of the isolated Phase 4a/4b operational store
                          (majordomo/majordomo.sqlite); no daemon needed. Node remains
-                         authoritative for the real action queue and event log.
+                         authoritative for the real action queue, event log and
+                         scheduler (the Rust scheduler is disabled by default).
     u2 --version | --help
 
 ENVIRONMENT:
@@ -88,6 +90,7 @@ async fn main() -> ExitCode {
         ["memory", sub, rest @ ..] => finish(memory(sub, rest)),
         ["actions", sub, rest @ ..] => finish(actions_cmd(sub, rest)),
         ["events", "tail", rest @ ..] => finish(events_tail(rest)),
+        ["scheduler", "runs", rest @ ..] => finish(scheduler_runs(rest)),
         ["git", "status", rest @ ..] => finish(git_status(rest)),
         ["git", "checkin", rest @ ..] => finish(git_checkin(rest)),
         ["forget", rest @ ..] => finish(forget(rest)),
@@ -819,6 +822,32 @@ fn actions_cmd(sub: &str, args: &[&str]) -> Result<bool, Error> {
         }
         other => Err(Error::Invalid(format!("unknown actions command: {other}"))),
     }
+}
+
+fn scheduler_runs(args: &[&str]) -> Result<bool, Error> {
+    let (values, json, _) = store_opts(args, &["limit"])?;
+    let store = open_store()?;
+    let limit = number(&values, "limit", 20)? as usize;
+    let v =
+        majordomo::inspect::scheduler_runs_json(store.as_ref(), limit).map_err(Error::Invalid)?;
+    if json {
+        return print_json(&v);
+    }
+    let items = v["items"].as_array().cloned().unwrap_or_default();
+    if items.is_empty() {
+        println!("no scheduler runs (the Rust scheduler is disabled; Node is authoritative)");
+    }
+    for r in &items {
+        println!(
+            "{:<10} {:<8} {:<28} {:<26} {}",
+            text(&r["status"]),
+            text(&r["trigger_kind"]),
+            text(&r["routine"]),
+            text(&r["slot"]),
+            text(&r["action_id"])
+        );
+    }
+    Ok(true)
 }
 
 fn events_tail(args: &[&str]) -> Result<bool, Error> {

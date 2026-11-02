@@ -20,6 +20,7 @@ pub mod inspect;
 pub mod lock;
 pub mod logging;
 pub mod memory;
+pub mod scheduler;
 pub mod server;
 pub mod store;
 pub mod vault;
