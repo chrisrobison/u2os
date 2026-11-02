@@ -178,6 +178,7 @@ Raw device debug routes are disabled outside explicit non-production development
 - **Validation:**
   - [Progress record](docs/personal-agent-progress.md)
   - [Personal acceptance and dogfooding](docs/personal-acceptance.md)
+  - [Dogfooding record, measures and triage](docs/dogfooding.md)
   - [Job research walkthrough](docs/job-research-walkthrough.md)
 - **Extensions:** [MCP tools](docs/mcp.md), [coding agents](docs/coding-agents.md), [job hunting](docs/job-hunt.md), [skills vs packages](docs/skills-vs-packages.md)
 - **Packages:** [Plugin architecture](docs/plugin-architecture.md), [writing packages](docs/packages/README.md), [reference Job Hunter package](packages/job-hunter/README.md)
