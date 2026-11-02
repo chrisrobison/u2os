@@ -38,7 +38,8 @@ pub enum StoreError {
 
 /// Statements applied in order; index + 1 is the schema version. Only ever
 /// append: shipped entries are never edited.
-const MIGRATIONS: &[&str] = &["
+const MIGRATIONS: &[&str] = &[
+    "
 CREATE TABLE events (
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
   id TEXT NOT NULL UNIQUE,
@@ -98,7 +99,31 @@ CREATE TABLE action_attempts (
   error_class TEXT,
   UNIQUE(action_id, attempt_number)
 );
-"];
+",
+    "
+-- Phase 4b scheduler: additive. One row per claimed (routine, slot); the
+-- UNIQUE constraint is what makes a slot run at most once.
+CREATE TABLE scheduler_runs (
+  id TEXT PRIMARY KEY,
+  routine TEXT NOT NULL,
+  slot TEXT NOT NULL,
+  trigger_kind TEXT NOT NULL,
+  event_id TEXT,
+  status TEXT NOT NULL CHECK (status IN ('started','enqueued','throttled')),
+  action_id TEXT,
+  reason TEXT,
+  created_at_ms INTEGER NOT NULL,
+  updated_at_ms INTEGER NOT NULL,
+  UNIQUE(routine, slot)
+);
+CREATE INDEX idx_scheduler_runs_created ON scheduler_runs(created_at_ms);
+CREATE TABLE scheduler_lease (
+  name TEXT PRIMARY KEY CHECK (name = 'tick'),
+  owner TEXT NOT NULL,
+  expires_at_ms INTEGER NOT NULL
+);
+",
+];
 
 pub const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;
 

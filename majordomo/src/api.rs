@@ -73,6 +73,7 @@ pub fn route(state: &AppState, method: &Method, target: &str) -> Response<Full<B
             "health" | "status" | "vault" | "memories" | "search" | "git" | "actions" | "events"
         ] | ["api", "v1", "memories", _]
             | ["api", "v1", "actions", _]
+            | ["api", "v1", "scheduler", "runs"]
             | ["api", "v1", "memories", _, "links" | "history" | "diff"]
     );
     if !known {
@@ -111,6 +112,7 @@ pub fn route(state: &AppState, method: &Method, target: &str) -> Response<Full<B
         ["api", "v1", "actions"] => inspect::actions_list(state, query),
         ["api", "v1", "actions", id] => inspect::action_show(state, id),
         ["api", "v1", "events"] => inspect::events(state, query),
+        ["api", "v1", "scheduler", "runs"] => inspect::scheduler_runs(state, query),
         ["api", "v1", "git"] => match Health::inspect(&state.git) {
             Ok(h) => json_response(
                 StatusCode::OK,

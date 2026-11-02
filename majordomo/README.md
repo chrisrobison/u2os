@@ -92,6 +92,10 @@ The daemon watches the vault (debounced filesystem events plus a 30 s reconcile)
 
 `majordomo::events` and `majordomo::actions` implement a durable event log and an action state machine in `majordomo/majordomo.sqlite`, with mock capabilities only. **Node stays authoritative**; the daemon does not run them and nothing is handed off. The store refuses any path other than `<home>/majordomo/majordomo.sqlite` and never opens Node's SQLite files. An action that was executing when its owner died becomes `outcome_uncertain` and waits for the owner; it is never retried automatically. Read-only inspection: `u2 actions list|show`, `u2 events tail` (also `GET /api/v1/actions`, `/actions/{id}`, `/events`). State table, crash semantics and Node differences: [docs/majordomo.md](../docs/majordomo.md#events-and-action-state-machine-phase-4a). Shared fixture: `tests/fixtures/actions-parity.json` with `node --test tests/majordomo-parity-actions.test.js` from the repository root.
 
+## Scheduler (Phase 4b, isolated)
+
+`majordomo::scheduler` adds a leased scheduler with durable `(routine, slot)` claims to the same store (additive migration; `scheduler_runs`, `scheduler_lease`), the Node slot formats, the 30-per-hour cap, `routine.fired` / `routine.failed` events and crash-safe enqueue of a mock `routine.run` action. Definitions are supplied in code; loading routines from the vault is Phase 7. It is **disabled by default**: the daemon runs no ticker and Node stays authoritative. Read-only: `u2 scheduler runs` (also `GET /api/v1/scheduler/runs`). Details, DST behaviour and differences: [docs/majordomo.md](../docs/majordomo.md#scheduler-phase-4b). Shared fixture: `tests/fixtures/scheduler-parity.json` with `node --test tests/majordomo-parity-scheduler.test.js` from the repository root.
+
 ## Not in this phase
 
-Policy, the scheduler (Phase 4b), real capabilities, TCP/HTTP exposure, configuration reload, Windows. See the phase table in [docs/majordomo.md](../docs/majordomo.md).
+Policy, real capabilities, TCP/HTTP exposure, configuration reload, Windows. See the phase table in [docs/majordomo.md](../docs/majordomo.md).

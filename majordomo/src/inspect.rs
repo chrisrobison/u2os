@@ -73,6 +73,33 @@ pub fn events_json(
     Ok(json!({ "items": events }))
 }
 
+/// Newest scheduler claims (Phase 4b), read-only.
+pub fn scheduler_runs_json(store: Option<&Store>, limit: usize) -> Result<Value, String> {
+    let items = match store {
+        None => Vec::new(),
+        Some(s) => crate::scheduler::list_runs(s, limit).map_err(|e| e.to_string())?,
+    };
+    Ok(json!({ "enabled": false, "items": items }))
+}
+
+pub fn scheduler_runs(state: &AppState, query: &str) -> Response<Full<Bytes>> {
+    let p = match params(query, &["limit"]) {
+        Ok(p) => p,
+        Err(r) => return *r,
+    };
+    let limit = match limit_of(&p, 100) {
+        Ok(l) => l,
+        Err(r) => return *r,
+    };
+    let Ok(store) = open(&state.store_path) else {
+        return unavailable();
+    };
+    match scheduler_runs_json(store.as_ref(), limit) {
+        Ok(v) => json_response(StatusCode::OK, &v),
+        Err(_) => unavailable(),
+    }
+}
+
 fn unavailable() -> Response<Full<Bytes>> {
     error(
         StatusCode::SERVICE_UNAVAILABLE,

@@ -4,7 +4,7 @@ Majordomo is the planned Rust daemon for U2OS's deterministic orchestration. The
 
 > The filesystem is the storage. The vault is the digital self. The daemon is the majordomo. The AI is an advisor, not an authority.
 
-**Status:** Phase 0 (design) complete; Phase 1 (foundation) implemented in [`majordomo/`](../majordomo/README.md) ([#604](https://github.com/chrisrobison/u2os/issues/604)); Phase 4a (durable events and action state machine, mock capabilities only) implemented and fixture-tested ([#650](https://github.com/chrisrobison/u2os/issues/650)). Until a phase says otherwise, **Node is authoritative for everything** and Majordomo changes no behaviour.
+**Status:** Phase 0 (design) complete; Phase 1 (foundation) implemented in [`majordomo/`](../majordomo/README.md) ([#604](https://github.com/chrisrobison/u2os/issues/604)); Phase 4 (4a durable events and action state machine; 4b leased scheduler; mock capabilities only) implemented, fixture-tested and isolated ([#650](https://github.com/chrisrobison/u2os/issues/650)). Until a phase says otherwise, **Node is authoritative for everything** and Majordomo changes no behaviour.
 
 ## What stays, what moves
 
@@ -93,6 +93,7 @@ CLI `u2` (separate from `npm run u2`, which is the Node package CLI and is uncha
 | `u2 memory list\|search\|show\|links` (`--json`, `--vault DIR`) | 2b, implemented (reads the vault directly, no daemon needed, same library code as the API) |
 | `u2 git status`, `u2 history <id\|path>`, `u2 diff <id\|path> --since …`, `u2 rewind <date\|commit>` | 3a, implemented (read-only; no daemon needed) |
 | `u2 git checkin`, `u2 forget` | 3b, 3c |
+| `u2 scheduler runs`, `GET /api/v1/scheduler/runs?limit=` | 4b, implemented (read-only; newest claims, `enabled: false`) |
 | `u2 actions list\|show`, `u2 events tail` | 4a, implemented (read-only; no daemon needed; read the isolated Phase 4a store) |
 | `u2 daemon start`/`stop` | later (foreground `majordomo` first; units documented) |
 
@@ -125,7 +126,7 @@ Out of scope: a compromised owner account, a malicious root user, network attack
 | 1 | Cargo crate, config, lock, lifecycle, logging, socket API, `u2 status`/`doctor` | Clean start/stop, second instance refused, peer checks, tests green |
 | 2 | Vault + memory read engine (2a [#607](https://github.com/chrisrobison/u2os/issues/607) scanner and `u2 vault check`: implemented; 2b [#608](https://github.com/chrisrobison/u2os/issues/608) queries, search and links: implemented; 2c [#609](https://github.com/chrisrobison/u2os/issues/609) watcher: implemented), watcher, search, backlinks, `u2 vault check` | Externally edited vault indexed and queryable; unrelated files untouched; parity fixtures vs Node indexer |
 | 3 | Git history: 3a read-only health, history, diff, snapshots ([#613](https://github.com/chrisrobison/u2os/issues/613), implemented); 3b check-in of dirty trees ([#614](https://github.com/chrisrobison/u2os/issues/614), implemented); 3c removal with optional history scrub ([#615](https://github.com/chrisrobison/u2os/issues/615), implemented, fixture-tested only; Node remains authoritative and no scrub has been run on a real vault) | Rename-surviving history, read-only snapshots; never pushes |
-| 4 | Events, scheduler, action state machine, mock capabilities. 4a ([#650](https://github.com/chrisrobison/u2os/issues/650)): events and action state machine, implemented, fixture-tested, Node authoritative, no handoff. 4b: scheduler, not started | Simulated crash never duplicates a consequential action |
+| 4 | Events, scheduler, action state machine, mock capabilities. 4a ([#650](https://github.com/chrisrobison/u2os/issues/650)): events and action state machine, implemented, fixture-tested, Node authoritative, no handoff. 4b ([#650](https://github.com/chrisrobison/u2os/issues/650)): leased scheduler with durable `(routine, slot)` claims, implemented, fixture-tested, Node authoritative, no handoff. Phase 4 is implemented, fixture-tested and isolated | Simulated crash never duplicates a consequential action |
 | 5 | Policy parity | Shared fixtures identical to Node; no bypass via routine/agent/event/API |
 | 6 | Capability registry, MCP adapter, agent proposal interface | End-to-end task with a replaceable agent and a mock capability |
 | 7 | Ownership handoffs, one subsystem at a time | Parity, restart recovery, UI still works, then retire Node code |
@@ -237,7 +238,7 @@ u2 forget --restore-scrub <backup-id>
 
 ## Events and action state machine (Phase 4a)
 
-**Node remains authoritative.** `majordomo::events` and `majordomo::actions` are an isolated implementation in `<U2OS_HOME>/majordomo/majordomo.sqlite`. Nothing is wired to Node's event bus or action queue, the daemon does not run the executor (`status` still reports `action_queue`, `scheduler` and `event_log` as `disabled`), and there is no handoff. The scheduler is Phase 4b; real execution-time policy is Phase 5; there are no real connectors (Phase 6).
+**Node remains authoritative.** `majordomo::events` and `majordomo::actions` are an isolated implementation in `<U2OS_HOME>/majordomo/majordomo.sqlite`. Nothing is wired to Node's event bus or action queue, the daemon does not run the executor (`status` still reports `action_queue`, `scheduler` and `event_log` as `disabled`), and there is no handoff. The scheduler is Phase 4b (below); real execution-time policy is Phase 5; there are no real connectors (Phase 6).
 
 ### Store
 
@@ -295,4 +296,35 @@ Append-only (database triggers abort `UPDATE` and `DELETE`), with a monotonic `s
 
 ### What is mock, what remains
 
-Mock: capabilities (counting, failing, hanging, panicking) and the authorizer, in `actions::mock`. No heartbeat renewal is wired into the executor (`renew_lease` exists); keep `lease_ms` above a capability's worst case, or accept `outcome_uncertain`. Remaining: scheduler with `(routine, slot)` claims (4b), policy parity at execution time (Phase 5), real capabilities and the agent bridge (Phase 6), ownership handoff and any import of Node's queue (Phase 7).
+Mock: capabilities (counting, failing, hanging, panicking) and the authorizer, in `actions::mock`. No heartbeat renewal is wired into the executor (`renew_lease` exists); keep `lease_ms` above a capability's worst case, or accept `outcome_uncertain`. Remaining: policy parity at execution time (Phase 5), real capabilities and the agent bridge (Phase 6), ownership handoff and any import of Node's queue (Phase 7).
+
+## Scheduler (Phase 4b)
+
+**Node remains authoritative.** `majordomo::scheduler` is isolated in the same `majordomo.sqlite` (additive migration 2: `scheduler_runs`, `scheduler_lease`); it never opens Node's databases. Routine definitions are supplied programmatically (`Routine`, `Trigger`, or `Trigger::from_when` on a front-matter-shaped `when:` mapping). **Reading routine files from the vault, and taking over routines, is Phase 7**; nothing here parses the vault. The daemon does not run a ticker: `status` still reports the scheduler as disabled and `u2 scheduler runs` says so. A "run" only enqueues a mock `routine.run` action through the 4a actions API.
+
+### Semantics
+
+- **Slots** (Node's formats): `daily:YYYY-MM-DD` (local date), `every:<minutes>:<floor(epoch_ms / window)>`, `event:<event id>`, `manual:<random id>`. `daily` is due from its local time until 60 minutes later and on the listed `days`; a late tick claims only the current slot. Missed runs are never caught up (an `every` tick after hours of downtime claims one current window; a missed morning brief is skipped). `every_minutes` is at least 15. Event routines cannot name `routine.`, `vault.`, `agent.`, `action.` or `run.` events, and `routine.*` events dispatch nothing (recursion ban).
+- **Claim.** `INSERT OR IGNORE` into `scheduler_runs` with `UNIQUE(routine, slot)` in an immediate transaction, before any work. A claimed slot never runs again, across restarts, threads or processes, even if it was throttled or the process died.
+- **Cap.** At most 30 non-throttled claims created in the last rolling hour (the new claim excluded, throttled rows excluded, manual runs counted but never throttled). Over the cap the row becomes `throttled` (reason `hourly_routine_limit`) and no action is created. The cap check, the status change and the event commit with the claim.
+- **Events.** `routine.fired` (data: routine, routineRunId, trigger, slot, eventId) and, for a throttled claim, `routine.failed` with reason `hourly_routine_limit`, which is what Node publishes; Node has no `routine.throttled`. Only identifiers are recorded or put in the action arguments, never triggering event content.
+- **Enqueue and crash recovery.** After the claim, the action is submitted with idempotency key `routine:<routine>:<slot>` and the claim moves `started` to `enqueued`. A crash in between leaves a `started` claim; `recover()` (run by every leader tick) submits with the same key and gets the same action, so there is never a second one. Tests cover the crash before enqueue, the crash after enqueue before marking, and a SIGKILLed child process.
+- **Lease.** One row `scheduler_lease('tick', owner, expires_at_ms)`. `tick()` takes or renews it; another owner's unexpired lease means the tick does nothing; `expires_at <= now` is takeable (Node's rule); `release_lease()` frees it. Default lease 5 minutes (the trigger engine's). The lease stops two daemons both ticking; the claim, not the lease, is the correctness guarantee, so event and manual fires need no lease.
+- **Time zone and DST.** Node uses the server's local zone through JavaScript `Date`. Rust has no IANA database here, so the zone is injected: `Zone::Fixed{offset_min}` or `Zone::UsDst{std_offset_min}` (US rules). A wall time skipped by spring-forward (02:30) resolves with the pre-change offset, so it fires at 03:30 local; a repeated wall time (fall-back 01:30) resolves to the earlier instant, and the repeated hour shares the day's slot, so it fires once. Both match Node under a real `TZ=America/Los_Angeles` in the parity test. Other DST rules are not implemented.
+
+### Parity
+
+`majordomo/tests/fixtures/scheduler-parity.json` is read by `tests/majordomo-parity-scheduler.test.js` (Node's real `parseTrigger`, `dueSlot` and routine runner with a temp home, vault and fake agent) and `majordomo/tests/scheduler_parity.rs`. It has 27 due-slot cases (grace edges, days, DST gap/overlap, half-hour offsets, midnight, `every` windows), valid and invalid `when` shapes, and scenarios for no re-fire, no catch-up, event redelivery, the 30 per hour cap with manual and aging. Recorded differences (also under `differences` in the fixture):
+
+| Area | Node | Rust |
+|---|---|---|
+| Time zone | process-local | injected `Zone` (fixed or US DST) |
+| Throttle event | `routine.failed` | same |
+| Cap clock | `Date.now()` | injected clock |
+| Lease | routine runner has none; the trigger engine leases its rows | one ticker lease; claims still dedupe |
+| Run | runs the agent in-process; status `completed` | enqueues a mock `routine.run` action; status `enqueued` |
+| Event matching `if.equals` | `String(value)` of any scalar | same for scalars; objects are not matched |
+
+### Status of the Rust migration
+
+Phase 4 (4a and 4b) is implemented, fixture-tested and isolated: no handoff, Node owns events, the queue and the scheduler. **Phases 5 to 8 are not started** (policy parity at execution time, real capabilities and the agent bridge, vault routine loading and ownership handoff, cutover) and need a separate scope decision before any begins.

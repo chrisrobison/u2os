@@ -1,0 +1,827 @@
+{
+ "description": "Shared by tests/majordomo-parity-scheduler.test.js (Node's real dueSlot/parseTrigger/runner) and majordomo/tests/scheduler_parity.rs. Statuses: 'ran' is Node 'completed' / Rust 'enqueued'.",
+ "differences": [
+  {
+   "area": "time zone",
+   "node": "process-local zone via JS Date (TZ env)",
+   "rust": "injected Zone (fixed offset or US DST rules); the fixture gives both",
+   "note": "Rust has no IANA database in this build"
+  },
+  {
+   "area": "throttle event",
+   "node": "routine.failed with reason hourly_routine_limit",
+   "rust": "same (there is no routine.throttled in Node)"
+  },
+  {
+   "area": "cap clock",
+   "node": "Date.now(), ignoring the tick's now",
+   "rust": "the injected clock"
+  },
+  {
+   "area": "lease",
+   "node": "none in the routine runner (claims dedupe); trigger-engine leases rows",
+   "rust": "one lease row so a single ticker fires; claims still dedupe"
+  },
+  {
+   "area": "enqueue",
+   "node": "runs the agent in-process",
+   "rust": "creates a mock routine.run action with key routine:<routine>:<slot>; repaired by recover() after a crash"
+  }
+ ],
+ "due_slot": [
+  {
+   "name": "weekday morning inside grace",
+   "tz": "America/Los_Angeles",
+   "zone": "us:-480",
+   "when": {
+    "daily": "07:00",
+    "days": [
+     "mon",
+     "tue",
+     "wed",
+     "thu",
+     "fri"
+    ]
+   },
+   "now": "2026-09-28T14:05:00Z",
+   "expected": "daily:2026-09-28"
+  },
+  {
+   "name": "not before its time",
+   "tz": "America/Los_Angeles",
+   "zone": "us:-480",
+   "when": {
+    "daily": "07:00",
+    "days": [
+     "mon",
+     "tue",
+     "wed",
+     "thu",
+     "fri"
+    ]
+   },
+   "now": "2026-09-28T13:59:59Z",
+   "expected": null
+  },
+  {
+   "name": "exact time",
+   "tz": "America/Los_Angeles",
+   "zone": "us:-480",
+   "when": {
+    "daily": "07:00",
+    "days": [
+     "mon",
+     "tue",
+     "wed",
+     "thu",
+     "fri"
+    ]
+   },
+   "now": "2026-09-28T14:00:00Z",
+   "expected": "daily:2026-09-28"
+  },
+  {
+   "name": "grace boundary inclusive",
+   "tz": "America/Los_Angeles",
+   "zone": "us:-480",
+   "when": {
+    "daily": "07:00",
+    "days": [
+     "mon",
+     "tue",
+     "wed",
+     "thu",
+     "fri"
+    ]
+   },
+   "now": "2026-09-28T15:00:00Z",
+   "expected": "daily:2026-09-28"
+  },
+  {
+   "name": "one ms past grace",
+   "tz": "America/Los_Angeles",
+   "zone": "us:-480",
+   "when": {
+    "daily": "07:00",
+    "days": [
+     "mon",
+     "tue",
+     "wed",
+     "thu",
+     "fri"
+    ]
+   },
+   "now": "2026-09-28T15:00:00.001Z",
+   "expected": null
+  },
+  {
+   "name": "hours later is not replayed",
+   "tz": "America/Los_Angeles",
+   "zone": "us:-480",
+   "when": {
+    "daily": "07:00",
+    "days": [
+     "mon",
+     "tue",
+     "wed",
+     "thu",
+     "fri"
+    ]
+   },
+   "now": "2026-09-28T16:30:00Z",
+   "expected": null
+  },
+  {
+   "name": "unlisted day (Sunday)",
+   "tz": "America/Los_Angeles",
+   "zone": "us:-480",
+   "when": {
+    "daily": "07:00",
+    "days": [
+     "mon",
+     "tue",
+     "wed",
+     "thu",
+     "fri"
+    ]
+   },
+   "now": "2026-09-27T14:05:00Z",
+   "expected": null
+  },
+  {
+   "name": "winter offset",
+   "tz": "America/Los_Angeles",
+   "zone": "us:-480",
+   "when": {
+    "daily": "07:00"
+   },
+   "now": "2026-01-05T15:00:00Z",
+   "expected": "daily:2026-01-05"
+  },
+  {
+   "name": "spring forward: nonexistent 02:30 fires at 03:30 PDT",
+   "tz": "America/Los_Angeles",
+   "zone": "us:-480",
+   "when": {
+    "daily": "02:30"
+   },
+   "now": "2026-03-08T10:30:00Z",
+   "expected": "daily:2026-03-08",
+   "note": "gap time resolves with the pre-change offset in both Node and Rust"
+  },
+  {
+   "name": "spring forward: before the shifted time",
+   "tz": "America/Los_Angeles",
+   "zone": "us:-480",
+   "when": {
+    "daily": "02:30"
+   },
+   "now": "2026-03-08T10:29:00Z",
+   "expected": null
+  },
+  {
+   "name": "spring forward: grace boundary",
+   "tz": "America/Los_Angeles",
+   "zone": "us:-480",
+   "when": {
+    "daily": "02:30"
+   },
+   "now": "2026-03-08T11:30:00Z",
+   "expected": "daily:2026-03-08"
+  },
+  {
+   "name": "spring forward: past grace",
+   "tz": "America/Los_Angeles",
+   "zone": "us:-480",
+   "when": {
+    "daily": "02:30"
+   },
+   "now": "2026-03-08T11:31:00Z",
+   "expected": null
+  },
+  {
+   "name": "fall back: first 01:30",
+   "tz": "America/Los_Angeles",
+   "zone": "us:-480",
+   "when": {
+    "daily": "01:30"
+   },
+   "now": "2026-11-01T08:30:00Z",
+   "expected": "daily:2026-11-01"
+  },
+  {
+   "name": "fall back: second 01:30 shares the slot",
+   "tz": "America/Los_Angeles",
+   "zone": "us:-480",
+   "when": {
+    "daily": "01:30"
+   },
+   "now": "2026-11-01T09:30:00Z",
+   "expected": "daily:2026-11-01",
+   "note": "the repeated hour is still within grace; the shared slot string stops a double fire"
+  },
+  {
+   "name": "fall back: past grace",
+   "tz": "America/Los_Angeles",
+   "zone": "us:-480",
+   "when": {
+    "daily": "01:30"
+   },
+   "now": "2026-11-01T09:31:00Z",
+   "expected": null
+  },
+  {
+   "name": "fall back: day after",
+   "tz": "America/Los_Angeles",
+   "zone": "us:-480",
+   "when": {
+    "daily": "01:30"
+   },
+   "now": "2026-11-02T09:30:00Z",
+   "expected": "daily:2026-11-02"
+  },
+  {
+   "name": "late-evening time is not due after midnight",
+   "tz": "UTC",
+   "zone": "fixed:0",
+   "when": {
+    "daily": "23:30"
+   },
+   "now": "2026-01-01T00:10:00Z",
+   "expected": null
+  },
+  {
+   "name": "late evening, same day",
+   "tz": "UTC",
+   "zone": "fixed:0",
+   "when": {
+    "daily": "23:30"
+   },
+   "now": "2026-01-01T23:45:00Z",
+   "expected": "daily:2026-01-01"
+  },
+  {
+   "name": "half-hour offset zone",
+   "tz": "Asia/Kolkata",
+   "zone": "fixed:330",
+   "when": {
+    "daily": "07:00"
+   },
+   "now": "2026-05-01T01:35:00Z",
+   "expected": "daily:2026-05-01"
+  },
+  {
+   "name": "date follows the local day, not UTC",
+   "tz": "Asia/Kolkata",
+   "zone": "fixed:330",
+   "when": {
+    "daily": "00:00"
+   },
+   "now": "2026-04-30T18:35:00Z",
+   "expected": "daily:2026-05-01"
+  },
+  {
+   "name": "single-digit hour is accepted",
+   "tz": "UTC",
+   "zone": "fixed:0",
+   "when": {
+    "daily": "7:05"
+   },
+   "now": "2026-02-03T07:06:00Z",
+   "expected": "daily:2026-02-03"
+  },
+  {
+   "name": "every 15 minutes at 2026-09-28T10:10:00Z",
+   "tz": "UTC",
+   "zone": "fixed:0",
+   "when": {
+    "every_minutes": 15
+   },
+   "now": "2026-09-28T10:10:00Z",
+   "expected": "every:15:1989544"
+  },
+  {
+   "name": "every 15 minutes at 2026-09-28T10:14:59.999Z",
+   "tz": "UTC",
+   "zone": "fixed:0",
+   "when": {
+    "every_minutes": 15
+   },
+   "now": "2026-09-28T10:14:59.999Z",
+   "expected": "every:15:1989544"
+  },
+  {
+   "name": "every 15 minutes at 2026-09-28T10:15:00Z",
+   "tz": "UTC",
+   "zone": "fixed:0",
+   "when": {
+    "every_minutes": 15
+   },
+   "now": "2026-09-28T10:15:00Z",
+   "expected": "every:15:1989545"
+  },
+  {
+   "name": "every 60 minutes at 2026-09-28T10:59:00Z",
+   "tz": "UTC",
+   "zone": "fixed:0",
+   "when": {
+    "every_minutes": 60
+   },
+   "now": "2026-09-28T10:59:00Z",
+   "expected": "every:60:497386"
+  },
+  {
+   "name": "every 60 minutes at 2026-09-28T11:00:00Z",
+   "tz": "UTC",
+   "zone": "fixed:0",
+   "when": {
+    "every_minutes": 60
+   },
+   "now": "2026-09-28T11:00:00Z",
+   "expected": "every:60:497387"
+  },
+  {
+   "name": "every 30 minutes at 1969-12-31T23:59:00Z",
+   "tz": "UTC",
+   "zone": "fixed:0",
+   "when": {
+    "every_minutes": 30
+   },
+   "now": "1969-12-31T23:59:00Z",
+   "expected": "every:30:-1"
+  }
+ ],
+ "valid_when": [
+  {
+   "name": "daily with long day names",
+   "when": {
+    "daily": "07:30",
+    "days": [
+     "Mon",
+     "friday"
+    ]
+   }
+  },
+  {
+   "name": "every 15",
+   "when": {
+    "every_minutes": 15
+   }
+  },
+  {
+   "name": "event with contains",
+   "when": {
+    "event": "email.received",
+    "if": {
+     "path": "data.after.from",
+     "contains": "Recruit"
+    }
+   }
+  }
+ ],
+ "invalid_when": [
+  {
+   "name": "null",
+   "when": null
+  },
+  {
+   "name": "empty",
+   "when": {}
+  },
+  {
+   "name": "hour 25",
+   "when": {
+    "daily": "25:00"
+   }
+  },
+  {
+   "name": "every below minimum",
+   "when": {
+    "every_minutes": 5
+   }
+  },
+  {
+   "name": "two kinds",
+   "when": {
+    "daily": "07:00",
+    "every_minutes": 60
+   }
+  },
+  {
+   "name": "routine events banned",
+   "when": {
+    "event": "routine.fired"
+   }
+  },
+  {
+   "name": "agent events banned",
+   "when": {
+    "event": "agent.message.received"
+   }
+  },
+  {
+   "name": "vault events banned",
+   "when": {
+    "event": "vault.changed"
+   }
+  },
+  {
+   "name": "action events banned",
+   "when": {
+    "event": "action.transition"
+   }
+  },
+  {
+   "name": "condition needs equals or contains",
+   "when": {
+    "event": "email.received",
+    "if": {
+     "path": "data.x"
+    }
+   }
+  },
+  {
+   "name": "condition with both",
+   "when": {
+    "event": "email.received",
+    "if": {
+     "path": "data.x",
+     "equals": "a",
+     "contains": "b"
+    }
+   }
+  },
+  {
+   "name": "bad day",
+   "when": {
+    "daily": "07:00",
+    "days": [
+     "someday"
+    ]
+   }
+  },
+  {
+   "name": "empty days",
+   "when": {
+    "daily": "07:00",
+    "days": []
+   }
+  },
+  {
+   "name": "event without a dot",
+   "when": {
+    "event": "email"
+   }
+  },
+  {
+   "name": "non-integer minutes",
+   "when": {
+    "every_minutes": 20.5
+   }
+  },
+  {
+   "name": "bad condition path",
+   "when": {
+    "event": "email.received",
+    "if": {
+     "path": "data x",
+     "equals": "a"
+    }
+   }
+  }
+ ],
+ "scenarios": [
+  {
+   "name": "slots are claimed once; late ticks claim only the current slot",
+   "tz": "America/Los_Angeles",
+   "zone": "us:-480",
+   "routines": [
+    {
+     "path": "a.md",
+     "when": {
+      "daily": "07:00",
+      "days": [
+       "mon",
+       "tue",
+       "wed",
+       "thu",
+       "fri"
+      ]
+     }
+    },
+    {
+     "path": "b.md",
+     "when": {
+      "every_minutes": 15
+     }
+    }
+   ],
+   "steps": [
+    {
+     "op": "tick",
+     "now": "2026-09-28T14:05:00Z",
+     "expect": [
+      {
+       "routine": "a.md",
+       "slot": "daily:2026-09-28",
+       "status": "ran"
+      },
+      {
+       "routine": "b.md",
+       "slot": "every:15:1989560",
+       "status": "ran"
+      }
+     ]
+    },
+    {
+     "op": "tick",
+     "now": "2026-09-28T14:06:00Z",
+     "expect": [],
+     "note": "same slots: nothing runs"
+    },
+    {
+     "op": "tick",
+     "now": "2026-09-28T14:15:00Z",
+     "expect": [
+      {
+       "routine": "b.md",
+       "slot": "every:15:1989561",
+       "status": "ran"
+      }
+     ]
+    },
+    {
+     "op": "tick",
+     "now": "2026-09-28T20:00:00Z",
+     "expect": [
+      {
+       "routine": "b.md",
+       "slot": "every:15:1989584",
+       "status": "ran"
+      }
+     ],
+     "note": "hours of downtime: no catch-up, the 07:00 brief is not replayed and the missed 15-minute windows are skipped"
+    },
+    {
+     "op": "tick",
+     "now": "2026-09-29T14:00:00Z",
+     "expect": [
+      {
+       "routine": "a.md",
+       "slot": "daily:2026-09-29",
+       "status": "ran"
+      },
+      {
+       "routine": "b.md",
+       "slot": "every:15:1989656",
+       "status": "ran"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "spring-forward day fires once",
+   "tz": "America/Los_Angeles",
+   "zone": "us:-480",
+   "routines": [
+    {
+     "path": "a.md",
+     "when": {
+      "daily": "02:30"
+     }
+    }
+   ],
+   "steps": [
+    {
+     "op": "tick",
+     "now": "2026-03-08T10:29:00Z",
+     "expect": []
+    },
+    {
+     "op": "tick",
+     "now": "2026-03-08T10:30:00Z",
+     "expect": [
+      {
+       "routine": "a.md",
+       "slot": "daily:2026-03-08",
+       "status": "ran"
+      }
+     ]
+    },
+    {
+     "op": "tick",
+     "now": "2026-03-08T10:45:00Z",
+     "expect": []
+    },
+    {
+     "op": "tick",
+     "now": "2026-03-09T09:30:00Z",
+     "expect": [
+      {
+       "routine": "a.md",
+       "slot": "daily:2026-03-09",
+       "status": "ran"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "fall-back day fires once despite the repeated hour",
+   "tz": "America/Los_Angeles",
+   "zone": "us:-480",
+   "routines": [
+    {
+     "path": "a.md",
+     "when": {
+      "daily": "01:30"
+     }
+    }
+   ],
+   "steps": [
+    {
+     "op": "tick",
+     "now": "2026-11-01T08:30:00Z",
+     "expect": [
+      {
+       "routine": "a.md",
+       "slot": "daily:2026-11-01",
+       "status": "ran"
+      }
+     ]
+    },
+    {
+     "op": "tick",
+     "now": "2026-11-01T09:30:00Z",
+     "expect": [],
+     "note": "second 01:30 is the same slot"
+    }
+   ]
+  },
+  {
+   "name": "event routines claim event:<id> once; conditions filter",
+   "tz": "UTC",
+   "zone": "fixed:0",
+   "routines": [
+    {
+     "path": "mail.md",
+     "when": {
+      "event": "email.received",
+      "if": {
+       "path": "data.after.from",
+       "contains": "talent"
+      }
+     }
+    }
+   ],
+   "steps": [
+    {
+     "op": "event",
+     "event": {
+      "id": "evt_1",
+      "type": "email.received",
+      "data": {
+       "after": {
+        "from": "jo@NorthwindTalent.example"
+       }
+      }
+     },
+     "expect": [
+      {
+       "routine": "mail.md",
+       "slot": "event:evt_1",
+       "status": "ran"
+      }
+     ]
+    },
+    {
+     "op": "event",
+     "event": {
+      "id": "evt_1",
+      "type": "email.received",
+      "data": {
+       "after": {
+        "from": "jo@NorthwindTalent.example"
+       }
+      }
+     },
+     "expect": [],
+     "note": "redelivery of the same event"
+    },
+    {
+     "op": "event",
+     "event": {
+      "id": "evt_2",
+      "type": "email.received",
+      "data": {
+       "after": {
+        "from": "mom@example.com"
+       }
+      }
+     },
+     "expect": []
+    },
+    {
+     "op": "event",
+     "event": {
+      "id": "evt_3",
+      "type": "calendar.event_added",
+      "data": {
+       "after": {
+        "from": "talent"
+       }
+      }
+     },
+     "expect": []
+    },
+    {
+     "op": "tick",
+     "now": "2026-09-28T14:05:00Z",
+     "expect": [],
+     "note": "event routines are not time-scheduled"
+    }
+   ]
+  },
+  {
+   "name": "hourly cap of 30; throttled rows do not count; manual is never throttled",
+   "tz": "UTC",
+   "zone": "fixed:0",
+   "routines": [
+    {
+     "path": "any.md",
+     "when": {
+      "event": "thing.happened"
+     }
+    }
+   ],
+   "steps": [
+    {
+     "op": "events",
+     "prefix": "evt_",
+     "from": 0,
+     "count": 32,
+     "type": "thing.happened",
+     "expect_ran": 30,
+     "expect_throttled": 2
+    },
+    {
+     "op": "event",
+     "event": {
+      "id": "evt_30",
+      "type": "thing.happened",
+      "data": {}
+     },
+     "expect": [],
+     "note": "a throttled slot stays claimed"
+    },
+    {
+     "op": "manual",
+     "routine": "any.md",
+     "expect": [
+      {
+       "routine": "any.md",
+       "slot": "manual:*",
+       "status": "ran"
+      }
+     ]
+    },
+    {
+     "op": "event",
+     "event": {
+      "id": "evt_32",
+      "type": "thing.happened",
+      "data": {}
+     },
+     "expect": [
+      {
+       "routine": "any.md",
+       "slot": "event:evt_32",
+       "status": "throttled"
+      }
+     ]
+    },
+    {
+     "op": "age_runs",
+     "ms": 3700000
+    },
+    {
+     "op": "event",
+     "event": {
+      "id": "evt_33",
+      "type": "thing.happened",
+      "data": {}
+     },
+     "expect": [
+      {
+       "routine": "any.md",
+       "slot": "event:evt_33",
+       "status": "ran"
+      }
+     ],
+     "note": "runs older than an hour leave the window"
+    }
+   ]
+  }
+ ]
+}
