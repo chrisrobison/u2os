@@ -1,0 +1,974 @@
+{
+ "version": 1,
+ "description": "Shared by tests/majordomo-parity-actions.test.js (drives Node's real queue store) and majordomo/tests/actions_parity.rs. Columns named node/rust hold each runtime's observable result; a note is mandatory wherever they differ. 'n/a' means Node has no equivalent operation.",
+ "transitions": [
+  {
+   "from": "awaiting_approval",
+   "trigger": "approve",
+   "rust": "queued",
+   "node": "n/a",
+   "note": "Approval lives in Node's agent_actions, not in the queue table."
+  },
+  {
+   "from": "awaiting_approval",
+   "trigger": "reject",
+   "rust": "cancelled",
+   "node": "n/a"
+  },
+  {
+   "from": "awaiting_approval",
+   "trigger": "cancel",
+   "rust": "cancelled",
+   "node": "n/a"
+  },
+  {
+   "from": "queued",
+   "trigger": "cancel",
+   "rust": "cancelled",
+   "node": "cancelled"
+  },
+  {
+   "from": "retry_wait",
+   "trigger": "cancel",
+   "rust": "cancelled",
+   "node": "cancelled"
+  },
+  {
+   "from": "queued",
+   "trigger": "lease",
+   "rust": "leased",
+   "node": "leased"
+  },
+  {
+   "from": "retry_wait",
+   "trigger": "lease",
+   "rust": "leased",
+   "node": "leased"
+  },
+  {
+   "from": "leased",
+   "trigger": "expire_lease",
+   "rust": "queued",
+   "node": "leased",
+   "note": "Node hands an expired lease straight to the next owner; Rust recovers it to queued and the next lease_next takes it. Both end up leased after a lease call."
+  },
+  {
+   "from": "leased",
+   "trigger": "begin_attempt",
+   "rust": "executing",
+   "node": "executing"
+  },
+  {
+   "from": "leased",
+   "trigger": "stop_failed",
+   "rust": "failed",
+   "node": "failed"
+  },
+  {
+   "from": "leased",
+   "trigger": "stop_cancelled",
+   "rust": "cancelled",
+   "node": "cancelled"
+  },
+  {
+   "from": "leased",
+   "trigger": "stop_dead_letter",
+   "rust": "dead_letter",
+   "node": "dead_letter"
+  },
+  {
+   "from": "executing",
+   "trigger": "complete",
+   "rust": "completed",
+   "node": "completed"
+  },
+  {
+   "from": "executing",
+   "trigger": "fail_retry",
+   "rust": "retry_wait",
+   "node": "retry_wait"
+  },
+  {
+   "from": "executing",
+   "trigger": "fail_dead_letter",
+   "rust": "dead_letter",
+   "node": "dead_letter"
+  },
+  {
+   "from": "executing",
+   "trigger": "fail_terminal",
+   "rust": "failed",
+   "node": "failed"
+  },
+  {
+   "from": "executing",
+   "trigger": "mark_uncertain",
+   "rust": "outcome_uncertain",
+   "node": "failed",
+   "note": "DIFFERENCE: Node records status failed with error_class outcome_uncertain; Rust has an explicit outcome_uncertain status that only an owner resolution can leave."
+  },
+  {
+   "from": "executing",
+   "trigger": "expire_lease",
+   "rust": "outcome_uncertain",
+   "node": "leased",
+   "note": "DIFFERENCE: Node re-leases an executing action whose lease expired (the worker later refuses to retry a non-idempotent tool); Rust never leases it again and parks it as outcome_uncertain."
+  },
+  {
+   "from": "failed",
+   "trigger": "requeue",
+   "rust": "queued",
+   "node": "queued"
+  },
+  {
+   "from": "cancelled",
+   "trigger": "requeue",
+   "rust": "queued",
+   "node": "queued"
+  },
+  {
+   "from": "outcome_uncertain",
+   "trigger": "resolve_done",
+   "rust": "completed",
+   "node": "n/a",
+   "note": "Owner review; Node has no equivalent operation."
+  },
+  {
+   "from": "outcome_uncertain",
+   "trigger": "resolve_not_done",
+   "rust": "queued",
+   "node": "n/a",
+   "note": "Owner review; Node refuses requeue of outcome_uncertain entirely."
+  }
+ ],
+ "rejections": [
+  {
+   "from": "queued",
+   "trigger": "begin_attempt",
+   "node": "reject"
+  },
+  {
+   "from": "queued",
+   "trigger": "complete",
+   "node": "reject"
+  },
+  {
+   "from": "retry_wait",
+   "trigger": "begin_attempt",
+   "node": "reject"
+  },
+  {
+   "from": "leased",
+   "trigger": "complete",
+   "node": "reject"
+  },
+  {
+   "from": "leased",
+   "trigger": "cancel",
+   "node": "reject"
+  },
+  {
+   "from": "executing",
+   "trigger": "lease",
+   "node": "reject"
+  },
+  {
+   "from": "executing",
+   "trigger": "cancel",
+   "node": "reject"
+  },
+  {
+   "from": "executing",
+   "trigger": "stop_failed",
+   "node": "reject"
+  },
+  {
+   "from": "queued",
+   "trigger": "stop_failed",
+   "node": "reject"
+  },
+  {
+   "from": "completed",
+   "trigger": "requeue",
+   "node": "reject"
+  },
+  {
+   "from": "completed",
+   "trigger": "cancel",
+   "node": "reject"
+  },
+  {
+   "from": "completed",
+   "trigger": "complete",
+   "node": "reject"
+  },
+  {
+   "from": "dead_letter",
+   "trigger": "requeue",
+   "node": "reject"
+  },
+  {
+   "from": "failed",
+   "trigger": "lease",
+   "node": "reject"
+  },
+  {
+   "from": "failed",
+   "trigger": "complete",
+   "node": "reject"
+  },
+  {
+   "from": "cancelled",
+   "trigger": "lease",
+   "node": "reject"
+  },
+  {
+   "from": "outcome_uncertain",
+   "trigger": "requeue",
+   "node": "n/a",
+   "note": "Rust: only resolve_not_done can requeue an uncertain action. Node refuses requeue by error_class."
+  },
+  {
+   "from": "outcome_uncertain",
+   "trigger": "lease",
+   "node": "n/a"
+  },
+  {
+   "from": "outcome_uncertain",
+   "trigger": "cancel",
+   "node": "n/a"
+  },
+  {
+   "from": "awaiting_approval",
+   "trigger": "lease",
+   "node": "n/a",
+   "note": "An unapproved consequential action can never be leased."
+  },
+  {
+   "from": "awaiting_approval",
+   "trigger": "begin_attempt",
+   "node": "n/a"
+  },
+  {
+   "from": "completed",
+   "trigger": "resolve_done",
+   "node": "n/a"
+  }
+ ],
+ "classification": [
+  {
+   "error": {
+    "code": "ETIMEDOUT"
+   },
+   "class": "retryable"
+  },
+  {
+   "error": {
+    "code": "econnreset"
+   },
+   "class": "retryable"
+  },
+  {
+   "error": {
+    "code": "ECONNREFUSED"
+   },
+   "class": "retryable"
+  },
+  {
+   "error": {
+    "code": "ENETUNREACH"
+   },
+   "class": "retryable"
+  },
+  {
+   "error": {
+    "code": "EAI_AGAIN"
+   },
+   "class": "retryable"
+  },
+  {
+   "error": {
+    "status": 408
+   },
+   "class": "retryable"
+  },
+  {
+   "error": {
+    "status": 429
+   },
+   "class": "retryable"
+  },
+  {
+   "error": {
+    "status": 500
+   },
+   "class": "retryable"
+  },
+  {
+   "error": {
+    "status": 503
+   },
+   "class": "retryable"
+  },
+  {
+   "error": {
+    "status": 401
+   },
+   "class": "authentication_required"
+  },
+  {
+   "error": {
+    "status": 403
+   },
+   "class": "authentication_required"
+  },
+  {
+   "error": {
+    "code": "EAUTH"
+   },
+   "class": "authentication_required"
+  },
+  {
+   "error": {
+    "code": "UNAUTHENTICATED"
+   },
+   "class": "authentication_required"
+  },
+  {
+   "error": {
+    "code": "INVALID_CREDENTIALS"
+   },
+   "class": "authentication_required"
+  },
+  {
+   "error": {
+    "status": 400
+   },
+   "class": "non_retryable"
+  },
+  {
+   "error": {
+    "status": 404
+   },
+   "class": "non_retryable"
+  },
+  {
+   "error": {
+    "code": "EWHATEVER"
+   },
+   "class": "non_retryable"
+  },
+  {
+   "error": {},
+   "class": "non_retryable"
+  },
+  {
+   "error": {
+    "ownerAttentionRequired": true
+   },
+   "class": "owner_attention_required"
+  },
+  {
+   "error": {
+    "ownerAttentionRequired": true,
+    "status": 503
+   },
+   "class": "owner_attention_required"
+  },
+  {
+   "error": {
+    "actionErrorClass": "outcome_uncertain",
+    "status": 503
+   },
+   "class": "outcome_uncertain"
+  },
+  {
+   "error": {
+    "actionErrorClass": "recovery_review_required"
+   },
+   "class": "recovery_review_required"
+  },
+  {
+   "error": {
+    "actionErrorClass": "retryable",
+    "status": 401
+   },
+   "class": "retryable"
+  },
+  {
+   "error": {
+    "actionErrorClass": "bogus",
+    "status": 503
+   },
+   "class": "retryable"
+  }
+ ],
+ "retry_delays": [
+  {
+   "attempt": 1,
+   "base": 1000,
+   "max": 60000,
+   "ms": 1000
+  },
+  {
+   "attempt": 2,
+   "base": 1000,
+   "max": 60000,
+   "ms": 2000
+  },
+  {
+   "attempt": 3,
+   "base": 1000,
+   "max": 60000,
+   "ms": 4000
+  },
+  {
+   "attempt": 6,
+   "base": 1000,
+   "max": 60000,
+   "ms": 32000
+  },
+  {
+   "attempt": 7,
+   "base": 1000,
+   "max": 60000,
+   "ms": 60000
+  },
+  {
+   "attempt": 30,
+   "base": 1000,
+   "max": 60000,
+   "ms": 60000
+  },
+  {
+   "attempt": 2,
+   "base": 500,
+   "max": 1500,
+   "ms": 1000
+  },
+  {
+   "attempt": 3,
+   "base": 500,
+   "max": 1500,
+   "ms": 1500
+  }
+ ],
+ "failure_outcomes": [
+  {
+   "class": "retryable",
+   "attempt": 1,
+   "max": 5,
+   "rust": "retry_wait",
+   "node": "retry_wait"
+  },
+  {
+   "class": "retryable",
+   "attempt": 4,
+   "max": 5,
+   "rust": "retry_wait",
+   "node": "retry_wait"
+  },
+  {
+   "class": "retryable",
+   "attempt": 5,
+   "max": 5,
+   "rust": "dead_letter",
+   "node": "dead_letter"
+  },
+  {
+   "class": "retryable",
+   "attempt": 1,
+   "max": 1,
+   "rust": "dead_letter",
+   "node": "dead_letter"
+  },
+  {
+   "class": "non_retryable",
+   "attempt": 1,
+   "max": 5,
+   "rust": "failed",
+   "node": "failed"
+  },
+  {
+   "class": "non_retryable",
+   "attempt": 4,
+   "max": 5,
+   "rust": "failed",
+   "node": "failed"
+  },
+  {
+   "class": "non_retryable",
+   "attempt": 5,
+   "max": 5,
+   "rust": "failed",
+   "node": "failed"
+  },
+  {
+   "class": "non_retryable",
+   "attempt": 1,
+   "max": 1,
+   "rust": "failed",
+   "node": "failed"
+  },
+  {
+   "class": "authentication_required",
+   "attempt": 1,
+   "max": 5,
+   "rust": "failed",
+   "node": "failed"
+  },
+  {
+   "class": "authentication_required",
+   "attempt": 4,
+   "max": 5,
+   "rust": "failed",
+   "node": "failed"
+  },
+  {
+   "class": "authentication_required",
+   "attempt": 5,
+   "max": 5,
+   "rust": "failed",
+   "node": "failed"
+  },
+  {
+   "class": "authentication_required",
+   "attempt": 1,
+   "max": 1,
+   "rust": "failed",
+   "node": "failed"
+  },
+  {
+   "class": "owner_attention_required",
+   "attempt": 1,
+   "max": 5,
+   "rust": "failed",
+   "node": "failed"
+  },
+  {
+   "class": "owner_attention_required",
+   "attempt": 4,
+   "max": 5,
+   "rust": "failed",
+   "node": "failed"
+  },
+  {
+   "class": "owner_attention_required",
+   "attempt": 5,
+   "max": 5,
+   "rust": "failed",
+   "node": "failed"
+  },
+  {
+   "class": "owner_attention_required",
+   "attempt": 1,
+   "max": 1,
+   "rust": "failed",
+   "node": "failed"
+  },
+  {
+   "class": "recovery_review_required",
+   "attempt": 1,
+   "max": 5,
+   "rust": "failed",
+   "node": "failed"
+  },
+  {
+   "class": "recovery_review_required",
+   "attempt": 4,
+   "max": 5,
+   "rust": "failed",
+   "node": "failed"
+  },
+  {
+   "class": "recovery_review_required",
+   "attempt": 5,
+   "max": 5,
+   "rust": "failed",
+   "node": "failed"
+  },
+  {
+   "class": "recovery_review_required",
+   "attempt": 1,
+   "max": 1,
+   "rust": "failed",
+   "node": "failed"
+  },
+  {
+   "class": "outcome_uncertain",
+   "attempt": 1,
+   "max": 5,
+   "rust": "outcome_uncertain",
+   "node": "failed",
+   "note": "DIFFERENCE: Node status failed + error_class outcome_uncertain."
+  },
+  {
+   "class": "outcome_uncertain",
+   "attempt": 5,
+   "max": 5,
+   "rust": "outcome_uncertain",
+   "node": "failed",
+   "note": "DIFFERENCE: Node status failed + error_class outcome_uncertain."
+  }
+ ],
+ "idempotency_keys": [
+  {
+   "tool": "email.send",
+   "correlationId": "corr_123",
+   "actionId": "act_1",
+   "key": "email.send:corr_123:act_1"
+  },
+  {
+   "tool": "email.send",
+   "correlationId": null,
+   "actionId": "act_1",
+   "key": "email.send:act_1:act_1"
+  },
+  {
+   "tool": "email.send",
+   "correlationId": "",
+   "actionId": "act_1",
+   "key": "email.send:act_1:act_1"
+  },
+  {
+   "tool": "cal.move",
+   "correlationId": "c",
+   "actionId": "a",
+   "key": "cal.move:c:a"
+  }
+ ],
+ "scenarios": [
+  {
+   "name": "duplicate submit never resets an existing action",
+   "steps": [
+    {
+     "op": "enqueue",
+     "at": 0,
+     "expect": {
+      "ok": true,
+      "status": "queued",
+      "next_attempt_at": 0
+     }
+    },
+    {
+     "op": "lease",
+     "at": 1000,
+     "owner": "a",
+     "leaseMs": 30000,
+     "expect": {
+      "ok": true,
+      "status": "leased",
+      "owner": "a"
+     }
+    },
+    {
+     "op": "enqueue",
+     "at": 2000,
+     "expect": {
+      "ok": true,
+      "status": "leased",
+      "owner": "a"
+     }
+    }
+   ]
+  },
+  {
+   "name": "only one tick can lease a due action",
+   "steps": [
+    {
+     "op": "enqueue",
+     "at": 0,
+     "expect": {}
+    },
+    {
+     "op": "lease",
+     "at": 1000,
+     "owner": "a",
+     "leaseMs": 30000,
+     "expect": {
+      "ok": true,
+      "status": "leased",
+      "owner": "a"
+     }
+    },
+    {
+     "op": "lease",
+     "at": 1000,
+     "owner": "b",
+     "leaseMs": 30000,
+     "expect": {
+      "ok": false,
+      "status": "leased",
+      "owner": "a"
+     }
+    }
+   ]
+  },
+  {
+   "name": "lease expiry boundary is inclusive",
+   "steps": [
+    {
+     "op": "enqueue",
+     "at": 0,
+     "expect": {}
+    },
+    {
+     "op": "lease",
+     "at": 1000,
+     "owner": "a",
+     "leaseMs": 1000,
+     "expect": {
+      "ok": true,
+      "status": "leased",
+      "owner": "a"
+     }
+    },
+    {
+     "op": "lease",
+     "at": 1999,
+     "owner": "c",
+     "leaseMs": 1000,
+     "expect": {
+      "ok": false,
+      "status": "leased",
+      "owner": "a"
+     }
+    },
+    {
+     "op": "lease",
+     "at": 2000,
+     "owner": "c",
+     "leaseMs": 1000,
+     "expect": {
+      "ok": true,
+      "status": "leased",
+      "owner": "c"
+     }
+    }
+   ]
+  },
+  {
+   "name": "retry backoff then dead letter",
+   "steps": [
+    {
+     "op": "enqueue",
+     "at": 0,
+     "expect": {}
+    },
+    {
+     "op": "lease",
+     "at": 1000,
+     "owner": "a",
+     "leaseMs": 30000,
+     "expect": {
+      "ok": true,
+      "status": "leased",
+      "owner": "a"
+     }
+    },
+    {
+     "op": "begin",
+     "at": 1500,
+     "owner": "a",
+     "expect": {
+      "ok": true,
+      "status": "executing"
+     }
+    },
+    {
+     "op": "fail",
+     "at": 3000,
+     "owner": "a",
+     "errorClass": "retryable",
+     "maxAttempts": 2,
+     "expect": {
+      "ok": true,
+      "status": "retry_wait",
+      "owner": null,
+      "next_attempt_at": 4000
+     }
+    },
+    {
+     "op": "lease",
+     "at": 3999,
+     "owner": "b",
+     "leaseMs": 30000,
+     "expect": {
+      "ok": false,
+      "status": "retry_wait"
+     }
+    },
+    {
+     "op": "lease",
+     "at": 4000,
+     "owner": "b",
+     "leaseMs": 30000,
+     "expect": {
+      "ok": true,
+      "status": "leased",
+      "owner": "b"
+     }
+    },
+    {
+     "op": "begin",
+     "at": 4100,
+     "owner": "b",
+     "expect": {
+      "ok": true,
+      "status": "executing"
+     }
+    },
+    {
+     "op": "fail",
+     "at": 5000,
+     "owner": "b",
+     "errorClass": "retryable",
+     "maxAttempts": 2,
+     "expect": {
+      "ok": true,
+      "status": "dead_letter",
+      "owner": null
+     }
+    }
+   ]
+  },
+  {
+   "name": "non-retryable failure is terminal",
+   "steps": [
+    {
+     "op": "enqueue",
+     "at": 0,
+     "expect": {}
+    },
+    {
+     "op": "lease",
+     "at": 1000,
+     "owner": "a",
+     "leaseMs": 30000,
+     "expect": {}
+    },
+    {
+     "op": "begin",
+     "at": 1100,
+     "owner": "a",
+     "expect": {}
+    },
+    {
+     "op": "fail",
+     "at": 1200,
+     "owner": "a",
+     "errorClass": "non_retryable",
+     "maxAttempts": 5,
+     "expect": {
+      "ok": true,
+      "status": "failed",
+      "owner": null
+     }
+    }
+   ]
+  },
+  {
+   "name": "an attempt settles once and only for its owner",
+   "steps": [
+    {
+     "op": "enqueue",
+     "at": 0,
+     "expect": {}
+    },
+    {
+     "op": "lease",
+     "at": 1000,
+     "owner": "a",
+     "leaseMs": 30000,
+     "expect": {}
+    },
+    {
+     "op": "begin",
+     "at": 1100,
+     "owner": "a",
+     "expect": {
+      "ok": true,
+      "status": "executing"
+     }
+    },
+    {
+     "op": "complete",
+     "at": 1200,
+     "owner": "b",
+     "expect": {
+      "ok": false,
+      "status": "executing",
+      "owner": "a"
+     }
+    },
+    {
+     "op": "complete",
+     "at": 1300,
+     "owner": "a",
+     "expect": {
+      "ok": true,
+      "status": "completed",
+      "owner": null
+     }
+    },
+    {
+     "op": "complete",
+     "at": 1400,
+     "owner": "a",
+     "expect": {
+      "ok": false,
+      "status": "completed"
+     }
+    }
+   ]
+  },
+  {
+   "name": "executing at crash",
+   "steps": [
+    {
+     "op": "enqueue",
+     "at": 0,
+     "expect": {}
+    },
+    {
+     "op": "lease",
+     "at": 1000,
+     "owner": "old",
+     "leaseMs": 1000,
+     "expect": {
+      "ok": true,
+      "status": "leased",
+      "owner": "old"
+     }
+    },
+    {
+     "op": "begin",
+     "at": 1500,
+     "owner": "old",
+     "expect": {
+      "ok": true,
+      "status": "executing"
+     }
+    },
+    {
+     "op": "lease",
+     "at": 3000,
+     "owner": "new",
+     "leaseMs": 30000,
+     "expect": {},
+     "expect_rust": {
+      "ok": false,
+      "status": "outcome_uncertain",
+      "owner": null
+     },
+     "expect_node": {
+      "ok": true,
+      "status": "leased",
+      "owner": "new"
+     },
+     "note": "DIFFERENCE: Node re-leases the abandoned execution; Rust parks it as outcome_uncertain and never leases it."
+    }
+   ]
+  }
+ ]
+}

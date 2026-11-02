@@ -47,6 +47,12 @@ USAGE:
     u2 memory links  <id|path>
                          read-only queries over the vault (no daemon needed);
                          all accept --vault DIR and --json
+    u2 actions list [--status S] [--limit N] [--json]
+    u2 actions show <id> [--json]
+    u2 events tail  [--after SEQ] [--limit N] [--json]
+                         read-only views of the isolated Phase 4a operational store
+                         (majordomo/majordomo.sqlite); no daemon needed. Node remains
+                         authoritative for the real action queue and event log.
     u2 --version | --help
 
 ENVIRONMENT:
@@ -80,6 +86,8 @@ async fn main() -> ExitCode {
         ["doctor"] => finish(run_doctor().await),
         ["vault", "check", rest @ ..] => finish(vault_check(rest)),
         ["memory", sub, rest @ ..] => finish(memory(sub, rest)),
+        ["actions", sub, rest @ ..] => finish(actions_cmd(sub, rest)),
+        ["events", "tail", rest @ ..] => finish(events_tail(rest)),
         ["git", "status", rest @ ..] => finish(git_status(rest)),
         ["git", "checkin", rest @ ..] => finish(git_checkin(rest)),
         ["forget", rest @ ..] => finish(forget(rest)),
@@ -687,5 +695,158 @@ fn rewind(args: &[&str]) -> Result<bool, Error> {
         info.dest.display()
     );
     println!("  it contains your private data; delete it when you are done");
+    Ok(true)
+}
+
+/// `--name value` / `--json` options for the store inspection commands.
+type StoreOpts = (Vec<(String, String)>, bool, Vec<String>);
+
+fn store_opts(args: &[&str], names: &[&str]) -> Result<StoreOpts, Error> {
+    let mut values = Vec::new();
+    let mut json = false;
+    let mut positional = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        if *a == "--json" {
+            json = true;
+        } else if let Some(name) = a.strip_prefix("--").filter(|n| names.contains(n)) {
+            let v = it
+                .next()
+                .ok_or_else(|| Error::Invalid(format!("--{name} needs a value")))?;
+            values.push((name.to_string(), (*v).to_string()));
+        } else if a.starts_with("--") {
+            return Err(Error::Invalid(format!("unknown option: {a}")));
+        } else {
+            positional.push((*a).to_string());
+        }
+    }
+    Ok((values, json, positional))
+}
+
+fn open_store() -> Result<Option<majordomo::store::Store>, Error> {
+    let config = Config::from_env()?;
+    majordomo::store::Store::open_read_only(&majordomo::store::store_path(&config.data_dir))
+        .map_err(|e| Error::Invalid(e.to_string()))
+}
+
+fn number(values: &[(String, String)], name: &str, default: i64) -> Result<i64, Error> {
+    match values.iter().find(|(k, _)| k == name) {
+        None => Ok(default),
+        Some((_, v)) => v
+            .parse::<i64>()
+            .ok()
+            .filter(|n| *n >= 0)
+            .ok_or_else(|| Error::Invalid(format!("--{name} must be a non-negative number"))),
+    }
+}
+
+fn actions_cmd(sub: &str, args: &[&str]) -> Result<bool, Error> {
+    let (values, json, positional) = store_opts(args, &["status", "limit"])?;
+    let store = open_store()?;
+    match sub {
+        "list" => {
+            let status = values
+                .iter()
+                .find(|(k, _)| k == "status")
+                .map(|(_, v)| {
+                    majordomo::actions::Status::parse(v)
+                        .ok_or_else(|| Error::Invalid(format!("unknown status: {v}")))
+                })
+                .transpose()?;
+            let limit = number(&values, "limit", 100)? as usize;
+            let v = majordomo::inspect::list_json(store.as_ref(), status, limit)
+                .map_err(Error::Invalid)?;
+            if json {
+                return print_json(&v);
+            }
+            let items = v["items"].as_array().cloned().unwrap_or_default();
+            if items.is_empty() {
+                println!("no actions");
+            }
+            for a in &items {
+                println!(
+                    "{:<22} {:<18} {:<20} attempts={} {}",
+                    text(&a["id"]),
+                    text(&a["status"]),
+                    text(&a["tool"]),
+                    text(&a["attempt_count"]),
+                    if a["consequential"] == true {
+                        "consequential"
+                    } else {
+                        ""
+                    }
+                );
+            }
+            Ok(true)
+        }
+        "show" => {
+            let [id] = positional.as_slice() else {
+                return Err(Error::Invalid(
+                    "usage: u2 actions show <id> [--json]".into(),
+                ));
+            };
+            let v = majordomo::inspect::show_json(store.as_ref(), id)
+                .map_err(Error::Invalid)?
+                .ok_or_else(|| Error::Invalid(format!("no action with id {id}")))?;
+            if json {
+                return print_json(&v);
+            }
+            for key in [
+                "id",
+                "status",
+                "tool",
+                "consequential",
+                "attempt_count",
+                "error_class",
+                "last_error",
+                "lease_owner",
+                "approved_by",
+                "idempotency_key",
+                "correlation_id",
+            ] {
+                println!("{key:<16} {}", text(&v[key]));
+            }
+            for att in v["attempts"].as_array().into_iter().flatten() {
+                println!(
+                    "attempt {} {:<10} by {} {}",
+                    text(&att["attempt_number"]),
+                    text(&att["status"]),
+                    text(&att["lease_owner"]),
+                    text(&att["error_class"])
+                );
+            }
+            Ok(true)
+        }
+        other => Err(Error::Invalid(format!("unknown actions command: {other}"))),
+    }
+}
+
+fn events_tail(args: &[&str]) -> Result<bool, Error> {
+    let (values, json, _) = store_opts(args, &["after", "limit"])?;
+    let store = open_store()?;
+    let after = values
+        .iter()
+        .any(|(k, _)| k == "after")
+        .then(|| number(&values, "after", 0))
+        .transpose()?;
+    let limit = number(&values, "limit", 20)? as usize;
+    let v =
+        majordomo::inspect::events_json(store.as_ref(), after, limit).map_err(Error::Invalid)?;
+    if json {
+        return print_json(&v);
+    }
+    let items = v["items"].as_array().cloned().unwrap_or_default();
+    if items.is_empty() {
+        println!("no events");
+    }
+    for e in &items {
+        println!(
+            "{:>6} {} {:<20} {}",
+            text(&e["seq"]),
+            text(&e["ts_ms"]),
+            text(&e["type"]),
+            text(&e["subject"]["id"])
+        );
+    }
     Ok(true)
 }

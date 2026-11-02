@@ -4,7 +4,7 @@ Majordomo is the planned Rust daemon for U2OS's deterministic orchestration. The
 
 > The filesystem is the storage. The vault is the digital self. The daemon is the majordomo. The AI is an advisor, not an authority.
 
-**Status:** Phase 0 (design) complete; Phase 1 (foundation) implemented in [`majordomo/`](../majordomo/README.md) ([#604](https://github.com/chrisrobison/u2os/issues/604)). Until a phase says otherwise, **Node is authoritative for everything** and Majordomo changes no behaviour.
+**Status:** Phase 0 (design) complete; Phase 1 (foundation) implemented in [`majordomo/`](../majordomo/README.md) ([#604](https://github.com/chrisrobison/u2os/issues/604)); Phase 4a (durable events and action state machine, mock capabilities only) implemented and fixture-tested ([#650](https://github.com/chrisrobison/u2os/issues/650)). Until a phase says otherwise, **Node is authoritative for everything** and Majordomo changes no behaviour.
 
 ## What stays, what moves
 
@@ -79,6 +79,7 @@ Local API over `majordomo/run/majordomo.sock` (HTTP/1.1 over a Unix socket). Ver
 | `GET /api/v1/git` | Repository health (see Git below) |
 | `GET /api/v1/memories/{id}/history?limit=` | Commits that touched the record, newest first, across renames |
 | `GET /api/v1/memories/{id}/diff?since=&until=` | Unified diff of the record (and its earlier paths) from `since` to `until` or the working tree |
+| `GET /api/v1/actions?status=&limit=`, `/actions/{id}`, `GET /api/v1/events?after=&limit=` | 4a: read-only views of `majordomo.sqlite` (opened read-only, never created; lists omit action arguments; events never carry them) |
 
 Errors are `{"error":{"code","message"}}`: 400 bad query or id, 404 unknown id or route, 405 non-GET, 503 `vault_unavailable` (the message never contains paths).
 
@@ -92,7 +93,7 @@ CLI `u2` (separate from `npm run u2`, which is the Node package CLI and is uncha
 | `u2 memory list\|search\|show\|links` (`--json`, `--vault DIR`) | 2b, implemented (reads the vault directly, no daemon needed, same library code as the API) |
 | `u2 git status`, `u2 history <id\|path>`, `u2 diff <id\|path> --since …`, `u2 rewind <date\|commit>` | 3a, implemented (read-only; no daemon needed) |
 | `u2 git checkin`, `u2 forget` | 3b, 3c |
-| `u2 actions list` | 4 |
+| `u2 actions list\|show`, `u2 events tail` | 4a, implemented (read-only; no daemon needed; read the isolated Phase 4a store) |
 | `u2 daemon start`/`stop` | later (foreground `majordomo` first; units documented) |
 
 The CLI is a client of the same socket API; it contains no business logic of its own.
@@ -124,7 +125,7 @@ Out of scope: a compromised owner account, a malicious root user, network attack
 | 1 | Cargo crate, config, lock, lifecycle, logging, socket API, `u2 status`/`doctor` | Clean start/stop, second instance refused, peer checks, tests green |
 | 2 | Vault + memory read engine (2a [#607](https://github.com/chrisrobison/u2os/issues/607) scanner and `u2 vault check`: implemented; 2b [#608](https://github.com/chrisrobison/u2os/issues/608) queries, search and links: implemented; 2c [#609](https://github.com/chrisrobison/u2os/issues/609) watcher: implemented), watcher, search, backlinks, `u2 vault check` | Externally edited vault indexed and queryable; unrelated files untouched; parity fixtures vs Node indexer |
 | 3 | Git history: 3a read-only health, history, diff, snapshots ([#613](https://github.com/chrisrobison/u2os/issues/613), implemented); 3b check-in of dirty trees ([#614](https://github.com/chrisrobison/u2os/issues/614), implemented); 3c removal with optional history scrub ([#615](https://github.com/chrisrobison/u2os/issues/615), implemented, fixture-tested only; Node remains authoritative and no scrub has been run on a real vault) | Rename-surviving history, read-only snapshots; never pushes |
-| 4 | Events, scheduler, action state machine, mock capabilities | Simulated crash never duplicates a consequential action |
+| 4 | Events, scheduler, action state machine, mock capabilities. 4a ([#650](https://github.com/chrisrobison/u2os/issues/650)): events and action state machine, implemented, fixture-tested, Node authoritative, no handoff. 4b: scheduler, not started | Simulated crash never duplicates a consequential action |
 | 5 | Policy parity | Shared fixtures identical to Node; no bypass via routine/agent/event/API |
 | 6 | Capability registry, MCP adapter, agent proposal interface | End-to-end task with a replaceable agent and a mock capability |
 | 7 | Ownership handoffs, one subsystem at a time | Parity, restart recovery, UI still works, then retire Node code |
@@ -233,3 +234,65 @@ u2 forget --restore-scrub <backup-id>
 - If the record still exists it is removed (and checked in) first, as above; the scrub then covers that commit too. A record that is already gone is scrubbed by path (an id cannot name it).
 
 **Limits.** Content-level redaction inside records that remain is not done (follow-up). Other records that merely mention a removed record's id or link to it are left as they are. Rewriting a large history with filter-branch is slow. The 3c code is verified with fixture repositories only.
+
+## Events and action state machine (Phase 4a)
+
+**Node remains authoritative.** `majordomo::events` and `majordomo::actions` are an isolated implementation in `<U2OS_HOME>/majordomo/majordomo.sqlite`. Nothing is wired to Node's event bus or action queue, the daemon does not run the executor (`status` still reports `action_queue`, `scheduler` and `event_log` as `disabled`), and there is no handoff. The scheduler is Phase 4b; real execution-time policy is Phase 5; there are no real connectors (Phase 6).
+
+### Store
+
+`majordomo.sqlite` (mode 0600, WAL, `synchronous=FULL`, foreign keys on) holds `events`, `actions`, `action_attempts` and a `schema_version` table. Migrations are additive and forward-only; a store written by a newer build is refused. The store never opens `db/u2os.sqlite` or `.runtime-lock.sqlite`: `guard_store_path` accepts only an absolute path, without `.` or `..`, named `majordomo.sqlite` directly inside a directory named `majordomo`, with no symlink at the file or its directory. Tests assert that Node-named files are refused and left byte-identical. All timestamps are integer milliseconds.
+
+### Events
+
+Append-only (database triggers abort `UPDATE` and `DELETE`), with a monotonic `seq` as replay cursor, `id`, `type`, `ts_ms`, `source`, optional actor and subject, JSON `data` (at most 64 KiB), `correlation_id` and `causation_id`. `EventBus::publish` persists first, then delivers from the log in `seq` order under one lock to bounded per-subscriber channels (default 256, at most 64 subscribers). A subscriber that falls behind is marked lagged and refills from the log, so delivery is gap-free and ordered. `subscribe(pattern, Cursor::Start | After(seq) | Now)` replays from a sequence cursor, also after a restart. Patterns are `*`, `domain.*` or an exact type, as in Node. Events carry ids, states and error classes, never action arguments or error text, and `Debug` output redacts payloads.
+
+### Action state machine
+
+`actions::state::TRANSITIONS` is the only source of legality. An action is `awaiting_approval` when consequential, otherwise `queued`.
+
+| From | Trigger | To |
+|---|---|---|
+| awaiting_approval | approve | queued |
+| awaiting_approval | reject, cancel | cancelled |
+| queued, retry_wait | cancel | cancelled |
+| queued, retry_wait | lease | leased |
+| leased | expire_lease | queued |
+| leased | begin_attempt | executing |
+| leased | stop_failed / stop_cancelled / stop_dead_letter | failed / cancelled / dead_letter |
+| executing | complete | completed |
+| executing | fail_retry | retry_wait |
+| executing | fail_dead_letter | dead_letter |
+| executing | fail_terminal | failed |
+| executing | mark_uncertain, expire_lease | outcome_uncertain |
+| failed, cancelled | requeue | queued |
+| outcome_uncertain | resolve_done | completed |
+| outcome_uncertain | resolve_not_done | queued |
+
+`completed` and `dead_letter` have no exits. Every other pair returns a typed `ActionError::Illegal` and writes nothing. Each transition and its `action.transition` event commit in one transaction; events chain through `causation_id` and share the action's `correlation_id`.
+
+- **Idempotency.** `idempotency_key` is `UNIQUE`; the default key is Node's `tool:(correlation||id):id`. Submitting an existing key (or id) returns the stored action untouched (`created: false`), whatever its state or arguments.
+- **Approval gate.** A consequential action cannot be leased until approved (checked in the lease query, again in the executor, together with a SHA-256 of the arguments taken at submit time). `requeue` refuses an unapproved consequential action. The `Authorizer` is injected and mocked; real policy parity is Phase 5.
+- **Leases.** Owner plus expiry; expired means `lease_expires_at <= now`, as in Node. `begin_attempt` needs the live lease. Settling an attempt needs the attempt to be `executing` for the same owner, so a late "zombie" worker cannot rewrite an outcome.
+- **Retries.** Node's classification and backoff: `min(60 s, 1 s * 2^(n-1))`, five attempts, then `dead_letter`. A `retryable` error on a tool that does not support idempotency is only retried if the capability marks it `safe_to_retry` (known to have failed before the effect handoff); otherwise it becomes `owner_attention_required` and `failed`, as in Node.
+
+### Crash semantics
+
+`begin_attempt` commits `executing` before any capability runs. If the process dies, the lease eventually expires and `recover` (run first by every lease call and at start) moves that action to `outcome_uncertain` and closes its attempt as `uncertain`; a lease that never reached `executing` simply returns to `queued`. An uncertain action is never leased, retried or requeued automatically. `requeue` is refused; only `resolve_uncertain(ConfirmedDone)` (completes) or `resolve_uncertain(ConfirmedNotDone)` (back to `queued`, attempt count kept) leaves the state, by an explicit owner call recorded in the event. A capability panic or an `outcome_uncertain` error class takes the same path. This is conservative: a crash between recording `executing` and the effect is also uncertain. Tests drop and reopen the store, kill a child process with `SIGKILL` mid-execution, and assert exactly one recorded effect, `outcome_uncertain`, refused requeue and the same action on re-submission.
+
+### Parity with Node
+
+`majordomo/tests/fixtures/actions-parity.json` is read by `tests/majordomo-parity-actions.test.js`, which drives Node's real queue store (no Rust binary needed) and asserts the `node` column, and by `majordomo/tests/actions_parity.rs`, which asserts the `rust` column and that the table equals the fixture exactly. It covers the transition table, classification, backoff, failure outcomes, idempotency keys and lease/retry scenarios. Recorded differences (each carries a `note` in the fixture):
+
+| Case | Node | Rust |
+|---|---|---|
+| Executing when the lease expires | re-leased to the next worker, which refuses a non-idempotent retry as `failed` + `outcome_uncertain` | `outcome_uncertain` status, never leased again |
+| Capability reports an unknown outcome | `failed` with `error_class = outcome_uncertain` | `outcome_uncertain` status |
+| Expired lease before execution | handed straight to the next owner | recovered to `queued`, then leased |
+| Approval and cancel-before-approval | in `agent_actions`, not the queue | `awaiting_approval` in the same table |
+| Owner resolution of uncertain outcomes | none (requeue is refused) | `resolve_uncertain` |
+| Identity of a duplicate | `action_id` is unique | the idempotency key and the id are both unique |
+
+### What is mock, what remains
+
+Mock: capabilities (counting, failing, hanging, panicking) and the authorizer, in `actions::mock`. No heartbeat renewal is wired into the executor (`renew_lease` exists); keep `lease_ms` above a capability's worst case, or accept `outcome_uncertain`. Remaining: scheduler with `(routine, slot)` claims (4b), policy parity at execution time (Phase 5), real capabilities and the agent bridge (Phase 6), ownership handoff and any import of Node's queue (Phase 7).
