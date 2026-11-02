@@ -11,7 +11,7 @@ async function withPage(page, operation) {
   try {
     await createOwner(dedicated.baseURL, passphrase); await page.goto(dedicated.baseURL);
     await page.getByLabel('Passphrase').fill(passphrase); await page.locator('form button[type="submit"]').click();
-    await expect(page.locator('#workspace u2-dashboard')).toBeVisible(); await operation(dedicated);
+    await expect(page.locator('#workspace u2-home')).toBeVisible(); await operation(dedicated);
   } finally { await stopDedicatedServer(page, dedicated); }
 }
 const open = (page) => gotoNav(page, '#/model');

@@ -10,7 +10,7 @@ test('morning dashboard adds a task from SSE without navigation or reload', asyn
   const page = await context.newPage();
 
   try {
-    await page.goto(`${dedicated.baseURL}/#/home`);
+    await page.goto(`${dedicated.baseURL}/#/briefing`);
     await page.locator('input[name="passphrase"]').fill(PASSPHRASE);
     await page.locator('form button[type="submit"]').click();
     await expect(page.locator('u2-dashboard')).toBeVisible();
@@ -26,7 +26,7 @@ test('morning dashboard adds a task from SSE without navigation or reload', asyn
     }, title);
 
     await expect(page.locator('u2-card[title="Tasks"] .u2-task__title', { hasText: title })).toBeVisible();
-    await expect(page).toHaveURL(/#\/home$/);
+    await expect(page).toHaveURL(/#\/briefing$/);
     expect(await page.evaluate(() => window.__dashboardDocumentMarker)).toBe(marker);
 
     const refreshCount = await page.evaluate(async () => {

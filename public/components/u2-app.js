@@ -8,6 +8,7 @@ import './u2-shell-header.js';
 import './u2-nav.js';
 import './u2-agent.js';
 import './u2-dashboard.js';
+import './home/u2-home.js';
 import './u2-schedule.js';
 import './u2-calendar.js';
 import './u2-task-list.js';
@@ -211,6 +212,13 @@ export class U2App extends HTMLElement {
       this._route();
       this._workspace.focus({ preventScroll: true });
     };
+    // Home's "Ask U2" box hands its text to the existing agent panel; no second chat.
+    this.addEventListener('u2-home-ask', (event) => {
+      const agent = this.querySelector('u2-agent');
+      if (!agent || !event.detail) return;
+      this.dataset.agentOpen = 'true';
+      event.detail.accepted = agent.submitPrompt(event.detail.text) !== false;
+    });
     window.addEventListener('hashchange', this._onHashChange);
     this._route();
   }
@@ -308,6 +316,8 @@ export class U2App extends HTMLElement {
     switch (root) {
       case undefined:
       case 'home':
+        this._renderHome();
+        break;
       case 'briefing':
         this._renderDashboard();
         break;
@@ -431,6 +441,11 @@ export class U2App extends HTMLElement {
   }
 
   // ---- views ----
+
+  // #/home: the Home overview (#495). The Morning Briefing stays at #/briefing.
+  _renderHome() {
+    this._setWorkspace('', document.createElement('u2-home'));
+  }
 
   async _renderDashboard() {
     const generation = this._routeGeneration;

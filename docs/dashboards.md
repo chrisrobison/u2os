@@ -23,6 +23,26 @@ Each group heading is a button with `aria-expanded`, operable with Enter or Spac
 
 Groups are defined in one list (`NAV_GROUPS` in `u2-nav.js`) so add-ons can contribute entries later ([ADR 0010](adr/0010-lean-core-bundled-addons.md)).
 
+## Home overview
+
+`#/home` is the Home overview ([#495](https://github.com/chrisrobison/u2os/issues/495)): a daily-use summary composed of fixed Web Components in `public/components/home/` (`u2-home` hosts the panels). It is not a generated dashboard schema; the Morning Briefing below stays at `#/briefing` (linked from Home) and is unchanged.
+
+Every value comes from an endpoint that already exists; nothing is computed from guesses, and a panel whose source fails says so while the others still render.
+
+| Panel | Source | Notes |
+|---|---|---|
+| Greeting | `GET /api/owner/entity` | First name only; no name when unavailable. |
+| Need your review / decision cards | `GET /api/actions/pending` | Cards show the tool, the recorded reason and the policy rule, never arguments. |
+| Routines active / Active routines | `GET /api/routines` | Enabled routines without errors. Shows each routine's schedule description and last run. The API does not expose a computed next run or a per-routine permission, so those mockup columns are not shown. |
+| Actions completed today / Your day, handled | `GET /api/vault/journal` | Today's journal entries (local day). `agent.action.completed` entries are counted; if the 500-entry read limit is reached inside today the count is shown as `500+`. |
+| Your world | `GET /api/vault/records?type=Person\|Project`, `GET /api/memory/entities?type=Commitment` | Counts of what the lists contain (the record list is capped at 500, shown as `500+`). |
+| System trust | `GET /api/vault`, `GET /api/model`, `GET /api/connectors` | Vault index report and policy-file status, the planner status, and connected non-demo providers. A missing field reads as "Unknown" or "Unavailable", never as healthy. |
+| Ask U2 | the existing agent panel | Hands the text to `u2-agent`; there is no second chat. |
+
+Approve and Reject on a decision card call the same `approveAction` / `rejectAction` client functions as `<u2-approval>` (`POST /api/actions/:id/approve|reject`); the server's policy engine decides, and the card shows the outcome it returns (including "outcome uncertain"). "Why?" is the existing `<u2-why>`. Home refreshes on `agent.action.*`, `routine.*`, `vault.*`, `task.*` and `commitment.*` events, discards responses that arrive after the owner navigated away, and announces approval results in a live region.
+
+Not included: the top-bar search, the knowledge graph (the vault exposes no link data yet) and a second chat panel.
+
 ## Schema
 
 ```json

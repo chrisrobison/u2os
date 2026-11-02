@@ -25,7 +25,7 @@ test('notification approval identifies the proposed named account without its we
     await page.goto(dedicated.baseURL);
     await page.getByLabel('Passphrase').fill('correct horse battery staple');
     await page.locator('form button[type="submit"]').click();
-    await expect(page.locator('#workspace u2-dashboard')).toBeVisible();
+    await expect(page.locator('#workspace u2-home')).toBeVisible();
     await page.evaluate(async (proposal) => {
       await import('/components/u2-approval.js');
       const card = document.createElement('u2-approval');

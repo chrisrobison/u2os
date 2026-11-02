@@ -85,7 +85,7 @@ test.describe.serial('section pattern with record modal (#434)', () => {
   });
 
   test('dashboard task cards stay read-only', async () => {
-    await page.goto(`${dedicated.baseURL}/#/home`);
+    await page.goto(`${dedicated.baseURL}/#/briefing`);
     await expect(page.locator('u2-card[title="Tasks"] .u2-task').first()).toBeVisible();
     await expect(page.locator('u2-card[title="Tasks"] button.u2-task--select')).toHaveCount(0);
   });
