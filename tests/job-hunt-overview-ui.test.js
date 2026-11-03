@@ -32,16 +32,18 @@ class ElementShim extends NodeShim {
 
 const registry = new Map();
 const windowListeners = {};
+const documentListeners = {};
 let fetchCalls = [];
 let respond = async () => ({});
 const realFetch = globalThis.fetch;
 const realSetInterval = globalThis.setInterval;
+const realClearInterval = globalThis.clearInterval;
 
 before(async () => {
   Object.assign(globalThis, {
     Node: NodeShim, HTMLElement: ElementShim, CustomEvent: Ev,
     customElements: { get: (n) => registry.get(n), define: (n, c) => registry.set(n, c) },
-    document: { createElement: (t) => { const node = registry.has(t) ? new (registry.get(t))() : new ElementShim(t); node.tagName = t.toUpperCase(); node.style = { setProperty() {} }; return node; }, createTextNode: (t) => new TextShim(t), hidden: false },
+    document: { createElement: (t) => { const node = registry.has(t) ? new (registry.get(t))() : new ElementShim(t); node.tagName = t.toUpperCase(); node.style = { setProperty() {} }; return node; }, createTextNode: (t) => new TextShim(t), hidden: false, addEventListener: (t, fn) => { (documentListeners[t] ??= []).push(fn); }, removeEventListener: (t, fn) => { documentListeners[t] = (documentListeners[t] ?? []).filter((f) => f !== fn); } },
     window: { addEventListener: (t, fn) => { (windowListeners[t] ??= []).push(fn); }, removeEventListener: (t, fn) => { windowListeners[t] = (windowListeners[t] ?? []).filter((f) => f !== fn); }, location: { hash: '' } },
     matchMedia: () => ({ matches: false }),
     fetch: async (url) => { fetchCalls.push(String(url)); const body = await respond(String(url)); if (body instanceof Error) return { ok: false, status: 500, statusText: 'Server Error', text: async () => JSON.stringify({ error: body.message }) }; return { ok: true, status: 200, text: async () => JSON.stringify(body) }; },
@@ -97,7 +99,7 @@ function payload(over = {}) {
 const NOW = Date.parse('2026-10-27T12:00:00.000Z');
 
 test('the model helpers format counts, links and deadlines without inventing values', async () => {
-  const { formatCount, jobHref, filterHref, stageHref, until } = await import('../public/components/job-hunt/jh-overview-model.js');
+  const { formatCount, jobHref, filterHref, stageHref, until, metricSub, panelHref } = await import('../public/components/job-hunt/jh-overview-model.js');
   assert.equal(formatCount(4059), '4,059');
   assert.equal(formatCount(0), '0');
   assert.equal(formatCount(null), '—');
@@ -113,6 +115,14 @@ test('the model helpers format counts, links and deadlines without inventing val
   assert.equal(filterHref({ filter: 'all', statuses: null }), '#/job-hunt/opportunities');
   assert.equal(stageHref({ id: 'submitted', flag: false }), '#/job-hunt/opportunities?stage=submitted');
   assert.equal(stageHref({ id: 'needs_input', flag: true }), '#/job-hunt/opportunities?filter=needs_input');
+  assert.equal(panelHref(JOB), `#/job-hunt/opportunities?job=${JOB}`, 'the Opportunities table with the job panel open');
+  assert.equal(panelHref('javascript:alert(1)'), null);
+  assert.equal(panelHref(null), null);
+  // The cards that count jobs ever sent or answered say so when the table they open lists a different number.
+  assert.equal(metricSub({ sub: '2 in the last 7 days', value: 8, listed: 6 }), '2 in the last 7 days · Table lists 6 by current status');
+  assert.equal(metricSub({ sub: '2 in the last 7 days', value: 8, listed: 8 }), '2 in the last 7 days', 'equal: nothing to explain');
+  assert.equal(metricSub({ sub: 'active now', value: 1 }), 'active now', 'no listed count: unchanged');
+  assert.equal(metricSub({ sub: null, value: 8, listed: 1234 }), 'Table lists 1,234 by current status');
   assert.equal(until('2026-10-29T12:00:00.000Z', NOW), 'in 2d');
   assert.equal(until('2026-10-27T15:00:00.000Z', NOW), 'in 3h');
   assert.equal(until('2026-10-27T11:00:00.000Z', NOW), 'now');
@@ -171,7 +181,7 @@ test('the autopilot bar shows mode and execution as separate labels and links to
   assert.match(textOf(none), /— not available/);
 });
 
-test('attention items name the company, role and reason, and Review opens the job and the specific question', async () => {
+test('attention items name the company, role and reason, and Review opens that job in the Opportunities panel', async () => {
   const { attention } = await import('../public/components/job-hunt/jh-overview-parts.js');
   const node = attention(payload(), NOW);
   const items = all(node, (n) => n.getAttribute('data-job'));
@@ -179,8 +189,8 @@ test('attention items name the company, role and reason, and Review opens the jo
   const [first, second] = items;
   assert.match(textOf(first), /Notion/);
   assert.equal(textOf(byPart(first, 'explanation')[0]), '1 required question could not be answered: Why are you interested?');
-  assert.equal(byPart(first, 'review')[0].getAttribute('href'), `#/job-hunt/jobs/${JOB}?question=custom%3Awhy`);
-  assert.equal(byPart(second, 'review')[0].getAttribute('href'), '#/job-hunt/jobs/job_fedcba9876543210', 'no question key, so the job page only');
+  assert.equal(byPart(first, 'review')[0].getAttribute('href'), `#/job-hunt/opportunities?job=${JOB}`);
+  assert.equal(byPart(second, 'review')[0].getAttribute('href'), '#/job-hunt/opportunities?job=job_fedcba9876543210', 'with or without an outstanding question, the panel opens');
   assert.match(textOf(second), /— · Interview in 2d/, 'unscored shows a dash and the deadline replaces the age');
   assert.match(textOf(first), /90 fit · 2h ago/);
   assert.equal(textOf(byPart(node, 'attention-count')[0]), '2');
@@ -312,4 +322,63 @@ test('a store with no jobs shows an empty state beside the zeroed summary', asyn
   assert.ok(states(node).some((s) => s.getAttribute('title') === 'No jobs yet'));
   assert.deepEqual(byTag(top(node), 'jh-summary-card').map((c) => c.getAttribute('value')), ['0', '0', '0', '0', '0', '0']);
   node.disconnectedCallback();
+});
+
+test('Submitted and Responded cards explain a table that lists fewer jobs than they count; the others stay plain', async () => {
+  const { summaryBar } = await import('../public/components/job-hunt/jh-overview-parts.js');
+  const data = payload();
+  data.metrics = data.metrics.map((m) => (m.id === 'submitted' ? { ...m, listed: 6 } : m.id === 'responded' ? { ...m, listed: 0 } : m));
+  const bar = summaryBar(data);
+  const cards = Object.fromEntries(byTag(bar, 'jh-summary-card').map((card) => [card.getAttribute('data-metric'), card.getAttribute('sublabel')]));
+  assert.equal(cards.submitted, '2 in the last 7 days · Table lists 6 by current status');
+  assert.equal(cards.responded, '0 in the last 7 days', 'the table lists the same 0');
+  assert.equal(cards.discovered, '+312 this week');
+});
+
+const setHidden = (hidden) => { document.hidden = hidden; for (const fn of documentListeners.visibilitychange ?? []) fn({ type: 'visibilitychange' }); };
+
+test('polling timers run only while the tab is visible; coming back refreshes at once and restarts them', async () => {
+  const timers = [];
+  const cleared = [];
+  globalThis.setInterval = (fn, ms) => { const timer = { fn, ms }; timers.push(timer); return timer; };
+  globalThis.clearInterval = (timer) => { cleared.push(timer); };
+  try {
+    fetchCalls = []; respond = async () => payload();
+    document.hidden = false;
+    const node = mount();
+    await settle();
+    assert.deepEqual(timers.map((t) => t.ms), [30_000, 60_000], 'a poll and a clock tick while visible');
+    assert.equal(fetchCalls.length, 1);
+    setHidden(true);
+    assert.equal(cleared.length, 2, 'both timers stop when the tab is hidden');
+    assert.equal((documentListeners.visibilitychange ?? []).length, 1);
+    // An agent event while hidden does not fetch; the refresh on return shows it.
+    (windowListeners['u2-event'] ?? []).forEach((fn) => fn({ detail: { type: 'agent.action.approved' } }));
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    assert.equal(fetchCalls.length, 1, 'no request while hidden');
+    setHidden(false);
+    await settle();
+    assert.equal(fetchCalls.length, 2, 'one refresh the moment the tab is visible');
+    assert.deepEqual(timers.slice(2).map((t) => t.ms), [30_000, 60_000], 'timers restarted');
+    node.disconnectedCallback();
+    assert.equal((documentListeners.visibilitychange ?? []).length, 0, 'leaving the page removes the visibility listener');
+    assert.equal(cleared.length, 4, 'and the timers');
+  } finally { globalThis.setInterval = realSetInterval; globalThis.clearInterval = realClearInterval; document.hidden = false; }
+});
+
+test('a page that opens in a hidden tab starts no timers until it is shown', async () => {
+  const timers = [];
+  globalThis.setInterval = (fn, ms) => { const timer = { fn, ms }; timers.push(timer); return timer; };
+  globalThis.clearInterval = () => {};
+  try {
+    fetchCalls = []; respond = async () => payload();
+    document.hidden = true;
+    const node = mount();
+    await settle();
+    assert.equal(timers.length, 0);
+    setHidden(false);
+    await settle();
+    assert.deepEqual(timers.map((t) => t.ms), [30_000, 60_000]);
+    node.disconnectedCallback();
+  } finally { globalThis.setInterval = realSetInterval; globalThis.clearInterval = realClearInterval; document.hidden = false; }
 });

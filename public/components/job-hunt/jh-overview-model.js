@@ -1,4 +1,5 @@
 import { opportunitiesHref } from './jh-opportunities-model.js';
+import { withJobInHash } from './jh-detail-model.js';
 
 // Pure helpers for the Job Hunt Overview (#629): links, labels and number formats. DOM-free so they can be tested.
 
@@ -9,10 +10,27 @@ export function formatCount(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString('en-US') : '—';
 }
 
+/**
+ * The small print under a metric. Submitted and Responded count jobs EVER sent or answered, but their link lists jobs by
+ * CURRENT status, so when the table would show a different number (`listed`) the card says so instead of leaving the owner
+ * to find the gap.
+ */
+export function metricSub(metric) {
+  const sub = metric.sub ?? '';
+  if (!Number.isInteger(metric.listed) || metric.listed === metric.value) return sub;
+  return [sub, `Table lists ${formatCount(metric.listed)} by current status`].filter(Boolean).join(' · ');
+}
+
 /** The job page link, optionally opening one outstanding question. Null when the id is not a job id. */
 export function jobHref(jobId, question = null) {
   if (!JOB_ID.test(String(jobId ?? ''))) return null;
   return `#/job-hunt/jobs/${jobId}${question?.key ? `?question=${encodeURIComponent(question.key)}` : ''}`;
+}
+
+/** The Opportunities table with that job's detail panel open beside it (#/job-hunt/opportunities?job=<id>), or null for a bad id. */
+export function panelHref(jobId) {
+  if (!JOB_ID.test(String(jobId ?? ''))) return null;
+  return withJobInHash(opportunitiesHref(), jobId);
 }
 
 /**

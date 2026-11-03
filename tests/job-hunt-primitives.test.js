@@ -145,6 +145,48 @@ test('workspace detail collapses and reopens, fires events, and Escape closes th
   narrow = false;
 });
 
+test('while the narrow drawer is open the page behind it is inert and a tap on the dimmed page closes it', () => {
+  const build = () => {
+    const main = document.createElement('div');
+    main.setAttribute('data-region', 'main');
+    const detail = document.createElement('div');
+    detail.setAttribute('data-region', 'detail');
+    const ws = document.createElement('jh-workspace');
+    ws.append(main, detail);
+    ws.querySelector = (selector) => (selector === ':scope > [data-region="main"]' ? main : null);
+    ws.isConnected = true;
+    ws.connectedCallback();
+    return { ws, main };
+  };
+  narrow = false;
+  const wide = build();
+  assert.notEqual(wide.main.inert, true, 'side by side on a wide screen: nothing is inert');
+  narrow = true;
+  const { ws, main } = build();
+  assert.equal(ws.detailCollapsed, true, 'a closed drawer to begin with');
+  assert.equal(main.inert, false, 'closed: the page is live');
+  ws.openDetail();
+  assert.equal(main.inert, true, 'open: the keyboard cannot reach rows hidden under the drawer');
+  const tapOnPage = new Ev('click');
+  tapOnPage.target = ws;
+  ws.dispatchEvent(tapOnPage);
+  assert.equal(ws.detailCollapsed, true, 'a tap on the dimmed page closes the drawer');
+  assert.equal(main.inert, false, 'and the page is live again');
+  ws.openDetail();
+  const tapInside = new Ev('click');
+  tapInside.target = main;
+  ws.dispatchEvent(tapInside);
+  assert.equal(ws.detailCollapsed, false, 'a click inside the page region is not a tap on the scrim');
+  ws.dispatchEvent(new Ev('keydown', { key: 'Escape' }));
+  assert.equal(main.inert, false, 'Escape closes it and releases the page');
+  ws.openDetail();
+  narrow = false;
+  ws.toggleDetail(false); // no change, but the media state is re-read on the next sync
+  ws.setAttribute('detail-collapsed', ''); ws.removeAttribute('detail-collapsed');
+  assert.equal(main.inert, false, 'grown wide again with the detail open: both are usable');
+  ws.disconnectedCallback();
+});
+
 test('hostile strings are text only and never become elements or attributes with markup', () => {
   const card = mount('jh-summary-card', { label: HOSTILE, value: HOSTILE, sublabel: HOSTILE });
   assert.equal(card.findClass('jh-summary-card__label').textContent, HOSTILE);

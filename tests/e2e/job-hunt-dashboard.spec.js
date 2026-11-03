@@ -54,7 +54,7 @@ test.describe.serial('job-hunt dashboard (#535)', () => {
   test('shows the six stages with counts, cards, fit chips, a greeting with real counts and details', async ({ browser }) => {
     const { context, page } = await signIn(browser, dedicated.baseURL, '#/job-hunt');
     try {
-      await expect(page.locator('u2-job-dashboard h1')).toHaveText(/Good (morning|afternoon|evening)/);
+      await expect(page.locator('u2-job-dashboard .jh-greeting')).toHaveText(/Good (morning|afternoon|evening)/);
       await expect(page.locator('.jh-sub')).toContainText('You sent 2 applications this week');
       await expect(page.locator('.jh-sub')).toContainText('1 follow-up is due');
       await expect(page.locator('.jh-sub')).toContainText('8 jobs in your pipeline');
@@ -451,7 +451,7 @@ test.describe.serial('job-hunt dashboard (#535)', () => {
       await expect(page.locator('.jh-card[aria-pressed="true"]')).toHaveCount(1);
 
       await page.setViewportSize({ width: 390, height: 800 });
-      await expect(page.locator('u2-job-dashboard h1')).toBeVisible();
+      await expect(page.locator('u2-job-dashboard .jh-greeting')).toBeVisible();
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
       expect(overflow).toBeLessThanOrEqual(1);
       const board = page.locator('.jh-board');

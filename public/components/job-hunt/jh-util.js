@@ -122,3 +122,39 @@ export function titleCase(status) {
 export function emptyNote(text, className = 'jh-empty') {
   return el('p', { class: className, text });
 }
+
+/** Offers a job to the chat as context (the `u2-agent-context` event the chat listens for). Only the id travels; the server reads the job. */
+export function askAboutJob(job) {
+  if (!job || !/^job_[0-9a-f]{16}$/.test(String(job.id))) return false;
+  const label = [job.company, job.role].filter(Boolean).join(' — ');
+  window.dispatchEvent(new CustomEvent('u2-agent-context', { detail: { kind: 'job', jobId: job.id, label } }));
+  return true;
+}
+
+/**
+ * Runs timed jobs (`{ every, run }` in milliseconds) only while the page is visible. When the tab is hidden the timers are
+ * cleared, so a background tab makes no requests and does no re-rendering; when it becomes visible again `onResume` runs
+ * once (an immediate refresh, so the owner never sees data that is minutes old) and the timers restart.
+ * `start()` is for connectedCallback and `stop()` for disconnectedCallback.
+ */
+export function pollWhileVisible(jobs, { onResume } = {}) {
+  let timers = [];
+  const hidden = () => typeof document !== 'undefined' && document.hidden === true;
+  const disarm = () => { for (const timer of timers) clearInterval(timer); timers = []; };
+  const arm = () => { disarm(); timers = jobs.map(({ every, run }) => setInterval(run, every)); };
+  const onChange = () => {
+    if (hidden()) { disarm(); return; }
+    arm();
+    if (onResume) onResume();
+  };
+  return {
+    start() {
+      if (!hidden()) arm();
+      if (typeof document !== 'undefined') document.addEventListener?.('visibilitychange', onChange);
+    },
+    stop() {
+      disarm();
+      if (typeof document !== 'undefined') document.removeEventListener?.('visibilitychange', onChange);
+    },
+  };
+}

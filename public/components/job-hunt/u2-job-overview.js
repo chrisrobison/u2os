@@ -1,5 +1,5 @@
 import * as api from '../../services/api.js';
-import { el, keepFocus } from './jh-util.js';
+import { el, keepFocus, pollWhileVisible } from './jh-util.js';
 import { summaryBar, autopilotBar, pipeline, attention, activity } from './jh-overview-parts.js';
 import './jh-all.js';
 import './u2-job-dashboard.js';
@@ -23,6 +23,7 @@ export class U2JobOverview extends HTMLElement {
     this._error = null;
     this._onEvent = (event) => {
       if (!REFRESH_EVENT.test(event.detail?.type || '')) return;
+      if (typeof document !== 'undefined' && document.hidden) return; // the refresh on return shows it
       clearTimeout(this._debounce);
       this._debounce = setTimeout(() => this._load(), 300);
     };
@@ -37,8 +38,9 @@ export class U2JobOverview extends HTMLElement {
     this.replaceChildren(this._top, el('section', { class: 'jh-ov__board', 'aria-label': 'Pipeline board and details' }, el('h2', { class: 'jh-ov__board-title', text: 'Pipeline board and details' }), el('u2-job-dashboard')));
     this.addEventListener('jh-retry', () => this._load());
     window.addEventListener('u2-event', this._onEvent);
-    this._poll = setInterval(() => { if (typeof document === 'undefined' || !document.hidden) this._load(); }, POLL_MS);
-    this._tick = setInterval(() => { if (!this._error) this._render(); }, TICK_MS); // an error banner is not re-created (and re-announced) by the clock
+    // While the tab is hidden nothing is requested or redrawn; on return it refreshes at once and the timers restart.
+    this._poller = pollWhileVisible([{ every: POLL_MS, run: () => this._load() }, { every: TICK_MS, run: () => { if (!this._error) this._render(); } }], { onResume: () => this._load() }); // an error banner is not re-created (and re-announced) by the clock
+    this._poller.start();
     this._render();
     this._load();
   }
@@ -46,8 +48,7 @@ export class U2JobOverview extends HTMLElement {
   disconnectedCallback() {
     window.removeEventListener('u2-event', this._onEvent);
     clearTimeout(this._debounce);
-    clearInterval(this._poll);
-    clearInterval(this._tick);
+    this._poller?.stop();
     this._seq += 1;
     this._workspace?.classList.remove('workspace--wide');
   }

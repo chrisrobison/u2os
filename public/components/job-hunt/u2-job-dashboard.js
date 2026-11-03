@@ -76,7 +76,7 @@ export class U2JobDashboard extends HTMLElement {
   }
 
   _build() {
-    this._title = el('h1', { class: 'jh-greeting', text: greeting() });
+    this._title = el('h3', { class: 'jh-greeting', text: greeting() });
     this._sub = el('p', { class: 'jh-sub', 'aria-live': 'polite', text: 'Loading your pipeline...' });
     this._search = el('input', { id: 'jh-search', class: 'jh-search__input', type: 'search', placeholder: 'Search jobs, companies, locations...', autocomplete: 'off' });
     this._search.addEventListener('input', () => this._pipeline.setQuery(this._search.value));

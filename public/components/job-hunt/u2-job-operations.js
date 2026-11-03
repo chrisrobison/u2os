@@ -1,5 +1,5 @@
 import * as api from '../../services/api.js';
-import { el, keepFocus } from './jh-util.js';
+import { el, keepFocus, pollWhileVisible } from './jh-util.js';
 import { liveSummary } from './jh-operations-model.js';
 import { activityPanel, approvalsPanel, autopilotPanel, failuresPanel, recentPanel, runningPanel } from './jh-operations-parts.js';
 import './jh-all.js';
@@ -22,6 +22,7 @@ export class U2JobOperations extends HTMLElement {
     this._announced = '';
     this._onEvent = (event) => {
       if (!REFRESH_EVENT.test(event.detail?.type || '')) return;
+      if (typeof document !== 'undefined' && document.hidden) return; // the refresh on return shows it
       clearTimeout(this._debounce);
       this._debounce = setTimeout(() => this._load(), 300);
     };
@@ -36,8 +37,9 @@ export class U2JobOperations extends HTMLElement {
     this.replaceChildren(this._live, this._body);
     this.addEventListener('jh-retry', () => this._load());
     window.addEventListener('u2-event', this._onEvent);
-    this._poll = setInterval(() => { if (typeof document === 'undefined' || !document.hidden) this._load(); }, POLL_MS);
-    this._tick = setInterval(() => { if (!this._error) this._render(); }, TICK_MS); // an error banner is not re-created (and re-announced) by the clock
+    // While the tab is hidden nothing is requested or redrawn; on return it refreshes at once and the timers restart.
+    this._poller = pollWhileVisible([{ every: POLL_MS, run: () => this._load() }, { every: TICK_MS, run: () => { if (!this._error) this._render(); } }], { onResume: () => this._load() }); // an error banner is not re-created (and re-announced) by the clock
+    this._poller.start();
     this._render();
     this._load();
   }
@@ -45,8 +47,7 @@ export class U2JobOperations extends HTMLElement {
   disconnectedCallback() {
     window.removeEventListener('u2-event', this._onEvent);
     clearTimeout(this._debounce);
-    clearInterval(this._poll);
-    clearInterval(this._tick);
+    this._poller?.stop();
     this._seq += 1;
     this._workspace?.classList.remove('workspace--wide');
   }
