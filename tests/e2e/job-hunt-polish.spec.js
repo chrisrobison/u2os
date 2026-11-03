@@ -117,6 +117,7 @@ test.describe('job hunt polish: responsive and accessible (#653)', () => {
 
   for (const theme of ['light', 'dark']) {
     test(`axe finds no violations on any job-hunt view in the ${theme} theme (wide and phone)`, async ({ browser }) => {
+      test.setTimeout(180_000); // every view at two widths in one test; Firefox and WebKit on CI need well over 30s
       const hashes = viewHash(server.ids);
       for (const width of [1280, 360]) {
         for (const kind of AXE_KINDS) {
