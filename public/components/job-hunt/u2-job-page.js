@@ -1,5 +1,5 @@
 import * as api from '../../services/api.js';
-import { el, monogram, safeUrl, titleCase, formatStamp, emptyNote } from './jh-util.js';
+import { askAboutJob, el, monogram, safeUrl, titleCase, formatStamp, emptyNote } from './jh-util.js';
 import { fitRing } from './u2-job-details.js';
 import { answersTable } from './u2-job-submit.js';
 import { answerableQuestions, buildAnswerInputs, savedMessage } from './jh-answers.js';
@@ -10,7 +10,7 @@ import './u2-job-actions.js';
 // (send, move to a stage) stay where they are.
 
 const JOB_ID = /^job_[0-9a-f]{16}$/;
-const section = (title, ...body) => el('section', { class: 'jh-page__section' }, el('h3', { class: 'jh-section__title', text: title }), ...body);
+const section = (title, ...body) => el('section', { class: 'jh-page__section' }, el('h2', { class: 'jh-section__title', text: title }), ...body);
 const list = (items, className = 'jh-list') => el('ul', { class: className }, items.map((item) => el('li', { text: item })));
 
 export class U2JobPage extends HTMLElement {
@@ -24,6 +24,7 @@ export class U2JobPage extends HTMLElement {
     this._notice = null;
     // Kept across renders so a submit's progress and result are not lost when the page redraws.
     this._submitEl = document.createElement('u2-job-submit');
+    this._submitEl.setAttribute('heading-level', '2');
     this._submitEl.addEventListener('jh-job-updated', (event) => { this._job = event.detail.job; this._render(); });
     this._actionsEl = document.createElement('u2-job-actions');
     this._actionsEl.addEventListener('jh-job-updated', (event) => { this._job = event.detail.job; this._notice = null; this._render(); });
@@ -58,12 +59,14 @@ export class U2JobPage extends HTMLElement {
     this.textContent = '';
     const back = el('a', { class: 'jh-link jh-page__back', href: '#/job-hunt/leads', text: '← Job Leads' });
     back.addEventListener('click', (event) => { if (history.length > 1 && document.referrer !== '') { event.preventDefault(); history.back(); } });
-    this.append(back);
     const job = this._job;
     if (!job) {
-      this.append(this._error ? el('p', { class: 'load-error', role: 'alert', text: this._error }) : emptyNote('Loading...'));
+      this.append(back, this._error ? el('p', { class: 'load-error', role: 'alert', text: this._error }) : emptyNote('Loading...'));
       return;
     }
+    const ask = el('button', { type: 'button', class: 'btn jh-page__ask', 'data-page-action': 'ask', title: 'Attach this job to the chat so you can ask about it', text: 'Ask about this job' });
+    ask.addEventListener('click', () => askAboutJob(this._job));
+    this.append(el('div', { class: 'jh-page__bar' }, back, ask));
     const where = [job.locations.join('; '), job.remote === true ? 'Remote' : job.remote === false ? 'On-site' : '', job.salary].filter(Boolean).join(' · ');
     const links = [['Company site', job.companyUrl], ...job.applicationUrls.map((url, index) => [index ? `Application link ${index + 1}` : 'Application link', url])]
       .map(([label, url]) => [label, safeUrl(url)]).filter(([, url]) => url);
@@ -71,7 +74,7 @@ export class U2JobPage extends HTMLElement {
       el('div', { class: 'jh-details__head' }, monogram(job.company, 'lg'),
         el('div', { class: 'jh-details__who' },
           el('div', { class: 'jh-details__company', text: job.company }),
-          el('h2', { class: 'jh-details__role', text: job.role || '(no role stated)' }),
+          el('h1', { class: 'jh-details__role', text: job.role || '(no role stated)' }),
           el('div', { class: 'jh-details__line' }, el('span', { class: 'jh-tag', text: titleCase(job.status) }), where ? ` ${where}` : ''),
           links.length ? el('div', { class: 'jh-details__line' }, links.map(([label, url]) => el('a', { class: 'jh-link', href: url, target: '_blank', rel: 'noopener noreferrer', text: `${label} ↗` }))) : null),
         fitRing(job.score, job.score?.label)),
@@ -120,7 +123,7 @@ export class U2JobPage extends HTMLElement {
     const attention = job.attention;
     if (!attention?.needsYou) return el('p', { class: 'jh-page__ok', text: 'Nothing is waiting on you for this job.' });
     return el('section', { class: 'jh-page__attention', role: 'region', 'aria-label': 'Needs you', 'data-needs-you': '' },
-      el('h3', { class: 'jh-page__attention-title', text: 'Needs you' }),
+      el('h2', { class: 'jh-page__attention-title', text: 'Needs you' }),
       attention.reasons.map((reason) => el('div', { class: 'jh-page__reason', 'data-reason': reason.kind },
         el('strong', { text: reason.title }),
         reason.items.length ? list(reason.items) : null,
@@ -174,8 +177,8 @@ export class U2JobPage extends HTMLElement {
     return section('Fit',
       el('p', { class: 'jh-details__line', text: `${score.score}% · ${titleCase(score.label)}${score.degraded ? ' (scored by rules only)' : ''}${job.strategy ? ` · approach: ${titleCase(job.strategy.name)}. ${job.strategy.reason}` : ''}` }),
       score.narrative ? el('p', { text: score.narrative }) : null,
-      score.reasons?.length ? [el('h4', { class: 'jh-section__title', text: 'Why it fits' }), list(score.reasons)] : null,
-      score.concerns?.length ? [el('h4', { class: 'jh-section__title', text: 'Concerns' }), list(score.concerns, 'jh-list jh-list--concerns')] : null);
+      score.reasons?.length ? [el('h3', { class: 'jh-section__title', text: 'Why it fits' }), list(score.reasons)] : null,
+      score.concerns?.length ? [el('h3', { class: 'jh-section__title', text: 'Concerns' }), list(score.concerns, 'jh-list jh-list--concerns')] : null);
   }
 
   _applications(job) {
@@ -195,7 +198,7 @@ export class U2JobPage extends HTMLElement {
         safeUrl(attempt.url) ? el('a', { class: 'jh-link', href: safeUrl(attempt.url), target: '_blank', rel: 'noopener noreferrer', text: 'Form ↗' }) : null),
       result.outcome || result.reason ? el('p', { class: 'jh-details__line', text: `Outcome: ${[result.outcome, result.reason].filter(Boolean).join(' · ')}` }) : null,
       result.errors.length ? list(result.errors.map(String), 'jh-list jh-list--concerns') : null,
-      plan.unresolved.length ? [el('h4', { class: 'jh-section__title', text: 'Unanswered' }), list(plan.unresolved.map((item) => item.label ?? item.key))] : null,
+      plan.unresolved.length ? [el('h3', { class: 'jh-section__title', text: 'Unanswered' }), list(plan.unresolved.map((item) => item.label ?? item.key))] : null,
       plan.fields.length ? el('details', { class: 'jh-page__source' }, el('summary', { text: `${plan.fields.length} planned answers` }), answersTable(plan)) : null,
       shots.length ? el('div', { class: 'jh-page__shots' }, shots) : null);
   }
@@ -207,8 +210,8 @@ export class U2JobPage extends HTMLElement {
       const concerns = review.concerns ?? [];
       return el('article', { class: 'jh-page__attempt', 'data-review': String(review.id) },
         el('div', { class: 'jh-details__line' }, el('span', { class: review.decision === 'approve' ? 'jh-tag' : 'jh-tag jh-tag--flag', text: review.decision === 'approve' ? 'Approved' : 'Rejected' }), ` ${titleCase(review.kind)} · ${formatStamp(review.createdAt)}${review.model ? ` · ${review.model}` : ''}`),
-        failed.length ? [el('h4', { class: 'jh-section__title', text: 'Failed checks' }), list(failed.map((check) => `${titleCase(check.name)}${check.detail ? `: ${check.detail}` : ''}`), 'jh-list jh-list--concerns')] : null,
-        concerns.length ? [el('h4', { class: 'jh-section__title', text: 'Concerns' }), list(concerns.map((concern) => `${titleCase(concern.severity)}: ${concern.text}`), 'jh-list jh-list--concerns')] : null,
+        failed.length ? [el('h3', { class: 'jh-section__title', text: 'Failed checks' }), list(failed.map((check) => `${titleCase(check.name)}${check.detail ? `: ${check.detail}` : ''}`), 'jh-list jh-list--concerns')] : null,
+        concerns.length ? [el('h3', { class: 'jh-section__title', text: 'Concerns' }), list(concerns.map((concern) => `${titleCase(concern.severity)}: ${concern.text}`), 'jh-list jh-list--concerns')] : null,
         review.notes ? el('p', { text: review.notes }) : null);
     }) : emptyNote('Not reviewed yet.'));
   }

@@ -159,7 +159,10 @@ export function buildActivity(store, { limit = ACTIVITY_LIMIT } = {}) {
  * jobs whose CURRENT status belongs to that stage (a job is in one stage, so
  * the stages add up; Needs Input is a flag over them, not a stage), while
  * Submitted and Responded in `metrics` are event-derived: jobs that have ever
- * been sent / answered, even if they have since moved on.
+ * been sent / answered, even if they have since moved on. Those two carry
+ * `listed`, the number of jobs the Opportunities table shows for the same
+ * link (current status in the metric's `statuses`), so the page can say so
+ * when it differs from `value`.
  */
 export function buildOverview(store, { now = new Date(), autopilot = null, minimumScore = null } = {}) {
   const counts = store.counts();
@@ -178,13 +181,18 @@ export function buildOverview(store, { now = new Date(), autopilot = null, minim
   const replied = marks.filter((m) => m.sentAt && m.replyAt);
   const recently = (list, key) => list.filter((m) => m[key] >= since).length;
   const strong = store.countScoredAtLeast(STRONG_MATCH_SCORE);
+  // What the Opportunities table lists for a status filter: jobs whose CURRENT status is in the list. For the two event-derived
+  // cards this can differ from the card (a job sent and since withdrawn or closed, or rejected without ever being sent).
+  const SUBMITTED_STATUSES = ['applied', 'contacted', 'followup_due', 'screening', 'interview', 'offer', 'rejected'];
+  const RESPONDED_STATUSES = ['screening', 'interview', 'offer', 'rejected'];
+  const listed = (statuses) => statuses.reduce((n, status) => n + (counts[status] ?? 0), 0);
   const stages = OVERVIEW_STAGES.map(({ id, label, statuses, flag }) => ({ id, label, statuses, count: stageCount.get(id), flag: Boolean(flag) }));
   const metrics = [
     { id: 'discovered', label: 'Jobs discovered', value: total, sub: `+${store.countFirstSeenSince(since)} this week`, filter: 'all', statuses: null },
     { id: 'strong', label: 'Strong matches', value: strong, sub: `score ${STRONG_MATCH_SCORE} or higher`, filter: 'strong', statuses: null },
     { id: 'attention', label: 'Need your attention', value: attention.count, sub: 'questions, reviews, decisions', filter: 'needs_input', statuses: null },
-    { id: 'submitted', label: 'Applications submitted', value: sent.length, sub: `${recently(sent, 'sentAt')} in the last 7 days`, filter: null, statuses: ['applied', 'contacted', 'followup_due', 'screening', 'interview', 'offer', 'rejected'] },
-    { id: 'responded', label: 'Employer responses', value: replied.length, sub: `${recently(replied, 'replyAt')} in the last 7 days`, filter: null, statuses: ['screening', 'interview', 'offer', 'rejected'] },
+    { id: 'submitted', label: 'Applications submitted', value: sent.length, sub: `${recently(sent, 'sentAt')} in the last 7 days`, filter: null, statuses: SUBMITTED_STATUSES, listed: listed(SUBMITTED_STATUSES) },
+    { id: 'responded', label: 'Employer responses', value: replied.length, sub: `${recently(replied, 'replyAt')} in the last 7 days`, filter: null, statuses: RESPONDED_STATUSES, listed: listed(RESPONDED_STATUSES) },
     { id: 'interviewing', label: 'Interviewing', value: stageCount.get('interviewing'), sub: 'active now', filter: null, statuses: ['interview'] },
   ];
   return {

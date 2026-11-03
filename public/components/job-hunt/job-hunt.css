@@ -53,8 +53,11 @@
   width: 2rem; height: 2rem; border-radius: var(--radius-md);
   font-size: var(--text-sm); font-weight: 700; letter-spacing: 0.02em; user-select: none;
   background: color-mix(in srgb, hsl(var(--jh-hue) 70% 50%) 20%, var(--bg-card));
-  color: color-mix(in srgb, hsl(var(--jh-hue) 70% 38%) 60%, var(--text-primary));
+  color: color-mix(in srgb, hsl(var(--jh-hue) 70% var(--jh-mono-l, 38%)) 60%, var(--text-primary));
 }
+/* Dark surfaces need a light tint of the hue, or the initials sink into the tinted chip for the blue and violet names. */
+:root[data-theme="dark"] .jh-mono { --jh-mono-l: 72%; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .jh-mono { --jh-mono-l: 72%; } }
 .jh-mono--sm { width: 1.25rem; height: 1.25rem; font-size: 0.6rem; border-radius: var(--radius-sm); }
 .jh-mono--lg { width: 3.5rem; height: 3.5rem; font-size: var(--text-lg); border-radius: var(--radius-md); }
 
@@ -287,7 +290,9 @@
 
 /* Job details page (#/job-hunt/jobs/<id>) */
 .jh-page { display: block; max-width: 56rem; margin: 0 auto; padding: var(--space-4); }
-.jh-page__back { display: inline-block; margin-bottom: var(--space-3); }
+.jh-page__bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
+.jh-page__back { display: inline-block; }
+.jh-page__ask:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .jh-page__section { margin-top: var(--space-5); }
 .jh-page .jh-details__line a { margin-right: var(--space-3); }
 .jh-page__ok { margin-top: var(--space-3); color: var(--text-secondary); }
@@ -378,13 +383,15 @@
     transition: transform 0.2s ease;
   }
   .jh-workspace[detail-collapsed] > [data-region="detail"] { display: block; transform: translateX(100%); visibility: hidden; }
+  /* The dimmed page behind the open drawer; a tap on it closes the drawer (jh-workspace.js) and the page under it is inert. */
+  .jh-workspace:not([detail-collapsed])::after { content: ''; position: fixed; inset: 0; z-index: 49; background: color-mix(in srgb, var(--bg-page) 55%, transparent); }
 }
 
 .jh-summary-card { display: block; min-width: 0; background: var(--bg-card); border: var(--border-width) solid var(--border-color); border-radius: var(--radius-md); }
 .jh-summary-card__body { display: flex; flex-direction: column; gap: 2px; width: 100%; padding: var(--space-3) var(--space-4); font: inherit; text-align: left; color: inherit; background: none; border: 0; border-radius: inherit; text-decoration: none; }
 .jh-summary-card__value { font-size: var(--text-lg); font-weight: 600; line-height: 1.2; }
 .jh-summary-card__label { font-size: var(--text-sm); color: var(--text-secondary); }
-.jh-summary-card__sub { font-size: var(--text-xs); color: var(--text-tertiary); }
+.jh-summary-card__sub { font-size: var(--text-xs); color: var(--text-secondary); }
 .jh-summary-card[data-tone="success"] .jh-summary-card__value { color: var(--accent-success); }
 .jh-summary-card[data-tone="active"] .jh-summary-card__value { color: var(--accent-strong); }
 .jh-summary-card[data-tone="attention"] .jh-summary-card__value { color: var(--jh-pending-text, var(--accent-pending)); }
@@ -568,3 +575,27 @@ a.jh-summary-card__body:hover, button.jh-summary-card__body:hover { background: 
 .jh-ops__facts dd { margin: 0; font-size: var(--text-md); font-weight: 600; }
 .jh-ops h1:focus { outline: none; }
 .jh-detail__ask:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+/* ---------- Polish (#653): narrow screens and touch ---------- */
+
+/* Below 40rem the table keeps the columns that identify a job and carry its state; place, pay and posted date are in the panel. */
+@media (max-width: 40rem) {
+  .jh-opp__table { min-width: 0; }
+  .jh-opp__table [data-col="location"], .jh-opp__table [data-col="comp"], .jh-opp__table [data-col="posted"] { display: none; }
+  .jh-opp__table th, .jh-opp__table td { padding: var(--space-2); }
+  .jh-opp__sortbox { margin-left: 0; }
+  .jh-ov__autopilot .jh-link { margin-left: 0; }
+}
+
+/* A 44px target for every control the job-hunt views draw, on a touch screen or a phone-width window. Checkboxes are 24px
+   (WCAG 2.5.8) with the row itself as the larger target; inline links in running text keep their line height. */
+@media (pointer: coarse), (max-width: 40rem) {
+  :is(.jh, .jh-page, .jh-detail) :is(.btn, button, select, summary, [role="tab"], .jh-search__input, .jh-input, .jh-select) { min-height: 44px; }
+  :is(.jh, .jh-page, .jh-detail) select { height: 44px; } /* Safari draws a native select at its own height unless it is set */
+  :is(.jh, .jh-page, .jh-detail) :is(.btn, button, summary, [role="tab"]) { min-width: 44px; }
+  :is(.jh, .jh-page, .jh-detail) summary { display: inline-flex; align-items: center; }
+  :is(.jh, .jh-page, .jh-detail) a.jh-link { display: inline-flex; align-items: center; min-height: 44px; }
+  :is(.jh, .jh-page, .jh-detail) input[type="checkbox"], :is(.jh, .jh-page, .jh-detail) input[type="radio"] { width: 1.5rem; height: 1.5rem; }
+  .jh-opp__check { width: 3rem; }
+  .jh-rowmenu__btn, .jh-iconbtn { min-width: 44px; min-height: 44px; }
+}

@@ -30,16 +30,18 @@ class ElementShim extends NodeShim {
 
 const registry = new Map();
 const windowListeners = {};
+const documentListeners = {};
 let fetchCalls = [];
 let respond = async () => ({});
 const realFetch = globalThis.fetch;
 const realSetInterval = globalThis.setInterval;
+const realClearInterval = globalThis.clearInterval;
 
 before(async () => {
   Object.assign(globalThis, {
     Node: NodeShim, HTMLElement: ElementShim, CustomEvent: Ev,
     customElements: { get: (n) => registry.get(n), define: (n, c) => registry.set(n, c) },
-    document: { createElement: (t) => { const node = registry.has(t) ? new (registry.get(t))() : new ElementShim(t); node.tagName = t.toUpperCase(); node.style = { setProperty() {} }; return node; }, createTextNode: (t) => new TextShim(t), hidden: false },
+    document: { createElement: (t) => { const node = registry.has(t) ? new (registry.get(t))() : new ElementShim(t); node.tagName = t.toUpperCase(); node.style = { setProperty() {} }; return node; }, createTextNode: (t) => new TextShim(t), hidden: false, addEventListener: (t, fn) => { (documentListeners[t] ??= []).push(fn); }, removeEventListener: (t, fn) => { documentListeners[t] = (documentListeners[t] ?? []).filter((f) => f !== fn); } },
     window: { addEventListener: (t, fn) => { (windowListeners[t] ??= []).push(fn); }, removeEventListener: (t, fn) => { windowListeners[t] = (windowListeners[t] ?? []).filter((f) => f !== fn); }, location: { hash: '' } },
     matchMedia: () => ({ matches: false }),
     fetch: async (url) => { fetchCalls.push(String(url)); const body = await respond(String(url)); if (body instanceof Error) return { ok: false, status: 500, statusText: 'Server Error', text: async () => JSON.stringify({ error: body.message }) }; return { ok: true, status: 200, text: async () => JSON.stringify(body) }; },
@@ -285,4 +287,31 @@ test('the chat API helper sends context only when one is attached', async () => 
     await sendAgentMessage('hi', 'conv_1', { kind: 'job', jobId: JOB });
   } finally { globalThis.fetch = keep; }
   assert.deepEqual(bodies, [{ text: 'hi', conversationId: 'conv_1' }, { text: 'hi', conversationId: 'conv_1', context: { kind: 'job', jobId: JOB } }]);
+});
+
+test('Agent Operations polls only while the tab is visible, refreshes the moment it returns, and cleans up', async () => {
+  const timers = [];
+  const cleared = [];
+  globalThis.setInterval = (fn, ms) => { const timer = { fn, ms }; timers.push(timer); return timer; };
+  globalThis.clearInterval = (timer) => { cleared.push(timer); };
+  const setHidden = (hidden) => { document.hidden = hidden; for (const fn of documentListeners.visibilitychange ?? []) fn({ type: 'visibilitychange' }); };
+  try {
+    fetchCalls = []; respond = async () => payload();
+    document.hidden = false;
+    const node = mount();
+    await settle();
+    assert.deepEqual(timers.map((t) => t.ms), [30_000, 60_000]);
+    assert.equal(fetchCalls.length, 1);
+    setHidden(true);
+    assert.equal(cleared.length, 2, 'both timers stop while hidden');
+    (windowListeners['u2-event'] ?? []).forEach((fn) => fn({ detail: { type: 'agent.action.proposed' } }));
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    assert.equal(fetchCalls.length, 1, 'an event while hidden makes no request');
+    setHidden(false);
+    await settle();
+    assert.equal(fetchCalls.length, 2, 'it refreshes the moment the tab is visible');
+    assert.equal(timers.length, 4, 'and the timers restart');
+    node.disconnectedCallback();
+    assert.equal((documentListeners.visibilitychange ?? []).length, 0);
+  } finally { globalThis.setInterval = realSetInterval; globalThis.clearInterval = realClearInterval; document.hidden = false; }
 });

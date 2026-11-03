@@ -1,5 +1,5 @@
 import * as api from '../../services/api.js';
-import { el } from './jh-util.js';
+import { askAboutJob, el } from './jh-util.js';
 import { jobActions, jobTasks } from './u2-job-actions.js';
 import { openAnswersDialog } from './jh-answers.js';
 import { JOB_ID, menuActions, primaryAction } from './jh-detail-model.js';
@@ -53,7 +53,11 @@ export class U2JobDetailPanel extends HTMLElement {
     this._render();
   }
 
-  disconnectedCallback() { this._seq += 1; }
+  disconnectedCallback() {
+    this._seq += 1;
+    // Leaving the view (a nav link, Back) with unsaved notes still saves them, the same as moving to another job; a failed save keeps a draft.
+    this._notesEl.flush().catch(() => { /* the draft is kept */ });
+  }
 
   /** Opens a job. `focus` moves focus to the panel heading (an owner action); a deep link leaves focus alone. */
   async show(jobId, { focus = false } = {}) {
@@ -244,12 +248,7 @@ export class U2JobDetailPanel extends HTMLElement {
   }
 
   /** Offers this job to the chat as context. Only its id travels; the server reads the job itself. */
-  _ask() {
-    const job = this._job;
-    if (!job || !JOB_ID.test(String(job.id))) return;
-    const label = [job.company, job.role].filter(Boolean).join(' — ');
-    window.dispatchEvent(new CustomEvent('u2-agent-context', { detail: { kind: 'job', jobId: job.id, label } }));
-  }
+  _ask() { askAboutJob(this._job); }
 
   _onKeydown(event) {
     const target = event.target;

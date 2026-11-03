@@ -149,7 +149,7 @@ test.describe.serial('navigation shell (#15)', () => {
     {
       hash: '#/job-hunt',
       async assert() {
-        await expect(page.locator('u2-job-dashboard h1')).toBeVisible();
+        await expect(page.locator('u2-job-dashboard .jh-greeting')).toBeVisible();
         await expect(page.locator('u2-job-pipeline')).toContainText('No jobs in your pipeline yet.');
         await expect(page.locator('u2-job-hunt')).toHaveCount(0);
       },

@@ -6,7 +6,8 @@ import { el, safeUrl } from './jh-util.js';
 // "Yes, submit this application"). Shared by the Job details page and the
 // dashboard's Approve dialog. Set `job` to the job detail from
 // GET /api/job-hunt/jobs/:id; the component fires `jh-job-updated` with the
-// refreshed job after a submit attempt.
+// refreshed job after a submit attempt. Its heading is an h3 (below a panel's h2 title); `heading-level="2"` makes it an h2
+// for the job page, whose title is an h1.
 
 export const answersTable = (plan) => el('table', { class: 'jh-page__table' }, el('tbody', {}, plan.fields.map((field) => el('tr', {}, el('th', { scope: 'row', text: `${field.label}${field.required ? ' *' : ''}` }), el('td', { text: field.file ? `[file] ${field.file}` : String(field.value ?? '') })))));
 const list = (items) => el('ul', { class: 'jh-list' }, items.map((item) => el('li', { text: item })));
@@ -48,7 +49,7 @@ export class U2JobSubmit extends HTMLElement {
     const blocking = (rejected?.concerns ?? []).filter((concern) => concern.severity === 'blocking').map((concern) => concern.text);
     const url = safeUrl(attempt.url);
     const box = el('section', { class: 'jh-page__submit', role: 'region', 'aria-label': 'Ready to submit', 'data-submit-box': '' },
-      el('h3', { class: 'jh-page__attention-title', text: 'Ready to submit' }),
+      el(this.getAttribute('heading-level') === '2' ? 'h2' : 'h3', { class: 'jh-page__attention-title', text: 'Ready to submit' }),
       el('p', { text: `The form for ${job.role || 'this role'} at ${job.company} is planned. Check what will be sent:` }),
       attempt.plan.fields.length ? answersTable(attempt.plan) : null,
       url ? el('p', {}, el('a', { class: 'jh-link', href: url, target: '_blank', rel: 'noopener noreferrer', text: 'The application form ↗' })) : null,

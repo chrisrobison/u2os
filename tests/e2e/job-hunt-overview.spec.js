@@ -92,20 +92,24 @@ test.describe.serial('job hunt overview (#629)', () => {
       expect(axe.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`)).toEqual([]);
 
       // The previous board is still on the page.
-      await expect(page.locator('u2-job-dashboard h1')).toBeVisible();
+      await expect(page.locator('u2-job-dashboard .jh-greeting')).toBeVisible();
       // One nav entry for the Overview, no duplicate.
       await expect(page.locator('u2-nav a[href="#/job-hunt"]')).toHaveCount(1);
     } finally { await context.close(); }
   });
 
-  test('Review opens the job and focuses the specific outstanding question', async ({ browser }) => {
+  test('Review opens that job in the Opportunities detail panel; the job page still focuses a specific outstanding question from its deep link', async ({ browser }) => {
     const { context, page } = await signIn(browser, dedicated.baseURL, '#/job-hunt');
     try {
       await page.route('**/api/job-hunt/overview', (route) => route.fulfill({ json: OVERVIEW }));
       await page.route(`**/api/job-hunt/jobs/${NOTION}`, (route) => route.fulfill({ json: detail }));
       await page.reload();
       await page.locator(`[data-job="${NOTION}"] [data-part="review"]`).click();
-      await expect(page).toHaveURL(new RegExp(`#/job-hunt/jobs/${NOTION}\\?question=custom%3Awhy$`));
+      await expect(page).toHaveURL(new RegExp(`#/job-hunt/opportunities\\?job=${NOTION}$`));
+      await expect(page.locator('u2-job-detail-panel [data-part="heading"]')).toHaveText('Software Engineer, Developer Platform');
+      await expect(page.locator('u2-job-page')).toHaveCount(0);
+      // The question deep link of the full job page is unchanged.
+      await page.goto(`${dedicated.baseURL}/#/job-hunt/jobs/${NOTION}?question=custom%3Awhy`);
       await expect(page.locator('u2-job-page [data-needs-you]')).toBeVisible();
       await expect(page.locator('u2-job-page [data-key="custom:why"]')).toHaveAttribute('data-focused-question', '');
       await expect(page.locator('u2-job-page [data-key="custom:why"] input, u2-job-page [data-key="custom:why"] textarea, u2-job-page [data-key="custom:why"] select')).toBeFocused();

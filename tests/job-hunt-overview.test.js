@@ -95,6 +95,35 @@ test('counts come from the seeded store: stage membership of the current status,
   store.close();
 });
 
+test('Submitted and Responded say how many jobs the table lists for the same link, so a withdrawn or never-sent job is not a silent gap', () => {
+  const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'u2os-overview-listed-'));
+  seedHuntStore(vault);
+  const store = openStore(huntDbPath(vault));
+  const metrics = () => Object.fromEntries(buildOverview(store).metrics.map((m) => [m.id, m]));
+  let metric = metrics();
+  assert.equal(metric.submitted.value, 6);
+  assert.equal(metric.submitted.listed, 6, 'every job sent is still in a listed status');
+  assert.equal(metric.responded.value, 4);
+  assert.equal(metric.responded.listed, 4);
+  // Sent, answered, then withdrawn: counted on the card (it WAS sent and answered), absent from the table.
+  const gone = addJob(store, 31, 'Withdrawn Co');
+  store.transition(gone.id, 'applied', {}, ago(10)); store.transition(gone.id, 'screening', {}, ago(8)); store.transition(gone.id, 'withdrawn', {}, ago(2));
+  // Sent and then closed.
+  const closed = addJob(store, 32, 'Closed Co');
+  store.transition(closed.id, 'applied', {}, ago(9)); store.transition(closed.id, 'closed', {}, ago(3));
+  // Rejected without ever being sent: listed by its status, not counted as sent.
+  const unsent = addJob(store, 33, 'Unsent Co');
+  store.transition(unsent.id, 'rejected', {}, ago(1));
+  metric = metrics();
+  assert.equal(metric.submitted.value, 8, 'two more were sent');
+  assert.equal(metric.submitted.listed, 7, 'the table lists the 6 still in a listed status plus the never-sent rejected job');
+  assert.equal(metric.responded.value, 5, 'the withdrawn job had been answered');
+  assert.equal(metric.responded.listed, 5, 'the same 4 plus the never-sent rejected one: here the totals happen to agree');
+  assert.equal(metric.interviewing.listed, undefined, 'the other cards carry no listed count');
+  assert.equal(metric.discovered.listed, undefined);
+  store.close();
+});
+
 test('the attention queue sorts by urgency, then score, then severity, and links the outstanding question', () => {
   const store = openStore(':memory:');
   const a = addJob(store, 1, 'LowScoreBlocked', { score: 70 });

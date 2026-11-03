@@ -570,6 +570,50 @@ test('Notes: unsaved text is saved when the owner moves to another job; a failed
   assert.equal(panel.querySelector('textarea').value, 'second thought');
 });
 
+test('Notes: unsaved text is saved when the view is left with the panel still open (a nav link, Back); a failed save keeps a draft', async () => {
+  let failing = false;
+  respond = async (url, options) => {
+    if (url.endsWith('/notes')) {
+      if (options.method === 'PUT') return failing ? { __status: 409, error: 'changed', code: 'CONFLICT', note: NOTE({ body: 'file now', revision: 'e'.repeat(64) }) } : NOTE({ body: 'saved on leave', revision: 'f'.repeat(64) });
+      return NOTE();
+    }
+    return jobFixture(1);
+  };
+  const panel = await mountPanel();
+  await panel.show(J(1));
+  await flush();
+  panel.querySelector('[data-tab="notes"]').click();
+  await flush();
+  const area = panel.querySelector('textarea');
+  area.value = 'typed, then the owner pressed a nav link';
+  area.dispatchEvent(new Ev('input', { bubbles: true }));
+  panel.disconnectedCallback();
+  await flush();
+  assert.deepEqual(fetchCalls.filter((call) => call.method === 'PUT').map((call) => call.body.body), ['typed, then the owner pressed a nav link'], 'saved as the view went away');
+
+  // Nothing typed: leaving makes no write. A failing save does not throw out of the callback.
+  fetchCalls.length = 0;
+  const quiet = await mountPanel();
+  await quiet.show(J(1));
+  await flush();
+  quiet.querySelector('[data-tab="notes"]').click();
+  await flush();
+  quiet.disconnectedCallback();
+  await flush();
+  assert.equal(fetchCalls.filter((call) => call.method === 'PUT').length, 0, 'untouched notes are not written');
+  failing = true;
+  const failed = await mountPanel();
+  await failed.show(J(1));
+  await flush();
+  failed.querySelector('[data-tab="notes"]').click();
+  await flush();
+  const field = failed.querySelector('textarea');
+  field.value = 'this one will conflict';
+  field.dispatchEvent(new Ev('input', { bubbles: true }));
+  assert.doesNotThrow(() => failed.disconnectedCallback());
+  await flush();
+});
+
 // ---- the Opportunities page ----------------------------------------------------------
 
 const row = (n) => ({ id: J(n), company: `Company ${n}`, role: `Engineer ${n}`, locations: ['Oakland, CA'], remote: true, compensation: '$180K', skills: ['Node'], status: 'qualified', stage: 'qualified', needsInput: false, fit: 90 - n, fitLabel: 'strong', postedAt: '2026-10-01T12:00:00.000Z', firstSeenAt: '2026-10-02T00:00:00.000Z' });
